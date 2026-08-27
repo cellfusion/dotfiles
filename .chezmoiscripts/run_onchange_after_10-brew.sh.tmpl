@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
-# Brewfile の内容が変わったときだけ実行される。
-# manifest hash: {{ includeTemplate "install/brewfile" (dict "os" .chezmoi.os) | sha256sum }}
+# Brewfile か third-party.txt が変わったときだけ実行される。
+# manifest hash: {{ printf "%s%s" (includeTemplate "install/brewfile" (dict "os" .chezmoi.os)) (includeTemplate "install/third-party" (dict "os" .chezmoi.os)) | sha256sum }}
 set -eu
 
 {{ includeTemplate "install/preamble" }}
 
 brewfile="$HOME/.config/install/Brewfile"
+thirdparty="$HOME/.config/install/third-party.txt"
 
 brew_env || die 'brew が見つからない。00-homebrew が失敗している'
 [ -f "$brewfile" ] || die "Brewfile が見つからない: $brewfile"
-
-# Homebrew 6.0 は untrusted tap の formula をロードごと拒む
-# （Refusing to load formula ... from untrusted tap ...）。Brewfile の `trusted:` は
-# ロードの後に効くので新しいマシンでは間に合わない。bundle の前にここで打つ。
-# 対象は Brewfile の宣言から取り、formula 名をここに二重に持たない。
-trusted="$(sed -n 's/^brew "\([^"]*\)", trusted: true.*/\1/p' "$brewfile")"
-if [ -n "$trusted" ]; then
-  printf 'third-party formula を trust する:\n%s\n' "$trusted"
-  # shellcheck disable=SC2086
-  brew trust --formula $trusted || die 'third-party formula の trust に失敗した'
-fi
+[ -f "$thirdparty" ] || die "third-party.txt が見つからない: $thirdparty"
 
 # --no-upgrade を付けて install だけを行う。付けないと brew bundle は outdated な
 # formula をまとめて upgrade するため、Brewfile を 1 行足しただけの apply が
-# ffmpeg / protobuf / gradle などの再ビルドを巻き込む。更新は手で `brew upgrade` する。
+# gradle / lua@5.4 / cocoapods などの再ビルドを巻き込む。更新は手で `brew upgrade` する。
 printf 'brew bundle を実行する（upgrade はしない）: %s\n' "$brewfile"
 brew bundle --file "$brewfile" --no-upgrade
+
+# non-official tap の formula は Brewfile に載せず、ここで fully-qualified 名で入れる。
+# その形なら tap と trust が自動で付き、Homebrew 6 の tap trust に止められない。
+# bundle の後に置いてあるので、ここが落ちても official の導入は完了している。
+# 導入済み判定は短縮名で行う。fully-qualified 名は tap の解決を伴う。
+while IFS= read -r f; do
+  case "$f" in
+    '' | '#'*) continue ;;
+  esac
+  if brew list --formula --versions "${f##*/}" >/dev/null 2>&1; then
+    printf '%s は導入済みなので飛ばす\n' "$f"
+    continue
+  fi
+  printf '%s を入れる\n' "$f"
+  brew install "$f" || die "$f の導入に失敗した"
+done < "$thirdparty"

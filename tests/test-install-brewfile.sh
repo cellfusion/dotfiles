@@ -24,36 +24,33 @@ for f in sccache awscli grpcurl; do
   assert_contains "$linux" "brew \"$f\"" "linux: 開発ツールに $f がある"
 done
 
-# --- tap ---
-assert_contains "$darwin" 'tap "anomalyco/tap"' "darwin: opencode の tap がある"
-assert_contains "$linux" 'tap "anomalyco/tap"' "linux: opencode の tap がある"
-assert_contains "$darwin" 'tap "asmvik/formulae"' "darwin: yabai/skhd の tap がある"
-assert_contains "$darwin" 'tap "felixkratz/formulae"' "darwin: borders/sketchybar の tap がある"
-assert_not_contains "$linux" 'asmvik/formulae' "linux: macOS 専用 tap が無い"
-assert_not_contains "$linux" 'felixkratz/formulae' "linux: macOS 専用 tap が無い"
+# --- third-party は Brewfile に載せない ---
+# non-official tap の formula は third-party.txt へ分けた。10-brew が fully-qualified 名で
+# 入れると tap と trust が自動で付く。Brewfile に残すと trust が要求され apply が止まる。
+for t in anomalyco asmvik felixkratz; do
+  assert_not_contains "$darwin" "$t" "darwin: third-party の $t を Brewfile に載せない"
+  assert_not_contains "$linux" "$t" "linux: third-party の $t を Brewfile に載せない"
+done
+assert_not_contains "$darwin" 'trusted:' "darwin: trusted 宣言に頼らない"
 
 # --- macOS 専用 ---
 for f in switchaudio-osx coreutils; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: macOS 専用に $f がある"
   assert_not_contains "$linux" "brew \"$f\"" "linux: macOS 専用の $f が無い"
 done
-# --- third-party formula は trust を宣言する ---
-# Homebrew 6.0 から non-official tap の formula は明示的な trust なしにロードされない。
-# 宣言が無いと、trust store を持たない新しいマシンで brew bundle がここで落ちる。
-# tap 全体ではなく formula 単位にする。tap 全体を trust すると、その tap に将来
-# 追加される formula も無条件に信頼することになる。
-assert_contains "$darwin" 'brew "asmvik/formulae/yabai", trusted: true' \
-  "darwin: yabai が trusted 付きである"
-assert_contains "$darwin" 'brew "asmvik/formulae/skhd", trusted: true' \
-  "darwin: skhd が trusted 付きである"
-assert_contains "$darwin" 'brew "felixkratz/formulae/borders", trusted: true' \
-  "darwin: borders が trusted 付きである"
-assert_contains "$darwin" 'brew "felixkratz/formulae/sketchybar", trusted: true' \
-  "darwin: sketchybar が trusted 付きである"
-assert_contains "$darwin" 'brew "anomalyco/tap/opencode", trusted: true' \
-  "darwin: opencode が trusted 付きである"
-assert_contains "$linux" 'brew "anomalyco/tap/opencode", trusted: true' \
-  "linux: opencode が trusted 付きである"
+# --- third-party のマニフェスト ---
+tp_darwin="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "install/third-party" (dict "os" "darwin") }}')"
+tp_linux="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "install/third-party" (dict "os" "linux") }}')"
+for f in anomalyco/tap/opencode asmvik/formulae/yabai asmvik/formulae/skhd \
+         felixkratz/formulae/borders felixkratz/formulae/sketchybar; do
+  assert_contains "$tp_darwin" "$f" "third-party: darwin に $f がある"
+done
+assert_contains "$tp_linux" 'anomalyco/tap/opencode' "third-party: linux に opencode がある"
+assert_not_contains "$tp_linux" 'asmvik' "third-party: linux に macOS 専用が無い"
+assert_not_contains "$tp_linux" 'felixkratz' "third-party: linux に macOS 専用が無い"
+
 # sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
 # lua@5.4 が無いと sketchybar は起動しない。
 assert_contains "$darwin" 'brew "lua@5.4"' "darwin: sketchybar が要求する lua@5.4 がある"

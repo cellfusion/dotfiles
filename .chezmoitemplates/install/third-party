@@ -1,0 +1,13 @@
+{{- /* non-official tap の formula。os には "darwin" か "linux" を渡す。 */ -}}
+# このファイルは chezmoi が生成する。直接編集しない。
+# 編集は chezmoi ソースの .chezmoitemplates/install/third-party を通す。
+#
+# Brewfile と分けてある。fully-qualified 名で入れると tap と trust が自動で付くので、
+# Homebrew 6 の tap trust に引っかからない。
+anomalyco/tap/opencode
+{{ if eq .os "darwin" -}}
+asmvik/formulae/yabai
+asmvik/formulae/skhd
+felixkratz/formulae/borders
+felixkratz/formulae/sketchybar
+{{ end -}}

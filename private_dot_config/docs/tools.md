@@ -9,7 +9,7 @@
 | 経路 | マニフェスト | 実行するスクリプト |
 |---|---|---|
 | Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
-| Homebrew | `~/.config/install/Brewfile` | `run_onchange_after_10-brew.sh` |
+| Homebrew | `~/.config/install/Brewfile`、`~/.config/install/third-party.txt` | `run_onchange_after_10-brew.sh` |
 | native installer（chezmoi・ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
@@ -30,6 +30,12 @@
 手で回すこともできる。
 
     brew bundle --file ~/.config/install/Brewfile --no-upgrade
+
+non-official tap の formula は Brewfile に載せず `~/.config/install/third-party.txt` に
+分けてある。fully-qualified 名で入れると tap と trust が自動で付くため、Homebrew 6 の
+tap trust に止められない。手で回すなら次のとおり。
+
+    xargs -n1 brew install < ~/.config/install/third-party.txt
 
 ## 新マシンでの手順
 

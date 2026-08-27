@@ -2,10 +2,6 @@
 # このファイルは chezmoi が生成する。直接編集しない。
 # 編集は chezmoi ソースの .chezmoitemplates/install/brewfile を通す。
 
-tap "anomalyco/tap"
-{{ if eq .os "darwin" }}tap "asmvik/formulae"
-tap "felixkratz/formulae"
-{{ end }}
 # --- core / OS 共通 CLI ---
 brew "git"
 brew "gh"
@@ -23,7 +19,6 @@ brew "jq"
 brew "television"
 brew "zoxide"
 brew "herdr"
-brew "anomalyco/tap/opencode", trusted: true
 
 # --- 開発ツール ---
 # mise / bun / uv / rustup は 20-runtimes が native installer で入れる。
@@ -36,12 +31,8 @@ brew "grpcurl"
 # --- macOS 専用 ---
 brew "coreutils"
 brew "switchaudio-osx"
-brew "asmvik/formulae/yabai", trusted: true
-brew "asmvik/formulae/skhd", trusted: true
-brew "felixkratz/formulae/borders", trusted: true
 # sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
 brew "lua@5.4"
-brew "felixkratz/formulae/sketchybar", trusted: true
 
 # --- モバイル・ネイティブ開発 ---
 brew "cocoapods"
