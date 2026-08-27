@@ -27,6 +27,10 @@ for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$
   assert_contains "$body" "#!/usr/bin/env bash" "$name: shebang がある"
   assert_contains "$body" "set -eu" "$name: set -eu がある"
   assert_not_contains "$body" "{{" "$name: 未展開のテンプレート構文が残っていない"
+  # Homebrew の trust store は XDG_CONFIG_HOME が指す場所に置かれる。設定しないと
+  # apply が書く trust と zsh から見る trust が別のファイルになる。
+  assert_contains "$body" 'XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"' \
+    "$name: trust store の場所を XDG_CONFIG_HOME で固定している"
 done
 
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
