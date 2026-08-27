@@ -1,0 +1,268 @@
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
+local colors = require("colors")
+local settings = require("settings")
+local app_icons = require("helpers.app_icons")
+
+local severity_color = {
+	crit = colors.red,
+	warn = colors.yellow,
+	ok = colors.green,
+	none = colors.grey,
+}
+
+local agent_specs = {
+{{- range $i, $env := $envs }}
+{{- if has "claude" $env.agents }}
+	{
+		env_key = "{{ $env.session }}",
+		environment = "{{ $env.label }}",
+		agent = "claude",
+		label = "Claude",
+		name = "widgets.usage.{{ $env.session }}.claude",
+		popup_name = "widgets.usage.popup.{{ $env.session }}.claude",
+		icon = app_icons["Claude"],
+	},
+{{- end }}
+{{- if has "codex" $env.agents }}
+	{
+		env_key = "{{ $env.session }}",
+		environment = "{{ $env.label }}",
+		agent = "codex",
+		label = "Codex",
+		name = "widgets.usage.{{ $env.session }}.codex",
+		popup_name = "widgets.usage.popup.{{ $env.session }}.codex",
+		icon = app_icons["ChatGPT"],
+	},
+{{- end }}
+{{- end }}
+}
+
+-- どの環境も agent を持たないなら、ウィジェットを描画しない。
+if #agent_specs == 0 then
+	return
+end
+
+-- 更新イベントを購読する項目は 1 つでよい。最初の agent 項目に持たせる。
+agent_specs[1].update_freq = 120
+
+local records = {}
+local function empty_record()
+	return {
+		used_pct = "-",
+		resets_at = "-",
+		status = "error",
+		severity = "none",
+	}
+end
+
+for _, spec in ipairs(agent_specs) do
+	records[spec.environment .. "\t" .. spec.agent] = empty_record()
+end
+
+local function add_caption(name, string)
+	return sbar.add("item", name, {
+		position = "right",
+		icon = { drawing = false },
+		label = {
+			string = string,
+			color = colors.grey,
+			font = { family = settings.font.text, style = settings.font.style_map["Semibold"] },
+			padding_left = 4,
+			padding_right = 4,
+		},
+	})
+end
+
+local function add_agent(spec)
+	local options = {
+		position = "right",
+		icon = {
+			string = spec.icon,
+			font = "sketchybar-app-font:Regular:16.0",
+			color = colors.grey,
+			padding_left = 4,
+			padding_right = 2,
+		},
+		label = {
+			string = "--%",
+			color = colors.grey,
+			font = { family = settings.font.text, style = settings.font.style_map["Semibold"] },
+			padding_left = 2,
+			padding_right = 4,
+		},
+	}
+	if spec.update_freq then
+		options.update_freq = spec.update_freq
+	end
+	return sbar.add("item", spec.name, options)
+end
+
+-- 左から右へ「<環境ラベル> [Claude] 64% [Codex] 20% | <環境ラベル> …」と並べる計画を作る。
+local display_plan = {}
+local last_env = nil
+for _, spec in ipairs(agent_specs) do
+	if spec.env_key ~= last_env then
+		if last_env ~= nil then
+			table.insert(display_plan, { kind = "separator" })
+		end
+		table.insert(display_plan, { kind = "caption", spec = spec })
+		last_env = spec.env_key
+	end
+	table.insert(display_plan, { kind = "agent", spec = spec })
+end
+
+-- sketchybar の position="right" は後から add したものを既存項目の左へ置く。
+-- 上の計画どおりに並べるには、末尾から add する。
+local display_items = {}
+local items_by_key = {}
+for i = #display_plan, 1, -1 do
+	local entry = display_plan[i]
+	local item
+	if entry.kind == "separator" then
+		item = add_caption("widgets.usage.separator." .. i, "|")
+	elseif entry.kind == "caption" then
+		item = add_caption("widgets.usage.env." .. entry.spec.env_key, entry.spec.environment)
+	else
+		item = add_agent(entry.spec)
+		items_by_key[entry.spec.environment .. "\t" .. entry.spec.agent] = item
+	end
+	display_items[i] = item
+end
+
+local bracket_names = {}
+for i = 1, #display_plan do
+	bracket_names[i] = display_items[i].name
+end
+
+local usage_bracket = sbar.add("bracket", "widgets.usage.bracket", bracket_names, {
+	background = { color = colors.bg1, height = 32 },
+	popup = { align = "center" },
+})
+
+sbar.add("item", "widgets.usage.padding", {
+	position = "right",
+	width = settings.group_paddings,
+})
+
+local popup_width = 360
+local popup_items = {}
+for _, spec in ipairs(agent_specs) do
+	popup_items[spec.environment .. "\t" .. spec.agent] = sbar.add("item", spec.popup_name, {
+		position = "popup." .. usage_bracket.name,
+		icon = { drawing = false },
+		label = {
+			string = spec.environment .. "  " .. spec.label .. "  --%  reset --  --  error",
+			color = colors.grey,
+			align = "left",
+			font = { family = settings.font.text, style = settings.font.style_map["Regular"] },
+		},
+		width = popup_width,
+	})
+end
+
+local function parse_records(result)
+	for _, spec in ipairs(agent_specs) do
+		records[spec.environment .. "\t" .. spec.agent] = empty_record()
+	end
+	for line in (result or ""):gmatch("[^\n]+") do
+		local environment, agent, used_pct, resets_at, status, severity = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+		if environment and records[environment .. "\t" .. agent] then
+			records[environment .. "\t" .. agent] = {
+				used_pct = used_pct ~= "" and used_pct or "-",
+				resets_at = resets_at ~= "" and resets_at or "-",
+				status = status ~= "" and status or "error",
+				severity = severity ~= "" and severity or "none",
+			}
+		end
+	end
+end
+
+local function format_usage(record)
+	if record.used_pct == "-" or record.used_pct == "" then
+		return "--%"
+	end
+	return record.used_pct .. "%"
+end
+
+local function color_for(record)
+	if record.status ~= "ok" then
+		return colors.grey
+	end
+	return severity_color[record.severity] or colors.grey
+end
+
+local function format_remaining(resets_at, now)
+	local reset = tonumber(resets_at)
+	if not reset then
+		return "--"
+	end
+
+	local remaining = math.max(0, reset - now)
+	if remaining >= 86400 then
+		return math.floor(remaining / 86400) .. "d" .. math.floor((remaining % 86400) / 3600) .. "h"
+	end
+	return math.floor(remaining / 3600) .. "h" .. math.floor((remaining % 3600) / 60) .. "m"
+end
+
+local function format_reset(resets_at)
+	local reset = tonumber(resets_at)
+	if not reset then
+		return "--"
+	end
+	return os.date("%m/%d %H:%M", reset)
+end
+
+local function update_display(spec, item)
+	local record = records[spec.environment .. "\t" .. spec.agent]
+	local color = color_for(record)
+	item:set({
+		icon = { color = color },
+		label = { string = format_usage(record), color = color },
+	})
+end
+
+local function update_popup(spec)
+	local key = spec.environment .. "\t" .. spec.agent
+	local record = records[key]
+	local color = color_for(record)
+	local now = os.time()
+	popup_items[key]:set({
+		label = {
+			string = spec.environment .. "  " .. spec.label .. "  " .. format_usage(record)
+				.. "  reset " .. format_reset(record.resets_at)
+				.. "  " .. format_remaining(record.resets_at, now)
+				.. "  " .. record.status,
+			color = color,
+		},
+	})
+end
+
+local function update()
+	sbar.exec("$CONFIG_DIR/helpers/usage.sh", function(result)
+		parse_records(result)
+		for _, spec in ipairs(agent_specs) do
+			local item = items_by_key[spec.environment .. "\t" .. spec.agent]
+			if item then
+				update_display(spec, item)
+			end
+			update_popup(spec)
+		end
+	end)
+end
+
+local function show_popup()
+	usage_bracket:set({ popup = { drawing = true } })
+end
+
+local function hide_popup()
+	usage_bracket:set({ popup = { drawing = false } })
+end
+
+for _, item in ipairs(display_items) do
+	item:subscribe("mouse.entered", show_popup)
+	item:subscribe("mouse.exited.global", hide_popup)
+end
+
+items_by_key[agent_specs[1].environment .. "\t" .. agent_specs[1].agent]
+	:subscribe({ "forced", "routine", "system_woke" }, update)

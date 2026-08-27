@@ -1,0 +1,14 @@
+# worktrunk (wt) — SDD の agent worktree 専用の設定。
+# https://worktrunk.dev/config/
+#
+# 人が使う worktree（config.toml）とは 2 点だけ違う。
+#
+# 1. herdr へ登録しない。子エージェントが herdr のエージェントとして状態管理され、
+#    通知が出るのを避ける。人が失敗タスクを見るときは、明示的に
+#    `herdr worktree open` を叩く
+# 2. 置き場所を分ける。人の worktree（~/.herdr/worktrees/）と混ざらない
+#
+# リポジトリ側の .config/wt.toml（.env のコピーと依存インストール）は
+# 通常どおり読まれる。pre-start は同期で走るので、agent が着地する前に終わる。
+
+worktree-path = "~/.local/state/sdd/worktrees/{{ repo }}/{{ branch | sanitize }}"

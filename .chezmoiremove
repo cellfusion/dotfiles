@@ -1,0 +1,67 @@
+# Targets to remove on `chezmoi apply` (paths are relative to the home dir).
+#
+# ここのエントリは、配布済みの実体を回収するための一時的な指示である。全マシンに
+# apply が行き渡れば役目を終える。保持方針は「追加から 1 ヶ月」とし、それより古い
+# ブロックは剪定する。剪定した記録は git 履歴に残る。
+
+# reinject-after-compact.sh は dev-workflow-inject.sh に統合した。
+.config/claude/hooks/reinject-after-compact.sh
+
+# SDD のスクリプトは ~/.agents/skills 側の 1 箇所に集約した。旧コピーを残すと、
+# source を編集しても workflow が古いコピーを実行し続ける。
+.config/claude/skills/subagent-driven-development/scripts
+
+# codex の設定は実運用の CODEX_HOME（~/.config/codex）へ移した。旧 ~/.codex に
+# 配った AGENTS.md と agent 定義が残ると、どちらが正か分からなくなる。
+# sessions/ や history.jsonl は chezmoi 管理外なのでここでは触らない。
+.codex/AGENTS.md
+.codex/agents
+
+.agents/skills/subagent-driven-development/scripts/herdr-dispatch
+
+# relay は CPU/メモリ対策で無効化したまま復帰しないと決めた。スキルとフックを
+# まとめて回収する。MCP 登録の削除は claude-mcp-removed.json 側が続けて行うため、
+# そちらのリストからは relay を外さない。
+.config/claude/skills/relay
+.config/claude/hooks/relay-session-start.sh
+.config/claude/hooks/relay-after-complete.sh
+.config/claude/hooks/relay-link-commit.sh
+.config/claude/hooks/relay-stop-review.sh
+
+# sesh は tmux/zellij 用のセッションマネージャで、tmux は退役済み。sesh-connect が
+# 呼ぶ tv sesh チャンネルも cable から消えており、セッション選択は
+# `ss = tv herdr-sessions` に置き換わっている。
+.config/sesh
+.local/bin/sesh-connect
+
+# 退役ツールのヘルパの取りこぼし。zk-memo と zk-today は zk-journal へ統合した
+# ときにソースから消したが削除対象に入れ忘れていた。どちらも
+# `source ~/.config/zk/helpers.sh` で始まり、その設定は既に消えているので壊れている。
+# ralph-relay は relay のヘルパ。
+.local/bin/zk-memo
+.local/bin/zk-today
+.local/bin/ralph-relay
+
+# herdr-sessions は agent-environments.zsh へ統合した。1 セッション 1 ファイルだと
+# ファイル名に環境名が現れ、public なリポジトリには置けない。環境定義は
+# ~/.config/chezmoi/private-data.toml の [[data.environments]] が持つ。
+.config/zsh/herdr-sessions
+
+# claude_secondary / codex_secondary は固定名のスロットだった。環境は
+# ~/.config/chezmoi/private-data.toml の [[data.environments]] で定義し、
+# ディレクトリは run_onchange_after_90-agent-envs.sh が実名で作る。
+#
+# ディレクトリごとは消さない。chezmoi はここの 1 行を RemoveAll で処理するため、
+# 管理外のランタイム状態（claude の .claude.json / projects / todos /
+# history.jsonl、codex の auth.json / sessions）まで巻き添えになる。旧スロットへ
+# 配っていた symlink だけを回収し、中身の移行はユーザーが apply の前に行う。
+# 手順は private_dot_config/claude/skills/dev-env/references/herdr.md の
+# 「旧 claude_secondary / codex_secondary からの移行」にある。
+.config/claude_secondary/agents
+.config/claude_secondary/commands
+.config/claude_secondary/skills
+.config/claude_secondary/hooks
+.config/claude_secondary/CLAUDE.md
+.config/claude_secondary/settings.json
+.config/codex_secondary/agents
+.config/codex_secondary/AGENTS.md

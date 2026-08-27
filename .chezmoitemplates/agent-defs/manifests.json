@@ -1,0 +1,52 @@
+{
+  "sdd-implementer": {
+    "tier": "work",
+    "access": "write",
+    "description": "subagent-driven-development 専用の実装エージェント。task brief を読み、実装・テスト・コミット・self-review を行い、詳細は報告ファイルに書いて短い status だけ返す。SDD の controller から dispatch される。"
+  },
+  "sdd-implementer-think": {
+    "tier": "think",
+    "access": "write",
+    "description": "subagent-driven-development の実装エージェントのうち、設計判断が要るタスクと fix ラウンド 4-5 で使う昇格版。振る舞いは sdd-implementer と同じで、モデルだけが上位になる。"
+  },
+  "sdd-task-reviewer": {
+    "tier": "work",
+    "access": "read",
+    "description": "subagent-driven-development のタスク単位レビュー役。1 タスクの diff を読み、spec 準拠とコード品質の 2 つの verdict を返す。読み取り専用。SDD の controller から dispatch される。"
+  },
+  "sdd-re-reviewer": {
+    "tier": "fast",
+    "access": "read",
+    "description": "subagent-driven-development の fix ラウンド用スコープ限定再レビュー役。前回の指摘が解消されたかを 1 件ずつ判定し、fix diff が壊したものだけを見る。読み取り専用。SDD の controller から dispatch される。"
+  },
+  "sdd-final-reviewer": {
+    "tier": "deep",
+    "access": "read",
+    "description": "ブランチ全体を要件と品質の両面からレビューするシニアコードレビュー役。merge 前や、subagent-driven-development の最終レビューで使う。読み取り専用。"
+  },
+  "researcher": {
+    "tier": "work",
+    "access": "read",
+    "description": "調査役。対象を調べ、要約と根拠と出典を返す。読み取り専用。"
+  },
+  "synthesizer": {
+    "tier": "think",
+    "access": "read",
+    "description": "統合役。複数の調査結果を 1 つにまとめ、食い違いを明示する。読み取り専用。"
+  },
+  "judge": {
+    "tier": "think",
+    "access": "read",
+    "description": "採点役。複数案を観点ごとに採点し、1 つ選んで理由を返す。読み取り専用。"
+  },
+  "reviewer": {
+    "tier": "work",
+    "access": "read",
+    "description": "レビュー役。spec 準拠と品質を見て PASS か FAIL と指摘を返す。読み取り専用。"
+  },
+  "implementer": {
+    "tier": "work",
+    "access": "write",
+    "description": "実装役。作業ディレクトリの中で変更を行い、Conventional Commits でコミットする"
+  }
+}

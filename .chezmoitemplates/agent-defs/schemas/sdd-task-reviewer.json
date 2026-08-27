@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["specVerdict", "qualityVerdict", "findings", "round", "head", "packageBase", "packageHead", "cannotVerify", "strengths"],
+  "additionalProperties": false,
+  "properties": {
+    "specVerdict": { "type": "string", "enum": ["compliant", "issues"] },
+    "qualityVerdict": { "type": "string", "enum": ["approved", "needs_fixes"] },
+    "round": { "type": "integer" },
+    "head": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
+    },
+    "cannotVerify": { "type": ["array", "null"], "items": { "type": "string" } },
+    "strengths": { "type": ["string", "null"] },
+    "packageBase": { "type": "string" },
+    "packageHead": { "type": "string" }
+  }
+}

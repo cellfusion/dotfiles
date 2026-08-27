@@ -1,0 +1,19 @@
+# worktrunk (wt) — git worktree manager
+# https://worktrunk.dev/config/
+#
+# 役割分担: worktree の置き場所と中身のセットアップは worktrunk、
+# 端末（workspace）は herdr。両者が同じパスを指すようにしてある。
+
+# herdr が使うレイアウトに合わせる: ~/.herdr/worktrees/<repo>/<branch>
+# herdr も worktrunk もブランチ名のスラッシュをダッシュに置換する
+worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
+
+# 作成後: herdr の workspace として開く。端末が付き、中の作業が人間から見える。
+# herdr の socket は detached プロセスからでも届くので post-（非同期）で問題ない。
+[post-start]
+herdr = "herdr worktree open --cwd '{{ primary_worktree_path }}' --path '{{ worktree_path }}' --no-focus >/dev/null 2>&1 || true"
+
+# 削除前: 対応する herdr workspace を閉じる。checkout の削除は worktrunk が行うので
+# ここでは workspace を閉じるだけにする（herdr worktree remove は checkout ごと消す）。
+[pre-remove]
+herdr = "ws=$(herdr worktree list --cwd \"{{ primary_worktree_path }}\" 2>/dev/null | jq -r --arg p \"{{ worktree_path }}\" '.result.worktrees[] | select(.path==$p) | .open_workspace_id // empty'); [ -n \"$ws\" ] && herdr workspace close \"$ws\" >/dev/null 2>&1; true"

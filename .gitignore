@@ -1,0 +1,6 @@
+private_dot_config/sketchybar/helpers/event_providers/cpu_load/bin/executable_cpu_load
+private_dot_config/sketchybar/helpers/event_providers/network_load/bin/executable_network_load
+private_dot_config/sketchybar/helpers/menus/bin/executable_menus
+private_dot_config/sketchybar/helpers/event_providers/spotify_events/bin/spotify_events
+.worktrees/
+.DS_Store

@@ -1,0 +1,13 @@
+#!/bin/sh
+# git の SSH 署名から呼ばれる ssh-keygen のラッパー。
+#
+# Secure Enclave の鍵 (sk-ecdsa-sha2-nistp256@openssh.com) で署名するには
+# SecurityKeyProvider が要る。ssh-keygen は ssh_config を読まないため、
+# 環境変数でしか渡せない。git config の gpg.ssh.program にこのスクリプトを
+# 指定すると、環境変数が無いシェルからでも署名できる。
+#
+# Source: ~/.local/share/chezmoi/private_dot_local/bin/executable_git-ssh-sign
+set -eu
+
+export SSH_SK_PROVIDER=/usr/lib/ssh-keychain.dylib
+exec /usr/bin/ssh-keygen "$@"

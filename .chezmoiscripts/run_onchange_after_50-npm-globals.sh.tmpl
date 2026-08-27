@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# npm-globals.txt が変わったときだけ実行される。
+# manifest hash: {{ include "private_dot_config/install/npm-globals.txt" | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+local_bin_env
+
+manifest="$HOME/.config/install/npm-globals.txt"
+
+if ! command -v mise >/dev/null 2>&1; then
+  die 'mise が見つからない。20-runtimes が失敗している'
+fi
+[ -f "$manifest" ] || die "npm-globals.txt が見つからない: $manifest"
+
+# npm は mise の node が連れてくる。PATH から探すと、mise activate を通していない
+# シェルから apply したときにシステムの node を掴むので、mise に解決させる。
+installed="$(mise exec -- npm ls -g --depth=0 --parseable 2>/dev/null || true)"
+
+pkg_is_installed() {
+  target="$1"
+  while IFS= read -r path; do
+    case "$path" in
+      */"$target") return 0 ;;
+    esac
+  done <<INSTALLED
+$installed
+INSTALLED
+  return 1
+}
+
+while IFS= read -r pkg; do
+  case "$pkg" in
+    '' | '#'*) continue ;;
+  esac
+  if pkg_is_installed "$pkg"; then
+    printf '%s は導入済みなので飛ばす\n' "$pkg"
+    continue
+  fi
+  printf '%s を入れる\n' "$pkg"
+  mise exec -- npm install -g "$pkg" || die "$pkg の導入に失敗した"
+done < "$manifest"

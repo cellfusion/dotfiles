@@ -1,0 +1,36 @@
+// Finicky configuration (managed by chezmoi)
+// Source : ~/.local/share/chezmoi/private_dot_config/finicky/finicky.js.tmpl
+// Docs   : https://github.com/johnste/finicky/wiki
+//
+// Finicky を macOS の既定ブラウザに設定すると、開かれる URL がここのルールで
+// 振り分けられる（System Settings > Desktop & Dock > Default web browser）。
+//
+// 振り分け表は chezmoi の template data に置く。リポジトリには表を回すロジック
+// だけを残し、URL パターンとプロファイル名は
+// ~/.config/chezmoi/private-data.toml に書く。書式は次のとおり。
+//
+//   [data.browser]
+//       defaultBrowser = "Google Chrome"
+//   [[data.browser.rules]]
+//       match = "example.com/org/*"
+//       profile = "work"
+
+{{/* 親キーが無い環境でもエラーにしないため、.browser ではなく index で取る（missingkey=error のため）。 */ -}}
+{{- $browser := (index . "browser") | default dict -}}
+export default {
+  // ルールに一致しない全 URL を開くブラウザ。
+  defaultBrowser: {{ (index $browser "defaultBrowser") | default "Google Chrome" | quote }},
+
+  // URL 振り分けルール。上から順に評価され、最初に match したものが使われる。
+  handlers: [
+{{- range ((index $browser "rules") | default (list)) }}
+    {
+      match: [{{ .match | quote }}],
+      browser: {
+        name: "Google Chrome",
+        profile: {{ .profile | quote }},
+      },
+    },
+{{- end }}
+  ],
+};

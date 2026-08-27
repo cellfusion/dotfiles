@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+'use strict'
+// 役割から、どのエンジンでどのモデルを使うかを解決して 1 行で出す。
+//
+//   eval "$(agent-route sdd-implementer)"
+//   → engine / model / effort / access / sandbox が変数になる
+//
+// アセットの場所は AGENT_DEFS_DIR で差し替えられる（テスト用）。
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+const role = process.argv[2]
+if (!role) {
+  console.error('usage: agent-route <role>')
+  process.exit(2)
+}
+
+const dir = process.env.AGENT_DEFS_DIR || path.join(os.homedir(), '.agents/agent-defs')
+const load = (name) => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
+const die = (msg) => {
+  console.error(`agent-route: ${msg}`)
+  process.exit(1)
+}
+
+const manifests = load('manifests.json')
+const routing = load('routing.json')
+const tiers = load('tiers.json')
+
+if (!manifests[role]) die(`未知の役割: ${role}`)
+if (!routing[role]) die(`routing.json に ${role} が無い`)
+
+const m = manifests[role]
+const r = routing[role]
+const engine = r.engine
+if (engine !== 'claude' && engine !== 'codex') die(`engine が不正: ${engine}`)
+
+const tier = r.tier || m.tier
+if (!tiers[tier]) die(`未知の tier: ${tier}`)
+const t = tiers[tier][engine]
+
+const access = m.access
+const sandbox = access === 'read' ? 'read-only' : 'workspace-write'
+
+console.log(
+  `engine=${engine} model=${t.model} effort=${t.effort} access=${access} sandbox=${sandbox}`
+)

@@ -1,0 +1,31 @@
+[metadata]
+name = "tui-launcher"
+description = "Launch TUI tools (editors, git, docker, music, files)"
+
+[source]
+command = "printf 'nvim\tNeovim\tText Editor\nlazygit\tLazyGit\tGit TUI\nlazydocker\tLazyDocker\tDocker TUI\nspotify_player\tSpotify Player\tMusic Player\nyazi\tYazi\tFile Manager\ntig\tTig\tGit Log Viewer\nmprocs\tMprocs\tProcess Manager\n'"
+display = "{split:\t:1}\t{split:\t:2}"
+output = "{split:\t:0}"
+no_sort = true
+
+[keybindings]
+enter = "actions:here"
+ctrl-p = "actions:right"
+ctrl-v = "actions:down"
+
+# herdr-open runs the tool in the current pane (Enter) or splits a new Herdr
+# pane (Ctrl-p / Ctrl-v). Outside Herdr it always runs in the current pane.
+[actions.here]
+description = "Open in current pane (Enter)"
+command = "herdr-open here '{split:\t:0}'"
+mode = "execute"
+
+[actions.right]
+description = "Open in a split to the right (Ctrl-p)"
+command = "herdr-open right '{split:\t:0}'"
+mode = "execute"
+
+[actions.down]
+description = "Open in a split below (Ctrl-v)"
+command = "herdr-open down '{split:\t:0}'"
+mode = "execute"

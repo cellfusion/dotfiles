@@ -1,0 +1,29 @@
+{{/*
+  ~/.config/chezmoi/chezmoi.toml を生成するテンプレート。chezmoi init が実行する。
+  ここが出力しないセクションは init を再実行した時点で失われるので、設定を足したら
+  必ずこのテンプレートにも足す。
+
+  このテンプレートが要求する data キーの全量:
+
+    private-data.toml 由来（配列を含み promptStringOnce では聞けない。
+    ~/.config/chezmoi/private-data.toml に手で書き、末尾の include が取り込む）
+      environments            AI 環境の定義（配列。先頭が primary）
+      browser.defaultBrowser  finicky の既定ブラウザ
+      browser.rules           finicky の振り分けルール（配列）
+      aws.region              AWS の既定リージョン
+      aws.opAccount           credential_process が使う 1Password アカウント
+      aws.profiles            AWS プロファイル（配列）
+      private.forbiddenWords  再汚染テストの禁止語（配列）
+
+  private-data.toml は無くてもよい。無ければ各テンプレートが既定値で描画される。
+  AI 環境については「claude と codex を持つ default 環境 1 つ」が既定値になる。
+*/ -}}
+
+[edit]
+  command = "nvim"
+
+[git]
+  autoAdd = true
+
+{{ $extra := joinPath .chezmoi.homeDir ".config/chezmoi/private-data.toml" -}}
+{{ if stat $extra }}{{ include $extra }}{{ end }}

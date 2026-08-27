@@ -1,0 +1,252 @@
+#!/usr/bin/env node
+'use strict'
+// 1 プランの SDD 実行を最後まで回す driver。
+//
+// LLM の controller が散文の手順を守れるかに賭けるのをやめ、コードにできる部分を
+// ここへ集める。波の計算、worktree の作成とセットアップ、波の並行起動、記帳、
+// マージ、後片付け、再開。
+//
+// LLM に返すのは、プラン全体と会話の文脈が無いと判断できないものだけである。
+// NEEDS_CONTEXT の文脈補充、NEEDS_HUMAN の判断、CAP_REACHED の裁定、
+// マージ衝突、cannotVerify の確認。
+//
+// スクリプトの置き場所は SDD_SCRIPTS_DIR で差し替えられる（テスト用）。
+const { execFileSync, spawn } = require('node:child_process')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+const SCRIPTS = process.env.SDD_SCRIPTS_DIR ||
+  path.join(os.homedir(), '.agents/skills/subagent-driven-development/scripts')
+const ROUTE = process.env.AGENT_ROUTE_BIN ||
+  path.join(os.homedir(), '.agents/skills/_shared/scripts/agent-route')
+
+const registry = require(process.env.SDD_REGISTRY_MODULE || path.join(__dirname, 'run-registry'))
+const worktree = require(process.env.SDD_WORKTREE_MODULE || path.join(__dirname, 'task-worktree'))
+
+function parseArgs(argv) {
+  const out = {}
+  for (let i = 0; i < argv.length; i += 2) {
+    if (!argv[i].startsWith('--')) return { __bad: `引数の形式が不正: ${argv[i]}` }
+    out[argv[i].slice(2)] = argv[i + 1]
+  }
+  return out
+}
+
+function sh(bin, args, opts) {
+  return execFileSync(bin, args, { encoding: 'utf8', ...opts })
+}
+
+/** プランの Global Constraints 節を本文のまま取り出す。 */
+function globalConstraints(plan) {
+  const lines = fs.readFileSync(plan, 'utf8').split('\n')
+  const start = lines.findIndex((l) => /^##+\s+Global Constraints/.test(l))
+  if (start < 0) return 'なし'
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex((l) => /^##+\s/.test(l) || /^---\s*$/.test(l))
+  return rest.slice(0, end < 0 ? rest.length : end).join('\n').trim() || 'なし'
+}
+
+/** `wave 1: 1 2` の行を [[1,2],[3]] にする。 */
+function waves(plan) {
+  let out
+  try {
+    out = sh(path.join(SCRIPTS, 'task-waves'), [plan])
+  } catch (e) {
+    return { bad: (e.stderr || e.message).toString().trim() }
+  }
+  const list = out.split('\n')
+    .map((l) => l.match(/^wave\s+\d+:\s*(.+)$/))
+    .filter(Boolean)
+    .map((m) => m[1].trim().split(/\s+/).map(Number))
+  return { list }
+}
+
+/** agent-route の `key=value` 出力を object にする。 */
+function route(role) {
+  const out = sh(process.execPath, [ROUTE, role])
+  return Object.fromEntries(out.trim().split(/\s+/).map((kv) => {
+    const i = kv.indexOf('=')
+    return [kv.slice(0, i), kv.slice(i + 1)]
+  }))
+}
+
+/** implementer になりうる役。sdd-task は指摘が 3 ラウンド残ると think へ昇格する。 */
+const IMPLEMENTER_ROLES = ['sdd-implementer', 'sdd-implementer-think']
+
+/**
+ * implementer が claude の write 役か。昇格先の sdd-implementer-think も含めて見る。
+ * claude には書き込み範囲を縛る CLI 機能が無く、cwd の外にも書けることを実測で確認した。
+ * codex の sandbox_workspace_write.writable_roots に相当するものが無いので、
+ * この場合は必ず worktree に隔離する。
+ * 隔離するかは波の開始時に 1 度だけ決まる一方、昇格は波の途中で起きる。
+ * 初回の役だけを見ると、既定の routing（sdd-implementer は codex、
+ * sdd-implementer-think は claude）で 4 ラウンド目の claude が隔離されない実リポジトリの
+ * ルートで動く。どちらか一方でも claude の write 役なら true を返す。
+ */
+function implementerNeedsIsolation() {
+  return IMPLEMENTER_ROLES.some((role) => {
+    const r = route(role)
+    return r.engine === 'claude' && r.access === 'write'
+  })
+}
+
+function isClean(repoRoot) {
+  return sh('git', ['-C', repoRoot, 'status', '--porcelain']).trim() === ''
+}
+
+/** sdd-task を 1 本起動する。stdout の 1 行 JSON を返す。 */
+function runTask(args) {
+  return new Promise((resolve) => {
+    const child = spawn(path.join(SCRIPTS, 'sdd-task'), args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    child.stdout.on('data', (c) => { out += c })
+    child.stderr.on('data', (c) => { err += c })
+    child.on('close', () => {
+      const line = out.trim().split('\n').filter((l) => l.trim().startsWith('{')).pop()
+      if (!line) {
+        resolve({ status: 'AGENT_FAILED', stage: 'driver', detail: `sdd-task が JSON を出さなかった: ${err.trim().slice(0, 300)}` })
+        return
+      }
+      try {
+        resolve(JSON.parse(line))
+      } catch (e) {
+        resolve({ status: 'AGENT_FAILED', stage: 'driver', detail: `sdd-task の出力を読めない: ${e.message}` })
+      }
+    })
+  })
+}
+
+async function main() {
+  const a = parseArgs(process.argv.slice(2))
+  if (a.__bad) return { status: 'BAD_ARGS', detail: a.__bad }
+  if (!a.plan) return { status: 'BAD_ARGS', detail: '--plan が無い' }
+  const plan = path.resolve(a.plan)
+  if (!fs.existsSync(plan)) return { status: 'BAD_ARGS', detail: `プランが無い: ${plan}` }
+
+  const repoRoot = sh('git', ['rev-parse', '--show-toplevel']).trim()
+  const workspace = sh(path.join(SCRIPTS, 'sdd-workspace'), [plan]).trim()
+
+  // run を作るか、再開する。再開のときは最初に reap する。SIGKILL された run の
+  // 残骸を RUNNING のまま残すと、二重 dispatch の元になる。
+  let runId = a['run-id']
+  let runPath
+  if (runId) {
+    runPath = path.join(workspace, runId, 'run.json')
+    if (!fs.existsSync(runPath)) return { status: 'BAD_ARGS', detail: `run が無い: ${runPath}` }
+    registry.reap(runPath)
+  } else {
+    runId = registry.newRunId()
+    ;({ runPath } = registry.createRun({ workspace, plan, runId }))
+  }
+  const runDir = path.dirname(runPath)
+  const ledger = path.join(runDir, 'progress.md')
+  if (!fs.existsSync(ledger)) {
+    fs.writeFileSync(ledger, `# SDD ledger — plan: ${plan}\n# run: ${runId}\n`, { mode: 0o600 })
+  }
+  const note = (line) => fs.appendFileSync(ledger, `${line}\n`)
+
+  const w = waves(plan)
+  if (w.bad) return { runId, status: 'BAD_PLAN', detail: w.bad, ledger }
+
+  const gc = globalConstraints(plan)
+  const needsIsolation = implementerNeedsIsolation()
+  const attention = []
+  const worktrees = []
+
+  for (const [index, wave] of w.list.entries()) {
+    const done = registry.loadRun(runPath).tasks
+    const todo = wave.filter((n) => (done[String(n)] || {}).state !== 'SUCCEEDED')
+    if (!todo.length) continue
+
+    const recorded = wave
+      .map((n) => done[String(n)] || {})
+      .find((entry) => typeof entry.isolate === 'boolean')
+    // 隔離するかは波の性質で決め、再開時は registry の記録を正本にする。
+    const isolate = recorded
+      ? recorded.isolate
+      : wave.length > 1 || needsIsolation || !isClean(repoRoot)
+    const baseEntry = wave
+      .map((n) => done[String(n)] || {})
+      .find((entry) => entry.base)
+    const base = baseEntry?.base || sh('git', ['-C', repoRoot, 'rev-parse', 'HEAD']).trim()
+    note(`Wave ${index + 1}: tasks ${todo.join(',')} (base ${base.slice(0, 7)}, isolate ${isolate})`)
+
+    const specs = todo.map((n) => {
+      const previous = done[String(n)] || {}
+      const branch = previous.branch || `sdd/${path.basename(plan, '.md')}/${runId}/task-${n}`
+      let workdir = repoRoot
+      if (isolate) {
+        const wt = previous.workdir
+          ? worktree.openTaskWorktree({ repoRoot, branch })
+          : worktree.createTaskWorktree({ repoRoot, branch, base })
+        workdir = wt.path
+        worktrees.push({ task: n, branch, path: workdir })
+      }
+      registry.updateTask(runPath, n, {
+        branch: isolate ? branch : null,
+        workdir, waveIndex: index + 1, isolate, base,
+      })
+      const brief = path.join(runDir, `task-${n}-brief.md`)
+      sh(path.join(SCRIPTS, 'task-brief'), [plan, String(n), brief])
+      return { n, branch, workdir, brief }
+    })
+
+    const results = await Promise.all(specs.map((s) => runTask([
+      '--plan', plan, '--task', String(s.n),
+      '--brief', s.brief, '--report', path.join(runDir, `task-${s.n}-report.md`),
+      '--status-dir', runDir, '--base', base, '--workdir', s.workdir,
+      '--run', runPath,
+      '--global-constraints', gc,
+    ])))
+
+    for (const [i, r] of results.entries()) {
+      const s = specs[i]
+      if (r.status === 'COMPLETE') {
+        // 実 CLI は sdd-task 自身が更新するが、差し替えた runner でも再開できるよう
+        // driver 側でも完了を記録する。
+        registry.updateTask(runPath, s.n, { state: 'SUCCEEDED', head: r.head, commits: r.commits || [] })
+        note(`Task ${s.n}: complete (commits ${r.base?.slice(0, 7)}..${r.head?.slice(0, 7)}, review clean)`)
+      } else {
+        attention.push({ task: s.n, ...r, branch: s.branch, workdir: s.workdir })
+        note(`Task ${s.n}: ${r.status} — ${r.detail || ''}`)
+      }
+      for (const m of r.minor || []) note(`Task ${s.n}: minor (deferred): ${m}`)
+      for (const c of r.cannotVerify || []) note(`Task ${s.n}: cannot verify: ${c}`)
+    }
+
+    // 人の判断が要るものが 1 つでもあれば、波を閉じずに返す。失敗したタスクの
+    // worktree は残す。人が中を見る。
+    if (attention.length) {
+      return { runId, status: 'NEEDS_ATTENTION', attention, ledger, worktrees, waveIndex: index + 1 }
+    }
+
+    const latest = registry.loadRun(runPath).tasks
+    const succeeded = wave
+      .filter((n) => latest[String(n)]?.state === 'SUCCEEDED' && latest[String(n)]?.branch)
+      .sort((left, right) => left - right)
+      .map((n) => ({ task: n, branch: latest[String(n)].branch, path: latest[String(n)].workdir }))
+
+    if (succeeded.length) {
+      for (const s of succeeded) {
+        const m = worktree.mergeTaskBranch({ repoRoot, branch: s.branch })
+        if (m.conflicted) {
+          note(`Wave ${index + 1}: CONFLICT on ${s.branch}`)
+          return { runId, status: 'CONFLICT', branch: s.branch, detail: m.detail, ledger, worktrees }
+        }
+      }
+      for (const s of succeeded) {
+        worktree.removeTaskWorktree({ repoRoot, branch: s.branch })
+        worktree.deleteTaskBranch({ repoRoot, branch: s.branch })
+      }
+      note(`Wave ${index + 1}: merged ${succeeded.map((s) => s.task).join(',')} -> ${sh('git', ['-C', repoRoot, 'rev-parse', 'HEAD']).trim().slice(0, 7)}`)
+    }
+  }
+
+  return { runId, status: 'COMPLETE', ledger, waves: w.list, attention: [], worktrees: [] }
+}
+
+main()
+  .catch((e) => ({ status: 'AGENT_FAILED', stage: 'driver', detail: e && e.message ? e.message : String(e) }))
+  .then((out) => console.log(JSON.stringify(out, null, 1).replace(/\n\s*/g, ' ')))

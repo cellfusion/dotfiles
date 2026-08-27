@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["severity", "summary", "location", "fix", "planMandated"],
+  "additionalProperties": false,
+  "properties": {
+    "severity": { "type": "string", "enum": ["critical", "important", "minor"] },
+    "summary": { "type": "string" },
+    "location": { "type": "string" },
+    "fix": { "type": ["string", "null"] },
+    "planMandated": { "type": ["boolean", "null"] }
+  }
+}

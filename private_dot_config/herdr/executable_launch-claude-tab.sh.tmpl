@@ -1,0 +1,43 @@
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
+#!/usr/bin/env bash
+# alt+c launcher: open Claude Code in a NEW herdr tab (not a zoomed pane).
+# Herdr's [[keys.command]] has no "tab" type, so we drive the CLI here:
+# create a tab (inherits the focused pane's cwd), then run claude in its root pane.
+#
+# chezmoi が生成する。直接編集しない。
+# 元: private_dot_config/herdr/executable_launch-claude-tab.sh.tmpl
+# 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
+set -euo pipefail
+
+# この環境が claude を持たないなら、タブを作る前に止める。作ってしまうと、
+# pane 側の zsh 関数が claude を弾いた後に空のタブが残る。
+#
+# 判定は $HERDR_SESSION から行う。AGENT_ENV_AGENTS は使えない。type="shell" の
+# キーコマンドは herdr サーバが detached で起動するため、環境は focus 中の pane
+# ではなくサーバのものを継承する。サーバの環境ではセッションごとに正しいのは
+# HERDR_SESSION だけで、AI 環境の変数はサーバを起動したシェル（＝先頭環境）の
+# 値のままである（`ps eww <herdr server pid>` で確認した）。
+#
+# 定義に無いセッション名と HERDR_SESSION 未設定は、agent-environments.zsh と
+# 同じく先頭環境として扱う。
+agents=""
+case "${HERDR_SESSION:-}" in
+{{- range $envs }}
+  {{ .session | quote }}) agents={{ join " " .agents | quote }} ;;
+{{- end }}
+  *) agents={{ join " " (index $envs 0).agents | quote }} ;;
+esac
+
+case " $agents " in
+  *" claude "*) ;;
+  *)
+    echo "claude is not configured for this environment (HERDR_SESSION=${HERDR_SESSION:-unset})" >&2
+    exit 1
+    ;;
+esac
+
+pane=$(herdr tab create --focus | jq -r '.result.root_pane.pane_id')
+[ -n "$pane" ] && [ "$pane" != "null" ] || { echo "herdr tab create failed" >&2; exit 1; }
+
+herdr pane run "$pane" "claude --dangerously-skip-permissions"

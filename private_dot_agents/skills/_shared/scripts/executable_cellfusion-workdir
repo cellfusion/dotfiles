@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# リポジトリ直下に _cellfusion/ を作り、自己無視の .gitignore を置いて絶対パスを返す。
+#
+# _cellfusion/ にはエージェントが生む中間成果物（spec・実装プラン・SDD の作業物）を置く。
+# これらが顧客リポジトリのコミットに混ざってはならない。無視は 2 段構えで、
+# 1 段目が ~/.config/git/ignore（global）、2 段目がここが書く _cellfusion/.gitignore。
+# global が無い環境（新しいマシン、他人の環境、CI）では 2 段目だけが頼りになるので、
+# _cellfusion/ に書き込むスキルは書き込む前に必ずこれを通す。
+#
+# 無視の生成箇所をここ 1 つに集約している。sdd-workspace もこれを呼ぶ。
+#
+# Usage: cellfusion-workdir
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+work="$root/_cellfusion"
+mkdir -p "$work"
+printf '*\n' > "$work/.gitignore"
+printf '%s\n' "$work"

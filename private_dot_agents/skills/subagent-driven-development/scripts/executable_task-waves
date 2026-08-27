@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""実装プランのタスク依存を読み、同時に走らせてよいタスクの波を出力する。
+
+各タスクの `**Depends on:**` 行と `**Files:**` ブロックを読む。依存の深さで
+波を作り、同じ波に入ったタスクが同じファイルに触れていないかを検証する。
+
+`Depends on:` を持たないタスクは、それより前のすべてのタスクに依存するものと
+みなす（＝直列）。依存宣言を持たない既存のプランは、これまでどおり 1 タスク
+1 波で流れる。
+
+出力（stdout）:
+    wave 1: 1 2
+    wave 2: 3
+
+警告と診断は stderr。
+終了コード: 0 正常 / 2 使い方の誤り / 3 依存グラフの不整合
+
+Usage: task-waves PLAN_FILE
+"""
+
+import re
+import sys
+
+TASK_RE = re.compile(r"^#{1,6}[ \t]+Task[ \t]+(\d+)\b(.*)$")
+DEPENDS_RE = re.compile(r"^\s*[-*]?\s*\*\*Depends on:?\*\*\s*(.*)$", re.IGNORECASE)
+FILE_RE = re.compile(r"^\s*[-*]\s*(?:Create|Modify|Test|作成|変更|テスト)\s*[:：]\s*(.+)$", re.IGNORECASE)
+TASK_REF_RE = re.compile(r"(\d+)")
+LINE_RANGE_RE = re.compile(r":\d+(?:-\d+)?$")
+NONE_WORDS = {"なし", "無し", "none", "-", "—", "n/a", "na", ""}
+
+
+def norm_path(raw):
+    """`path/to/x.ts:12-30` のような表記からパスだけ取り出す。"""
+    s = raw.strip().strip("`").strip()
+    s = s.split("`")[0] if "`" in s else s
+    s = s.strip().rstrip(",.;")
+    s = LINE_RANGE_RE.sub("", s)
+    return s.lstrip("./")
+
+
+def parse(path):
+    """{番号: {name, deps(None=未宣言), files:set}} を返す。"""
+    tasks = {}
+    order = []
+    cur = None
+    in_fence = False
+    in_files = False
+
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+
+            m = TASK_RE.match(line)
+            if m:
+                num = int(m.group(1))
+                name = m.group(2).lstrip(" :：").strip()
+                cur = num
+                in_files = False
+                if num in tasks:
+                    print(f"warning: Task {num} の見出しが複数ある", file=sys.stderr)
+                else:
+                    tasks[num] = {"name": name, "deps": None, "files": set()}
+                    order.append(num)
+                continue
+
+            if cur is None:
+                continue
+
+            m = DEPENDS_RE.match(line)
+            if m:
+                body = m.group(1).strip()
+                if body.lower() in NONE_WORDS:
+                    tasks[cur]["deps"] = []
+                else:
+                    tasks[cur]["deps"] = [int(n) for n in TASK_REF_RE.findall(body)]
+                in_files = False
+                continue
+
+            if re.match(r"^\s*[-*]?\s*\*\*Files:?\*\*", line, re.IGNORECASE):
+                in_files = True
+                continue
+
+            if in_files:
+                m = FILE_RE.match(line)
+                if m:
+                    p = norm_path(m.group(1))
+                    if p:
+                        tasks[cur]["files"].add(p)
+                    continue
+                if line.strip() and not line.startswith((" ", "\t", "-", "*")):
+                    in_files = False
+
+    return tasks, order
+
+
+def resolve(tasks, order):
+    """未宣言のタスクは直前までの全タスクに依存させる（＝直列）。"""
+    undeclared = []
+    for i, num in enumerate(order):
+        if tasks[num]["deps"] is None:
+            tasks[num]["deps"] = order[:i]
+            undeclared.append(num)
+    if undeclared:
+        print(
+            "warning: Depends on が無いタスク {}: 直前までの全タスクに依存するものとして扱う"
+            "（＝並行しない）".format(", ".join(str(n) for n in undeclared)),
+            file=sys.stderr,
+        )
+
+
+def validate_refs(tasks):
+    errors = []
+    for num, t in tasks.items():
+        for d in t["deps"]:
+            if d == num:
+                errors.append(f"Task {num} が自分自身に依存している")
+            elif d not in tasks:
+                errors.append(f"Task {num} の Depends on が存在しない Task {d} を指している")
+    return errors
+
+
+def levels(tasks):
+    """依存の深さで波を作る。循環があれば (None, 残ったタスク) を返す。"""
+    level = {}
+    remaining = set(tasks)
+    while remaining:
+        ready = [n for n in remaining if all(d in level for d in tasks[n]["deps"])]
+        if not ready:
+            return None, sorted(remaining)
+        for n in ready:
+            level[n] = 1 + max((level[d] for d in tasks[n]["deps"]), default=0)
+        remaining -= set(ready)
+
+    waves = {}
+    for n, lv in level.items():
+        waves.setdefault(lv, []).append(n)
+    return [sorted(waves[lv]) for lv in sorted(waves)], []
+
+
+def check_overlap(tasks, waves):
+    errors = []
+    for i, wave in enumerate(waves, 1):
+        for a_idx, a in enumerate(wave):
+            for b in wave[a_idx + 1 :]:
+                shared = tasks[a]["files"] & tasks[b]["files"]
+                if shared:
+                    errors.append(
+                        f"wave {i}: Task {a} と Task {b} が同じファイルに触れる "
+                        f"({', '.join(sorted(shared))})。"
+                        "どちらかの Depends on にもう一方を足して順序を付ける"
+                    )
+    return errors
+
+
+def main(argv):
+    if len(argv) != 2:
+        print("usage: task-waves PLAN_FILE", file=sys.stderr)
+        return 2
+
+    plan = argv[1]
+    try:
+        tasks, order = parse(plan)
+    except OSError as e:
+        print(f"no such plan file: {plan} ({e})", file=sys.stderr)
+        return 2
+
+    if not tasks:
+        print(f"タスクが見つからない: {plan}（'### Task N:' 形式の見出しが要る）", file=sys.stderr)
+        return 3
+
+    resolve(tasks, order)
+
+    errors = validate_refs(tasks)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 3
+
+    waves, cyclic = levels(tasks)
+    if waves is None:
+        print(
+            f"error: 依存が循環している: Task {', '.join(str(n) for n in cyclic)}",
+            file=sys.stderr,
+        )
+        return 3
+
+    errors = check_overlap(tasks, waves)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 3
+
+    for i, wave in enumerate(waves, 1):
+        print(f"wave {i}: {' '.join(str(n) for n in wave)}")
+
+    parallel = sum(1 for w in waves if len(w) > 1)
+    print(
+        f"{len(tasks)} タスクを {len(waves)} 波に分けた"
+        f"（並行する波 {parallel} 個）",
+        file=sys.stderr,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

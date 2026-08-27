@@ -1,0 +1,12 @@
+{{- $tiers := includeTemplate "agent-defs/tiers.json" . | fromJson -}}
+{{- $manifests := includeTemplate "agent-defs/manifests.json" . | fromJson -}}
+{{- $m := index $manifests .agent -}}
+{{- $t := index $tiers $m.tier "codex" -}}
+name = {{ .agent | quote }}
+description = {{ $m.description | quote }}
+model = {{ $t.model | quote }}
+model_reasoning_effort = {{ $t.effort | quote }}
+sandbox_mode = {{ if eq $m.access "read" }}"read-only"{{ else }}"workspace-write"{{ end }}
+developer_instructions = """
+{{ includeTemplate (printf "agent-defs/prompts/%s.md" .agent) . }}
+"""

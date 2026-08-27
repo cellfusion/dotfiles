@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# claude / codex を native installer で入れる。どちらも自己更新を持つので、
+# 未導入のときだけ入れて、更新は各ツールに任せる。
+#
+# Homebrew の claude-code cask は stable チャネルを追う一方、アプリ内の更新通知は
+# latest チャネルを見るため、cask に未着のバージョンを「更新あり」と表示する状態が
+# 起きる。そのため brew に寄せていない。
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+local_bin_env
+
+if command -v claude >/dev/null 2>&1; then
+  printf 'claude は導入済みなので飛ばす\n'
+else
+  printf 'claude を native installer で入れる\n'
+  curl -fsSL https://claude.ai/install.sh | bash || die 'claude の導入に失敗した'
+  command -v claude >/dev/null 2>&1 || die 'claude を導入したが PATH に見つからない'
+fi
+
+if command -v codex >/dev/null 2>&1; then
+  printf 'codex は導入済みなので飛ばす\n'
+else
+  printf 'codex を native installer で入れる\n'
+  curl -fsSL https://chatgpt.com/codex/install.sh | sh || die 'codex の導入に失敗した'
+  command -v codex >/dev/null 2>&1 || die 'codex を導入したが PATH に見つからない'
+fi

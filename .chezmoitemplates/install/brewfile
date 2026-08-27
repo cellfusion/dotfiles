@@ -1,0 +1,89 @@
+{{- /* ツールのインストールマニフェスト本体。os には "darwin" か "linux" を渡す。 */ -}}
+# このファイルは chezmoi が生成する。直接編集しない。
+# 編集は chezmoi ソースの .chezmoitemplates/install/brewfile を通す。
+
+tap "anomalyco/tap"
+{{ if eq .os "darwin" }}tap "asmvik/formulae"
+tap "felixkratz/formulae"
+{{ end }}
+# --- core / OS 共通 CLI ---
+brew "chezmoi"
+brew "git"
+brew "gh"
+brew "ghq"
+brew "git-lfs"
+brew "git-filter-repo"
+brew "lazygit"
+brew "worktrunk"
+brew "neovim"
+brew "fzf"
+brew "fd"
+brew "ripgrep"
+brew "bat"
+brew "eza"
+brew "jq"
+brew "television"
+brew "zoxide"
+brew "herdr"
+brew "hyperfine"
+brew "hunk"
+brew "sevenzip"
+brew "pandoc"
+brew "chafa"
+brew "ffmpeg"
+brew "anomalyco/tap/opencode"
+
+# --- 言語・ビルド ---
+# mise / bun / uv / rustup は 20-runtimes が native installer で入れる。
+# node / python / java / pnpm / deno / go は mise が入れる。
+brew "cmake"
+brew "ninja"
+brew "automake"
+brew "zig"
+brew "protobuf"
+brew "sccache"
+brew "watchman"
+brew "semgrep"
+brew "mkcert"
+brew "lazydocker"
+brew "awscli"
+brew "cloudflared"
+brew "grpcurl"
+{{ if eq .os "darwin" }}
+# --- macOS 専用 ---
+brew "coreutils"
+brew "switchaudio-osx"
+brew "nowplaying-cli"
+brew "asmvik/formulae/yabai"
+brew "asmvik/formulae/skhd"
+brew "felixkratz/formulae/borders"
+# sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
+brew "lua@5.4"
+brew "felixkratz/formulae/sketchybar"
+
+# --- モバイル・ネイティブ開発 ---
+brew "cocoapods"
+brew "ios-deploy"
+brew "libimobiledevice"
+brew "xcodegen"
+brew "xcode-build-server"
+brew "mint"
+brew "apktool"
+brew "jadx"
+brew "kdoctor"
+brew "gradle"
+
+# --- cask ---
+cask "ghostty"
+cask "1password-cli"
+cask "finicky"
+cask "aquaskk"
+# google-cloud-sdk は同じ cask の旧名。旧名で宣言すると gcloud-cli と別物に見える。
+cask "gcloud-cli"
+cask "font-hack-nerd-font"
+cask "font-sf-mono"
+cask "font-sf-pro"
+cask "sf-symbols"
+cask "dotnet-sdk"
+cask "swiftformat-for-xcode"
+{{ end -}}

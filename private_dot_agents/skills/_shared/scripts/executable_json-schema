@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+'use strict'
+// 最小の JSON Schema 検証。エージェントの構造化出力を検査するために使う。
+//
+// 外部依存を足さないために手書きしている。見ているキーワードは
+// type / required / properties / additionalProperties / enum / items だけである。
+// 新しいキーワードをスキーマに足すときはここも足す。見ていないキーワードは
+// 黙って無視されるので、契約が緩む。
+
+/** 1 つの型名に対する検査。合えば null、合わなければ理由を返す。 */
+function checkType(type, data, where) {
+  if (type === 'null') return data === null ? null : `${where}: null を期待した`
+  if (type === 'object') {
+    return data !== null && typeof data === 'object' && !Array.isArray(data)
+      ? null : `${where}: object を期待した`
+  }
+  if (type === 'array') return Array.isArray(data) ? null : `${where}: array を期待した`
+  if (type === 'string') return typeof data === 'string' ? null : `${where}: string を期待した`
+  if (type === 'integer') return Number.isInteger(data) ? null : `${where}: integer を期待した`
+  if (type === 'boolean') return typeof data === 'boolean' ? null : `${where}: boolean を期待した`
+  return null
+}
+
+/** 検証エラーの配列を返す。空配列なら合格。 */
+function validateSchema(schema, data, at) {
+  const where = at || '(root)'
+  const errs = []
+
+  // type は文字列でも配列でもよい。structured output（codex exec --output-schema）は
+  // optional property を許さないので、任意の項目は ["string", "null"] のように
+  // nullable にして required に入れる。配列を解釈できないと、その項目の型検査が
+  // 黙って素通りする。
+  const types = schema.type === undefined
+    ? [] : (Array.isArray(schema.type) ? schema.type : [schema.type])
+  if (types.length) {
+    const fails = types.map((t) => checkType(t, data, where)).filter(Boolean)
+    if (fails.length === types.length) return [fails[0]]
+  }
+
+  // null が許されていて実際に null なら、これ以上見るものはない。
+  if (data === null) return errs
+
+  if (types.includes('object') && typeof data === 'object' && !Array.isArray(data)) {
+    for (const k of schema.required || []) {
+      if (!(k in data)) errs.push(`${where}.${k}: 必須項目が無い`)
+    }
+    const props = schema.properties || {}
+    if (schema.additionalProperties === false) {
+      for (const k of Object.keys(data)) {
+        if (!(k in props)) errs.push(`${where}.${k}: 未知の項目`)
+      }
+    }
+    for (const k of Object.keys(props)) {
+      if (k in data) errs.push(...validateSchema(props[k], data[k], `${where}.${k}`))
+    }
+    return errs
+  }
+
+  if (types.includes('array') && Array.isArray(data) && schema.items) {
+    data.forEach((v, i) => errs.push(...validateSchema(schema.items, v, `${where}[${i}]`)))
+    return errs
+  }
+
+  if (schema.enum && !schema.enum.includes(data)) {
+    errs.push(`${where}: enum ${JSON.stringify(schema.enum)} のいずれかを期待した` +
+      `（実際 ${JSON.stringify(data)}）`)
+  }
+  return errs
+}
+
+module.exports = { validateSchema }

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Homebrew を導入する。既に入っていれば何もしない。
+#
+# before ではなく after に置く。run_before_ が失敗するとファイル配布そのものが
+# 行われないため、Homebrew の導入でつまずいたときに nvim や zsh の設定まで
+# 配られないことになる。after なら設定ファイルは先に手に入る。
+#
+# マニフェストのハッシュは持たない。一度入れば十分で、更新は brew 自身に任せる。
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+if brew_env; then
+  printf 'Homebrew は導入済みなので飛ばす: %s\n' "$(command -v brew)"
+  exit 0
+fi
+
+printf 'Homebrew を導入する\n'
+# Homebrew の installer は NONINTERACTIVE のとき sudo -n で権限を確かめ、timestamp が
+# 無ければ「Need sudo access on macOS」で abort する。先に対話で 1 回踏んでおく。
+sudo -v || die 'Homebrew の導入には管理者権限が要る'
+# NONINTERACTIVE=1 は確認プロンプトを飛ばす。sudo の timestamp は上の sudo -v で
+# 先に作っておくので、ここではもう聞かれない。
+NONINTERACTIVE=1 /bin/bash -c \
+  "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+  || die 'Homebrew の導入に失敗した'
+
+brew_env || die 'Homebrew を導入したが PATH に載せられなかった'
+printf 'Homebrew を導入した: %s\n' "$(command -v brew)"

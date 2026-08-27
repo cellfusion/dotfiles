@@ -1,0 +1,26 @@
+# AGENTS.md
+
+## Response Style
+
+- 常体（だ・である）で簡潔に。
+- 前置き・相槌・要約・確認質問は書かない。
+- コード変更の説明は 1 行以内。理由は聞かれたら書く。
+
+## Conventional Commits
+
+`<type>: <description>` 形式。スコープは任意（`feat(auth): add login endpoint`）。
+
+type: `feat` 新機能 / `fix` バグ修正 / `refactor` 動作を変えない再構成 / `docs` ドキュメントのみ / `test` テストの追加・更新 / `chore` 雑務 / `perf` パフォーマンス改善 / `ci` CI/CD
+
+- type と description は小文字、件名は 72 文字以内
+- 命令形を使う（"add feature"、"added feature" ではない）
+- 1 コミット 1 論理変更
+
+## Chezmoi
+
+- `~/.config` 配下を変更するときは、実体を直接編集せず `~/.local/share/chezmoi/` の対応するソースを編集する。
+- 編集前に `chezmoi diff` を実行する。未反映差分が今回の対象と重なる場合は、作業を止めてユーザーへ確認する。
+- `chezmoi apply` はユーザーの明示的な許可なしに実行しない。
+- キーバインドを変更した場合は `private_dot_config/docs/keybindings.md` を同時に更新し、`bash tests/test-keybindings.sh` を実行する。
+
+{{ includeTemplate "agent-skills/_workflow-table.md" (merge (dict "tool" "codex") .) }}

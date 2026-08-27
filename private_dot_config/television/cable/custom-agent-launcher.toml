@@ -1,0 +1,25 @@
+[metadata]
+name = "agent-launcher"
+description = "Launch an AI agent (Claude, Copilot, Gemini, Codex)"
+
+[source]
+command = "printf 'claude --dangerously-skip-permissions\tClaude Code\ncopilot\tGitHub Copilot CLI\ngemini\tGemini CLI\ncodex\tCodex CLI\n'"
+display = "{split:\t:1}"
+output = "{split:\t:0}"
+no_sort = true
+
+[keybindings]
+enter = "actions:right"
+ctrl-p = "actions:here"
+
+# herdr-open splits a new Herdr pane for the agent (Enter) or runs it in the
+# current pane (Ctrl-p). Outside Herdr it always runs in the current pane.
+[actions.right]
+description = "Open agent in a split to the right (Enter)"
+command = "herdr-open right '{split:\t:0}'"
+mode = "execute"
+
+[actions.here]
+description = "Open agent in current pane (Ctrl-p)"
+command = "herdr-open here '{split:\t:0}'"
+mode = "execute"

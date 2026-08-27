@@ -1,0 +1,95 @@
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
+#!/usr/bin/env bash
+# 2 つ目以降の AI 環境ディレクトリを作る。定義は
+# ~/.config/chezmoi/private-data.toml の [[data.environments]] にある。
+#
+# chezmoi のソースツリーは静的なので、ディレクトリ名に環境名が現れるものは
+# source 側に置けない（リポジトリは public で、環境名は書けない）。ここで作る。
+# そのため生成物は `chezmoi managed` に出ない。
+#
+# 先頭環境（~/.config/claude と ~/.config/codex）は chezmoi 本体が直接配るので触らない。
+#
+# environments hash: {{ $envs | toJson | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+command -v jq >/dev/null 2>&1 || die 'jq が見つからない。10-brew が失敗している'
+
+# 全プロファイル共通の MCP 定義。claude 本体の modify_dot_claude.json.tmpl と同じものを使う。
+SERVERS='{{ includeTemplate "claude-mcp-servers.json" . }}'
+REMOVED='{{ includeTemplate "claude-mcp-removed.json" . }}'
+
+# $CODEX_HOME/config.toml の変換。claude 本体の modify_private_config.toml.tmpl と
+# 同じ処理を関数として持つ。stdin を読み stdout に出す。
+codex_config() {
+{{ includeTemplate "codex-config.sh" . }}
+}
+
+# $2 を $1 への symlink にする。既に正しく張られていれば何もしない。
+link() {
+  target="$1"
+  dest="$2"
+  if [ -L "$dest" ]; then
+    [ "$(readlink "$dest")" = "$target" ] && return 0
+    rm -f "$dest"
+  elif [ -e "$dest" ]; then
+    die "$dest が symlink ではない実体として存在する。手で退避してから apply し直す"
+  fi
+  ln -s "$target" "$dest"
+}
+
+setup_claude() {
+  session="$1"
+  dir="$XDG_CONFIG_HOME/claude_$session"
+  mkdir -p "$dir"
+  for name in agents commands skills hooks CLAUDE.md settings.json; do
+    link "../claude/$name" "$dir/$name"
+  done
+  # .claude.json はランタイム状態を持つ実体である。mcpServers だけをマージする。
+  f="$dir/.claude.json"
+  [ -s "$f" ] || printf '{}' > "$f"
+  jq --argjson servers "$SERVERS" --argjson removed "$REMOVED" \
+    '.mcpServers += $servers | reduce $removed[] as $key (.; del(.mcpServers[$key]))' \
+    < "$f" > "$f.tmp" || die "$f のマージに失敗した"
+  mv "$f.tmp" "$f"
+}
+
+setup_codex() {
+  session="$1"
+  dir="$XDG_CONFIG_HOME/codex_$session"
+  mkdir -p "$dir"
+  link "../codex/agents" "$dir/agents"
+  link "../codex/AGENTS.md" "$dir/AGENTS.md"
+  # config.toml は独立した実体である。projects の trust_level などは残す。
+  f="$dir/config.toml"
+  [ -f "$f" ] || : > "$f"
+  codex_config < "$f" > "$f.tmp" || die "$f の変換に失敗した"
+  mv "$f.tmp" "$f"
+}
+
+{{ range $i, $env := $envs }}
+{{- if $i }}
+{{- if has "claude" $env.agents }}
+setup_claude {{ $env.session | quote }}
+{{- end }}
+{{- if has "codex" $env.agents }}
+setup_codex {{ $env.session | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+# 定義から消えた環境のディレクトリは削除しない。認証情報（.credentials.json /
+# auth.json）と履歴を持つため、破棄はユーザーが判断する。残っていることだけ知らせる。
+KNOWN=' {{ range $i, $env := $envs }}{{ if $i }}{{ if has "claude" $env.agents }}claude_{{ $env.session }} {{ end }}{{ if has "codex" $env.agents }}codex_{{ $env.session }} {{ end }}{{ end }}{{ end }}'
+for d in "$XDG_CONFIG_HOME"/claude_* "$XDG_CONFIG_HOME"/codex_*; do
+  [ -d "$d" ] || continue
+  base="${d##*/}"
+  case "$KNOWN" in
+    *" $base "*) ;;
+    *) printf '定義に無い AI 環境が残っている: %s（消すかどうかは手で判断する）\n' "$d" >&2 ;;
+  esac
+done

@@ -1,0 +1,64 @@
+{{- /* herdr セッションごとの AI 環境を解決する。定義は
+       ~/.config/chezmoi/private-data.toml の [[data.environments]] にある。
+       配列の先頭が primary で、サフィックスの無いディレクトリを使う。
+       定義が無いマシン（private-data.toml を置いていない場合）では、
+       claude と codex を持つ default 環境 1 つとして描画する。 */ -}}
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
+# chezmoi が生成する。直接編集しない。
+# 元: private_dot_config/zsh/agent-environments.zsh.tmpl
+# 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
+#
+# 環境が持たない AI ツールは、変数を unset したうえで同名の関数で覆う。
+# unset だけではツール既定（~/.claude / ~/.codex）に落ちてしまい、
+# 意図しない環境で作業することになるため。
+
+_agent_env_apply() {
+  case "$1" in
+{{- range $i, $env := $envs }}
+{{- $suffix := ternary (printf "_%s" $env.session) "" (ne $i 0) }}
+{{- $wrangler := ternary (printf ".wrangler-%s" $env.session) ".wrangler" (ne $i 0) }}
+{{- $cf := dig "cloudflareAccountId" "" $env }}
+    {{ $env.session }})
+{{- if has "claude" $env.agents }}
+      export CLAUDE_CONFIG_DIR="$XDG_CONFIG_HOME/claude{{ $suffix }}"
+{{- else }}
+      unset CLAUDE_CONFIG_DIR
+{{- end }}
+{{- if has "codex" $env.agents }}
+      export CODEX_HOME="$XDG_CONFIG_HOME/codex{{ $suffix }}"
+{{- else }}
+      unset CODEX_HOME
+{{- end }}
+      export WRANGLER_HOME="$XDG_CONFIG_HOME/{{ $wrangler }}"
+{{- if $cf }}
+      export CLOUDFLARE_ACCOUNT_ID="{{ $cf }}"
+{{- else }}
+      unset CLOUDFLARE_ACCOUNT_ID
+{{- end }}
+      export AGENT_ENV_SESSION="{{ $env.session }}"
+      export AGENT_ENV_AGENTS="{{ join " " $env.agents }}"
+      ;;
+{{- end }}
+    *) return 1 ;;
+  esac
+}
+
+# 定義の無いセッション名と、herdr の外（HERDR_SESSION 未設定）は先頭環境へ落とす。
+_agent_env_apply "${HERDR_SESSION:-}" || _agent_env_apply "{{ (index $envs 0).session }}"
+
+# この環境が持たないツールを関数で塞ぐ。持っているツールは前段の定義を外す。
+for _agent_env_tool in claude codex; do
+  case " $AGENT_ENV_AGENTS " in
+    *" $_agent_env_tool "*)
+      unfunction "$_agent_env_tool" 2>/dev/null
+      ;;
+    *)
+      eval "\$_agent_env_tool() {
+        print -u2 \"\$0 is not configured for this environment (AGENT_ENV_SESSION=\$AGENT_ENV_SESSION). See ~/.config/chezmoi/private-data.toml\"
+        return 1
+      }"
+      ;;
+  esac
+done
+unset _agent_env_tool

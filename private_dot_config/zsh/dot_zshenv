@@ -1,0 +1,42 @@
+# 計測
+# zmodload zsh/zprof && zprof
+
+### XDG ###
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_STATE_HOME="$HOME/.local/state"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+### zsh ###
+export ZDOTDIR="$XDG_CONFIG_HOME/zsh" # .zshrc や .zprofile が ~/.config/zsh から読み込まれるようになる $ZDOTDIR を変更する例
+
+# Android
+# AVD などのユーザーデータは XDG に寄せるが、SDK 本体は Android Studio が
+# 管理する既定の場所にある。ここを XDG にすると SDK を見失う。
+# .zshenv に置くのは、非 login shell（スクリプト・エディタ・エージェント経由の実行）
+# でも同じ値が要るため。.zprofile だけだとターミナルを手で開いたときしか効かない。
+export ANDROID_USER_HOME="$XDG_DATA_HOME"/android
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+# export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
+
+# AWS
+export AWS_SHARED_CREDENTIALS_FILE="$XDG_CONFIG_HOME"/aws/credentials
+export AWS_CONFIG_FILE="$XDG_CONFIG_HOME"/aws/config
+
+### Rust ###
+export RUSTUP_HOME="$XDG_DATA_HOME/rustup"
+export CARGO_HOME="$XDG_DATA_HOME/cargo"
+# 新マシンの初回起動時点では rustup がまだ toolchain を入れていない。
+[ -f "$XDG_DATA_HOME/cargo/env" ] && . "$XDG_DATA_HOME/cargo/env"
+
+### CocoaPods ###
+export CP_HOME_DIR="$XDG_DATA_HOME"/cocoapods
+
+### Cabal ###
+export CABAL_CONFIG="$XDG_CONFIG_HOME"/cabal/config
+export CABAL_DIR="$XDG_DATA_HOME"/cabal
+
+### Deno ###
+export DENO_INSTALL="$XDG_DATA_HOME/deno"
+export DENO_INSTALL_ROOT="$DENO_INSTALL"

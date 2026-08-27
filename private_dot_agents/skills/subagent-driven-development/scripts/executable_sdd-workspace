@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# 1 つのプランが使う作業ディレクトリを解決して絶対パスを出力する。
+# ここに task brief / implementer report / review package / progress ledger を置く。
+#
+# プランごとに 1 ディレクトリ（_cellfusion/sdd/<plan-basename>/）にするのは、同じ作業ツリーで
+# 続けて別のプランを流したときに、前のプランの ledger を現在の進捗と読み違えて
+# 完了済みタスク列をまるごと飛ばす事故を構造的に防ぐため。
+#
+# .git/ 配下ではなく作業ツリーに置くのは、Claude Code が .git/ を保護パスとして
+# 扱い、subagent の書き込みを拒否するため。cellfusion-workdir が
+# _cellfusion/.gitignore に "*" を書いて自己無視させ、git status にも出さない。
+#
+# task-brief と review-package が同じ場所を指すための単一の情報源。
+#
+# Usage: sdd-workspace PLAN_FILE
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: sdd-workspace PLAN_FILE" >&2
+  exit 2
+fi
+
+plan=$1
+[ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
+
+slug=$(basename "$plan" .md)
+[ -n "$slug" ] && [ "$slug" != "." ] && [ "$slug" != ".." ] \
+  || { echo "cannot derive a workspace name from: $plan" >&2; exit 2; }
+
+# 作業ディレクトリと自己無視の生成は cellfusion-workdir に集約する。
+# chezmoi ソースから直接実行して検証できるよう、配布名と source 名の両方を探す。
+shared=$(cd "$(dirname "$0")/../../_shared/scripts" && pwd)
+workdir_script="$shared/cellfusion-workdir"
+[ -f "$workdir_script" ] || workdir_script="$shared/executable_cellfusion-workdir"
+work=$(bash "$workdir_script")
+
+dir="$work/sdd/$slug"
+mkdir -p "$dir"
+cd "$dir" && pwd

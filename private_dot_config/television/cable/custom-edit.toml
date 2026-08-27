@@ -1,0 +1,22 @@
+[metadata]
+name = "edit"
+description = "Pick a file and open it in $EDITOR"
+requirements = ["fd", "bat"]
+
+[source]
+command = ["fd -t f", "fd -t f -H"]
+
+[preview]
+command = "bat -n --color=always '{}'"
+env = { BAT_THEME = "ansi" }
+
+[keybindings]
+enter = "actions:edit"
+
+# Bound to Herdr's alt+e. `execute` replaces tv with the editor, so quitting the
+# editor returns to the shell rather than back to tv.
+[actions.edit]
+description = "Open the selected file in $EDITOR (Enter)"
+command = "${EDITOR:-nvim} '{}'"
+shell = "bash"
+mode = "execute"

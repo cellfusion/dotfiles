@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "required": ["status", "testSummary", "round", "baseHead", "changedFiles", "proposedCommitMessage", "concerns", "detail", "commits", "reviewPackagePath", "head"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"]
+    },
+    "round": { "type": "integer", "description": "0 が初回実装、1 以降が fix ラウンド" },
+    "baseHead": {
+      "type": ["string", "null"],
+      "description": "sdd-run 経路で使う。作業を始めた時点の git rev-parse HEAD。controller が dispatch 時の値と照合する。Workflow 経路では null"
+    },
+    "changedFiles": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "sdd-run 経路で使う。変更・作成したファイルのリポジトリ相対パス。controller はこの範囲だけを stage する"
+    },
+    "proposedCommitMessage": {
+      "type": ["string", "null"],
+      "description": "sdd-run 経路で使う。Conventional Commits 形式の 1 行。commit は controller が行う"
+    },
+    "commits": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "Workflow 経路で使う。agent 自身が作ったコミット。sdd-run 経路では null"
+    },
+    "reviewPackagePath": {
+      "type": ["string", "null"],
+      "description": "Workflow 経路で使う。agent が生成した review package のパス。sdd-run 経路では controller が作るので null"
+    },
+    "head": {
+      "type": ["string", "null"],
+      "description": "Workflow 経路で使う。commit 後の git rev-parse HEAD。sdd-run 経路では null"
+    },
+    "testSummary": { "type": "string" },
+    "concerns": { "type": ["string", "null"] },
+    "detail": { "type": ["string", "null"] }
+  }
+}

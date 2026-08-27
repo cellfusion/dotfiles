@@ -1,0 +1,368 @@
+#!/usr/bin/env node
+'use strict'
+// SDD の 1 タスクを headless の役割エージェントで回す。
+//
+// 実装 → タスクレビュー → fix ループ（最大 5 ラウンド）を決定的に実行し、
+// 結果を 1 行の JSON で stdout に出す。詳細は報告ファイルとログに残る。
+//
+// commit と review package の生成は controller（このスクリプト）が行う。agent には
+// git を触らせない。linked worktree の git メタデータは作業ツリーの外にあり、
+// sandbox の中からは触れないためである。commit 前に 7 つの検査を通す。
+//
+// backend / registry / review-package は環境変数で差し替えられる（テスト用）。
+const { execFileSync } = require('node:child_process')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+const MAX_ROUNDS = 5
+const IMPL_TIMEOUT = 1800000
+const REVIEW_TIMEOUT = 600000
+// scope は `(scope)` と `/scope` の両方を許す。
+// 後者は Conventional Commits の拡張ではないが、`feat/proto-app: ...` を主流とする
+// リポジトリがあり、そちらの慣習に合わせて commit できるようにするため。
+const CONVENTIONAL = /^(feat|fix|refactor|docs|test|chore|perf|ci)(\([^)]+\)|\/[^:\s]+)?: .+/
+
+let backend
+let registry
+
+const DEFS = process.env.AGENT_DEFS_DIR || path.join(os.homedir(), '.agents/agent-defs')
+const ROUTE = process.env.AGENT_ROUTE_BIN ||
+  path.join(os.homedir(), '.agents/skills/_shared/scripts/agent-route')
+const REVIEW_PACKAGE = process.env.SDD_REVIEW_PACKAGE_BIN ||
+  path.join(os.homedir(), '.agents/skills/subagent-driven-development/scripts/review-package')
+
+const REQUIRED = ['plan', 'task', 'brief', 'report', 'status-dir', 'base', 'workdir', 'run']
+
+function parseArgs(argv) {
+  const out = {}
+  for (let i = 0; i < argv.length; i += 2) {
+    if (!argv[i].startsWith('--')) return { __bad: `引数の形式が不正: ${argv[i]}` }
+    out[argv[i].slice(2)] = argv[i + 1]
+  }
+  const missing = REQUIRED.filter((k) => !out[k])
+  if (missing.length) return { __bad: `必須の引数が無い: ${missing.join(', ')}` }
+  if (!/^\d+$/.test(out.task)) return { __bad: `--task が数値でない: ${out.task}` }
+  if (!fs.existsSync(out.workdir)) return { __bad: `--workdir が存在しない: ${out.workdir}` }
+  return out
+}
+
+const blocking = (f) => f.severity === 'critical' || f.severity === 'important'
+const listFindings = (fs_) =>
+  fs_.map((f, i) => `${i + 1}. [${f.severity}] ${f.location} — ${f.summary}`).join('\n')
+
+function git(workdir, args) {
+  return execFileSync('git', ['-C', workdir, ...args], { encoding: 'utf8' })
+}
+
+/** 役割から engine / model / effort / access を解決する。 */
+function route(role) {
+  const out = execFileSync(process.execPath, [ROUTE, role], {
+    encoding: 'utf8', env: { ...process.env, AGENT_DEFS_DIR: DEFS },
+  })
+  return Object.fromEntries(out.trim().split(/\s+/).map((kv) => {
+    const i = kv.indexOf('=')
+    return [kv.slice(0, i), kv.slice(i + 1)]
+  }))
+}
+
+/**
+ * 役割を走らせる backend を決める。engine が決まれば backend が決まる。
+ * claude の write 役には --permission-mode auto で許可を与える。read 役は --tools で
+ * ツール面が閉じているので許可を渡さない。
+ */
+function backendFor(role) {
+  const r = route(role)
+  if (r.engine === 'codex') return { ...r, backend: 'codex-headless' }
+  return { ...r, backend: 'claude-headless' }
+}
+
+function loadSchema(role) {
+  // 昇格した sdd-implementer-think にも sdd-implementer のスキーマを渡す。
+  // 配布されるスキーマは 4 役割分しかない。
+  const name = role === 'sdd-implementer-think' ? 'sdd-implementer' : role
+  return JSON.parse(fs.readFileSync(path.join(DEFS, 'schemas', `${name}.json`), 'utf8'))
+}
+
+function implPrompt(role, a, round, findings) {
+  const lines = [
+    'あなたは SDD の実装エージェントとして起動されている。',
+    `役割: ~/.agents/agent-defs/prompts/${role}.md を読み、その役割として振る舞う。`,
+    `要件: ${a.brief}`,
+    `報告: ${a.report}`,
+    `Global Constraints: ${a['global-constraints'] || 'なし'}`,
+    'git add / git commit / git switch / git merge / git rebase は実行しない。',
+    'commit は controller が行う。作業ツリーを変更したまま終わり、',
+    'baseHead（作業開始時の git rev-parse HEAD）、changedFiles、proposedCommitMessage を返す。',
+    `round は ${round} である。`,
+  ]
+  if (findings.length) lines.push('未解決の指摘:', listFindings(findings))
+  if (round >= 4) {
+    lines.push(`このタスクは過去 ${round - 1} 回別の implementer が試みた。何を試したかは報告ファイルにある。`)
+  }
+  return lines.join('\n')
+}
+
+function reviewPrompt(role, a, pkg, round, findings) {
+  const lines = [
+    'あなたは SDD のレビュー担当として起動されている。',
+    `役割: ~/.agents/agent-defs/prompts/${role}.md を読み、その役割として振る舞う。`,
+    `要件: ${a.brief}`,
+    `報告: ${a.report}`,
+    `diff: ${pkg}`,
+    `Global Constraints: ${a['global-constraints'] || 'なし'}`,
+    'コードには一切触らない。結果は構造化出力で返す。',
+    `round は ${round} である。package の 1 行目の base と head を packageBase / packageHead に写す。`,
+  ]
+  if (findings.length) lines.push('検証する指摘:', listFindings(findings))
+  return lines.join('\n')
+}
+
+/** commit してよいかを 7 つの観点で確かめる。問題の説明を返す（無ければ null）。 */
+function precommitProblem(workdir, expectedHead, round, payload) {
+  if (payload.round !== round) {
+    return `round が違う: 期待 ${round} / 実際 ${payload.round}`
+  }
+  const head = git(workdir, ['rev-parse', 'HEAD']).trim()
+  if (head !== expectedHead) {
+    return `HEAD が dispatch 時と違う: 期待 ${expectedHead} / 実際 ${head}`
+  }
+  if (payload.baseHead !== expectedHead) {
+    return `implementer の baseHead が違う: 期待 ${expectedHead} / 実際 ${payload.baseHead}`
+  }
+  const staged = git(workdir, ['diff', '--cached', '--name-only']).trim()
+  if (staged) return `index が空でない: ${staged.split('\n').join(', ')}`
+  const files = payload.changedFiles || []
+  if (!files.length) return 'changedFiles が空である'
+  const dirty = git(workdir, ['status', '--porcelain', '--untracked-files=all']).split('\n')
+    .filter((l) => l.trim()).map((l) => l.slice(3).trim())
+  const extra = dirty.filter((f) => !files.includes(f))
+  if (extra.length) return `報告に無い変更がある: ${extra.join(', ')}`
+  if (!CONVENTIONAL.test(payload.proposedCommitMessage || '')) {
+    return `proposedCommitMessage が Conventional Commits でない: ${payload.proposedCommitMessage}`
+  }
+  return null
+}
+
+/** 対象パスだけを stage して commit する。git add -A は使わない。 */
+function commitRound(workdir, payload) {
+  git(workdir, ['add', '--', ...payload.changedFiles])
+  git(workdir, ['commit', '-m', payload.proposedCommitMessage])
+  return git(workdir, ['rev-parse', 'HEAD']).trim()
+}
+
+function makePackage(a, base, head, out) {
+  execFileSync(REVIEW_PACKAGE, [a.plan, base, head, out], { cwd: a.workdir, encoding: 'utf8' })
+  return out
+}
+
+/**
+ * sha が同じコミットを指すか。プラン 1 で入れた prefix 一致をそのまま使う。
+ * controller は短縮 sha を扱う一方、review-package の header は完全な sha を出すので、
+ * 厳密一致では正しい範囲を見たレビューまで弾いてしまう。
+ */
+const shaMatch = (a, b) => (!a || !b ? false : a.startsWith(b) || b.startsWith(a))
+
+function verdictMismatch(review) {
+  const findings = review.findings || []
+  const blockingCount = findings.filter(blocking).length
+  if (review.specVerdict === 'issues' && findings.length === 0) {
+    return 'specVerdict が issues なのに findings が空である'
+  }
+  if (review.qualityVerdict === 'needs_fixes' && findings.length === 0) {
+    return 'qualityVerdict が needs_fixes なのに findings が空である'
+  }
+  if (review.specVerdict === 'compliant' && review.qualityVerdict === 'approved' && blockingCount) {
+    return `verdict は両方とも合格なのに blocking な findings が ${blockingCount} 件ある`
+  }
+  return null
+}
+
+async function main() {
+  const a = parseArgs(process.argv.slice(2))
+  if (a.__bad) return { status: 'BAD_ARGS', detail: a.__bad }
+
+  backend = require(process.env.SDD_BACKEND_MODULE || path.join(__dirname, 'agent-backend'))
+  registry = require(process.env.SDD_REGISTRY_MODULE || path.join(__dirname, 'run-registry'))
+
+  const task = Number(a.task)
+  const sdir = a['status-dir']
+  fs.mkdirSync(sdir, { recursive: true, mode: 0o700 })
+
+  const result = {
+    status: 'AGENT_FAILED', task, rounds: 0, base: a.base, head: a.base,
+    commits: [], minor: [], outOfScope: [], cannotVerify: [], open: [], concerns: '',
+  }
+  const note = (state) => registry.updateTask(a.run, task, { state })
+
+  /** 1 役割を走らせ、失敗なら result を埋めて返す。成功なら payload を返す。 */
+  const call = async (role, round, extra) => {
+    const r = backendFor(role)
+    const res = await backend.runRole({
+      backend: r.backend, role, round,
+      model: r.model, effort: r.effort,
+      cwd: a.workdir,
+      schema: loadSchema(role),
+      writableRoots: [a.workdir, sdir],
+      addDirs: [sdir],
+      tools: r.access === 'read' ? 'Read,Grep,Glob' : undefined,
+      permissionMode: 'auto',
+      logPath: path.join(sdir, `task-${task}-${role}-${round}.log`),
+      lastPath: path.join(sdir, `task-${task}-${role}-${round}.json`),
+      timeoutMs: role.startsWith('sdd-implementer') ? IMPL_TIMEOUT : REVIEW_TIMEOUT,
+      expectedHead: result.head,
+      onSpawn: (s) => registry.updateTask(a.run, task, {
+        pid: s.pid, pgid: s.pgid, command: s.command,
+      }),
+      ...extra,
+    })
+    if (!res.ok) {
+      result.status = 'AGENT_FAILED'
+      result.stage = 'backend'
+      result.detail = res.error
+      return null
+    }
+    return res.payload
+  }
+
+  note('RUNNING')
+
+  const impl = await call('sdd-implementer', 0,
+    { prompt: implPrompt('sdd-implementer', a, 0, []) })
+  if (!impl) return result
+  if (impl.status === 'BLOCKED' || impl.status === 'NEEDS_CONTEXT') {
+    result.status = impl.status
+    result.detail = impl.detail || ''
+    return result
+  }
+  if (impl.status === 'DONE_WITH_CONCERNS') result.concerns = impl.concerns || ''
+
+  const problem = precommitProblem(a.workdir, result.head, 0, impl)
+  if (problem) {
+    result.status = 'AGENT_FAILED'
+    result.stage = 'precommit'
+    result.detail = problem
+    return result
+  }
+  const base0 = result.head
+  result.head = commitRound(a.workdir, impl)
+  result.commits.push(`${result.head.slice(0, 7)} ${impl.proposedCommitMessage}`)
+
+  const pkg0 = makePackage(a, base0, result.head, path.join(sdir, `task-${task}-package-0.diff`))
+  const review = await call('sdd-task-reviewer', 0,
+    { prompt: reviewPrompt('sdd-task-reviewer', a, pkg0, 0, []), packageBase: base0, packageHead: result.head })
+  if (!review) return result
+
+  if (!shaMatch(review.packageBase, base0) || !shaMatch(review.packageHead, result.head)) {
+    result.status = 'AGENT_FAILED'
+    result.stage = 'review-range'
+    result.detail = `レビュアーが見た範囲が違う: 期待 ${base0}..${result.head} / ` +
+      `実際 ${review.packageBase}..${review.packageHead}`
+    return result
+  }
+  const mismatch = verdictMismatch(review)
+  if (mismatch) {
+    result.status = 'AGENT_FAILED'
+    result.stage = 'review-verdict'
+    result.detail = mismatch
+    return result
+  }
+
+  result.cannotVerify = review.cannotVerify || []
+  const findings = review.findings || []
+  result.minor = findings.filter((f) => !blocking(f)).map((f) => f.summary)
+  let open = findings.filter(blocking)
+
+  if (open.some((f) => f.planMandated)) {
+    result.status = 'NEEDS_HUMAN'
+    result.open = open
+    return result
+  }
+
+  let rounds = 0
+  while (open.length && rounds < MAX_ROUNDS) {
+    rounds += 1
+    const role = rounds <= 3 ? 'sdd-implementer' : 'sdd-implementer-think'
+    const fixBase = result.head
+
+    const fix = await call(role, rounds, { prompt: implPrompt(role, a, rounds, open) })
+    if (!fix) { result.rounds = rounds; result.open = open; return result }
+    if (fix.status === 'BLOCKED' || fix.status === 'NEEDS_CONTEXT') {
+      result.rounds = rounds
+      result.open = open
+      result.status = fix.status
+      result.detail = fix.detail || ''
+      return result
+    }
+    if (fix.status === 'DONE_WITH_CONCERNS') result.concerns = fix.concerns || ''
+
+    const fixProblem = precommitProblem(a.workdir, fixBase, rounds, fix)
+    if (fixProblem) {
+      result.rounds = rounds
+      result.open = open
+      result.status = 'AGENT_FAILED'
+      result.stage = 'precommit'
+      result.detail = fixProblem
+      return result
+    }
+    result.head = commitRound(a.workdir, fix)
+    result.commits.push(`${result.head.slice(0, 7)} ${fix.proposedCommitMessage}`)
+
+    const pkgN = makePackage(a, fixBase, result.head,
+      path.join(sdir, `task-${task}-package-${rounds}.diff`))
+    const rr = await call('sdd-re-reviewer', rounds, {
+      prompt: reviewPrompt('sdd-re-reviewer', a, pkgN, rounds, open),
+      packageBase: fixBase, packageHead: result.head,
+    })
+    if (!rr) { result.rounds = rounds; result.open = open; return result }
+
+    if (!shaMatch(rr.packageBase, fixBase) || !shaMatch(rr.packageHead, result.head)) {
+      result.rounds = rounds
+      result.open = open
+      result.status = 'AGENT_FAILED'
+      result.stage = 'review-range'
+      result.detail = `再レビュアーが見た範囲が違う: 期待 ${fixBase}..${result.head} / ` +
+        `実際 ${rr.packageBase}..${rr.packageHead}`
+      return result
+    }
+    const verdicts = rr.verdicts || []
+    if (verdicts.length !== open.length) {
+      result.rounds = rounds
+      result.open = open
+      result.status = 'AGENT_FAILED'
+      result.stage = 'review-verdict'
+      result.detail =
+        `re-reviewer の verdict が ${verdicts.length} 件、渡した指摘が ${open.length} 件で一致しない`
+      return result
+    }
+
+    const breakage = (rr.newBreakage || []).filter(blocking)
+    result.minor.push(...(rr.newBreakage || []).filter((f) => !blocking(f)).map((f) => f.summary))
+    result.outOfScope.push(...(rr.outOfScope || []))
+    // re-reviewer の verdicts をそのまま新しい open にする（文字列一致で元の findings を
+    // 絞り込まない）。summary の言い換えで未解決の指摘が静かに消えるのを防ぐ。
+    open = verdicts.filter((v) => !v.addressed)
+      .map((v) => ({ severity: 'important', summary: v.finding, location: v.evidence || '(未特定)' }))
+      .concat(breakage)
+  }
+
+  result.rounds = rounds
+  result.open = open
+  result.status = open.length ? 'CAP_REACHED' : 'COMPLETE'
+  return result
+}
+
+// 出力契約は「stdout に 1 行の JSON」である。分類できない例外もここで JSON にする。
+// controller はこの 1 行だけを見て worktree を片付けるか残すかを決める。
+main()
+  .catch((e) => ({ status: 'AGENT_FAILED', stage: 'internal', detail: e && e.message ? e.message : String(e) }))
+  .then((out) => {
+    try {
+      const a = parseArgs(process.argv.slice(2))
+      if (!a.__bad) {
+        registry.updateTask(a.run, Number(a.task),
+          { state: out.status === 'COMPLETE' ? 'SUCCEEDED' : 'FAILED' })
+      }
+    } catch { /* registry を書けなくても結果は返す */ }
+    console.log(JSON.stringify(out, null, 1).replace(/\n\s*/g, ' '))
+  })

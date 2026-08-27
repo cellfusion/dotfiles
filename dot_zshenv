@@ -1,0 +1,6 @@
+# zsh は起動時にまず /etc/zshenv と ~/.zshenv を読む。ZDOTDIR をここで決めないと
+# ~/.config/zsh/ 以下（.zshenv / .zprofile / .zshrc）が一度も読まれない。
+# /etc/zshenv でも同じ設定ができるが、あれは root 所有で sudo が要る手作業になる。
+# ここに置けば chezmoi apply が配れる。
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export ZDOTDIR="$XDG_CONFIG_HOME/zsh"

@@ -1,0 +1,30 @@
+.DS_Store
+.config/zsh/.zcompdump
+
+.config/nvim/lazy-lock.json
+.config/sketchybar/helpers/menus/bin/menus
+.config/sketchybar/helpers/event_providers/cpu_load/bin/cpu_load
+.config/sketchybar/helpers/event_providers/memory_load/bin/memory_load
+.config/sketchybar/helpers/event_providers/network_load/bin/network_load
+.config/sketchybar/helpers/event_providers/disk_load/bin/disk_load
+.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events
+.config/sketchybar/helpers/event_providers/spotify_events/bin/spotify_events
+
+# このリポジトリ自身のドキュメント (destDir の docs へは配らない)
+docs
+docs/**
+
+# spec / plan / SDD の作業物 (git 追跡外の作業ディレクトリ。destDir の _cellfusion へは配らない)
+_cellfusion
+_cellfusion/**
+
+# テンプレートの検証スクリプト (このリポジトリの検証用であり destDir の tests へは配らない)
+tests
+tests/**
+
+# Herdr runtime state (only config.toml is managed by chezmoi)
+.config/herdr/session.json
+.config/herdr/*.log
+.config/herdr/*.sock
+# シェル履歴は機械ごとのものなので配らない
+.config/zsh/.zsh_history

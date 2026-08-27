@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Brewfile の内容が変わったときだけ実行される。
+# manifest hash: {{ includeTemplate "install/brewfile" (dict "os" .chezmoi.os) | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+brewfile="$HOME/.config/install/Brewfile"
+
+brew_env || die 'brew が見つからない。00-homebrew が失敗している'
+[ -f "$brewfile" ] || die "Brewfile が見つからない: $brewfile"
+
+# --no-upgrade を付けて install だけを行う。付けないと brew bundle は outdated な
+# formula をまとめて upgrade するため、Brewfile を 1 行足しただけの apply が
+# ffmpeg / protobuf / gradle などの再ビルドを巻き込む。更新は手で `brew upgrade` する。
+printf 'brew bundle を実行する（upgrade はしない）: %s\n' "$brewfile"
+brew bundle --file "$brewfile" --no-upgrade

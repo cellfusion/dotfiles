@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# sketchybar の helper をビルドし、yabai / skhd のサービスを登録する。
+#
+# helper のバイナリは .chezmoiignore で配布対象から外してある。ビルド成果物を
+# リポジトリに置かないため、新マシンではここでソースから作る。
+#
+# yabai と skhd のサービス登録は brew では行われない。--start-service が
+# ~/Library/LaunchAgents に plist を書く。
+#
+# manifest hash: {{ list
+    (include "private_dot_config/sketchybar/helpers/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/makefile")
+    (include "private_dot_config/sketchybar/helpers/menus/makefile")
+    (include "private_dot_config/sketchybar/helpers/menus/menus.c")
+    (include "private_dot_config/sketchybar/helpers/event_providers/sketchybar.h")
+    (include "private_dot_config/sketchybar/helpers/event_providers/cpu_load/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/cpu_load/cpu_load.c")
+    (include "private_dot_config/sketchybar/helpers/event_providers/cpu_load/cpu.h")
+    (include "private_dot_config/sketchybar/helpers/event_providers/memory_load/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/memory_load/memory_load.c")
+    (include "private_dot_config/sketchybar/helpers/event_providers/memory_load/memory.h")
+    (include "private_dot_config/sketchybar/helpers/event_providers/network_load/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/network_load/network_load.c")
+    (include "private_dot_config/sketchybar/helpers/event_providers/network_load/network.h")
+    (include "private_dot_config/sketchybar/helpers/event_providers/disk_load/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/disk_load/disk_load.c")
+    (include "private_dot_config/sketchybar/helpers/event_providers/disk_load/disk.h")
+    (include "private_dot_config/sketchybar/helpers/event_providers/calendar_events/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/calendar_events/calendar_events.swift")
+    (include "private_dot_config/sketchybar/helpers/event_providers/spotify_events/makefile")
+    (include "private_dot_config/sketchybar/helpers/event_providers/spotify_events/spotify_events.swift")
+    | join "" | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+{{ if eq .chezmoi.os "darwin" -}}
+
+# yabai / skhd は Homebrew が入れる。PATH に載せてからでないと command -v が偽になる。
+brew_env || die 'brew が見つからない。00-homebrew が失敗している'
+
+helpers="$HOME/.config/sketchybar/helpers"
+
+[ -d "$helpers" ] || die "sketchybar の helper が見つからない: $helpers"
+
+# clang と swiftc は Xcode Command Line Tools が持つ。Homebrew のインストーラが
+# 入れるので、00-homebrew が通っていれば揃っている。
+command -v clang >/dev/null 2>&1 || die 'clang が見つからない。Xcode Command Line Tools を入れる'
+
+printf 'sketchybar の helper をビルドする\n'
+( cd "$helpers" && make ) || die 'sketchybar の helper のビルドに失敗した'
+
+# --start-service は plist を書いてから起動する。既に登録済みなら触らない。
+start_service() {
+  cmd="$1"
+  plist="$2"
+  if [ -f "$HOME/Library/LaunchAgents/$plist" ]; then
+    printf '%s のサービスは登録済みなので飛ばす\n' "$cmd"
+    return 0
+  fi
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    die "$cmd が見つからない。10-brew が失敗している"
+  fi
+  printf '%s のサービスを登録する\n' "$cmd"
+  case "$cmd" in
+    yabai)
+      yabai --start-service || die 'yabai --start-service に失敗した'
+      ;;
+    skhd)
+      skhd --start-service || die 'skhd --start-service に失敗した'
+      ;;
+    *)
+      die "未対応のサービス: $cmd"
+      ;;
+  esac
+}
+
+# sketchybar は yabairc の末尾が起動する。ここでは触らない。
+start_service yabai com.asmvik.yabai.plist
+start_service skhd com.koekeishiya.skhd.plist
+{{- else }}
+
+printf 'macOS 専用の処理なので飛ばす\n'
+{{- end }}

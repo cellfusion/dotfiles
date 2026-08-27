@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# herdr-open: run a command in the current pane, or split a new Herdr pane.
+#
+# Usage: herdr-open <here|right|down> <command...>
+#   here  - run in the current pane (default; also used outside Herdr)
+#   right - split a new pane to the right and run the command there
+#   down  - split a new pane below and run the command there
+#
+# Outside Herdr (no $HERDR_ENV) it always runs in the current pane, so the same
+# Television channels work in a bare terminal too.
+set -euo pipefail
+
+mode="${1:-here}"
+shift || true
+cmd="$*"
+[ -n "$cmd" ] || exit 0
+
+# Run in the current pane (replaces this process) when asked, or when we are
+# not inside a Herdr-managed pane.
+if [ "$mode" = "here" ] || [ -z "${HERDR_ENV:-}" ] || [ -z "${HERDR_PANE_ID:-}" ]; then
+  exec "${SHELL:-/bin/sh}" -lc "$cmd"
+fi
+
+dir="right"
+[ "$mode" = "down" ] && dir="down"
+
+new_pane=$(herdr pane split --pane "$HERDR_PANE_ID" --direction "$dir" --cwd "$PWD" \
+  | jq -r '.result.pane.pane_id // empty')
+
+if [ -n "$new_pane" ]; then
+  herdr pane run "$new_pane" "$cmd"
+else
+  # Split failed for some reason; fall back to the current pane.
+  exec "${SHELL:-/bin/sh}" -lc "$cmd"
+fi

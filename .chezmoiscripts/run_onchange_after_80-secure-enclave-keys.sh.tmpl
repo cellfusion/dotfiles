@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# GitHub 用の Secure Enclave 鍵を用意する。
+#
+# 認証鍵と署名鍵を Secure Enclave に作り、stub file を ~/.ssh に置く。秘密鍵は
+# Secure Enclave から出ないため、ディスクにも git にも載らない。新しいマシンでは
+# chezmoi apply がここを走らせ、公開鍵を表示する。GitHub への登録は人間が行う。
+#
+# 冪等である。identity と stub file が揃っていれば何もしない。run_onchange_ は
+# このファイルの内容が変わると再実行されるので、その前提で書いてある。
+#
+# マニフェストのハッシュは持たない。鍵は一度作れば十分で、更新は有効期限が切れた
+# ときに人間が行う（~/.config/docs/git-signing.md の「鍵の更新」を参照）。
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+{{ if ne .chezmoi.os "darwin" -}}
+printf 'Secure Enclave の鍵は macOS でだけ作る。飛ばす\n'
+exit 0
+{{ end -}}
+
+PROVIDER=/usr/lib/ssh-keychain.dylib
+AUTH_LABEL=github-auth
+SIGN_LABEL=github-sign
+AUTH_DEST="$HOME/.ssh/id_github_auth"
+SIGN_DEST="$HOME/.ssh/id_github_sign"
+
+[ -f "$PROVIDER" ] || die "SecurityKeyProvider が無い: $PROVIDER"
+command -v sc_auth >/dev/null 2>&1 || die 'sc_auth が無い'
+
+# label 列 ($4) が一致する行の Public Key Hash / fingerprint ($2) を返す。
+identity_hash() {
+  sc_auth list-ctk-identities | awk -v l="$1" '$4 == l { print $2 }'
+}
+identity_fingerprint() {
+  sc_auth list-ctk-identities -t ssh | awk -v l="$1" '$4 == l { print $2 }'
+}
+
+# 無ければ作る。あれば何もしない。
+ensure_identity() {
+  if [ -n "$(identity_hash "$1")" ]; then
+    printf 'Secure Enclave の %s は作成済みなので飛ばす\n' "$1"
+    return 0
+  fi
+  printf 'Secure Enclave に %s を作る\n' "$1"
+  sc_auth create-ctk-identity -l "$1" -k p-256-ne -t none \
+    || die "$1 の作成に失敗した"
+}
+
+ensure_identity "$AUTH_LABEL"
+ensure_identity "$SIGN_LABEL"
+
+# stub file が両方揃っていれば書き出しを飛ばす。
+if [ -f "$AUTH_DEST" ] && [ -f "$AUTH_DEST.pub" ] \
+   && [ -f "$SIGN_DEST" ] && [ -f "$SIGN_DEST.pub" ]; then
+  printf 'stub file は配置済みなので飛ばす\n'
+  exit 0
+fi
+
+# ssh-keygen -K は書き出すファイル名を選べず、カレントディレクトリに置く。
+# ファイル名は鍵の SSH application から決まるが、Secure Enclave の identity は
+# どれも application が "ssh:" なので id_ecdsa_sk_rk で必ず衝突する。2 本目以降
+# は「Overwrite (y/n)?」を聞いてきて、断ると ssh-keygen は exit 255 で終わる。
+#
+# そこで identity の本数だけ ssh-keygen -K を回し、k 回目の実行では最初の k-1
+# 回の Overwrite に y と答え、残りは空行で断る。こうすると k 本目の鍵だけが
+# その実行のディレクトリに残る。断った実行は必ず失敗で終わるため、成否は exit
+# status ではなくファイルの有無で判定する。
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# PIN と passphrase は ssh-keygen の read_passphrase が読む。制御端末があると
+# /dev/tty から、無ければ stdin から読むため、stdin に流し込む方式では端末の
+# 有無で回答の対応がずれる。一方 Overwrite (y/n)? は常に stdin から読む。
+# SSH_ASKPASS に空文字を返させて PIN と passphrase の経路を固定し、stdin は
+# Overwrite の回答専用にする。-t none の鍵なので空で通る。
+askpass="$tmp/askpass"
+cat > "$askpass" <<'ASKPASS'
+#!/bin/sh
+echo
+ASKPASS
+chmod 700 "$askpass"
+export SSH_ASKPASS="$askpass"
+export SSH_ASKPASS_REQUIRE=force
+
+n="$(sc_auth list-ctk-identities | tail -n +2 | grep -c . || true)"
+[ "$n" -ge 1 ] || die 'CTK identity が 1 つも無い'
+
+# k 本目の鍵を取り出すための Overwrite の回答を組み立てる。
+answers() {
+  i=1
+  while [ "$i" -lt "$n" ]; do
+    if [ "$i" -lt "$1" ]; then printf 'y\n'; else printf '\n'; fi
+    i=$(( i + 1 ))
+  done
+}
+
+# 失敗したときに原因を残す。>/dev/null に捨てると新マシンで落ちたときに
+# 手掛かりが無くなる。
+k=1
+while [ "$k" -le "$n" ]; do
+  mkdir -p "$tmp/$k"
+  log="$tmp/$k/keygen.log"
+  answers "$k" | ( cd "$tmp/$k" && ssh-keygen -K -w "$PROVIDER" >"$log" 2>&1 ) || true
+  [ -f "$tmp/$k/id_ecdsa_sk_rk.pub" ] \
+    || die "$k 本目の stub file の書き出しに失敗した: $(cat "$log")"
+  k=$(( k + 1 ))
+done
+
+# fingerprint が一致する stub を dest へ移す。
+install_stub() {
+  label="$1" dest="$2"
+  if [ -f "$dest" ] && [ -f "$dest.pub" ]; then
+    printf '%s の stub は配置済みなので飛ばす\n' "$label"
+    return 0
+  fi
+  want="$(identity_fingerprint "$label")"
+  [ -n "$want" ] || die "$label の fingerprint を取れなかった"
+  for pub in "$tmp"/*/*.pub; do
+    [ -e "$pub" ] || continue
+    got="$(ssh-keygen -lf "$pub" | awk '{ print $2 }')"
+    if [ "$got" = "$want" ]; then
+      mv "${pub%.pub}" "$dest"
+      mv "$pub" "$dest.pub"
+      chmod 600 "$dest"
+      chmod 644 "$dest.pub"
+      printf '%s の stub を %s に置いた\n' "$label" "$dest"
+      return 0
+    fi
+  done
+  die "$label に対応する stub file が見つからなかった"
+}
+
+install_stub "$AUTH_LABEL" "$AUTH_DEST"
+install_stub "$SIGN_LABEL" "$SIGN_DEST"
+
+printf '\n'
+printf '=== GitHub に登録してください ===\n'
+printf 'https://github.com/settings/keys で「New SSH key」を 2 回行います。\n\n'
+printf -- '--- Authentication Key として登録 ---\n'
+cat "$AUTH_DEST.pub"
+printf '\n'
+printf -- '--- Signing Key として登録 ---\n'
+cat "$SIGN_DEST.pub"
+printf '\n'
+printf 'Key type の選択を間違えないでください。認証と署名は別枠です。\n'

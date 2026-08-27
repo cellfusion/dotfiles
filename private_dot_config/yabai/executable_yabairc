@@ -1,0 +1,95 @@
+#!/usr/bin/env sh
+
+# yabai 設定 (フェーズ1: SIP 有効のまま運用)
+#
+# SIP を部分無効化していない間は scripting addition が使えないため、
+# 以下は動作しない:
+#   - スペースの作成 / 破棄 / 移動、ウィンドウの別スペースへの移動
+#   - ウィンドウの透明度・影の除去・アニメーション
+#   - sticky / レイヤー制御 / scratchpad / PiP
+# タイリング・リサイズ・回転・ミラー・同一スペース内の入れ替えは動く。
+# SIP を無効化したら、末尾のブロックのコメントを外す。
+
+# --- レイアウト ---------------------------------------------------------
+yabai -m config layout bsp
+
+# 新しいウィンドウは分割された領域の第2子に置く (右または下に開く)
+yabai -m config window_placement second_child
+
+# 分割方向は領域の縦横比に応じて自動で決める
+yabai -m config split_type auto
+yabai -m config auto_balance off
+
+# --- 余白 ---------------------------------------------------------------
+# 上端は macOS メニューバーが自動で確保されるので小さな隙間のみ。
+# 下端は sketchybar (高さ34) ぶんを確保する。どのディスプレイでも下部は共通。
+yabai -m config top_padding 4
+yabai -m config bottom_padding 38
+yabai -m config left_padding 4
+yabai -m config right_padding 4
+yabai -m config window_gap 4
+
+# --- フォーカス ---------------------------------------------------------
+yabai -m config focus_follows_mouse off
+yabai -m config mouse_follows_focus off
+
+# マウス操作: alt + 左ドラッグで移動、alt + 右ドラッグでリサイズ
+yabai -m config mouse_modifier alt
+yabai -m config mouse_action1 move
+yabai -m config mouse_action2 resize
+
+# ドロップ先のウィンドウと入れ替える (stack ではなく swap)
+yabai -m config mouse_drop_action swap
+
+# --- アプリ個別ルール ---------------------------------------------------
+# aerospace の on-window-detected から移植したもの
+yabai -m rule --add app="^Finder$" manage=off
+yabai -m rule --add app="^1Password$" manage=off
+yabai -m rule --add app="^システム設定$" manage=off
+yabai -m rule --add app="^System Settings$" manage=off
+yabai -m rule --add app="^Karabiner-Elements$" manage=off
+
+# Spotify のミニプレイヤーは can-resize=true なので yabai の自動 float 判定
+# (リサイズ不可 かつ 500px 以下) に引っかからず、タイル枠まで引き伸ばされる。
+# 小さいまま置いておきたいので管理対象から外す。
+yabai -m rule --add app="^Spotify$" manage=off
+
+# Android Emulator (qemu-system-*) は自分でウィンドウのアスペクト比と最大サイズを
+# 強制し直す。yabai がタイル枠へリサイズしても 0.5 秒ほどで自分のサイズへ戻すため、
+# リサイズの往復が起きてウィンドウが震える。yabai 側にアスペクト比を尊重する機能は
+# 無いので、管理対象から外すしかない。
+# Extended controls のツールバーも同じ app 名で出るので、このルールで一緒に外れる。
+yabai -m rule --add app="^qemu-system-" manage=off
+
+# --- signal -------------------------------------------------------------
+# 管理外にした emulator はタイルされたウィンドウに重なる。emulator-dock が
+# emulator のいるスペースの右端にウィンドウ幅ぶんの空き地を作り、そこへ寄せる。
+# window_destroyed は yabai が内部で処理し終える前に発火するため、閉じたウィンドウの
+# id を渡して判定から除く。
+yabai -m signal --add label=emulator_dock_on event=window_created \
+  app="^qemu-system-" action='$HOME/.config/yabai/emulator-dock'
+yabai -m signal --add label=emulator_dock_off event=window_destroyed \
+  app="^qemu-system-" action='$HOME/.config/yabai/emulator-dock --closed $YABAI_WINDOW_ID'
+
+# ルールは window_created のときに評価されるので、yabai を起動し直した時点で
+# 開いていたウィンドウには当たっていない。既存のウィンドウへ当て直してから、
+# emulator が既に動いている場合の位置を合わせる。
+yabai -m rule --apply
+"$HOME/.config/yabai/emulator-dock" >/dev/null 2>&1 || true
+
+# --- 併走するプロセス ---------------------------------------------------
+# yabairc は yabai の起動ごとに実行されるため、多重起動しないようにする
+pgrep -x sketchybar >/dev/null || sketchybar &
+pgrep -x borders >/dev/null || borders &
+
+# --- SIP を部分無効化したら有効にする ----------------------------------
+# yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
+# sudo yabai --load-sa
+#
+# yabai -m config window_opacity              on
+# yabai -m config active_window_opacity       1.0
+# yabai -m config normal_window_opacity       0.90
+# yabai -m config window_shadow               float
+# yabai -m config window_animation_duration   0.15
+
+echo "yabai configuration loaded"

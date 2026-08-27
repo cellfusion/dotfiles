@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "required": ["status", "readyToMerge", "findings", "round", "head", "packageBase", "packageHead", "triage", "strengths", "reasoning"],
+  "additionalProperties": false,
+  "properties": {
+    "status": { "type": "string", "enum": ["CLEAN", "ISSUES"] },
+    "readyToMerge": { "type": "string", "enum": ["yes", "no", "with_fixes"] },
+    "round": { "type": "integer" },
+    "head": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
+    },
+    "packageBase": { "type": ["string", "null"] },
+    "packageHead": { "type": ["string", "null"] },
+    "triage": {
+      "type": ["array", "null"],
+      "description": "先送り Minor と park の選別結果。項目ごとに 1 件",
+      "items": {
+        "type": "object",
+        "required": ["item", "mustFixBeforeMerge", "reasoning"],
+        "additionalProperties": false,
+        "properties": {
+          "item": { "type": "string" },
+          "mustFixBeforeMerge": { "type": "boolean" },
+          "reasoning": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "strengths": { "type": ["string", "null"] },
+    "reasoning": { "type": ["string", "null"] }
+  }
+}

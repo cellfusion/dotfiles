@@ -1,0 +1,165 @@
+#!/bin/sh
+# SketchyBar agent usage provider.
+# 無引数: 定義された環境 × agent の分だけ environment<TAB>agent<TAB>used_pct<TAB>resets_at<TAB>status<TAB>severity を出力する。
+set -u
+
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+
+CACHE_DIR="$HOME/.cache/sketchybar-usage"
+CLAUDE_STALE_AFTER=1800
+WEEK_SECONDS=604800
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+cache_get() { cat "$CACHE_DIR/$1.json" 2>/dev/null; }
+
+cache_put() {
+  cache_file="$CACHE_DIR/$1.json"
+  mkdir -p "$CACHE_DIR" 2>/dev/null || return 1
+  printf '%s' "$2" > "$cache_file.tmp" 2>/dev/null && mv "$cache_file.tmp" "$cache_file" 2>/dev/null
+}
+
+error_record() { printf -- '-\t-\terror'; }
+
+# provider_codex <session_dir> <cache_key>
+provider_codex() {
+  session_dir="${1:-}"
+  cache_key="${2:-}"
+  [ -n "$session_dir" ] && [ -n "$cache_key" ] && have jq || { error_record; return; }
+
+  # 渡された環境の session directory だけを検索し、環境間でログを混在させない。
+  session_file=$(grep -rl '"rate_limits"' "$session_dir" 2>/dev/null \
+    | while IFS= read -r path; do
+        mtime=$(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null || printf '0')
+        printf '%s\t%s\n' "$mtime" "$path"
+      done | sort -rn | head -1 | cut -f2-)
+
+  if [ -z "$session_file" ]; then
+    cached=$(cache_get "$cache_key")
+    if [ -n "$cached" ]; then
+      pct=$(printf '%s' "$cached" | jq -r '.used_pct // empty' 2>/dev/null)
+      reset=$(printf '%s' "$cached" | jq -r '.resets_at // empty' 2>/dev/null)
+      if [ -n "$pct" ] && [ -n "$reset" ]; then
+        printf '%s\t%s\tstale' "$pct" "$reset"
+        return
+      fi
+    fi
+    error_record
+    return
+  fi
+
+  limits=$(grep '"rate_limits"' "$session_file" | tail -1 | jq -r '
+    (.payload.rate_limits // .rate_limits) as $r
+    | [$r.primary, $r.secondary]
+    | map(select(. != null and .window_minutes != null and .window_minutes >= 10080))
+    | if length == 0 then empty
+      else max_by(.window_minutes)
+      | [((.used_percent // empty) | floor), (.resets_at // empty)]
+      | @tsv
+      end' 2>/dev/null)
+  pct=$(printf '%s' "$limits" | cut -f1)
+  reset=$(printf '%s' "$limits" | cut -f2)
+  case "$pct" in ''|*[!0-9]*) error_record; return;; esac
+  case "$reset" in ''|*[!0-9]*) error_record; return;; esac
+
+  cache_put "$cache_key" "$(jq -n --arg p "$pct" --arg r "$reset" --argjson ts "$(date +%s)" \
+    '{ts:$ts, used_pct:$p, resets_at:$r}')" || :
+  printf '%s\t%s\tok' "$pct" "$reset"
+}
+
+# provider_claude <config_dir> <cache_key>
+provider_claude() {
+  config_dir="${1:-}"
+  cache_key="${2:-}"
+  [ -n "$config_dir" ] && [ -n "$cache_key" ] && have jq || { error_record; return; }
+  cached=$(cache_get "$cache_key")
+  [ -n "$cached" ] || { error_record; return; }
+
+  pct=$(printf '%s' "$cached" | jq -r '.used_pct // empty' 2>/dev/null)
+  reset=$(printf '%s' "$cached" | jq -r '.resets_at // empty' 2>/dev/null)
+  ts=$(printf '%s' "$cached" | jq -r '.ts // empty' 2>/dev/null)
+  case "$pct" in ''|*[!0-9]*) error_record; return;; esac
+  case "$reset" in ''|*[!0-9]*) error_record; return;; esac
+  case "$ts" in ''|*[!0-9]*) error_record; return;; esac
+
+  now=$(date +%s)
+  if [ $((now - ts)) -lt "$CLAUDE_STALE_AFTER" ]; then
+    printf '%s\t%s\tok' "$pct" "$reset"
+  else
+    printf '%s\t%s\tstale' "$pct" "$reset"
+  fi
+}
+
+# pace_of <used_pct> <resets_at> <status> [now]
+pace_of() {
+  used_pct="${1:-}"
+  resets_at="${2:-}"
+  status="${3:-}"
+  now="${4:-$(date +%s)}"
+  case "$used_pct" in ''|*[!0-9]*) printf 'none'; return;; esac
+  case "$resets_at" in ''|*[!0-9]*) printf 'none'; return;; esac
+  case "$now" in ''|*[!0-9]*) printf 'none'; return;; esac
+  [ "$status" = ok ] || { printf 'none'; return; }
+  [ "$resets_at" -gt "$now" ] || { printf 'none'; return; }
+
+  window_start=$((resets_at - WEEK_SECONDS))
+  elapsed=$(( (now - window_start) * 100 / WEEK_SECONDS ))
+  [ "$elapsed" -lt 0 ] && elapsed=0
+  [ "$elapsed" -gt 100 ] && elapsed=100
+  [ "$used_pct" -lt 5 ] && { printf 'none'; return; }
+
+  delta=$((used_pct - elapsed))
+  if [ "$delta" -ge 20 ]; then
+    printf 'crit'
+  elif [ "$delta" -ge 5 ]; then
+    printf 'warn'
+  else
+    printf 'ok'
+  fi
+}
+
+provider_dispatch() {
+  case "${1:-}" in
+    codex) provider_codex "${2:-}" "${3:-}" ;;
+    claude) provider_claude "${2:-}" "${3:-}" ;;
+    *) error_record ;;
+  esac
+}
+
+emit_record() {
+  environment="$1"
+  agent="$2"
+  config_dir="$3"
+  cache_key="$4"
+  output=$(provider_dispatch "$agent" "$config_dir" "$cache_key")
+  pct=$(printf '%s' "$output" | cut -f1)
+  reset=$(printf '%s' "$output" | cut -f2)
+  status=$(printf '%s' "$output" | cut -f3)
+  case "$status" in ok|stale|error) :;; *) pct=-; reset=-; status=error;; esac
+  if [ "$status" = ok ]; then
+    severity=$(pace_of "$pct" "$reset" "$status")
+  else
+    severity=none
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$environment" "$agent" "$pct" "$reset" "$status" "$severity"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  codex) shift; provider_codex "${1:-}" "${2:-}"; exit 0 ;;
+  claude) shift; provider_claude "${1:-}" "${2:-}"; exit 0 ;;
+  pace) shift; pace_of "${1:-}" "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
+esac
+
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
+{{- range $i, $env := $envs }}
+{{- $suffix := ternary (printf "_%s" $env.session) "" (ne $i 0) }}
+{{- if has "claude" $env.agents }}
+emit_record {{ $env.label }} claude "$HOME/.config/claude{{ $suffix }}" {{ $env.session }}-claude
+{{- end }}
+{{- if has "codex" $env.agents }}
+emit_record {{ $env.label }} codex "$HOME/.config/codex{{ $suffix }}/sessions" {{ $env.session }}-codex
+{{- end }}
+{{- end }}

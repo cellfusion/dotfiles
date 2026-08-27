@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# mise の config.toml が変わったときだけ実行される。
+# manifest hash: {{ include "private_dot_config/mise/config.toml" | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+local_bin_env
+
+if ! command -v mise >/dev/null 2>&1; then
+  die 'mise が見つからない。20-runtimes が失敗している'
+fi
+
+printf 'mise install を実行する\n'
+mise install

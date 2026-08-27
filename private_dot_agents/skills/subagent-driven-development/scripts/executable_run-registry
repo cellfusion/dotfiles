@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+'use strict'
+// 1 回の SDD 実行の正本。実行中プロセスの素性をファイルに残し、
+// controller が compaction や異常終了を挟んでも状態を復元できるようにする。
+//
+// ledger（progress.md）は人間向けの履歴であり、実行中プロセスの正本にはしない。
+// 二重 dispatch を防げるのはこちらだけである。
+const crypto = require('node:crypto')
+const { execFileSync } = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const STATES = [
+  'PREPARING', 'RUNNING',
+  'CANCEL_REQUESTED', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'ORPHANED',
+]
+
+/** 時刻 + 乱数。同じ秒に 2 つ始めても衝突しない。 */
+function newRunId() {
+  const t = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '')
+  return `${t}-${crypto.randomBytes(3).toString('hex')}`
+}
+
+/** tmp に書いてから rename する。途中で落ちても壊れた JSON を残さない。 */
+function writeAtomic(file, text) {
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, text, { mode: 0o600 })
+  fs.renameSync(tmp, file)
+}
+
+function createRun({ workspace, plan, runId }) {
+  const dir = path.join(workspace, runId)
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(dir, 0o700)
+  const tasksDir = path.join(dir, 'tasks')
+  fs.mkdirSync(tasksDir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(tasksDir, 0o700)
+  const runPath = path.join(dir, 'run.json')
+  writeAtomic(runPath, JSON.stringify({
+    runId, plan, planSlug: path.basename(plan, '.md'),
+    createdAt: new Date().toISOString(), tasks: {},
+  }, null, 2))
+  return { runId, dir, runPath }
+}
+
+function loadRun(runPath) {
+  const run = JSON.parse(fs.readFileSync(runPath, 'utf8'))
+  const tasksDir = path.join(path.dirname(runPath), 'tasks')
+  const tasks = {}
+  if (fs.existsSync(tasksDir)) {
+    for (const name of fs.readdirSync(tasksDir)) {
+      if (!name.endsWith('.json')) continue
+      const taskNumber = name.slice(0, -'.json'.length)
+      tasks[taskNumber] = JSON.parse(
+        fs.readFileSync(path.join(tasksDir, name), 'utf8'),
+      )
+    }
+  }
+  return { ...run, tasks }
+}
+
+/**
+ * 1 タスクの状態を更新する。既存の項目は残し、patch を重ねる。
+ * state は STATES のいずれかでなければならない（綴り違いで壊れた state が残るのを防ぐ）。
+ */
+function updateTask(runPath, taskNumber, patch) {
+  if (patch.state && !STATES.includes(patch.state)) {
+    throw new Error(`未知の state: ${patch.state}`)
+  }
+  const key = String(taskNumber)
+  const tasksDir = path.join(path.dirname(runPath), 'tasks')
+  fs.mkdirSync(tasksDir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(tasksDir, 0o700)
+  const taskPath = path.join(tasksDir, `${key}.json`)
+  const previous = fs.existsSync(taskPath)
+    ? JSON.parse(fs.readFileSync(taskPath, 'utf8'))
+    : {}
+  const entry = { ...previous, ...patch }
+  const pidChanged = patch.pid !== undefined && String(entry.pid) !== String(previous.pid)
+  if (entry.pid && (!entry.startedAt || (pidChanged && !patch.startedAt))) {
+    const startedAt = processStartTime(entry.pid)
+    if (startedAt) entry.startedAt = startedAt
+  }
+  const updated = { ...entry, updatedAt: new Date().toISOString() }
+  writeAtomic(taskPath, JSON.stringify(updated, null, 2))
+  return loadRun(runPath)
+}
+
+function taskEntry(run, taskNumber) {
+  return run.tasks[String(taskNumber)]
+}
+
+function processStartTime(pid) {
+  return processInfo(pid)?.startTime || null
+}
+
+function processCommand(pid) {
+  return processInfo(pid)?.command || null
+}
+
+/** lstart と command を一度の ps から分離する。lstart の日時書式を境界にする。 */
+function processInfo(pid) {
+  try {
+    const output = execFileSync('ps', ['-o', 'lstart=,command=', '-p', String(pid)], {
+      encoding: 'utf8',
+    }).trim()
+    const match = output.match(/^((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.*)$/)
+    if (!match) return null
+    return { startTime: match[1], command: match[2].trim() || null }
+  } catch {
+    return null
+  }
+}
+
+function commandBasename(command) {
+  if (!command) return null
+  const token = command.trim().split(/\s+/, 1)[0]
+  return path.basename(token)
+}
+
+/**
+ * プロセスが生きているか。
+ * ps の command は PATH 経由なら basename、絶対パス経由なら絶対パスになるため、
+ * 実行ファイルの basename だけを比較する。さらに開始時刻を比較することで、
+ * 同じ PID に別のプロセスが割り当てられた場合を弾く。PID だけでは不十分である。
+ */
+function isAlive(entry) {
+  if (!entry || !entry.pid || !entry.command || !entry.startedAt) return false
+  try {
+    process.kill(entry.pid, 0)
+  } catch {
+    return false
+  }
+  const info = processInfo(entry.pid)
+  const cmd = info?.command
+  const startedAt = info?.startTime
+  if (!cmd || !startedAt) return false
+  return commandBasename(cmd) === commandBasename(entry.command) && startedAt === entry.startedAt
+}
+
+/**
+ * registry 上 RUNNING なのにプロセスが生きていないタスクを ORPHANED にする。
+ * controller や driver が SIGKILL されると cleanup が走らないので、
+ * 起動時にこれを呼ぶことが契約である。
+ */
+function reap(runPath) {
+  const run = loadRun(runPath)
+  const orphaned = []
+  for (const [key, entry] of Object.entries(run.tasks)) {
+    if (entry.state !== 'RUNNING') continue
+    if (isAlive(entry)) continue
+    orphaned.push(Number(key))
+  }
+  for (const n of orphaned) updateTask(runPath, n, { state: 'ORPHANED' })
+  return { orphaned }
+}
+
+module.exports = {
+  STATES, newRunId, createRun, loadRun, updateTask, taskEntry, isAlive, reap,
+}

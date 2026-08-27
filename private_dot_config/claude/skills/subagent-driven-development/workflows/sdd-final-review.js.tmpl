@@ -1,0 +1,230 @@
+export const meta = {
+  name: 'sdd-final-review',
+  description: 'ブランチ全体の最終レビュー → fix 1 波 → スコープ限定の再レビュー 1 回',
+  whenToUse: 'subagent-driven-development で全タスクが完了した後に 1 回だけ呼ぶ',
+  phases: [
+    { title: 'Final review', detail: 'sdd-final-reviewer がブランチ全体を見る（opus）' },
+    { title: 'Fix', detail: '指摘リスト全体を 1 つの implementer にまとめて渡す' },
+    { title: 'Re-review', detail: 'fix diff だけをスコープ限定で再レビューする' },
+  ],
+}
+
+// 呼び出し側（controller）が用意するもの:
+//   plan, packagePath（merge-base..HEAD の review package）, mergeBase, head
+//   任意: description, deferred（先送り Minor の 1 行要約の配列）,
+//         parked（ruling 付きで park された指摘の配列）, scriptsDir
+
+// args の正規化。実測では Workflow ツールにオブジェクトを渡しても script には
+// JSON 文字列で届く。詳細は sdd-task.js の同じ箇所を参照。
+function parseInput(raw) {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'string') return raw
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    return { __parseError: e.message }
+  }
+}
+const input = parseInput(args)
+
+if (input.__parseError) {
+  return { status: 'BAD_ARGS', detail: `args を JSON として解釈できなかった: ${input.__parseError}` }
+}
+
+const REQUIRED = ['plan', 'packagePath', 'mergeBase', 'head']
+const missing = REQUIRED.filter((k) => input[k] === undefined || input[k] === null || input[k] === '')
+if (missing.length) {
+  return {
+    status: 'BAD_ARGS',
+    detail: `必須の args が渡されていない: ${missing.join(', ')}。エージェントは起動していない`,
+    received: Object.keys(input),
+  }
+}
+
+const SCRIPTS = input.scriptsDir || '~/.agents/skills/subagent-driven-development/scripts'
+
+const FINAL_REVIEW_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-final-reviewer.json" . }}
+const IMPL_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-implementer.json" . }}
+const RE_REVIEW_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-re-reviewer.json" . }}
+
+const isBlocking = (f) => f && (f.severity === 'critical' || f.severity === 'important')
+const shaMatch = (a, b) => (!a || !b ? true : a.startsWith(b) || b.startsWith(a))
+const listFindings = (fs) =>
+  fs.map((f, i) => `${i + 1}. [${f.severity}] ${f.location} — ${f.summary}${f.fix ? ` / 直し方: ${f.fix}` : ''}`).join('\n')
+const bullets = (xs) => (xs && xs.length ? xs.map((x) => `- ${x}`).join('\n') : 'なし')
+
+phase('Final review')
+
+const review = await agent(
+  `このブランチ全体をレビューする。
+
+## 何を実装したか
+${input.description || '（controller から補足なし）'}
+
+## プラン / 要件
+${input.plan}
+
+## review package（${input.mergeBase}..${input.head}）
+${input.packagePath}
+
+## 先送りされた Minor 指摘
+${bullets(input.deferred)}
+
+## ruling 付きで park された指摘
+${bullets(input.parked)}
+
+先送り・park の各項目について、merge 前に直すべきか否かを triage の 1 件として返す
+（item に項目、mustFixBeforeMerge に判定、reasoning に理由）。
+review package のヘッダ行 "# Review package: <base>..<head>" に書かれている
+base と head を packageBase / packageHead として返す。
+blocking な指摘（critical / important）が無ければ status を CLEAN、あれば ISSUES にする。
+readyToMerge は yes / no / with_fixes のいずれかで返す。
+findings、triage、packageBase、packageHead も返し、findings の各 item に fix と planMandated を含める。
+strengths によくできている点を、reasoning に 1-2 文の技術的評価を書く。
+nullable の項目で値が無い場合は null を返す。
+返す構造化出力には round（このタスクの fix ラウンド数。初回は 0）と head（git rev-parse HEAD）を必ず含める。`,
+  {
+    agentType: 'sdd-final-reviewer',
+    label: 'final-review',
+    phase: 'Final review',
+    schema: FINAL_REVIEW_RESULT,
+  }
+)
+
+if (!review) return { status: 'AGENT_FAILED', stage: 'final-review' }
+
+if (!shaMatch(review.packageBase, input.mergeBase) || !shaMatch(review.packageHead, input.head)) {
+  log(
+    `警告 — final reviewer が読んだ package の範囲 (${review.packageBase}..${review.packageHead}) が ` +
+      `期待値 (${input.mergeBase}..${input.head}) と一致しない`
+  )
+}
+
+const minor = (review.findings || []).filter((f) => f.severity === 'minor')
+const open = (review.findings || []).filter(isBlocking)
+const base = {
+  readyToMerge: review.readyToMerge,
+  strengths: review.strengths || '',
+  reasoning: review.reasoning || '',
+  triage: review.triage || [],
+  minor,
+  head: input.head,
+}
+
+if (!open.length) {
+  log(`最終レビューは blocking なし（Minor ${minor.length} 件）`)
+  return Object.assign({ status: 'CLEAN', commits: [] }, base)
+}
+
+log(`最終レビューが blocking ${open.length} 件。fix 波を 1 回だけ回す`)
+
+phase('Fix')
+
+const fix = await agent(
+  `ブランチ全体の最終レビューで出た指摘を、まとめて 1 度で直す。
+
+## プラン / 要件
+${input.plan}
+
+## 指摘（全件）
+${listFindings(open)}
+
+## やること
+1. 指摘をすべて直す
+2. 変更したコードを覆うテストを実行する。最後に全体スイートを 1 回だけ回す
+3. コミットする（1 コミット 1 論理変更）
+4. \`git rev-parse HEAD\` の結果を head として返す
+5. 次を実行し、出力されたパスを reviewPackagePath として返す
+   ${SCRIPTS}/review-package ${input.plan} ${input.head} HEAD
+
+このタスクは自動化されたワークフローの中で実行されており、途中で人に質問できない。
+判断できない指摘があるときは、直せた分をコミットしたうえで status を
+DONE_WITH_CONCERNS にし、手を付けられなかった指摘と理由を concerns に書く。
+1 件も直せないときは BLOCKED にして detail に書く。
+required の全項目を返し、nullable の項目で値が無い場合は null を返す。Workflow 経路では
+baseHead、changedFiles、proposedCommitMessage は null、commits、reviewPackagePath、head は実際の値にする。
+返す構造化出力には round（このタスクの fix ラウンド数。初回は 0）と head（git rev-parse HEAD）を必ず含める。`,
+  {
+    agentType: 'sdd-implementer',
+    label: 'final-fix',
+    phase: 'Fix',
+    model: 'opus',
+    effort: 'high',
+    schema: IMPL_RESULT,
+  }
+)
+
+if (!fix) return Object.assign({ status: 'AGENT_FAILED', stage: 'final-fix', open }, base)
+
+const commits = fix.commits || []
+const fixHead = fix.head || input.head
+
+if (fix.status === 'BLOCKED' || fix.status === 'NEEDS_CONTEXT') {
+  return Object.assign({ status: fix.status, detail: fix.detail || '', open, commits, head: fixHead }, base)
+}
+if (fix.concerns) log(`final fix concerns — ${fix.concerns}`)
+if (!fix.reviewPackagePath) {
+  return Object.assign({ status: 'AGENT_FAILED', stage: 'final-fix review-package', open, commits, head: fixHead }, base)
+}
+
+phase('Re-review')
+
+const re = await agent(
+  `最終レビューの fix 波を再レビューする。
+
+## プラン / 要件
+${input.plan}
+
+## 検証対象の指摘
+${listFindings(open)}
+
+## fix diff の review package
+${fix.reviewPackagePath}
+
+fix base: ${input.head}
+
+スコープは指摘リストと fix diff だけ。fix が触っていないコードは再レビューしない。
+review package のヘッダ行の base と head を packageBase / packageHead として返す。
+verdicts の各 item の evidence、newBreakage の各 item の fix と planMandated を含め、
+nullable の項目で値が無い場合は null を返す。
+返す構造化出力には required の全項目、round（このタスクの fix ラウンド数。初回は 0）と
+head（git rev-parse HEAD）を必ず含める。`,
+  {
+    agentType: 'sdd-re-reviewer',
+    label: 're-review:final',
+    phase: 'Re-review',
+    schema: RE_REVIEW_RESULT,
+  }
+)
+
+if (!re) return Object.assign({ status: 'AGENT_FAILED', stage: 'final-re-review', open, commits, head: fixHead }, base)
+
+if (!shaMatch(re.packageBase, input.head) || !shaMatch(re.packageHead, fixHead)) {
+  log(
+    `警告 — re-reviewer が読んだ package の範囲 (${re.packageBase}..${re.packageHead}) が ` +
+      `期待値 (${input.head}..${fixHead}) と一致しない`
+  )
+}
+
+const verdicts = re.verdicts || []
+const notAddressed = verdicts.filter((v) => !v.addressed)
+const breakage = (re.newBreakage || []).filter(isBlocking)
+const residual = notAddressed
+  .map((v) => ({ severity: 'important', summary: v.finding, location: v.evidence || '(未特定)' }))
+  .concat(breakage)
+
+log(
+  `fix 波の再レビュー — ${verdicts.length - notAddressed.length} addressed, ${residual.length} 残り。` +
+    '2 回目の fix 波は無い。残りの裁定は controller が行う'
+)
+
+return Object.assign(
+  {
+    status: residual.length ? 'RESIDUAL' : 'FIXED',
+    residual,
+    outOfScope: re.outOfScope || [],
+    commits,
+    head: fixHead,
+  },
+  base
+)

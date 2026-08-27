@@ -1,0 +1,123 @@
+# Herdr configuration (managed by chezmoi)
+# Source : ~/.local/share/chezmoi/private_dot_config/herdr/config.toml
+# Apply  : chezmoi apply && herdr server reload-config
+#
+# NOTE: `herdr config reset-keys` rewrites this file in place. Always edit the
+#       chezmoi source above, never ~/.config/herdr/config.toml directly.
+# Runtime files (session.json / *.log / *.sock) are NOT managed by chezmoi.
+
+# Written by Herdr at runtime once onboarding is dismissed; tracked here so
+# `chezmoi apply` does not re-trigger the first-run onboarding screen.
+onboarding = false
+
+[theme]
+name = "tokyo-night"
+auto_switch = false
+
+[keys]
+# Prefix stays at the default "ctrl+b".
+
+# workspace
+# workspace 移動は picker に寄せてある。<C-j> / <C-k> を直接キーにすると pane 内の
+# Neovim (snacks.picker の上下移動) と zsh の accept-line / kill-line に届かなく
+# なるため、alt+w の picker から選ぶ。picker の中では上下矢印が workspace を、
+# h/j/k/l が pane を選ぶ。明示割り当てにより既定の prefix+w では開かなくなる。
+new_workspace = "ctrl+n"
+new_worktree = "prefix+t"
+workspace_picker = "alt+w"
+
+# agents
+focus_agent = "prefix+alt+1..9"
+
+# tab
+# ctrl+h / ctrl+l はホームポジションのままタブを送るためのもの。pane 内の shell では
+# ctrl+l (clear-screen) が届かなくなるため、画面を消すときは clear コマンドを使う。
+# Neovim の <C-h> / <C-l> は <C-w>h / <C-w>l へ退避してある
+# (nvim/lua/config/keymaps.lua)。
+new_tab = "ctrl+t"
+previous_tab = "ctrl+h"
+next_tab = "ctrl+l"
+
+toggle_sidebar = "ctrl+i"
+
+# pane close は確認プロンプト付きにする。ビルトイン (prefix+x) を無効化し、
+# ctrl+q を herdr-confirm-close-pane プラグインへ回す。プラグインは
+# `herdr plugin install poweroutlet2/herdr-confirm-close-pane` で導入する
+# (plugins.json は chezmoi 管理外なので、新しいマシンでは手で打つ必要がある)。
+close_pane = ""
+
+[[keys.command]]
+key = "ctrl+q"
+type = "plugin_action"
+command = "confirm-close-pane.confirm-close-pane"
+description = "Close pane (with confirmation)"
+
+# --- Launch shortcuts (mirror the old tmux M- keys) -------------------------
+# All of these open a temporary pane that closes when the tool exits.
+#
+# Reliability note: alt+<key> depends on the terminal. Ghostty is configured
+# with `macos-option-as-alt = true`, so Option presses arrive as Alt and reach
+# Herdr. If a binding does NOT register, switch its `key` to "ctrl+alt+<key>"
+# or "prefix+<key>" (Herdr docs flag alt/punctuation chords as terminal-dependent).
+# These launch keys (g/e/c/a/z/t) avoid the alt chords skhd already owns
+# (h/j/k/l/r/x/y/v/s/q/p/n/f/m, 1-9, comma, period). skhd takes alt keys at the
+# system level, so anything it claims never reaches Herdr.
+
+# lazygit (old M-g Git menu -> direct launch; high frequency).
+# Git sub-pickers (branch/log/diff/status) live under alt+f -> tv channels.
+[[keys.command]]
+key = "alt+g"
+type = "popup"
+command = "lazygit"
+description = "lazygit"
+width = "100%"
+height = "100%"
+
+# File picker -> open the choice in $EDITOR (old M-e).
+[[keys.command]]
+key = "alt+e"
+type = "pane"
+command = "tv edit"
+description = "file picker"
+
+# Claude Code (old master-menu "c"). CLAUDE_CONFIG_DIR は HERDR_SESSION 経由で解決。
+# type="pane" は「一時的な zoomed pane」なので、新規タブで開くためラッパー経由に。
+# ラッパーが herdr CLI でタブを作り、その root pane で claude を起動する。
+[[keys.command]]
+key = "alt+c"
+type = "shell"
+command = "$HOME/.config/herdr/launch-claude-tab.sh"
+description = "claude (new tab)"
+
+[[keys.command]]
+key = "alt+a"
+type = "pane"
+command = "tv agent-launcher"
+description = "agent-launcher"
+
+[[keys.command]]
+key = "alt+z"
+type = "pane"
+command = "tv zoxide"
+description = ""
+
+[[keys.command]]
+key = "alt+t"
+type = "popup"
+command = "exec \"${SHELL:-sh}\""
+description = "open scratch terminal"
+width = "80%"
+height = "80%"
+
+[ui]
+show_agent_labels_on_pane_borders = true
+agent_panel_sort = "priority"
+prompt_new_tab_name = false
+
+[ui.toast]
+delivery = "herdr"
+
+[experimental]
+kitty_graphics = true
+reveal_hidden_cursor_for_cjk_ime = true
+cjk_ime_agents = ["claude", "pi", "codex"]

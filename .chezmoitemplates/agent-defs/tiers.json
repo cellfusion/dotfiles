@@ -1,0 +1,22 @@
+{
+  "fast": {
+    "claude":   { "model": "sonnet", "effort": "medium" },
+    "codex":    { "model": "gpt-5.6-luna", "effort": "medium" },
+    "opencode": { "model": "openai/gpt-5.6-luna", "effort": "medium" }
+  },
+  "work": {
+    "claude":   { "model": "sonnet", "effort": "high" },
+    "codex":    { "model": "gpt-5.6-luna", "effort": "high" },
+    "opencode": { "model": "openai/gpt-5.6-luna", "effort": "high" }
+  },
+  "think": {
+    "claude":   { "model": "opus", "effort": "high" },
+    "codex":    { "model": "gpt-5.6-terra", "effort": "high" },
+    "opencode": { "model": "openai/gpt-5.6-terra", "effort": "high" }
+  },
+  "deep": {
+    "claude":   { "model": "opus", "effort": "max" },
+    "codex":    { "model": "gpt-5.6-sol", "effort": "high" },
+    "opencode": { "model": "openai/gpt-5.6-sol", "effort": "high" }
+  }
+}

@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# claude-monitor: Monitor Claude Code instances across tmux sessions
+# Select an instance with fzf to jump to its pane
+set -euo pipefail
+
+SELF="$(realpath "$0")"
+RELOAD_INTERVAL=3
+HYSTERESIS_DIR="${TMPDIR:-/tmp}/claude-monitor-state"
+HYSTERESIS_SECONDS=6
+
+# --- Detect Claude status from pane title and content ---
+detect_status() {
+  local pane="$1"
+  local title="${2:-}"
+  local content
+  content=$(tmux capture-pane -t "$pane" -p -S -40 2>/dev/null || echo "")
+  local tail10
+  tail10=$(echo "$content" | tail -10)
+
+  # Priority 1: Approval waiting — Yes/No buttons or numbered choices in tail
+  if echo "$tail10" | grep -qE '(Yes|No).*│.*(Yes|No)|\[y\/n\]|[0-9]+\.\s'; then
+    echo "⚠ approval"
+    return
+  fi
+
+  # Priority 2: Subagent running — ctrl+b ctrl+b hint in content
+  if echo "$content" | grep -qF 'ctrl+b ctrl+b'; then
+    echo "⚙ subagent"
+    return
+  fi
+
+  # Priority 3: Processing — Braille spinner in pane title (U+2801-U+28FF)
+  if [[ -n "$title" ]] && echo "$title" | grep -q '[⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿]'; then
+    echo "▶ working"
+    return
+  fi
+
+  # Priority 4: Plan mode — ⏸ in tail
+  if echo "$tail10" | grep -q "⏸"; then
+    echo "◆ plan"
+    return
+  fi
+
+  # Priority 5: Idle — ❯ prompt in tail or ✳ in title
+  if echo "$content" | tail -3 | grep -q "❯"; then
+    echo "● idle"
+    return
+  fi
+  if [[ -n "$title" ]] && echo "$title" | grep -q "✳"; then
+    echo "● idle"
+    return
+  fi
+
+  # Priority 6: Unknown
+  echo "○ unknown"
+}
+
+# --- Hysteresis: prevent flickering on state transitions ---
+apply_hysteresis() {
+  local pane="$1" current_status="$2"
+  local sanitized="${pane//[:.]/_}"
+  local state_file="$HYSTERESIS_DIR/$sanitized"
+
+  mkdir -p "$HYSTERESIS_DIR"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "$current_status" > "$state_file"
+    echo "$current_status"
+    return
+  fi
+
+  local prev_status
+  prev_status=$(<"$state_file")
+
+  # If transitioning from active state to idle/unknown, apply grace period
+  case "$prev_status" in
+    "▶ working"|"⚙ subagent"|"⚠ approval")
+      case "$current_status" in
+        "● idle"|"○ unknown")
+          local file_age
+          file_age=$(( $(date +%s) - $(stat -f %m "$state_file" 2>/dev/null || echo 0) ))
+          if (( file_age < HYSTERESIS_SECONDS )); then
+            echo "$prev_status"
+            return
+          fi
+          ;;
+      esac
+      ;;
+  esac
+
+  echo "$current_status" > "$state_file"
+  echo "$current_status"
+}
+
+# --- Generate entries (callable as subcommand for fzf reload) ---
+generate_entries() {
+  declare -A TTY_TO_PANE
+  declare -A TTY_TO_SESSION
+  declare -A TTY_TO_TITLE
+  while IFS='|' read -r pane tty session title; do
+    TTY_TO_PANE["$tty"]="$pane"
+    TTY_TO_SESSION["$tty"]="$session"
+    TTY_TO_TITLE["$tty"]="$title"
+  done < <(tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}|#{pane_tty}|#{session_name}|#{pane_title}")
+
+  while IFS= read -r line; do
+    pid=$(echo "$line" | awk '{print $2}')
+
+    tty=$(ps -o tty= -p "$pid" 2>/dev/null | xargs)
+    [[ -z "$tty" ]] && continue
+    tty="/dev/$tty"
+
+    pane="${TTY_TO_PANE[$tty]:-}"
+    [[ -z "$pane" ]] && continue
+    session="${TTY_TO_SESSION[$tty]:-}"
+    title="${TTY_TO_TITLE[$tty]:-}"
+
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | sed 's/^n//')
+    project=$(basename "$cwd" 2>/dev/null || echo "?")
+
+    read -r etime rss <<< "$(ps -o etime=,rss= -p "$pid" 2>/dev/null | xargs)"
+    mem_mb=$(( ${rss:-0} / 1024 ))
+
+    raw_status=$(detect_status "$pane" "$title")
+    status=$(apply_hysteresis "$pane" "$raw_status")
+
+    printf '%s\t%-12s │ %-20s │ %6s │ %4sMB │ %s\n' \
+      "$pane" "$status" "$project" "$etime" "$mem_mb" "$session"
+
+  done < <(ps aux | grep -E "[c]laude.*--dangerously-skip-permissions" | grep -v "chrome-mcp")
+}
+
+# --- Subcommand: --entries (for fzf reload) ---
+if [[ "${1:-}" == "--entries" ]]; then
+  generate_entries | sort -t$'\t' -k1,1
+  exit 0
+fi
+
+# --- Initial check ---
+initial=$(generate_entries | sort -t$'\t' -k1,1)
+if [[ -z "$initial" ]]; then
+  echo "No Claude Code instances found."
+  read -n 1 -s -r -p "Press any key to close..."
+  exit 0
+fi
+
+# --- fzf selection with auto-reload ---
+selected=$(echo "$initial" | fzf \
+  --reverse \
+  --prompt='  Claude Monitor > ' \
+  --delimiter=$'\t' \
+  --with-nth=2 \
+  --header '  STATUS       │ PROJECT              │   TIME │  MEM  │ SESSION' \
+  --no-sort \
+  --track \
+  --preview 'tmux capture-pane -t {1} -p -S -50 2>/dev/null' \
+  --preview-window='right:60%:wrap:<120(hidden)' \
+  --bind "load:reload-sync:sleep $RELOAD_INTERVAL && $SELF --entries" \
+  ) || exit 0
+
+[[ -z "$selected" ]] && exit 0
+
+# Extract pane target (first tab-separated field)
+target_pane=$(echo "$selected" | cut -f1)
+
+# Switch to the target pane
+tmux switch-client -t "$target_pane"

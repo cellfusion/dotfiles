@@ -1,0 +1,226 @@
+#!/usr/bin/env node
+'use strict'
+// 役割エージェントを headless CLI の子プロセスとして走らせ、engine 固有の出力を
+// 1 つの契約に正規化する層。engine は codex と claude の 2 つで、どちらも headless
+// である。プロセスの終了コードで完了を判定し、出力はスキーマで検証する。
+//
+// 実測（codex 0.148 / claude 2.1.238）に基づく制約:
+//   - codex exec は -a / --ask-for-approval を受け付けない。-c approval_policy を使う
+//   - codex exec resume は --sandbox / --add-dir / --cd を持たない。-c で毎回渡す
+//   - claude --json-schema はパスではなく JSON 本体の文字列を取る
+//   - claude は --permission-mode auto を -p でも受け付ける。承認を求める相手が
+//     いなくても拒否されない
+//   - --tools はツールの品揃えを決めるだけで、許可を与えない。--setting-sources "" と
+//     組み合わせると、permission-mode の無い役割は cwd の外を読めない
+//   - claude には書き込み範囲を縛るフラグが無い。codex の writable_roots に相当する
+//     機能は存在せず、cwd の外にも書ける。隔離は worktree で行う
+const { spawn } = require('node:child_process')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+// 構造化出力の検証は _shared の json-schema が持つ。
+const { validateSchema } = require(process.env.SDD_VALIDATOR_MODULE ||
+  path.join(os.homedir(), '.agents/skills/_shared/scripts/json-schema'))
+
+/** backend の起動・待機・正規化のいずれかが失敗した。 */
+class BackendError extends Error {}
+
+const SANDBOX = 'sandbox_mode="workspace-write"'
+const APPROVAL = 'approval_policy="never"'
+
+/**
+ * codex exec / codex exec resume の引数。
+ * sandbox と approval は resume でも毎回渡す。resume はフラグを持たず、
+ * 前回の設定を継承する保証も無い。
+ */
+function codexArgs({ model, effort, schemaPath, lastPath, writableRoots, sessionId }) {
+  const args = ['exec']
+  if (sessionId) args.push('resume', sessionId)
+  args.push(
+    '--json',
+    '--output-schema', schemaPath,
+    '--output-last-message', lastPath,
+    '-m', model,
+    '-c', `model_reasoning_effort=${effort}`,
+    '-c', SANDBOX,
+    '-c', APPROVAL,
+    '-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots || [])}`,
+  )
+  return args
+}
+
+/** ログとスキーマの一時ファイルは 0600 で作る。tool 出力や拒否理由が入りうる。 */
+function writePrivate(file, text) {
+  fs.writeFileSync(file, text, { mode: 0o600 })
+}
+
+/**
+ * 子プロセスを走らせ、stdout / stderr をログに流し、終了を待つ。
+ * onSpawn は spawn 直後に同期で呼ぶ。呼び出し側はここで registry に記録してから待つ。
+ */
+function spawnAndWait({ bin, args, cwd, stdin, logPath, timeoutMs, onSpawn }) {
+  return new Promise((resolve) => {
+    writePrivate(logPath, '')
+    const log = fs.createWriteStream(logPath, { flags: 'a', mode: 0o600 })
+    // detached にして自分の process group を持たせる。停止のとき group ごと落とせる。
+    const child = spawn(bin, args, { cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    let timedOut = false
+    const timer = timeoutMs
+      ? setTimeout(() => { timedOut = true; try { process.kill(-child.pid, 'SIGTERM') } catch {} }, timeoutMs)
+      : null
+
+    if (onSpawn) {
+      onSpawn({ pid: child.pid, pgid: child.pid, command: [bin, ...args].join(' ') })
+    }
+
+    child.stdout.on('data', (c) => { out += c; log.write(c) })
+    child.stderr.on('data', (c) => { err += c; log.write(c) })
+    child.stdin.on('error', () => {})
+    if (stdin !== undefined) { child.stdin.write(stdin) }
+    child.stdin.end()
+
+    child.on('close', (code, signal) => {
+      if (timer) clearTimeout(timer)
+      log.end()
+      resolve({ exitCode: code, signal, stdout: out, stderr: err, timedOut })
+    })
+    child.on('error', (e) => {
+      if (timer) clearTimeout(timer)
+      log.end()
+      resolve({ exitCode: null, signal: null, stdout: out, stderr: e.message, timedOut })
+    })
+  })
+}
+
+/** JSONL から thread.started の thread_id を拾う。 */
+function threadIdFrom(jsonl) {
+  for (const line of jsonl.split('\n')) {
+    if (!line.trim().startsWith('{')) continue
+    try {
+      const ev = JSON.parse(line)
+      if (ev.type === 'thread.started' && ev.thread_id) return ev.thread_id
+    } catch { /* 途中で切れた行は無視する */ }
+  }
+  return null
+}
+
+/** 正規化した結果の器。backend ごとに埋める項目が違っても形は同じにする。 */
+function result(backend, patch) {
+  return {
+    ok: false, payload: null, error: null, engineSessionId: null,
+    exitCode: null, signal: null, permissionDenials: [], backend, ...patch,
+  }
+}
+
+async function runCodex(opts) {
+  const tmpSchema = path.join(os.tmpdir(), `sdd-schema-${process.pid}-${opts.role}.json`)
+  writePrivate(tmpSchema, JSON.stringify(opts.schema))
+  const args = codexArgs({
+    model: opts.model, effort: opts.effort,
+    schemaPath: tmpSchema, lastPath: opts.lastPath,
+    writableRoots: opts.writableRoots, sessionId: opts.sessionId,
+  })
+  const r = await spawnAndWait({
+    bin: 'codex', args, cwd: opts.cwd, stdin: opts.prompt,
+    logPath: opts.logPath, timeoutMs: opts.timeoutMs, onSpawn: opts.onSpawn,
+  })
+  fs.rmSync(tmpSchema, { force: true })
+
+  const sid = threadIdFrom(r.stdout)
+  const base = { engineSessionId: sid, exitCode: r.exitCode, signal: r.signal }
+  if (r.timedOut) {
+    return result('codex-headless', { ...base, error: `timeout（${opts.timeoutMs}ms）` })
+  }
+  if (r.exitCode !== 0) {
+    return result('codex-headless', { ...base, error: `codex が ${r.exitCode} で終了した: ${r.stderr.trim().slice(0, 500)}` })
+  }
+  let payload
+  try {
+    payload = JSON.parse(fs.readFileSync(opts.lastPath, 'utf8'))
+  } catch (e) {
+    return result('codex-headless', { ...base, error: `最終出力を JSON として読めない: ${e.message}` })
+  }
+  const errs = validateSchema(opts.schema, payload)
+  if (errs.length) {
+    return result('codex-headless', { ...base, error: `出力がスキーマに合わない: ${errs.join('; ')}` })
+  }
+  return result('codex-headless', { ...base, ok: true, payload })
+}
+
+/**
+ * claude -p の引数。
+ * --json-schema はファイルパスではなく JSON 本体の文字列を取る。
+ * --safe-mode は CLAUDE.md / skills / plugins / hooks / MCP を全部切る。
+ * 役割エージェントにユーザーの応答規約やワークフロー表を持ち込まないために必須である。
+ * --setting-sources "" は settings.json を 1 つも読まない。--safe-mode は permissions を
+ * 切らないため、これが無いとユーザーの defaultMode と permissions.allow を引き継ぐ。
+ * 設定を変えた日に SDD の挙動が黙って変わるのを防ぐ。
+ * permissionMode は read 役にも渡す。--tools はツールの品揃えを決めるだけで、許可を
+ * 与えない。--setting-sources "" が settings.json の permissions.allow を切るので、
+ * これが無いと read 役は cwd の外を 1 つも読めない。実測で reviewer の Read と Glob が
+ * すべて拒否され、レビューが cannotVerify だらけになることを確認した。
+ * read 役の書き込みは --tools Read,Grep,Glob が閉じている。auto mode でも書けない。
+ */
+function claudeArgs({ model, effort, schema, tools, addDirs, sessionId, resume, permissionMode }) {
+  const args = [
+    '-p', '--safe-mode',
+    '--setting-sources', '',
+    '--model', model,
+    '--effort', effort,
+    '--output-format', 'json',
+    '--json-schema', JSON.stringify(schema),
+  ]
+  if (tools) args.push('--tools', tools)
+  if (permissionMode) args.push('--permission-mode', permissionMode)
+  for (const d of addDirs || []) args.push('--add-dir', d)
+  if (resume && sessionId) args.push('--resume', sessionId)
+  else if (sessionId) args.push('--session-id', sessionId)
+  return args
+}
+
+async function runClaudeHeadless(opts) {
+  const args = claudeArgs({
+    model: opts.model, effort: opts.effort, schema: opts.schema,
+    tools: opts.tools, addDirs: opts.addDirs, permissionMode: opts.permissionMode,
+    sessionId: opts.sessionId, resume: opts.resume,
+  })
+  const r = await spawnAndWait({
+    bin: 'claude', args, cwd: opts.cwd, stdin: opts.prompt,
+    logPath: opts.logPath, timeoutMs: opts.timeoutMs, onSpawn: opts.onSpawn,
+  })
+  const base = { exitCode: r.exitCode, signal: r.signal }
+  if (r.timedOut) {
+    return result('claude-headless', { ...base, error: `timeout（${opts.timeoutMs}ms）` })
+  }
+  let envelope
+  try {
+    envelope = JSON.parse(r.stdout.trim().split('\n').filter((l) => l.trim()).pop() || '')
+  } catch (e) {
+    return result('claude-headless', { ...base, error: `claude の応答を JSON として読めない: ${e.message}` })
+  }
+  const denials = envelope.permission_denials || []
+  const sid = envelope.session_id || null
+  const withMeta = { ...base, engineSessionId: sid, permissionDenials: denials }
+  if (!envelope.structured_output) {
+    return result('claude-headless', {
+      ...withMeta,
+      error: `構造化出力が返らなかった: ${String(envelope.result || '').slice(0, 500)}`,
+    })
+  }
+  const errs = validateSchema(opts.schema, envelope.structured_output)
+  if (errs.length) {
+    return result('claude-headless', { ...withMeta, error: `出力がスキーマに合わない: ${errs.join('; ')}` })
+  }
+  return result('claude-headless', { ...withMeta, ok: true, payload: envelope.structured_output })
+}
+
+async function runRole(opts) {
+  if (opts.backend === 'codex-headless') return runCodex(opts)
+  if (opts.backend === 'claude-headless') return runClaudeHeadless(opts)
+  throw new BackendError(`未知の backend: ${opts.backend}`)
+}
+
+module.exports = { BackendError, codexArgs, claudeArgs, runRole }

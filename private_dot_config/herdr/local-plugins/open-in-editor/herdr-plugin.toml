@@ -1,0 +1,46 @@
+id = "open-in-editor"
+name = "Open in Editor"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Click a file path/link in a pane -> open it in nvim in an overlay popup (instead of Finder)"
+platforms = ["macos", "linux"]
+
+# クリックされた URL がここの pattern (Rust 正規表現) に一致すると、herdr は既定の
+# OS open (= Finder) の代わりに action を呼ぶ。action には HERDR_PLUGIN_CLICKED_URL /
+# HERDR_PLUGIN_CONTEXT_JSON が env で渡る。
+# file:// リンク用と、素の絶対パス用の 2 本を同じ action に向ける（どちらの形で
+# 渡るかは環境依存なので両対応。実際の形は open.sh がログに残す）。
+[[link_handlers]]
+id = "file-url"
+title = "Open in nvim"
+pattern = "^file://"
+action = "open"
+
+[[link_handlers]]
+id = "abs-path"
+title = "Open in nvim"
+pattern = "^/"
+action = "open"
+
+# 相対パス / ~ 始まり（例: docs/foo.md）。先頭語の直後が "/" のものだけ拾うので
+# scheme://（https 等）は除外される（Rust 正規表現は先読み非対応のためこの形）。
+# 相対パスは open.sh がクリック元 pane の cwd を基準に解決する。
+[[link_handlers]]
+id = "rel-path"
+title = "Open in nvim"
+pattern = '^[\w.@%+~-]+/'
+action = "open"
+
+[[actions]]
+id = "open"
+title = "Open clicked file in nvim"
+contexts = ["global"]
+command = ["bash", "open.sh"]
+
+# overlay = フローティング popup。nvim を終了すると herdr が pane を畳んで元の
+# フォーカスに戻す。開くファイルは open.sh が --env EDIT_FILE/EDIT_LINE で渡す。
+[[panes]]
+id = "editor"
+title = "nvim"
+placement = "overlay"
+command = ["bash", "edit.sh"]

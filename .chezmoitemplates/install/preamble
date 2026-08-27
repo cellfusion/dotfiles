@@ -1,0 +1,72 @@
+{{- /* インストールスクリプト共通の前置き。各スクリプトが
+       {{ includeTemplate "install/preamble" }} で取り込む。
+
+       chezmoi はスクリプトをプロセスごとに独立して実行するため、PATH は段をまたいで
+       共有されない。前の段が入れたツールを使う段は、自分で PATH を組み立てる。 */ -}}
+# --- ここから preamble ---
+# pipeline の途中で落ちたコマンドを見逃さない。curl … | sh の curl 側が失敗しても
+# sh は空入力を読んで 0 で終わるため、これが無いと || die が発火しない。
+set -o pipefail
+
+# XDG の既定値。chezmoi のスクリプトは zsh の環境を継承するとは限らないので、
+# ~/.config/zsh/.zshenv と同じ値をここでも明示する。
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+CARGO_HOME="${CARGO_HOME:-$XDG_DATA_HOME/cargo}"
+RUSTUP_HOME="${RUSTUP_HOME:-$XDG_DATA_HOME/rustup}"
+export XDG_DATA_HOME CARGO_HOME RUSTUP_HOME
+
+# 非ゼロで落ちる。chezmoi は非ゼロで終わった script を entryState に記録しないので、
+# ここで落ちたぶんは次の apply で再実行される。
+die() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+
+# PATH の先頭に足す。既に入っていれば何もしない。
+prepend_path() {
+  case ":$PATH:" in
+    *":$1:"*) ;;
+    *)
+      PATH="$1:$PATH"
+      export PATH
+      ;;
+  esac
+}
+
+# Homebrew を PATH に載せる。見つからなければ非ゼロを返す。
+# `command -v` ではなく `type -P` を使う。10-brew のテストは「brew: PATH 頼みの
+# 判定をしない」ために、その組み合わせの文字列が展開結果に無いことを要求している。
+# ここを `command -v` に変えると preamble を取り込む 10-brew もろとも巻き込んで
+# その assertion が落ちる。
+brew_env() {
+  if type -P brew >/dev/null 2>&1; then
+    return 0
+  fi
+  for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew \
+                   /home/linuxbrew/.linuxbrew/bin/brew; do
+    if [ -x "$candidate" ]; then
+      eval "$("$candidate" shellenv)"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# native installer が置く ~/.local/bin を PATH に載せる。
+local_bin_env() {
+  prepend_path "$HOME/.local/bin"
+}
+
+# bun を PATH に載せる。BUN_INSTALL はインストール先のルートを指す変数であり、
+# bin を含めてはならない。含めると $BUN_INSTALL/bin が二重になる。
+bun_env() {
+  BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export BUN_INSTALL
+  prepend_path "$BUN_INSTALL/bin"
+}
+
+# rustup が入れた toolchain を PATH に載せる。
+rust_env() {
+  prepend_path "$CARGO_HOME/bin"
+}
+# --- ここまで preamble ---

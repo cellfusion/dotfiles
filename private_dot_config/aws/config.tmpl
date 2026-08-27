@@ -1,0 +1,10 @@
+{{/* 親キーが無い環境でもエラーにしないため、.aws ではなく index で取る（missingkey=error のため）。 */ -}}
+{{- $aws := (index . "aws") | default dict -}}
+{{- $region := (index $aws "region") | default "ap-northeast-1" -}}
+{{- $account := (index $aws "opAccount") | default "" -}}
+{{- range $i, $p := ((index $aws "profiles") | default (list)) }}{{ if $i }}
+
+{{ end }}{{ if eq $p.name "default" }}[default]{{ else }}[profile {{ $p.name }}]{{ end }}
+region = {{ $region }}
+credential_process = op read --no-newline --account {{ $account }} "{{ $p.opPath }}"
+{{- end }}

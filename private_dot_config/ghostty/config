@@ -1,0 +1,34 @@
+font-family = "JetBrainsMono Nerd Font"
+#font-family = "Pennywort"
+font-size = 16.0
+font-feature = -dlig
+
+# Window Settings
+# yabai でタイルするためタイトルバーを隠してシンプルに。角丸・ボーダーは残る
+macos-titlebar-style = "hidden"
+# titlebar hidden 下では信号機ボタンも消えるため無効化
+# macos-window-buttons = "visible"
+# タイリング時にウィンドウの影を消す (SIP 無効化不要・アプリ自身が影を落とさない)
+macos-window-shadow = false
+window-theme = "system"
+# window-theme = "auto"
+window-padding-balance = true
+window-padding-x = 4
+window-padding-y = 0
+window-padding-color = "background"
+background-opacity = 0.95
+background-blur = true
+theme = "TokyoNight"
+
+
+# macOS: Option keys act as Alt (for tmux M-Space etc.)
+macos-option-as-alt = true
+
+# Keybindings
+
+# タブ管理は herdr に任せるので、Ghostty 自身のタブ切替は無効にしておく。
+# herdr のタブ移動は ctrl+h / ctrl+l (herdr/config.toml) なので ctrl+tab を
+# 通す必要はもう無いが、Ghostty のタブが誤って開かないよう解除は残す。
+keybind = ctrl+tab=unbind
+keybind = ctrl+shift+tab=unbind
+

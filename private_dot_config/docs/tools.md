@@ -1,0 +1,260 @@
+# ツール一覧
+
+使っているツールと、その導入経路をまとめる。マニフェストの実体は
+`~/.config/install/` にあり、chezmoi のソースは
+`private_dot_config/install/` にある。
+
+## 管理方法
+
+| 経路 | マニフェスト | 実行するスクリプト |
+|---|---|---|
+| Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
+| Homebrew | `~/.config/install/Brewfile` | `run_onchange_after_10-brew.sh` |
+| native installer（ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
+| mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
+| native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
+| npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
+| cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
+| ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
+| GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
+| AI 環境ディレクトリ | `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` | `run_onchange_after_90-agent-envs.sh` |
+
+マニフェストを持つスクリプトは、そのハッシュを埋め込んでいる。マニフェストを
+書き換えたときだけ `chezmoi apply` で走る。マニフェストを持たない 4 本
+（00 / 20 / 40 / 80）は、対象が未導入のときだけ入れる。
+
+実行するのはインストールだけで、既に入っているものの upgrade は行わない。
+`brew bundle` は既定で outdated な formula もまとめて upgrade するため、
+`--no-upgrade` を付けている。更新したいときは `brew upgrade` を手で回す。
+
+手で回すこともできる。
+
+    brew bundle --file ~/.config/install/Brewfile --no-upgrade
+
+## 新マシンでの手順
+
+素の macOS の `/usr/bin/git` は Xcode Command Line Tools の stub である。実行すると
+GUI のインストールダイアログが出て、入っていなければ `chezmoi init` の clone が
+そこで失敗する。先に本体を入れておく。
+
+    xcode-select --install
+
+    sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion
+
+これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
+apply の中で上の表の 10 本が番号順に実行される。
+
+各スクリプトは前提が無ければ自分で入れ、入れられなければ非ゼロで落ちる。chezmoi は
+非ゼロで終わったスクリプトを実行済みとして記録しないため、落ちたところから次の
+apply で再開する。飛ばされて黙って記録される状態にはならない。
+
+途中で落ちたら、表示された原因を直してから `chezmoi apply` をもう一度回す。
+
+Homebrew の導入と cask のインストールで、sudo のパスワードを複数回聞かれる。
+
+## apply 後に手でやること
+
+自動化できないものが 5 つある。
+
+1. **アクセシビリティ権限の付与**（yabai と skhd）。システム設定 → プライバシーと
+   セキュリティ → アクセシビリティ で許可する。付与するまでウィンドウ操作と
+   ホットキーは効かない
+2. **`~/.config/chezmoi/private-data.toml` の配置**。AI 環境の定義（`[[data.environments]]`）、
+   Cloudflare のアカウント ID、AWS プロファイル、1Password のパス、再汚染テストの禁止語を
+   持つ。無くても apply は通り、各テンプレートは既定値で描画される。AI 環境については
+   「claude と codex を持つ `default` 環境 1 つ」が既定値になる
+3. **1Password へのサインイン**。AWS の `credential_process` が `op read` を呼ぶ
+4. **AquaSKK を入力ソースに追加する**。cask はアプリを配置するだけで、使うには
+   システム設定 → キーボード → 入力ソース で AquaSKK を追加し、ログインし直す
+   必要がある
+5. **GitHub への鍵の登録**。`run_onchange_after_80-secure-enclave-keys.sh` が
+   Secure Enclave に認証鍵と署名鍵を作り、公開鍵を 2 つ表示して終わる。
+   https://github.com/settings/keys で片方を **Authentication Key**、
+   もう片方を **Signing Key** として登録する。この 2 つは別枠なので、
+   Key type の選択を間違えると push か Verified のどちらかが通らない。
+   秘密鍵は Secure Enclave から出ないため、この登録だけは自動化できない。
+   詳細は `~/.config/docs/git-signing.md` にある
+
+sketchybar のカレンダー表示を使う場合は、フルディスクアクセスの付与も要る。
+システム設定 → プライバシーとセキュリティ → フルディスクアクセス に
+`~/.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events`
+を足す。makefile が ad-hoc 署名を打っているので、付与は再ビルドをまたいで保持される。
+
+## core
+
+| ツール | 用途 |
+|---|---|
+| chezmoi | dotfiles 管理 |
+| git | バージョン管理 |
+| gh | GitHub CLI |
+| ghq | リポジトリのローカル管理 |
+| git-lfs | Git Large File Storage |
+| git-filter-repo | Git 履歴の書き換え |
+| lazygit | git の TUI クライアント |
+| worktrunk | git worktree マネージャ（`wt`）。herdr と併用する |
+| neovim | エディタ |
+| fzf | 曖昧検索 |
+| fd | 高速 find |
+| ripgrep | 高速 grep |
+| bat | シンタックスハイライト付き cat |
+| eza | 高機能 ls |
+| jq | JSON 処理 |
+| television | ファジーファインダー |
+| zoxide | 賢い cd |
+| herdr | ターミナルマルチプレクサ |
+| hyperfine | ベンチマーク計測 |
+| hunk | diff/hunk 操作 |
+| sevenzip | 7z アーカイブ |
+| pandoc | 文書変換 |
+| chafa | 画像を端末に表示 |
+| ffmpeg | 音声・動画処理 |
+| opencode | AI コーディングエージェント |
+
+## 言語・ビルド
+
+mise / bun / uv / rustup は native installer、go は mise が管理する。それぞれの節を見る。
+
+| ツール | 用途 |
+|---|---|
+| cmake | ビルドシステム生成 |
+| ninja | ビルドシステム |
+| automake | ビルド自動化 |
+| zig | Zig 言語・ビルドツール |
+| protobuf | Protocol Buffers |
+| sccache | ビルドキャッシュ |
+| watchman | ファイル監視 |
+| semgrep | 静的解析 |
+| mkcert | ローカル用 TLS 証明書発行 |
+| lazydocker | Docker の TUI クライアント |
+| awscli | AWS CLI |
+| cloudflared | Cloudflare Tunnel クライアント |
+| grpcurl | gRPC 用 curl |
+
+## macOS 専用
+
+| ツール | 用途 |
+|---|---|
+| coreutils | GNU coreutils |
+| switchaudio-osx | 音声出力デバイス切り替え |
+| nowplaying-cli | 再生中メディアの情報取得 |
+| yabai | タイリングウィンドウマネージャ |
+| skhd | ホットキーデーモン |
+| borders | ウィンドウ枠の強調表示 |
+| lua@5.4 | sketchybar の起動に必要（sketchybarrc の shebang が指している） |
+| sketchybar | カスタムメニューバー |
+| ghostty (cask) | ターミナルエミュレータ |
+| 1password-cli (cask) | 1Password CLI |
+| finicky (cask) | デフォルトブラウザ振り分け |
+| aquaskk (cask) | SKK 日本語入力 |
+| gcloud-cli (cask) | Google Cloud CLI（旧名 google-cloud-sdk。同一 cask のエイリアス） |
+| font-hack-nerd-font (cask) | Nerd Font |
+| font-sf-mono (cask) | SF Mono フォント |
+| font-sf-pro (cask) | SF Pro フォント |
+| sf-symbols (cask) | SF Symbols アプリ |
+| dotnet-sdk (cask) | .NET SDK |
+| swiftformat-for-xcode (cask) | Swift フォーマッタの Xcode 拡張 |
+
+## モバイル・ネイティブ開発
+
+| ツール | 用途 |
+|---|---|
+| cocoapods | iOS/macOS 依存管理 |
+| ios-deploy | iOS 実機へのインストール・デバッグ |
+| libimobiledevice | iOS デバイス通信ライブラリ |
+| xcodegen | Xcode プロジェクト生成 |
+| xcode-build-server | Xcode ビルドサーバー（LSP 連携） |
+| mint | Swift パッケージのバイナリ管理 |
+| apktool | APK の逆コンパイル・再構築 |
+| jadx | Android の逆コンパイラ |
+| kdoctor | Kotlin/Native 開発環境の診断 |
+| gradle | Android/JVM ビルドツール |
+
+## native installer
+
+自己更新を持つツール、または Homebrew 版が別ビルドになるツールは brew に寄せない。
+未導入のときだけ入れて、更新は各ツールに任せる。
+
+| ツール | 導入 | 理由 |
+|---|---|---|
+| mise | `curl https://mise.run \| sh` | Homebrew 版は別ビルドで、公式の最適化されたリリースバイナリではない |
+| bun | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` で自己更新する |
+| uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `uv self update` で自己更新する |
+| rustup | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh -s -- -y --no-modify-path` | brew 版は keg-only で toolchain を持たない |
+| claude | `curl -fsSL https://claude.ai/install.sh \| bash` | 自己更新を持つ |
+| codex | `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | 自己更新を持つ |
+| opencode | Homebrew（`anomalyco/tap/opencode`） | 自己更新を持たないので brew に置く |
+
+claude と codex を brew に寄せない理由はもう 1 つある。Homebrew の `claude-code`
+cask は stable チャネルを追う一方、アプリ内の更新通知は latest チャネルを見るため、
+cask に未着のバージョンを「更新あり」と表示する状態が起きる。
+
+rustup に `--no-modify-path` を渡すのは、PATH の管理を `~/.config/zsh/.zshenv` と
+`.chezmoitemplates/install/preamble` に一本化するためである。rustup 自身に shell の
+設定ファイルを書き換えさせない。
+
+## mise 管理
+
+node / python / java / pnpm / deno / go は mise で管理し、Brewfile には載せない。
+
+| ツール | バージョン | 用途 |
+|---|---|---|
+| python | 3.13 | Python ランタイム |
+| node | 22.19 | Node.js ランタイム |
+| pnpm | 10.16.1 | Node.js パッケージマネージャ |
+| java | 25 | JVM ランタイム |
+| deno | 2.5 | Deno ランタイム |
+| go | 1.26 | Go ランタイム |
+
+## npm グローバル
+
+| ツール | 用途 |
+|---|---|
+| wrangler | Cloudflare Workers の CLI |
+| firebase-tools | Firebase CLI |
+| mcp-hub | MCP サーバーのハブ |
+
+## cargo 管理
+
+現在は 1 つも無い。マニフェスト `~/.config/install/cargo-globals.txt` は
+コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。
+
+## 手動インストール
+
+マニフェストに載せていないが使っているもの。
+
+現在は無い。AquaSKK は cask（`aquaskk`）へ移した。辞書は `~/.config/skk` にあり、
+chezmoi の管理外である。
+
+## 削除候補
+
+過去の作業で入ったまま使っていないもの。**削除は自動化しない。**
+消すかどうかは手で判断する。
+
+Homebrew と cargo 経由の候補は 2026-08-26 に削除を実行した。ここに残っているのは
+npm グローバルと `~/.local/bin` に手で置いたものだけである。
+
+### AI CLI
+coderabbit (~/.local/bin), openclaw (npm),
+@github/copilot (npm), @zed-industries/claude-code-acp (npm),
+@zed-industries/codex-acp (npm), generator-code (npm)
+
+### 重複
+corepack (npm, mise の pnpm 管理と重複)
+
+### brew と native installer の二重インストール
+
+`mise` / `bun` / `uv` / `rustup` は Homebrew と native installer の両方で入っており、
+brew 版は使われていない。Brewfile からは外したので新マシンでは入らないが、現マシンの
+brew 版は残っている。
+
+    brew uninstall mise bun uv rustup
+
+`~/.bun/bin/bin` も、`BUN_INSTALL` の設定ミスでできた二重構造である。`.zshrc` を
+直したので参照されなくなった。
+
+    rm -rf ~/.bun/bin/bin
+
+削除するときの例。
+
+    npm uninstall -g corepack
+    rm ~/.local/bin/coderabbit

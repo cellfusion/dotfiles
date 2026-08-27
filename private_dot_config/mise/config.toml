@@ -1,0 +1,7 @@
+[tools]
+python = "3.13"
+node = "22.19"
+pnpm = "10.16.1"
+java = "25"
+deno = "2.5"
+go = "1.26"

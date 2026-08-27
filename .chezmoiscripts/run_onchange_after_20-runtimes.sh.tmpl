@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# mise / bun / uv / rustup を native installer で入れる。
+#
+# どれも自己更新を持ち、Homebrew 版は別ビルドになる。brew の rustup に至っては
+# keg-only で toolchain を持たない。未導入のときだけ入れて、更新は各ツールに任せる。
+# 40-ai-clis と同じ方針である。
+#
+# brew には依存しないので、brew bundle の完了を待たずに走る。
+# マニフェストのハッシュは持たない。導入の有無だけを見る。
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+local_bin_env
+bun_env
+rust_env
+
+if command -v mise >/dev/null 2>&1; then
+  printf 'mise は導入済みなので飛ばす\n'
+else
+  printf 'mise を native installer で入れる\n'
+  curl -fsSL https://mise.run | sh || die 'mise の導入に失敗した'
+  command -v mise >/dev/null 2>&1 || die 'mise を導入したが PATH に見つからない'
+fi
+
+if command -v bun >/dev/null 2>&1; then
+  printf 'bun は導入済みなので飛ばす\n'
+else
+  printf 'bun を native installer で入れる\n'
+  curl -fsSL https://bun.sh/install | bash || die 'bun の導入に失敗した'
+  command -v bun >/dev/null 2>&1 || die 'bun を導入したが PATH に見つからない'
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  printf 'uv は導入済みなので飛ばす\n'
+else
+  printf 'uv を native installer で入れる\n'
+  # PATH の管理は .zshenv と preamble に一本化する。installer に shell の設定ファイルを
+  # 書き換えさせない。rustup の --no-modify-path と同じ意図である。
+  INSTALLER_NO_MODIFY_PATH=1 curl -LsSf https://astral.sh/uv/install.sh | sh \
+    || die 'uv の導入に失敗した'
+  command -v uv >/dev/null 2>&1 || die 'uv を導入したが PATH に見つからない'
+fi
+
+if command -v rustup >/dev/null 2>&1; then
+  printf 'rustup は導入済みなので飛ばす\n'
+else
+  printf 'rustup を native installer で入れる\n'
+  # --no-modify-path: PATH の管理は .zshenv と preamble に一本化する。
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --no-modify-path || die 'rustup の導入に失敗した'
+  command -v rustup >/dev/null 2>&1 || die 'rustup を導入したが PATH に見つからない'
+fi
+
+# rustup を入れただけでは toolchain が無く、cargo は存在しない。
+rust_env
+if command -v cargo >/dev/null 2>&1; then
+  printf 'rust の toolchain は導入済みなので飛ばす\n'
+else
+  printf 'rust の toolchain を入れる\n'
+  rustup default stable || die 'rustup default stable に失敗した'
+fi

@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# emulator-dock: Android Emulator のウィンドウを、タイルされたウィンドウと
+# 重ならない場所に置く。yabai の signal から呼ばれる。
+#
+# Android Emulator (qemu-system-*) のウィンドウは自分でアスペクト比と最大サイズを
+# 強制し直す。yabai がタイル枠へリサイズしても 0.5 秒ほどで自分のサイズへ戻すため、
+# リサイズの往復が起きてウィンドウが震える。yabai にアスペクト比を尊重する機能は
+# 無いので、yabairc では manage=off で管理対象から外している。
+# 管理外のウィンドウはタイルの上に重なる。そこで emulator がいるスペースの右端に
+# ウィンドウ幅ぶんの空き地を padding で作り、そこへ寄せる。emulator が消えたら畳む。
+#
+# 空き地を作ってよいスペースは高々 1 つなので、右 padding が既定と違うスペースを
+# 「このスクリプトが空けたところ」とみなして畳む。yabairc はスペース個別の padding を
+# 設定していないので、この判定で取り違えは起きない。
+#
+# Usage: emulator-dock [--closed WINDOW_ID] [--dry-run]
+set -euo pipefail
+
+APP_PATTERN='^qemu-system-'
+
+# テストからスタブに差し替えるための逃げ道。既定は PATH 上の yabai。
+YABAI=${EMULATOR_DOCK_YABAI:-yabai}
+
+usage() {
+  cat <<'EOF'
+Usage: emulator-dock [--closed WINDOW_ID] [--dry-run]
+
+  --closed ID  そのウィンドウを既に閉じたものとして扱う
+  --dry-run    実際には動かさず、何をするかを表示する
+  -h, --help   この使い方を表示する
+
+Android Emulator のウィンドウがいるスペースの右端に、ウィンドウ幅ぶんの
+空き地を padding で作り、emulator をそこへ寄せる。emulator が無くなったら畳む。
+
+yabai の window_destroyed は yabai が内部で処理し終える前に発火するため、
+閉じたばかりのウィンドウが query にまだ残っていることがある。--closed には
+$YABAI_WINDOW_ID を渡して、そのウィンドウを判定から除く。
+
+環境変数:
+  EMULATOR_DOCK_YABAI   yabai コマンドのパスを差し替える (テスト用)
+EOF
+}
+
+die() {
+  printf 'emulator-dock: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+# --- 引数のパース -------------------------------------------------------
+# yabai への問い合わせより先にここを終える。yabai の無い環境でも
+# 引数の検証結果が変わらないようにするため。
+closed_id=
+dry_run=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --closed)
+      if [ $# -lt 2 ]; then
+        printf 'emulator-dock: --closed には window id が要る\n\n' >&2
+        usage >&2
+        exit 2
+      fi
+      closed_id=$2
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'emulator-dock: 不明なオプション: %s\n\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [ -n "$closed_id" ] && ! [[ $closed_id =~ ^[0-9]+$ ]]; then
+  printf 'emulator-dock: --closed には数値の window id を渡す: %s\n\n' "$closed_id" >&2
+  usage >&2
+  exit 2
+fi
+
+command -v jq >/dev/null 2>&1 || die "jq が要る (brew install jq)"
+
+# dry-run のときは実行せず would run: の行を出す。
+run_or_echo() {
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'would run: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+# --- emulator のウィンドウを拾う ---------------------------------------
+windows=$("$YABAI" -m query --windows 2>/dev/null) || die "ウィンドウ情報が取得できない"
+
+# 本体は AXStandardWindow、ツールバー (Extended controls) は AXDialog で出る。
+# ツールバーは本体に追従するので、幅を空き地に足すだけで位置は触らない。
+emu=$(printf '%s' "$windows" | jq -c \
+  --arg pattern "$APP_PATTERN" --arg closed "${closed_id:-0}" '
+  [ .[] | select(.app | test($pattern)) | select(.id != ($closed | tonumber)) ] as $all
+  | ($all | map(select(.subrole == "AXStandardWindow")) | first) as $main
+  | if $main == null then {main: null}
+    else
+      {
+        main: $main,
+        bar_width: ($all
+          | map(select(.subrole != "AXStandardWindow") | select(.space == $main.space))
+          | map(.frame.w) | max // 0)
+      }
+    end')
+
+main=$(printf '%s' "$emu" | jq -c '.main')
+
+# --- 既定の padding と隙間 ----------------------------------------------
+# スペース個別の値ではなく yabairc が設定したグローバル値を読む。畳むときはここへ戻す。
+gap=$("$YABAI" -m config window_gap)
+pad_top=$("$YABAI" -m config top_padding)
+pad_bottom=$("$YABAI" -m config bottom_padding)
+pad_left=$("$YABAI" -m config left_padding)
+pad_right=$("$YABAI" -m config right_padding)
+
+target_space=
+reserve=
+
+if [ "$main" = "null" ]; then
+  printf 'emulator: none\n'
+else
+  main_id=$(printf '%s' "$main" | jq -r '.id')
+  target_space=$(printf '%s' "$main" | jq -r '.space')
+  main_display=$(printf '%s' "$main" | jq -r '.display')
+  main_w=$(printf '%s' "$main" | jq -r '.frame.w | floor')
+  main_h=$(printf '%s' "$main" | jq -r '.frame.h | floor')
+  main_y=$(printf '%s' "$main" | jq -r '.frame.y | floor')
+  bar_w=$(printf '%s' "$emu" | jq -r '.bar_width | floor')
+
+  printf 'emulator: id=%s space=%s display=%s %sx%s\n' \
+    "$main_id" "$target_space" "$main_display" "$main_w" "$main_h"
+
+  # タイル側との間と、画面の端との間にそれぞれ隙間を 1 つずつ空ける。
+  reserve=$(( main_w + bar_w + gap * 2 ))
+  printf 'reserve: %s\n' "$reserve"
+fi
+
+# --- スペースごとに空き地を作る / 畳む ----------------------------------
+spaces=$(printf '%s' "$("$YABAI" -m query --spaces 2>/dev/null)" | jq -r '.[].index')
+[ -n "$spaces" ] || die "スペース情報が取得できない"
+
+for space in $spaces; do
+  if [ -n "$target_space" ] && [ "$space" = "$target_space" ]; then
+    want=$reserve
+  else
+    want=$pad_right
+  fi
+  current=$("$YABAI" -m config --space "$space" right_padding 2>/dev/null || printf '%s' "$want")
+  # 既にそうなっているスペースを設定し直すと、タイルの再配置が無駄に走る。
+  [ "$current" = "$want" ] && continue
+  run_or_echo "$YABAI" -m space "$space" --padding "abs:$pad_top:$pad_bottom:$pad_left:$want"
+done
+
+[ "$main" = "null" ] && exit 0
+
+# --- 空き地へ寄せる -----------------------------------------------------
+display=$("$YABAI" -m query --displays 2>/dev/null | jq -c \
+  --argjson index "$main_display" '.[] | select(.index == $index)') \
+  || die "ディスプレイ情報が取得できない"
+[ -n "$display" ] || die "emulator のいるディスプレイが見つからない: $main_display"
+
+dx=$(printf '%s' "$display" | jq -r '.frame.x | floor')
+dw=$(printf '%s' "$display" | jq -r '.frame.w | floor')
+
+# ツールバーは本体の右へ張り出すので、その幅ぶん手前に本体を置く。
+x=$(( dx + dw - gap - bar_w - main_w ))
+
+# 上端はタイルされたウィンドウに揃える。メニューバーの高さを決め打ちせずに済む。
+# タイルされたウィンドウが 1 つも無いスペースでは、今の高さのまま動かさない。
+y=$(printf '%s' "$windows" | jq -r --argjson space "$target_space" --argjson fallback "$main_y" '
+  [ .[] | select(.space == $space) | select(."is-floating" == false) | .frame.y ]
+  | if length == 0 then $fallback else min end | floor')
+
+run_or_echo "$YABAI" -m window "$main_id" --move "abs:$x:$y"

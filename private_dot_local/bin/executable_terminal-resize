@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# terminal-resize: フォーカス中のウィンドウを決まったサイズにしてディスプレイ中央へ置く。
+# スクリーンショットを毎回同じ大きさで撮るために使う。
+#
+# yabai が動いていれば yabai 経由でリサイズする。yabai の --resize abs: は
+# タイル管理下のウィンドウには効かないので、必要なら先に float 化する。
+# yabai が動いていなければ AppleScript (System Events) で同じことをする。
+#
+# サイズは論理ピクセル。Retina では screencapture の出力が 2 倍のピクセル数になる
+# (-s 800x600 で撮った画像は 1600x1200 px)。
+#
+# Usage: terminal-resize [-s WxH] [--dry-run]
+set -euo pipefail
+
+DEFAULT_SIZE=1024x768
+
+usage() {
+  cat <<'EOF'
+Usage: terminal-resize [-s WxH] [--dry-run]
+
+  -s WxH       幅と高さを論理ピクセルで指定する (既定: 1024x768)
+  --dry-run    実際には動かさず、何をするかを表示する
+  -h, --help   この使い方を表示する
+
+フォーカス中のウィンドウを指定サイズにし、ディスプレイ中央へ移動する。
+yabai が動いていればタイル管理下のウィンドウを float 化してからリサイズする。
+既に float のウィンドウは float のまま扱う。
+
+環境変数:
+  TERMINAL_RESIZE_BACKEND   yabai か applescript を指定してバックエンドを固定する。
+                            省略時は yabai の起動状況から自動で選ぶ。
+EOF
+}
+
+die() {
+  printf 'terminal-resize: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+# --- 引数のパース -------------------------------------------------------
+# ウィンドウの問い合わせより先にここを終える。GUI の無い環境でも
+# 引数の検証結果が変わらないようにするため。
+size=$DEFAULT_SIZE
+dry_run=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -s)
+      if [ $# -lt 2 ]; then
+        printf 'terminal-resize: -s には WxH が要る\n\n' >&2
+        usage >&2
+        exit 2
+      fi
+      size=$2
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'terminal-resize: 不明なオプション: %s\n\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if ! [[ $size =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]]; then
+  printf 'terminal-resize: サイズは WxH の形式で指定する (例: 800x600): %s\n\n' "$size" >&2
+  usage >&2
+  exit 2
+fi
+
+width=${size%x*}
+height=${size#*x}
+
+# --- バックエンドの選択 -------------------------------------------------
+backend=${TERMINAL_RESIZE_BACKEND:-}
+if [ -z "$backend" ]; then
+  if pgrep -x yabai >/dev/null 2>&1; then
+    backend=yabai
+  else
+    backend=applescript
+  fi
+fi
+case "$backend" in
+  yabai|applescript) ;;
+  *) die "TERMINAL_RESIZE_BACKEND は yabai か applescript にする: $backend" 2 ;;
+esac
+
+# --- 共通ヘルパ ---------------------------------------------------------
+# dry-run のときは実行せず would run: の行を出す。
+run_or_echo() {
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'would run: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+# 中央に置いたときの左上座標を出す。指定サイズがディスプレイより大きい場合は
+# 原点に寄せて、ウィンドウが画面外へ出ないようにする。
+centered() {
+  local origin=$1 span=$2 extent=$3
+  local pos
+  pos=$(( origin + (span - extent) / 2 ))
+  if [ "$pos" -lt "$origin" ]; then
+    pos=$origin
+  fi
+  printf '%s\n' "$pos"
+}
+
+# --- yabai バックエンド -------------------------------------------------
+resize_with_yabai() {
+  command -v jq >/dev/null 2>&1 || die "jq が要る (brew install jq)"
+
+  local win display
+  local id app floating resizable
+  local dx dy dw dh x y
+
+  win=$(yabai -m query --windows --window 2>/dev/null) \
+    || die "フォーカス中のウィンドウが取得できない"
+  [ -n "$win" ] || die "フォーカス中のウィンドウが取得できない"
+
+  id=$(printf '%s' "$win" | jq -r '.id')
+  app=$(printf '%s' "$win" | jq -r '.app')
+  floating=$(printf '%s' "$win" | jq -r '."is-floating"')
+  resizable=$(printf '%s' "$win" | jq -r '."can-resize"')
+
+  [ "$resizable" = "true" ] || die "このウィンドウはリサイズできない: $app"
+
+  display=$(yabai -m query --displays --display 2>/dev/null) \
+    || die "ディスプレイ情報が取得できない"
+  dx=$(printf '%s' "$display" | jq -r '.frame.x | floor')
+  dy=$(printf '%s' "$display" | jq -r '.frame.y | floor')
+  dw=$(printf '%s' "$display" | jq -r '.frame.w | floor')
+  dh=$(printf '%s' "$display" | jq -r '.frame.h | floor')
+
+  x=$(centered "$dx" "$dw" "$width")
+  y=$(centered "$dy" "$dh" "$height")
+
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'backend: yabai\n'
+    printf 'window: id=%s app=%s is-floating=%s can-resize=%s\n' \
+      "$id" "$app" "$floating" "$resizable"
+    printf 'size: %sx%s\n' "$width" "$height"
+  fi
+
+  # タイル管理下のウィンドウには --resize abs: が効かないので先に float 化する。
+  # 既に float なら触らない (ユーザーが自分で float にしたウィンドウを戻さない)。
+  if [ "$floating" != "true" ]; then
+    run_or_echo yabai -m window --toggle float
+  fi
+  run_or_echo yabai -m window --resize "abs:$width:$height"
+  run_or_echo yabai -m window --move "abs:$x:$y"
+}
+
+# --- AppleScript バックエンド -------------------------------------------
+resize_with_applescript() {
+  local app pos px py screen dx dy dw dh x y
+
+  app=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null) \
+    || die "フォーカス中のアプリが取得できない。アクセシビリティ権限を確認してほしい"
+  [ -n "$app" ] || die "フォーカス中のアプリが取得できない。アクセシビリティ権限を確認してほしい"
+
+  # 前面ウィンドウの現在位置。どのディスプレイに置くかをこの点で決める。
+  # NSScreen.mainScreen は CLI プロセスから呼ぶとフォーカス中のウィンドウがある
+  # ディスプレイではなくプライマリを返すことがあるので、画面の特定には使えない。
+  pos=$(osascript -e "tell application \"System Events\" to tell process \"$app\" to get position of front window" 2>/dev/null) \
+    || die "前面ウィンドウの位置が取得できない。アクセシビリティ権限を確認してほしい"
+  read -r px py <<<"${pos//,/}"
+  [[ $px =~ ^-?[0-9]+$ && $py =~ ^-?[0-9]+$ ]] || die "前面ウィンドウの位置が読めない: $pos"
+
+  # Finder への Apple Events 権限が無い環境でも動くよう、画面情報は NSScreen から取る。
+  # NSScreen はプライマリディスプレイの左下を原点とする左下原点系、System Events は
+  # プライマリディスプレイの左上を原点とする左上原点系なので、
+  # y = primaryHeight - (origin.y + height) で変換する。原点も込みで返すことで、
+  # yabai バックエンドと同じ「そのウィンドウがあるディスプレイの中央」になる。
+  screen=$(osascript -l JavaScript -e '
+function run(argv) {
+  ObjC.import("AppKit");
+  const px = parseInt(argv[0], 10), py = parseInt(argv[1], 10);
+  const screens = $.NSScreen.screens;
+  const primaryHeight = screens.objectAtIndex(0).frame.size.height;
+  let hit = null, primary = null;
+  for (let i = 0; i < screens.count; i++) {
+    const f = screens.objectAtIndex(i).frame;
+    const r = [Math.round(f.origin.x),
+               Math.round(primaryHeight - (f.origin.y + f.size.height)),
+               Math.round(f.size.width),
+               Math.round(f.size.height)];
+    if (i === 0) primary = r;
+    if (px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3]) { hit = r; break; }
+  }
+  return (hit || primary).join(" ");
+}' -- "$px" "$py" 2>/dev/null) \
+    || die "画面情報が取得できない"
+  [[ $screen =~ ^-?[0-9]+\ -?[0-9]+\ [0-9]+\ [0-9]+$ ]] \
+    || die "画面情報が読めない: $screen"
+  read -r dx dy dw dh <<<"$screen"
+
+  x=$(centered "$dx" "$dw" "$width")
+  y=$(centered "$dy" "$dh" "$height")
+
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'backend: applescript\n'
+    printf 'window: app=%s\n' "$app"
+    printf 'size: %sx%s\n' "$width" "$height"
+    printf 'would run: osascript set size of front window to {%s, %s}\n' "$width" "$height"
+    printf 'would run: osascript set position of front window to {%s, %s}\n' "$x" "$y"
+    return 0
+  fi
+
+  osascript -e "tell application \"System Events\" to tell process \"$app\" to set size of front window to {$width, $height}" >/dev/null 2>&1 \
+    || die "リサイズに失敗した。アクセシビリティ権限を確認してほしい"
+  osascript -e "tell application \"System Events\" to tell process \"$app\" to set position of front window to {$x, $y}" >/dev/null 2>&1 \
+    || die "移動に失敗した。アクセシビリティ権限を確認してほしい"
+}
+
+case "$backend" in
+  yabai) resize_with_yabai ;;
+  applescript) resize_with_applescript ;;
+esac

@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "required": ["winner", "scores", "reason"],
+  "additionalProperties": false,
+  "properties": {
+    "winner": { "type": "string" },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate", "score", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "candidate": { "type": "string" },
+          "score": { "type": "integer" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "reason": { "type": "string" }
+  }
+}

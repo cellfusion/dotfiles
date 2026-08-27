@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["summary", "findings", "sources", "cannotVerify"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": { "type": "string" },
+    "findings": { "type": "array", "items": { "type": "string" } },
+    "sources": { "type": "array", "items": { "type": "string" } },
+    "cannotVerify": { "type": ["array", "null"], "items": { "type": "string" } }
+  }
+}

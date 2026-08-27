@@ -1,0 +1,28 @@
+#!/bin/bash
+# .claude.json の mcpServers を管理する
+# 既存のランタイム状態はそのまま保持し、mcpServers だけマージする
+#
+# サーバー定義と削除対象は全プロファイル共通:
+#   .chezmoitemplates/claude-mcp-servers.json
+#   .chezmoitemplates/claude-mcp-removed.json
+#
+# claude-mcp-removed.json は「chezmoi が定義しない」ではなく「apply のたびに実
+# ファイルから消す」リストである。配布物（CLAUDE.md.tmpl / commands / agents /
+# skills）が呼ぶ MCP をここへ入れると、apply のたびに参照先が失われる。
+
+set -euo pipefail
+
+CURRENT="$(cat)"
+
+# ファイルが空または存在しない場合
+if [ -z "$CURRENT" ]; then
+  CURRENT='{}'
+fi
+
+SERVERS='{{ includeTemplate "claude-mcp-servers.json" . }}'
+REMOVED='{{ includeTemplate "claude-mcp-removed.json" . }}'
+
+echo "$CURRENT" | jq \
+  --argjson servers "$SERVERS" \
+  --argjson removed "$REMOVED" \
+  '.mcpServers += $servers | reduce $removed[] as $key (.; del(.mcpServers[$key]))'

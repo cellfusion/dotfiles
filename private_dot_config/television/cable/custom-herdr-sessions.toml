@@ -1,0 +1,21 @@
+[metadata]
+name = "herdr-sessions"
+description = "List herdr sessions and attach to the selected one"
+
+[source]
+# running を上に、状態と default を併記して一覧。1列目=name(=attach 対象), 2列目=表示。
+command = '''herdr session list --json | jq -r '.sessions | sort_by(.running|not) | .[] | [.name, (.name + "  [" + (if .running then "running" else "stopped" end) + "]" + (if .default then " (default)" else "" end))] | @tsv' '''
+display = "{split:\t:1}"
+output = "{split:\t:0}"
+no_sort = true
+
+[keybindings]
+enter = "actions:attach"
+
+# 選択したセッションに現在のペインで接続する（execで tv を抜けてから attach）。
+# herdr-open here は `exec $SHELL -lc <cmd>` なので、現ペインが attach 先へ切り替わる。
+# 注: herdr ペイン内から attach するには config の allow_nested = true が必要。
+[actions.attach]
+description = "Attach to the selected herdr session (Enter)"
+command = "herdr-open here 'herdr session attach {split:\t:0}'"
+mode = "execute"

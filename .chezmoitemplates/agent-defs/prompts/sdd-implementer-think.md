@@ -1,0 +1,1 @@
+{{ includeTemplate "agent-defs/prompts/sdd-implementer.md" . -}}

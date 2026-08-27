@@ -1,0 +1,362 @@
+export const meta = {
+  name: 'sdd-task',
+  description: 'SDD の 1 タスクを実装 → タスクレビュー → fix ループ（最大 5 ラウンド）まで決定的に回す',
+  whenToUse: 'subagent-driven-development でプランの 1 タスクを実行するとき。タスクごとに 1 回呼ぶ',
+  phases: [
+    { title: 'Implement', detail: 'sdd-implementer が実装・テスト・コミットし review package を作る' },
+    { title: 'Review', detail: 'sdd-task-reviewer が spec 準拠とコード品質を判定する' },
+    { title: 'Fix', detail: '未解決の Critical/Important を最大 5 ラウンドで潰す。4-5 は opus へ昇格' },
+  ],
+}
+
+// 呼び出し側（controller）が用意するもの:
+//   plan, taskNumber, taskName, briefPath, reportPath, base, globalConstraints
+//   任意: context, interfaces, resolutions, parkedPointers, effort, scriptsDir
+//   任意: workdir — 波で並行するとき、このタスク専用の worktree のパス。
+//         渡すときは briefPath / reportPath / plan も絶対パスにする
+//   mode: 'fix' のときは実装を飛ばし、input.findings を起点に fix ループだけ回す（head 必須）
+
+// args の正規化。
+// ドキュメントは args が verbatim で渡ると書いているが、Claude Code 2.1.220 の実測では
+// Workflow ツールにオブジェクトを渡しても script には JSON 文字列で届く。素の args を
+// 直接参照すると全プロパティが undefined になり、プロンプトが "undefined" だらけの
+// まま実装が走る。文字列・オブジェクトのどちらでも受けられるように正規化する。
+function parseInput(raw) {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'string') return raw
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    return { __parseError: e.message }
+  }
+}
+const input = parseInput(args)
+
+if (input.__parseError) {
+  return { status: 'BAD_ARGS', detail: `args を JSON として解釈できなかった: ${input.__parseError}` }
+}
+
+// 必須 args が欠けたままエージェントを起動させない。欠落を黙って undefined として
+// 流すと、実装エージェントが要件不明のまま走ってトークンだけ消える。
+const REQUIRED = ['plan', 'taskNumber', 'briefPath', 'reportPath', 'globalConstraints']
+const missing = REQUIRED.filter((k) => input[k] === undefined || input[k] === null || input[k] === '')
+if (input.mode !== 'fix' && !input.base) missing.push('base')
+if (missing.length) {
+  return {
+    status: 'BAD_ARGS',
+    detail: `必須の args が渡されていない: ${missing.join(', ')}。エージェントは起動していない`,
+    received: Object.keys(input),
+  }
+}
+
+const MAX_ROUNDS = 5
+const SCRIPTS = input.scriptsDir || '~/.agents/skills/subagent-driven-development/scripts'
+
+const IMPL_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-implementer.json" . }}
+const REVIEW_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-task-reviewer.json" . }}
+const RE_REVIEW_RESULT = {{ includeTemplate "agent-defs/schemas/sdd-re-reviewer.json" . }}
+
+const isBlocking = (f) => f && (f.severity === 'critical' || f.severity === 'important')
+const shaMatch = (a, b) => {
+  if (!a || !b) return true // 片方が取れないときは判定しない
+  return a.startsWith(b) || b.startsWith(a)
+}
+const listFindings = (fs) =>
+  fs.map((f, i) => `${i + 1}. [${f.severity}] ${f.location} — ${f.summary}${f.fix ? ` / 直し方: ${f.fix}` : ''}`).join('\n')
+
+// workdir が渡されているときは、このタスクが他のタスクと並行して走っている。
+// すべてのコマンドをその worktree で実行させる。
+const inDir = (cmd) => (input.workdir ? `cd ${input.workdir} && ${cmd}` : cmd)
+
+const WORKDIR_NOTE = input.workdir
+  ? `
+## 作業ディレクトリ
+
+${input.workdir}
+
+このタスクは他のタスクと**並行して**走っている。上のディレクトリはこのタスク専用の
+git worktree である。**すべてのコマンドをこのディレクトリで実行する**（\`cd\` してから
+実行するか、git は \`git -C ${input.workdir} ...\` を使う）。このディレクトリの外にある
+ファイルを書き換えてはならない。他のタスクが同時に触っている。
+`
+  : ''
+
+const NO_QUESTIONS = `
+このタスクは自動化されたワークフローの中で実行されており、途中で人に質問できない。
+brief と上記の文脈で判断できない点があるときは、推測で進めずに status を
+NEEDS_CONTEXT（情報が足りない）または BLOCKED（完了できない）にし、
+何が足りないか・何を試したかを detail に具体的に書いて返す。`
+
+function implPrompt() {
+  return `Task ${input.taskNumber}: ${input.taskName} を実装する。
+${WORKDIR_NOTE}
+## 位置づけ
+${input.context || '（controller から補足なし）'}
+
+## 要件
+まず task brief を読む: ${input.briefPath}
+これがあなたの要件であり、使う値（数値・文字列・シグネチャ・テストケース）は
+brief に書かれた通りにする。プランファイル全体は読まない。
+
+## 先行タスクからのインターフェース・決定事項
+${input.interfaces || 'なし'}
+
+## brief の曖昧点についての controller の解決
+${input.resolutions || 'なし'}
+
+## この領域に park されている指摘
+${input.parkedPointers || 'なし'}
+
+## Global Constraints
+${input.globalConstraints}
+
+## 報告ファイル
+詳細な報告は ${input.reportPath} に書く。
+
+## コミットの後に必ず行うこと
+1. \`${inDir('git rev-parse HEAD')}\` の結果を head として返す
+2. 次を実行し、出力されたパスを reviewPackagePath として返す
+   ${inDir(`${SCRIPTS}/review-package ${input.plan} ${input.base} HEAD`)}
+${NO_QUESTIONS}
+返す構造化出力には required の全項目を含める。Workflow 経路では baseHead、changedFiles、
+proposedCommitMessage は null、commits、reviewPackagePath、head は実際の値にする。
+nullable の項目で値が無い場合は null を返す。round（このタスクの fix ラウンド数。
+初回は 0）と head（git rev-parse HEAD）を必ず含める。`
+}
+
+function fixPrompt(findings, round, fixBase) {
+  const escalation =
+    round >= 4
+      ? `\n過去 ${round - 1} 回、別の implementer がこのタスクを試みた。今はあなたが担当する。
+何を試したかは報告ファイルの末尾にある fix レポートを読む。\n`
+      : ''
+  return `Task ${input.taskNumber}: ${input.taskName} のレビュー指摘を修正する（fix round ${round}/${MAX_ROUNDS}）。
+${escalation}${WORKDIR_NOTE}
+## 要件
+task brief: ${input.briefPath}
+これまでの経緯（fix レポートは末尾に追記されている）: ${input.reportPath}
+
+## Global Constraints
+${input.globalConstraints}
+
+## 未解決の指摘
+${listFindings(findings)}
+
+## やること
+1. 指摘を直す
+2. 変更したコードを覆うテストを再実行する（全体スイートではなく該当するテスト）
+3. ${input.reportPath} に fix レポートを追記する。
+   「何を変えたか」「実行した covering test」「実行コマンド」「出力」の 4 点を必ず含める
+4. コミットする
+5. \`${inDir('git rev-parse HEAD')}\` の結果を head として返す
+6. 次を実行し、出力されたパスを reviewPackagePath として返す
+   ${inDir(`${SCRIPTS}/review-package ${input.plan} ${fixBase} HEAD`)}
+${NO_QUESTIONS}
+返す構造化出力には required の全項目を含める。Workflow 経路では baseHead、changedFiles、
+proposedCommitMessage は null、commits、reviewPackagePath、head は実際の値にする。
+nullable の項目で値が無い場合は null を返す。round（このタスクの fix ラウンド数。
+今回は ${round}）と head（git rev-parse HEAD）を必ず含める。`
+}
+
+function reviewPrompt(diffPath) {
+  return `Task ${input.taskNumber}: ${input.taskName} の実装をレビューする。
+
+task brief: ${input.briefPath}
+implementer の報告: ${input.reportPath}
+review package: ${diffPath}
+
+## このタスクを縛る Global Constraints
+${input.globalConstraints}
+
+review package のヘッダ行 "# Review package: <base>..<head>" に書かれている
+base と head を packageBase / packageHead として返す。
+specVerdict、qualityVerdict、findings、cannotVerify、strengths も返す。nullable の項目で値が無い場合は null を返す。
+返す構造化出力には required の全項目、round（このタスクの fix ラウンド数。初回は 0）と
+head（git rev-parse HEAD）を必ず含める。`
+}
+
+function reReviewPrompt(findings, diffPath, fixBase, round) {
+  return `Task ${input.taskNumber}: ${input.taskName} の fix round ${round} を再レビューする。
+
+task brief: ${input.briefPath}
+implementer の報告（fix レポートは末尾に追記されている）: ${input.reportPath}
+fix diff の review package: ${diffPath}
+fix base: ${fixBase}
+
+## 検証対象の指摘
+${listFindings(findings)}
+
+review package のヘッダ行に書かれている base と head を
+packageBase / packageHead として返す。
+verdicts、newBreakage、outOfScope も返す。verdicts の各 item の evidence、newBreakage の各
+item の fix と planMandated を含め、nullable の項目で値が無い場合は null を返す。
+返す構造化出力には required の全項目、round（このタスクの fix ラウンド数。今回は ${round}）と
+head（git rev-parse HEAD）を必ず含める。`
+}
+
+// ---------------------------------------------------------------- 実行
+
+const minor = []
+const outOfScope = []
+const commits = []
+let head = input.head || null
+let diffPath = input.diffPath || null
+// fix モードでは controller が渡した指摘をそのまま起点にする。severity 未指定は
+// important とみなす（minor だけを除外）。ここで空振りすると 0 ラウンドで
+// COMPLETE を返してしまうため、下で明示的に弾く。
+let open =
+  input.mode === 'fix'
+    ? (input.findings || [])
+        .filter((f) => f && f.severity !== 'minor')
+        .map((f) => ({
+          severity: f.severity || 'important',
+          summary: f.summary || '(要約なし)',
+          location: f.location || '(未特定)',
+          fix: f.fix,
+        }))
+    : []
+let rounds = 0
+let strengths = ''
+let cannotVerify = []
+
+const result = (status, extra) =>
+  Object.assign(
+    {
+      status,
+      task: input.taskNumber,
+      rounds,
+      base: input.base || input.head,
+      head,
+      commits,
+      minor,
+      outOfScope,
+      cannotVerify,
+      strengths,
+    },
+    extra || {}
+  )
+
+if (input.mode === 'fix') {
+  if (!head) return result('BAD_ARGS', { detail: "mode: 'fix' には head が必要" })
+  if (!open.length) return result('BAD_ARGS', { detail: "mode: 'fix' に blocking な findings が渡されていない" })
+  log(`Task ${input.taskNumber}: fix モードで開始。起点 ${head}、指摘 ${open.length} 件`)
+}
+
+if (input.mode !== 'fix') {
+  phase('Implement')
+  const impl = await agent(implPrompt(), {
+    agentType: 'sdd-implementer',
+    label: `impl:task-${input.taskNumber}`,
+    phase: 'Implement',
+    effort: input.effort || 'high',
+    schema: IMPL_RESULT,
+  })
+
+  if (!impl) return result('AGENT_FAILED', { stage: 'implement' })
+  commits.push(...(impl.commits || []))
+  head = impl.head || head
+  diffPath = impl.reviewPackagePath || null
+
+  if (impl.status === 'BLOCKED' || impl.status === 'NEEDS_CONTEXT') {
+    return result(impl.status, { detail: impl.detail || '', reportPath: input.reportPath })
+  }
+  if (impl.concerns) log(`Task ${input.taskNumber}: implementer concerns — ${impl.concerns}`)
+  if (!diffPath) return result('AGENT_FAILED', { stage: 'review-package', detail: 'implementer が reviewPackagePath を返さなかった' })
+
+  phase('Review')
+  const review = await agent(reviewPrompt(diffPath), {
+    agentType: 'sdd-task-reviewer',
+    label: `review:task-${input.taskNumber}`,
+    phase: 'Review',
+    schema: REVIEW_RESULT,
+  })
+  if (!review) return result('AGENT_FAILED', { stage: 'review' })
+
+  if (!shaMatch(review.packageBase, input.base) || !shaMatch(review.packageHead, head)) {
+    log(
+      `Task ${input.taskNumber}: 警告 — reviewer が読んだ package の範囲 ` +
+        `(${review.packageBase}..${review.packageHead}) が期待値 (${input.base}..${head}) と一致しない`
+    )
+  }
+
+  strengths = review.strengths || ''
+  cannotVerify = review.cannotVerify || []
+  const findings = review.findings || []
+  minor.push(...findings.filter((f) => f.severity === 'minor'))
+  open = findings.filter(isBlocking)
+
+  const planMandated = open.filter((f) => f.planMandated)
+  if (planMandated.length) {
+    // プランの指示と衝突する指摘は人間の判断事項。ループに入れずに返す。
+    return result('NEEDS_HUMAN', {
+      reason: 'plan-mandated',
+      findings: planMandated,
+      otherOpen: open.filter((f) => !f.planMandated),
+    })
+  }
+}
+
+while (open.length && rounds < MAX_ROUNDS) {
+  rounds += 1
+  phase('Fix')
+  const fixBase = head
+  const opts = {
+    agentType: 'sdd-implementer',
+    label: `fix:task-${input.taskNumber} r${rounds}`,
+    phase: 'Fix',
+    effort: 'high',
+    schema: IMPL_RESULT,
+  }
+  if (rounds >= 4) opts.model = 'opus' // 3 回の再試行を生き延びたら能力を 1 段上げる
+
+  const fix = await agent(fixPrompt(open, rounds, fixBase), opts)
+  if (!fix) return result('AGENT_FAILED', { stage: `fix round ${rounds}`, open })
+  commits.push(...(fix.commits || []))
+  head = fix.head || head
+
+  if (fix.status === 'BLOCKED' || fix.status === 'NEEDS_CONTEXT') {
+    return result(fix.status, { detail: fix.detail || '', open, reportPath: input.reportPath })
+  }
+  if (!fix.reviewPackagePath) {
+    return result('AGENT_FAILED', { stage: `fix round ${rounds} review-package`, open })
+  }
+
+  const re = await agent(reReviewPrompt(open, fix.reviewPackagePath, fixBase, rounds), {
+    agentType: 'sdd-re-reviewer',
+    label: `re-review:task-${input.taskNumber} r${rounds}`,
+    phase: 'Fix',
+    schema: RE_REVIEW_RESULT,
+  })
+  if (!re) return result('AGENT_FAILED', { stage: `re-review round ${rounds}`, open })
+
+  if (!shaMatch(re.packageBase, fixBase) || !shaMatch(re.packageHead, head)) {
+    log(
+      `Task ${input.taskNumber}: 警告 — re-reviewer が読んだ package の範囲 ` +
+        `(${re.packageBase}..${re.packageHead}) が期待値 (${fixBase}..${head}) と一致しない`
+    )
+  }
+
+  const verdicts = re.verdicts || []
+  const notAddressed = verdicts.filter((v) => !v.addressed)
+  const breakage = (re.newBreakage || []).filter(isBlocking)
+  minor.push(...(re.newBreakage || []).filter((f) => f.severity === 'minor'))
+  outOfScope.push(...(re.outOfScope || []))
+
+  open = notAddressed
+    .map((v) => ({ severity: 'important', summary: v.finding, location: v.evidence || '(未特定)' }))
+    .concat(breakage)
+
+  log(
+    `Task ${input.taskNumber}: fix round ${rounds}/${MAX_ROUNDS} — ` +
+      `${verdicts.length - notAddressed.length} addressed, ${open.length} open` +
+      (breakage.length ? `（うち fix diff の新規破壊 ${breakage.length} 件）` : '')
+  )
+}
+
+if (open.length) {
+  // ブレーカー。裁定は controller の仕事なので、指摘をそのまま返す。
+  log(`Task ${input.taskNumber}: ${MAX_ROUNDS} ラウンド上限に到達。未解決 ${open.length} 件を controller へ返す`)
+  return result('CAP_REACHED', { open })
+}
+
+return result('COMPLETE')

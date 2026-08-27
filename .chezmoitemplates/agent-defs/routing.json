@@ -1,0 +1,12 @@
+{
+  "sdd-implementer":       { "engine": "codex"  },
+  "sdd-implementer-think": { "engine": "claude" },
+  "sdd-task-reviewer":     { "engine": "claude" },
+  "sdd-re-reviewer":       { "engine": "claude" },
+  "sdd-final-reviewer":    { "engine": "claude" },
+  "researcher":            { "engine": "codex"  },
+  "synthesizer":           { "engine": "claude" },
+  "judge":                 { "engine": "claude" },
+  "reviewer":              { "engine": "claude" },
+  "implementer":           { "engine": "codex"  }
+}

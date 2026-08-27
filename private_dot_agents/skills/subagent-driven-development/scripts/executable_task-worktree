@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+'use strict'
+// SDD の task worktree を worktrunk 越しに管理する薄い層。
+//
+// herdr worktree create を使わない理由:
+//   - herdr の workspace とタブが増え、子エージェントが herdr に状態管理される
+//   - .env のコピーと依存インストール（wt hook pre-start）が走らない
+//
+// wt remove にブランチ削除をさせない理由:
+//   wt の「マージ済みなら消す」判定は default branch が基準である。task branch を
+//   feature branch にマージしただけでは消えない。ブランチ削除は git branch -d に
+//   任せる（feature HEAD が task HEAD を含むことの確認を兼ねる）。
+const { execFileSync } = require('node:child_process')
+const os = require('node:os')
+const path = require('node:path')
+
+/** wt / git のコマンドが失敗した、または応答を読めなかった。 */
+class WorktreeError extends Error {}
+
+// agent 専用の worktrunk config。人の worktree とは置き場所が違い、
+// herdr 登録フックを持たない。
+const AGENT_CONFIG = process.env.SDD_WT_CONFIG ||
+  path.join(os.homedir(), '.config/worktrunk/agent.toml')
+
+function wt(args, cwd) {
+  let out
+  try {
+    out = execFileSync('wt', args, { encoding: 'utf8', cwd })
+  } catch (e) {
+    throw new WorktreeError(`wt ${args.join(' ')} が失敗した: ${(e.stderr || e.message).trim()}`)
+  }
+  return out
+}
+
+function parseSwitchOutput(out) {
+  const line = out.split('\n').find((l) => l.trim().startsWith('{'))
+  if (!line) throw new WorktreeError(`wt switch の JSON 出力を読めない: ${out.trim()}`)
+  let parsed
+  try {
+    parsed = JSON.parse(line)
+  } catch (e) {
+    throw new WorktreeError(`wt switch の出力を JSON として読めない: ${e.message}`)
+  }
+  if (!parsed.path) throw new WorktreeError(`wt switch が path を返さなかった: ${line}`)
+  return { branch: parsed.branch, path: parsed.path }
+}
+
+function git(args) {
+  return execFileSync('git', args, { encoding: 'utf8' })
+}
+
+/**
+ * task worktree を作る。.env のコピーと依存インストールは pre-start フックが行う
+ * （同期なので、返った時点で作業ツリーは使える状態になっている）。
+ */
+function createTaskWorktree({ repoRoot, branch, base }) {
+  const out = wt(['switch', '--create', branch, '--base', base,
+    '--no-cd', '--format', 'json', '-y', '--config', AGENT_CONFIG], repoRoot)
+  return parseSwitchOutput(out)
+}
+
+/** 既存の task worktree を開く。ブランチも worktree も作り直さない。 */
+function openTaskWorktree({ repoRoot, branch }) {
+  const out = wt(['switch', branch, '--no-cd', '--format', 'json', '-y', '--config', AGENT_CONFIG], repoRoot)
+  return parseSwitchOutput(out)
+}
+
+/** task worktree を消す。ブランチは残す（削除は deleteTaskBranch が行う）。 */
+function removeTaskWorktree({ repoRoot, branch }) {
+  wt(['remove', branch, '--no-delete-branch', '--foreground', '--format', 'json', '-y',
+    '--config', AGENT_CONFIG], repoRoot)
+}
+
+/**
+ * task branch を今いるブランチに取り込む。衝突しても自動で解消しない。
+ * 衝突は「独立」の判断が外れた証拠なので、呼び出し側が人に返す。
+ */
+function mergeTaskBranch({ repoRoot, branch }) {
+  try {
+    git(['-C', repoRoot, 'merge', '--no-ff', '--no-edit', branch])
+    return { conflicted: false }
+  } catch (e) {
+    return { conflicted: true, detail: (e.stderr || e.stdout || e.message).toString().trim() }
+  }
+}
+
+/** マージ済みのブランチを消す。-D は使わない（未マージなら失敗させる）。 */
+function deleteTaskBranch({ repoRoot, branch }) {
+  try {
+    git(['-C', repoRoot, 'branch', '-d', branch])
+  } catch (e) {
+    throw new WorktreeError(`ブランチを消せない: ${(e.stderr || e.message).toString().trim()}`)
+  }
+}
+
+module.exports = {
+  WorktreeError, AGENT_CONFIG,
+  createTaskWorktree, openTaskWorktree, removeTaskWorktree, mergeTaskBranch, deleteTaskBranch,
+}

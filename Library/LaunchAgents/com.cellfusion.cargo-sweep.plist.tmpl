@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cellfusion.cargo-sweep</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{ .chezmoi.homeDir }}/.local/share/cargo/bin/cargo-sweep</string>
+        <string>sweep</string>
+        <string>-r</string>
+        <string>--time</string>
+        <string>14</string>
+        <string>{{ .chezmoi.homeDir }}/Workspaces</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:{{ .chezmoi.homeDir }}/.local/share/cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>CARGO_HOME</key>
+        <string>{{ .chezmoi.homeDir }}/.local/share/cargo</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/cargo-sweep.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/cargo-sweep.err.log</string>
+</dict>
+</plist>

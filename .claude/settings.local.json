@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": []
+  },
+  "skillOverrides": {
+    "linear": "off",
+    "refactor-clean": "off",
+    "rust-dev": "off",
+    "ship": "off",
+    "spec-first": "off",
+    "gemini": "off",
+    "codex": "off"
+  }
+}
