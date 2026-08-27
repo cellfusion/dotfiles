@@ -34,7 +34,7 @@ done
 assert_not_contains "$darwin" 'trusted:' "darwin: trusted 宣言に頼らない"
 
 # --- macOS 専用 ---
-for f in switchaudio-osx coreutils; do
+for f in coreutils; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: macOS 専用に $f がある"
   assert_not_contains "$linux" "brew \"$f\"" "linux: macOS 専用の $f が無い"
 done
@@ -61,14 +61,21 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/sketchybar/executable
 # --- cask は macOS だけ ---
 assert_contains "$darwin" 'cask "ghostty"' "darwin: ghostty の cask がある"
 assert_contains "$darwin" 'cask "1password-cli"' "darwin: 1password-cli の cask がある"
-# google-cloud-sdk は gcloud-cli の旧名であり、同一 cask のエイリアスである。旧名で
-# 宣言すると別物と誤認する。実際、削除候補として gcloud-cli を消したとき
-# google-cloud-sdk ごと消えて gcloud が失われた。
-assert_contains "$darwin" 'cask "gcloud-cli"' "darwin: gcloud-cli の cask がある"
-assert_not_contains "$darwin" 'cask "google-cloud-sdk"' \
-  "darwin: 旧名 google-cloud-sdk で宣言しない"
-assert_contains "$darwin" 'cask "aquaskk"' "darwin: aquaskk の cask がある"
 assert_not_contains "$linux" 'cask "' "linux: cask 行が 1 つも無い"
+
+# --- SF 系は sketchybar が要求するので残す ---
+# settings.lua と helpers/default_font.lua が SF Pro / SF Mono / SF Symbols を参照する。
+for c in sf-symbols font-sf-pro font-sf-mono font-hack-nerd-font; do
+  assert_contains "$darwin" "cask \"$c\"" "darwin: $c の cask がある"
+done
+
+# --- 2026-08-27 に外した cask / formula は載せない ---
+# 現マシンからは消していない。新マシンで入らなくなるだけである。
+for c in swiftformat-for-xcode dotnet-sdk gcloud-cli aquaskk; do
+  assert_not_contains "$darwin" "cask \"$c\"" "darwin: 外した cask $c を載せない"
+done
+assert_not_contains "$darwin" 'brew "switchaudio-osx"' \
+  "darwin: 外した switchaudio-osx を載せない"
 
 # --- モバイル・ネイティブは macOS だけ ---
 for f in cocoapods ios-deploy libimobiledevice xcodegen xcode-build-server \
