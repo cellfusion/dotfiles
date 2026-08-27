@@ -32,7 +32,7 @@ for s in review-package sdd-workspace task-brief task-waves \
 done
 
 # SKILL.md は 3 ツールすべてに配られる。
-for skill in brainstorming writing-plans using-git-worktrees; do
+for skill in brainstorming writing-plans using-git-worktrees braid; do
   assert_contains "$managed" ".config/claude/skills/$skill/SKILL.md" \
     "$skill: claude へ配られる"
   assert_contains "$managed" ".config/opencode/skills/$skill/SKILL.md" \

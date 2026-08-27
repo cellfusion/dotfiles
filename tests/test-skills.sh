@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
@@ -281,5 +281,85 @@ assert_not_contains "$sdd" "herdr worktree create" "SDD: worktree の作成手�
 assert_not_contains "$sdd" "herdr pane split" "SDD: pane の手順を controller に書かせない"
 assert_not_contains "$sdd" "anchor-pane" "SDD: 廃止した引数が残っていない"
 assert_contains "$sdd" "worktrunk" "SDD: worktree は worktrunk が作ると書く"
+
+# braid の呼び方は共有パーシャルに 1 本だけ置く。
+braid_inv="$(render_template "agent-skills/_braid-invocation.md" "claude")"
+assert_contains "$braid_inv" "## braid の呼び方" "_braid-invocation: 節の見出しがある"
+assert_contains "$braid_inv" "command -v braid" "_braid-invocation: braid が PATH にあるか確かめる"
+assert_contains "$braid_inv" "git rev-parse --is-inside-work-tree" \
+  "_braid-invocation: cwd が git リポジトリか確かめる"
+assert_contains "$braid_inv" "--dry-run --json" "_braid-invocation: 本実行の前に dry-run を通す"
+assert_contains "$braid_inv" "braid cancel" "_braid-invocation: 停止の手段を書く"
+assert_contains "$braid_inv" "braid status" "_braid-invocation: run の追い方を書く"
+assert_contains "$braid_inv" "リトライしない" "_braid-invocation: 失敗を再試行しない"
+assert_not_contains "$braid_inv" "target/release/braid" "_braid-invocation: 開発中のパスを書かない"
+
+# レシピごとの必須引数。表の drift を検出するため、レシピ名だけでなく引数名も assert する。
+required_args_for() {
+  case "$1" in
+    research) echo "topic" ;;
+    decide) echo "problem" ;;
+    debate) echo "proposal" ;;
+    fanout) echo "items task" ;;
+    review) echo "requirements review_file" ;;
+    implement) echo "requirements" ;;
+    waves) echo "waves spec_dir" ;;
+  esac
+}
+
+# braid スキルはレシピ 7 本を表に持ち、呼び方は共有パーシャルから取り込む。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/braid/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review implement waves; do
+    assert_contains "$out" "\`$recipe\`" "braid/$tool: レシピ $recipe が表にある"
+    for arg in $(required_args_for "$recipe"); do
+      assert_contains "$out" "\`$arg\`" "braid/$tool: $recipe の必須引数 $arg が表にある"
+    done
+  done
+  assert_contains "$out" "## braid の呼び方" "braid/$tool: 呼び方の節が展開される"
+done
+
+braid_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/braid/SKILL.md")"
+assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
+  "braid: 呼び方を共有パーシャルから取り込む"
+assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
+
+# SDD 外の単発レビューは review package をリポジトリ内に作り、braid の review レシピを呼ぶ。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
+  assert_contains "$out" "_cellfusion/reviews/" "rcr/$tool: package をリポジトリ内に作る"
+  assert_contains "$out" "braid run review" "rcr/$tool: review レシピを呼ぶ"
+  assert_contains "$out" "--arg requirements=" "rcr/$tool: requirements 引数を渡す"
+  assert_contains "$out" "--arg review_file=" "rcr/$tool: review_file 引数を渡す"
+  assert_contains "$out" "## braid の呼び方" "rcr/$tool: 呼び方の節が展開される"
+  assert_not_contains "$out" "mktemp -t review" "rcr/$tool: /tmp に package を作らない"
+  assert_not_contains "$out" 'requirements=<' "rcr/$tool: bash ブロックの中で < をリダイレクトにしない"
+  assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
+  assert_contains "$out" "cellfusion-workdir" "rcr/$tool: reviews を cellfusion-workdir 経由で作る"
+done
+
+rcr_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")"
+assert_contains "$rcr_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
+  "rcr: 呼び方を共有パーシャルから取り込む"
+
+# 3 つの配布先すべてに .tmpl がある。
+for d in private_dot_agents/skills \
+         private_dot_config/claude/skills \
+         private_dot_config/opencode/skills; do
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/$d/braid/SKILL.md.tmpl" ] && echo yes || echo no)" \
+            "yes" "braid: 配布先に .tmpl がある: $d"
+done
+
+# スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
+# プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
+# 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
+for skill in braid requesting-code-review; do
+  for tool in claude codex opencode; do
+    out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
+    blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
+    ok="$(printf '%s\n' "$blocks" | bash -n 2>/dev/null && echo yes || echo no)"
+    assert_eq "$ok" "yes" "$skill/$tool: bash ブロックが構文として妥当"
+  done
+done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

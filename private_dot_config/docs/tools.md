@@ -217,6 +217,11 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` にあり、chezmoi の
 管理外である。
 
+braid。複数の AI エージェントを組み合わせたフローを実行する Rust 製 CLI で、`braid` /
+`requesting-code-review` スキルが PATH にあることを前提にする。リポジトリは
+`~/Workspaces/github.com/cellfusion/braid` にあり、`cargo build --release` でビルドし、
+`target/release/braid` を `~/.local/bin` へ置く。
+
 ## 削除候補
 
 過去の作業で入ったまま使っていないもの。**削除は自動化しない。**
