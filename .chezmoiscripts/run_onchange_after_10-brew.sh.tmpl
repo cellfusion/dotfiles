@@ -10,6 +10,17 @@ brewfile="$HOME/.config/install/Brewfile"
 brew_env || die 'brew が見つからない。00-homebrew が失敗している'
 [ -f "$brewfile" ] || die "Brewfile が見つからない: $brewfile"
 
+# Homebrew 6.0 は untrusted tap の formula をロードごと拒む
+# （Refusing to load formula ... from untrusted tap ...）。Brewfile の `trusted:` は
+# ロードの後に効くので新しいマシンでは間に合わない。bundle の前にここで打つ。
+# 対象は Brewfile の宣言から取り、formula 名をここに二重に持たない。
+trusted="$(sed -n 's/^brew "\([^"]*\)", trusted: true.*/\1/p' "$brewfile")"
+if [ -n "$trusted" ]; then
+  printf 'third-party formula を trust する:\n%s\n' "$trusted"
+  # shellcheck disable=SC2086
+  brew trust --formula $trusted || die 'third-party formula の trust に失敗した'
+fi
+
 # --no-upgrade を付けて install だけを行う。付けないと brew bundle は outdated な
 # formula をまとめて upgrade するため、Brewfile を 1 行足しただけの apply が
 # ffmpeg / protobuf / gradle などの再ビルドを巻き込む。更新は手で `brew upgrade` する。
