@@ -75,18 +75,21 @@ assert_not_contains "$brew_s" "brew bundle cleanup" "brew: cleanup を実行し�
 # 1 行足しただけの apply が無関係な formula の再ビルドを巻き込まないよう抑止する。
 assert_contains "$brew_s" '--no-upgrade' "brew: 既定の upgrade を抑止する"
 
-# Brewfile の `trusted:` は formula のロード後に効くので、trust store が空の新しい
-# マシンでは間に合わない。bundle より前に brew trust を打つ必要がある。
-assert_contains "$brew_s" 'brew trust --formula' \
-  "brew: third-party formula を明示的に trust する"
-trust_line="$(printf '%s\n' "$brew_s" | grep -n 'brew trust --formula' | head -1 | cut -d: -f1)"
+# third-party は Brewfile から分け、fully-qualified 名で入れる。tap と trust が自動で
+# 付くので trust store の書き込み順に依存しない。bundle の後に置くことで、ここが
+# 落ちても official の導入は完了する。
+assert_contains "$brew_s" '$HOME/.config/install/third-party.txt' \
+  "brew: third-party のマニフェストを参照する"
+assert_contains "$brew_s" 'brew install "$f"' "brew: fully-qualified 名で入れる"
+assert_not_contains "$brew_s" 'brew trust' "brew: trust の明示実行に頼らない"
+install_line="$(printf '%s\n' "$brew_s" | grep -n 'brew install "\$f"' | head -1 | cut -d: -f1)"
 bundle_line="$(printf '%s\n' "$brew_s" | grep -n 'brew bundle --file' | head -1 | cut -d: -f1)"
-if [ -n "$trust_line" ] && [ -n "$bundle_line" ] && [ "$trust_line" -lt "$bundle_line" ]; then
-  order=before
-else
+if [ -n "$install_line" ] && [ -n "$bundle_line" ] && [ "$bundle_line" -lt "$install_line" ]; then
   order=after
+else
+  order=before
 fi
-assert_eq "$order" "before" "brew: trust を brew bundle より前に実行する"
+assert_eq "$order" "after" "brew: third-party を brew bundle の後に入れる"
 
 # --- runtimes ---
 assert_contains "$runtimes_s" 'https://mise.run' "runtimes: mise の native installer を使う"
