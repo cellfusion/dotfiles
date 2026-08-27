@@ -87,6 +87,15 @@ assert_contains "$runtimes_s" '--no-modify-path' "runtimes: rustup に PATH を�
 assert_contains "$runtimes_s" 'rustup default stable' "runtimes: toolchain を入れる"
 assert_not_contains "$runtimes_s" 'brew install' "runtimes: brew を使わない"
 assert_not_contains "$runtimes_s" 'brew_env ||' "runtimes: brew に依存しない"
+# chezmoi は Brewfile から外した。apply の連鎖に chezmoi を入れる経路はここだけである。
+# ここが無いと、bootstrap が ./bin に置いた 1 本しか残らず、~/.local/bin にも
+# /opt/homebrew/bin にも chezmoi が無い新マシンができる。
+assert_contains "$runtimes_s" 'get.chezmoi.io' "runtimes: chezmoi の native installer を使う"
+# install script の既定の BINDIR は ./bin（カレントディレクトリ配下）である。-b を
+# 渡さないと、.zshenv が PATH に載せる ~/.local/bin には入らない。
+assert_contains "$runtimes_s" '-b "$HOME/.local/bin"' \
+  "runtimes: chezmoi を ~/.local/bin に入れる"
+assert_contains "$runtimes_s" 'command -v chezmoi' "runtimes: chezmoi の有無を確認する"
 
 # --- mise ---
 assert_contains "$mise_s" 'mise install' "mise: mise install を実行する"
