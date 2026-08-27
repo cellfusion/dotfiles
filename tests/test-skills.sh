@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
@@ -293,5 +293,27 @@ assert_contains "$braid_inv" "braid cancel" "_braid-invocation: 停止の手段�
 assert_contains "$braid_inv" "braid status" "_braid-invocation: run の追い方を書く"
 assert_contains "$braid_inv" "リトライしない" "_braid-invocation: 失敗を再試行しない"
 assert_not_contains "$braid_inv" "target/release/braid" "_braid-invocation: 開発中のパスを書かない"
+
+# braid スキルはレシピ 7 本を表に持ち、呼び方は共有パーシャルから取り込む。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/braid/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review implement waves; do
+    assert_contains "$out" "\`$recipe\`" "braid/$tool: レシピ $recipe が表にある"
+  done
+  assert_contains "$out" "## braid の呼び方" "braid/$tool: 呼び方の節が展開される"
+done
+
+braid_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/braid/SKILL.md")"
+assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
+  "braid: 呼び方を共有パーシャルから取り込む"
+assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
+
+# 3 つの配布先すべてに .tmpl がある。
+for d in private_dot_agents/skills \
+         private_dot_config/claude/skills \
+         private_dot_config/opencode/skills; do
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/$d/braid/SKILL.md.tmpl" ] && echo yes || echo no)" \
+            "yes" "braid: 配布先に .tmpl がある: $d"
+done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
