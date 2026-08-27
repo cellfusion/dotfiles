@@ -47,10 +47,9 @@ assert_contains "$doc" "claude.ai/install.sh" "docs: claude の導入方法が�
 assert_contains "$doc" "chatgpt.com/codex/install.sh" "docs: codex の導入方法が書かれている"
 assert_contains "$doc" "自己更新" "docs: brew に寄せない理由が書かれている"
 
-# --- AquaSKK は cask で導入する ---
-assert_contains "$doc" "aquaskk" "docs: AquaSKK が cask として載っている"
-manual_install="$(printf '%s\n' "$doc" | sed -n '/^## 手動インストール/,/^## /p')"
-assert_not_contains "$manual_install" "| AquaSKK |" "docs: AquaSKK を手動インストールの表に残さない"
+# --- AquaSKK の扱いが記録されている ---
+# 2026-08-27 に Brewfile から外した。現マシンには残っている。
+assert_contains "$doc" "aquaskk" "docs: AquaSKK の扱いが記録されている"
 
 # --- 削除を自動化しないことが明記されている ---
 assert_contains "$doc" "削除は自動化しない" "docs: 削除を自動化しない旨が書かれている"
@@ -110,10 +109,11 @@ done
 for f in helix wezterm alacritty aerospace omniwm cmux jinrai copilot-cli; do
   assert_not_contains "$removal_section" "$f" "docs: 削除済みの $f を候補に残さない"
 done
-# gcloud-cli は google-cloud-sdk と同一の cask であり、重複ではない。候補に残すと
-# 消したときに gcloud ごと失う。
-assert_not_contains "$removal_section" "gcloud-cli" "docs: gcloud-cli を削除候補に載せない"
-assert_contains "$doc" "gcloud-cli (cask)" "docs: gcloud-cli が macOS 専用として載っている"
+# gcloud-cli は google-cloud-sdk と同一の cask であり、消すと gcloud ごと失う。
+# Brewfile からは外したが、uninstall コマンドには絶対に含めない。
+uninstall_cmds="$(printf '%s\n' "$doc" | grep 'brew uninstall' || true)"
+assert_not_contains "$uninstall_cmds" "gcloud-cli" \
+  "docs: gcloud-cli を brew uninstall の対象に載せない"
 
 # --- native installer と mise に移したものが、その旨とともに載っている ---
 native_section="$(printf '%s\n' "$doc" | sed -n '/^## native installer/,/^## /p')"

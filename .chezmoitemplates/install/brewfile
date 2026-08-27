@@ -30,7 +30,6 @@ brew "grpcurl"
 {{ if eq .os "darwin" }}
 # --- macOS 専用 ---
 brew "coreutils"
-brew "switchaudio-osx"
 # sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
 brew "lua@5.4"
 
@@ -49,13 +48,8 @@ brew "gradle"
 cask "ghostty"
 cask "1password-cli"
 cask "finicky"
-cask "aquaskk"
-# google-cloud-sdk は同じ cask の旧名。旧名で宣言すると gcloud-cli と別物に見える。
-cask "gcloud-cli"
 cask "font-hack-nerd-font"
 cask "font-sf-mono"
 cask "font-sf-pro"
 cask "sf-symbols"
-cask "dotnet-sdk"
-cask "swiftformat-for-xcode"
 {{ end -}}

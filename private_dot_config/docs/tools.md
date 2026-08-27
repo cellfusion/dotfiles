@@ -74,9 +74,9 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
    持つ。無くても apply は通り、各テンプレートは既定値で描画される。AI 環境については
    「claude と codex を持つ `default` 環境 1 つ」が既定値になる
 3. **1Password へのサインイン**。AWS の `credential_process` が `op read` を呼ぶ
-4. **AquaSKK を入力ソースに追加する**。cask はアプリを配置するだけで、使うには
-   システム設定 → キーボード → 入力ソース で AquaSKK を追加し、ログインし直す
-   必要がある
+4. **AquaSKK の導入と入力ソースへの追加**。2026-08-27 に Brewfile から外したので
+   apply では入らない。手で入れたうえで、システム設定 → キーボード → 入力ソース で
+   AquaSKK を追加し、ログインし直す
 5. **GitHub への鍵の登録**。`run_onchange_after_80-secure-enclave-keys.sh` が
    Secure Enclave に認証鍵と署名鍵を作り、公開鍵を 2 つ表示して終わる。
    https://github.com/settings/keys で片方を **Authentication Key**、
@@ -128,7 +128,6 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 | ツール | 用途 |
 |---|---|
 | coreutils | GNU coreutils |
-| switchaudio-osx | 音声出力デバイス切り替え |
 | yabai | タイリングウィンドウマネージャ |
 | skhd | ホットキーデーモン |
 | borders | ウィンドウ枠の強調表示 |
@@ -137,14 +136,10 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 | ghostty (cask) | ターミナルエミュレータ |
 | 1password-cli (cask) | 1Password CLI |
 | finicky (cask) | デフォルトブラウザ振り分け |
-| aquaskk (cask) | SKK 日本語入力 |
-| gcloud-cli (cask) | Google Cloud CLI（旧名 google-cloud-sdk。同一 cask のエイリアス） |
 | font-hack-nerd-font (cask) | Nerd Font |
 | font-sf-mono (cask) | SF Mono フォント |
 | font-sf-pro (cask) | SF Pro フォント |
 | sf-symbols (cask) | SF Symbols アプリ |
-| dotnet-sdk (cask) | .NET SDK |
-| swiftformat-for-xcode (cask) | Swift フォーマッタの Xcode 拡張 |
 
 ## モバイル・ネイティブ開発
 
@@ -219,8 +214,8 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 
 マニフェストに載せていないが使っているもの。
 
-現在は無い。AquaSKK は cask（`aquaskk`）へ移した。辞書は `~/.config/skk` にあり、
-chezmoi の管理外である。
+AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` にあり、chezmoi の
+管理外である。
 
 ## 削除候補
 
@@ -250,6 +245,17 @@ brew 版は残っている。
 直したので参照されなくなった。
 
     rm -rf ~/.bun/bin/bin
+
+### Brewfile から外した cask（2026-08-27）
+
+`swiftformat-for-xcode` / `dotnet-sdk` / `gcloud-cli` / `aquaskk` と、formula の
+`switchaudio-osx` を外した。新マシンでは入らないが、現マシンには残っている。
+
+**`gcloud-cli` は uninstall しないこと。** `google-cloud-sdk` と同一の cask なので、
+消すと gcloud ごと失う。過去に一度そうなっている。
+
+`switchaudio-osx` は `sketchybar/items/widgets/volume.lua` が、`aquaskk` は
+`sketchybar/items/ime.lua` が参照している。新マシンでは本体が無い状態になる。
 
 ### Brewfile から外したもの
 
