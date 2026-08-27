@@ -81,7 +81,8 @@ for f in cocoapods ios-deploy libimobiledevice xcodegen xcode-build-server \
 done
 
 # --- 2026-08-27 に外したものは載せない ---
-# chezmoi は get.chezmoi.io が ~/.local/bin に入れる。brew 版を載せると 2 本になる。
+# chezmoi は 20-runtimes が get.chezmoi.io で ~/.local/bin に入れる。brew 版を載せると
+# 2 本になる。
 # nowplaying-cli は macOS 26 で MediaRemote が塞がれていて動かない。
 # 残りは設定からもスクリプトからも参照されず、他の formula の依存にもなっていない。
 for f in chezmoi nowplaying-cli hunk semgrep sevenzip chafa watchman hyperfine \

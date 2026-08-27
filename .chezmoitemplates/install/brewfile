@@ -28,7 +28,7 @@ brew "anomalyco/tap/opencode", trusted: true
 # --- 開発ツール ---
 # mise / bun / uv / rustup は 20-runtimes が native installer で入れる。
 # node / python / java / pnpm / deno / go は mise が入れる。
-# chezmoi は get.chezmoi.io が ~/.local/bin に入れる。
+# chezmoi は 20-runtimes が get.chezmoi.io で ~/.local/bin に入れる。
 brew "sccache"
 brew "awscli"
 brew "grpcurl"

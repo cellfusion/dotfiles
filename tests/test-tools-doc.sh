@@ -126,6 +126,17 @@ for t in mise bun uv rustup go cmake ninja zig protobuf automake watchman \
          semgrep mkcert lazydocker cloudflared; do
   assert_not_contains "$build_section" "| $t |" "docs: $t を開発ツールの表に残さない"
 done
+# chezmoi の install script の既定の BINDIR は ./bin（カレントディレクトリ配下）である。
+# -b を渡さないと ~/.local/bin には入らず、「which chezmoi が ~/.local/bin を指すことを
+# 確かめてから brew 版を消す」という移行手順がそこで止まる。
+chezmoi_install='sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"'
+assert_contains "$native_section" "$chezmoi_install" \
+  "docs: native installer の chezmoi が -b で ~/.local/bin を指定している"
+assert_contains "$removal_section" "$chezmoi_install" \
+  "docs: brew からの移行手順が -b で ~/.local/bin を指定している"
+# chezmoi を Brewfile から外したので、apply の連鎖に入れる経路は 20-runtimes だけになった。
+assert_contains "$native_section" "20-runtimes" \
+  "docs: chezmoi を入れるスクリプトが native installer の表から分かる"
 # go は mise 管理へ移した。
 mise_section="$(printf '%s\n' "$doc" | sed -n '/^## mise 管理/,/^## /p')"
 assert_contains "$mise_section" "| go |" "docs: go が mise 管理として載っている"

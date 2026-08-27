@@ -10,7 +10,7 @@
 |---|---|---|
 | Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
 | Homebrew | `~/.config/install/Brewfile` | `run_onchange_after_10-brew.sh` |
-| native installer（ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
+| native installer（chezmoi・ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
@@ -43,6 +43,10 @@ GUI のインストールダイアログが出て、入っていなければ `ch
 
 これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
 apply の中で上の表の 10 本が番号順に実行される。
+
+この 1 本目の chezmoi は install script の既定の BINDIR、つまり実行したディレクトリの
+`./bin` に置かれる。PATH には載らない。恒久的な chezmoi は apply の中で 20-runtimes が
+`~/.local/bin` に入れるので、apply が終わったら `./bin` は消してよい。
 
 各スクリプトは前提が無ければ自分で入れ、入れられなければ非ゼロで落ちる。chezmoi は
 非ゼロで終わったスクリプトを実行済みとして記録しないため、落ちたところから次の
@@ -153,11 +157,16 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 ## native installer
 
 自己更新を持つツール、または Homebrew 版が別ビルドになるツールは brew に寄せない。
-未導入のときだけ入れて、更新は各ツールに任せる。
+未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup は
+`run_onchange_after_20-runtimes.sh` が、claude / codex は
+`run_onchange_after_40-ai-clis.sh` が入れる。
+
+chezmoi の install script の既定の BINDIR は `./bin`（実行時のカレントディレクトリ
+配下）である。`-b` を渡さないと、`.zshenv` が PATH に載せる `~/.local/bin` には入らない。
 
 | ツール | 導入 | 理由 |
 |---|---|---|
-| chezmoi | `sh -c "$(curl -fsLS get.chezmoi.io)"` | 新マシンの起点になる。brew 版を併せて入れると 2 本になる |
+| chezmoi | `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"` | 新マシンの起点になる。20-runtimes が未導入のときだけ入れる。brew 版を併せて入れると 2 本になる |
 | mise | `curl https://mise.run \| sh` | Homebrew 版は別ビルドで、公式の最適化されたリリースバイナリではない |
 | bun | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` で自己更新する |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `uv self update` で自己更新する |
@@ -249,9 +258,10 @@ brew 版は残っている。
 **`chezmoi` はこのコマンドに含めていない。** 現マシンの chezmoi は brew 版しか無く
 （`~/.local/bin/chezmoi` は存在しない）、そのまま消すと chezmoi が使えなくなる。
 先に native installer で入れ、`which chezmoi` が `~/.local/bin/chezmoi` を指すことを
-確かめてから brew 版を消す。
+確かめてから brew 版を消す。`-b` を落とすと既定の `./bin` に入り、PATH に載らない。
 
-    sh -c "$(curl -fsLS get.chezmoi.io)"
+    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+    hash -r
     which chezmoi
     brew uninstall chezmoi
 
