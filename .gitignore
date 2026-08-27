@@ -3,4 +3,5 @@ private_dot_config/sketchybar/helpers/event_providers/network_load/bin/executabl
 private_dot_config/sketchybar/helpers/menus/bin/executable_menus
 private_dot_config/sketchybar/helpers/event_providers/spotify_events/bin/spotify_events
 .worktrees/
+.claude/worktrees/
 .DS_Store
