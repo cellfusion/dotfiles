@@ -12,16 +12,16 @@ darwin="$(render_brewfile darwin)"
 linux="$(render_brewfile linux)"
 
 # --- core は両 OS に載る ---
-for f in chezmoi git gh ghq lazygit neovim fzf fd ripgrep bat eza jq \
-         television zoxide herdr hyperfine hunk pandoc; do
+for f in git gh ghq git-lfs lazygit neovim fzf fd ripgrep bat eza jq \
+         television zoxide herdr; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: core に $f がある"
   assert_contains "$linux" "brew \"$f\"" "linux: core に $f がある"
 done
 
-# --- 言語・ビルドは両 OS に載る ---
-for f in cmake ninja zig protobuf sccache semgrep; do
-  assert_contains "$darwin" "brew \"$f\"" "darwin: 言語・ビルドに $f がある"
-  assert_contains "$linux" "brew \"$f\"" "linux: 言語・ビルドに $f がある"
+# --- 開発ツールは両 OS に載る ---
+for f in sccache awscli grpcurl; do
+  assert_contains "$darwin" "brew \"$f\"" "darwin: 開発ツールに $f がある"
+  assert_contains "$linux" "brew \"$f\"" "linux: 開発ツールに $f がある"
 done
 
 # --- tap ---
@@ -33,7 +33,7 @@ assert_not_contains "$linux" 'asmvik/formulae' "linux: macOS 専用 tap が無�
 assert_not_contains "$linux" 'felixkratz/formulae' "linux: macOS 専用 tap が無い"
 
 # --- macOS 専用 ---
-for f in switchaudio-osx nowplaying-cli coreutils; do
+for f in switchaudio-osx coreutils; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: macOS 専用に $f がある"
   assert_not_contains "$linux" "brew \"$f\"" "linux: macOS 専用の $f が無い"
 done
@@ -75,9 +75,20 @@ assert_not_contains "$linux" 'cask "' "linux: cask 行が 1 つも無い"
 
 # --- モバイル・ネイティブは macOS だけ ---
 for f in cocoapods ios-deploy libimobiledevice xcodegen xcode-build-server \
-         mint apktool jadx kdoctor gradle; do
+         apktool jadx kdoctor gradle; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: モバイル系に $f がある"
   assert_not_contains "$linux" "brew \"$f\"" "linux: モバイル系の $f が無い"
+done
+
+# --- 2026-08-27 に外したものは載せない ---
+# chezmoi は get.chezmoi.io が ~/.local/bin に入れる。brew 版を載せると 2 本になる。
+# nowplaying-cli は macOS 26 で MediaRemote が塞がれていて動かない。
+# 残りは設定からもスクリプトからも参照されず、他の formula の依存にもなっていない。
+for f in chezmoi nowplaying-cli hunk semgrep sevenzip chafa watchman hyperfine \
+         mint lazydocker git-filter-repo automake mkcert cloudflared \
+         cmake ninja zig protobuf pandoc ffmpeg; do
+  assert_not_contains "$darwin" "brew \"$f\"" "darwin: 外した $f を載せない"
+  assert_not_contains "$linux" "brew \"$f\"" "linux: 外した $f を載せない"
 done
 
 # --- 削除候補は載せない ---

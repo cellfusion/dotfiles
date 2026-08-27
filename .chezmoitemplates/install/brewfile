@@ -7,12 +7,10 @@ tap "anomalyco/tap"
 tap "felixkratz/formulae"
 {{ end }}
 # --- core / OS 共通 CLI ---
-brew "chezmoi"
 brew "git"
 brew "gh"
 brew "ghq"
 brew "git-lfs"
-brew "git-filter-repo"
 brew "lazygit"
 brew "worktrunk"
 brew "neovim"
@@ -25,35 +23,19 @@ brew "jq"
 brew "television"
 brew "zoxide"
 brew "herdr"
-brew "hyperfine"
-brew "hunk"
-brew "sevenzip"
-brew "pandoc"
-brew "chafa"
-brew "ffmpeg"
 brew "anomalyco/tap/opencode", trusted: true
 
-# --- 言語・ビルド ---
+# --- 開発ツール ---
 # mise / bun / uv / rustup は 20-runtimes が native installer で入れる。
 # node / python / java / pnpm / deno / go は mise が入れる。
-brew "cmake"
-brew "ninja"
-brew "automake"
-brew "zig"
-brew "protobuf"
+# chezmoi は get.chezmoi.io が ~/.local/bin に入れる。
 brew "sccache"
-brew "watchman"
-brew "semgrep"
-brew "mkcert"
-brew "lazydocker"
 brew "awscli"
-brew "cloudflared"
 brew "grpcurl"
 {{ if eq .os "darwin" }}
 # --- macOS 専用 ---
 brew "coreutils"
 brew "switchaudio-osx"
-brew "nowplaying-cli"
 brew "asmvik/formulae/yabai", trusted: true
 brew "asmvik/formulae/skhd", trusted: true
 brew "felixkratz/formulae/borders", trusted: true
@@ -67,7 +49,6 @@ brew "ios-deploy"
 brew "libimobiledevice"
 brew "xcodegen"
 brew "xcode-build-server"
-brew "mint"
 brew "apktool"
 brew "jadx"
 brew "kdoctor"
