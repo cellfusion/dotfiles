@@ -350,4 +350,16 @@ for d in private_dot_agents/skills \
             "yes" "braid: 配布先に .tmpl がある: $d"
 done
 
+# スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
+# プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
+# 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
+for skill in braid requesting-code-review; do
+  for tool in claude codex opencode; do
+    out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
+    blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
+    ok="$(printf '%s\n' "$blocks" | bash -n 2>/dev/null && echo yes || echo no)"
+    assert_eq "$ok" "yes" "$skill/$tool: bash ブロックが構文として妥当"
+  done
+done
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

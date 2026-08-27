@@ -24,7 +24,7 @@ git rev-parse --is-inside-work-tree
 **1. 本実行の前に dry-run を通す。**
 
 ```bash
-braid run <recipe> --arg k=v --dry-run --json
+braid run RECIPE --arg k=v --dry-run --json
 ```
 
 引数の不足、役割・スキーマ・プロンプトの欠落、参照先の不在はここで全件返る。失敗したら本実行へ
@@ -33,7 +33,7 @@ braid run <recipe> --arg k=v --dry-run --json
 **2. 本実行する。同期で待つ。**
 
 ```bash
-braid run <recipe> --arg k=v
+braid run RECIPE --arg k=v
 ```
 
 時間のかかるプロセスを別 pane へ委譲する規約の例外にする。braid は run store と `run.lock` で
@@ -81,6 +81,6 @@ stderr にメッセージが出る。
 
 ```bash
 braid ls                # 一覧
-braid status <runId>    # 1 つの詳細
+braid status RUN_ID     # 1 つの詳細
 braid                   # TUI（サブコマンド無しで起動する）
 ```

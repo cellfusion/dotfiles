@@ -84,7 +84,10 @@ SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上�
 | 先送り・park された指摘のリスト | `requirements` に含める |
 
 ```bash
-REQ=<パスまたは要件の文字列>
+# 要件ファイルがあるとき。cwd の下に無ければ package と同じ場所へ複製してから渡す
+REQ="$(git rev-parse --show-toplevel)/_cellfusion/plans/PLAN.md"
+# 無いときは、概要と要件を数行にまとめた文字列をそのまま渡す
+# REQ='X を実装した。要件は次の 3 点である: ...'
 braid run review --arg requirements="$REQ" --arg review_file="$OUT"
 ```
 
