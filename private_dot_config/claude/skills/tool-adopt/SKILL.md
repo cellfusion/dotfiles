@@ -74,7 +74,7 @@ television のカスタムチャンネルを作成する場合:
 
 ツール導入が完了したら、`private_dot_config/docs/tools.md` に記録する。
 
-- 導入経路に合った節（core / 言語・ビルド / macOS 専用 など）の表に 1 行足す
+- 導入経路に合った節（core / 開発ツール / macOS 専用 など）の表に 1 行足す
 - マニフェストにも追加する。Homebrew なら `.chezmoitemplates/install/brewfile`、
   mise なら `private_dot_config/mise/config.toml`、npm なら
   `private_dot_config/install/npm-globals.txt`、cargo なら
