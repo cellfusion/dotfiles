@@ -31,17 +31,23 @@ description: >-
 
 **1. diff をファイルにまとめる**
 
-レビュアーの context に diff を 1 回の Read で載せる。SDD の workspace が使えるならそのスクリプトを使う。
+レビュアーの context に diff を 1 回の Read で載せる。SDD の中では従来経路を維持し、SDD の
+workspace のスクリプトを使う。
 
 ```bash
 BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-SDD の外で単発に依頼する場合は、同じ内容を手で作る。
+SDD の外で単発に依頼する場合は、リポジトリ内の `_cellfusion/reviews/` に作る。`/tmp` を使わない
+のは、read 役が現在の作業ディレクトリの外を読めない engine 設定でも同じ入力を読めるようにする
+ためである。`_cellfusion/` が無ければ
+`~/.agents/skills/_shared/scripts/cellfusion-workdir` が作る。
 
 ```bash
-OUT=$(mktemp -t review).diff
+REVIEWS="$(git rev-parse --show-toplevel)/_cellfusion/reviews"
+mkdir -p "$REVIEWS"
+OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
 {
   echo "# Review package: ${BASE_SHA}..${HEAD_SHA}"
   echo; echo "## Commits"; git log --oneline "${BASE_SHA}..${HEAD_SHA}"
@@ -51,14 +57,31 @@ OUT=$(mktemp -t review).diff
 echo "$OUT"
 ```
 
-**2. [dispatch-subagent: sdd-final-reviewer] する**
+**2. レビューを依頼する**
 
-ロールプロンプトとレビュー基準はエージェント定義に入っている。dispatch プロンプトに渡すのは次の 4 つだけ。
+SDD の中では従来経路を維持する。[dispatch-subagent: sdd-final-reviewer] し、dispatch プロンプト
+には次の 4 つだけを渡す。
 
 - 何を実装したかの概要
 - プランまたは要件のパス（無ければ要件を数行で）
 - review package のパス
 - 先送りされた指摘や park された指摘のリスト（あれば）
+
+SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上の 4 項目をレシピの 2 引数へ移す。
+
+| 渡すもの | 移す先 |
+|---|---|
+| review package のパス | `review_file` |
+| プランまたは要件のパス | `requirements` |
+| 何を実装したかの概要 | 要件のパスが無い場合、概要と要件を数行にまとめた文字列を `requirements` に渡す |
+| 先送り・park された指摘のリスト | `requirements` に含める |
+
+```bash
+braid run review --arg requirements=<パスまたは要件の文字列> --arg review_file="$OUT"
+```
+
+`review` レシピは 3 つの `reviewer` を並列に走らせ、後段の `reviewer` が統合して `PASS` /
+`FAIL` と findings を返す。critical と important が 0 件のときだけ `PASS` になる。
 
 **3. フィードバックに対応する**
 
@@ -89,3 +112,5 @@ echo "$OUT"
 - 技術的な根拠を添えて押し返す
 - 動作を証明するコードやテストを示す
 - 説明を求める
+
+{{ includeTemplate "agent-skills/_braid-invocation.md" . }}

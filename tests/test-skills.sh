@@ -308,6 +308,20 @@ assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md
   "braid: 呼び方を共有パーシャルから取り込む"
 assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
 
+# SDD 外の単発レビューは review package をリポジトリ内に作り、braid の review レシピを呼ぶ。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
+  assert_contains "$out" "_cellfusion/reviews/" "rcr/$tool: package をリポジトリ内に作る"
+  assert_contains "$out" "braid run review" "rcr/$tool: review レシピを呼ぶ"
+  assert_contains "$out" "## braid の呼び方" "rcr/$tool: 呼び方の節が展開される"
+  assert_not_contains "$out" "mktemp -t review" "rcr/$tool: /tmp に package を作らない"
+  assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
+done
+
+rcr_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")"
+assert_contains "$rcr_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
+  "rcr: 呼び方を共有パーシャルから取り込む"
+
 # 3 つの配布先すべてに .tmpl がある。
 for d in private_dot_agents/skills \
          private_dot_config/claude/skills \
