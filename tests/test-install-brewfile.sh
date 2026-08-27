@@ -37,10 +37,23 @@ for f in switchaudio-osx nowplaying-cli coreutils; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: macOS 専用に $f がある"
   assert_not_contains "$linux" "brew \"$f\"" "linux: macOS 専用の $f が無い"
 done
-assert_contains "$darwin" 'brew "asmvik/formulae/yabai"' "darwin: yabai がある"
-assert_contains "$darwin" 'brew "asmvik/formulae/skhd"' "darwin: skhd がある"
-assert_contains "$darwin" 'brew "felixkratz/formulae/borders"' "darwin: borders がある"
-assert_contains "$darwin" 'brew "felixkratz/formulae/sketchybar"' "darwin: sketchybar がある"
+# --- third-party formula は trust を宣言する ---
+# Homebrew 6.0 から non-official tap の formula は明示的な trust なしにロードされない。
+# 宣言が無いと、trust store を持たない新しいマシンで brew bundle がここで落ちる。
+# tap 全体ではなく formula 単位にする。tap 全体を trust すると、その tap に将来
+# 追加される formula も無条件に信頼することになる。
+assert_contains "$darwin" 'brew "asmvik/formulae/yabai", trusted: true' \
+  "darwin: yabai が trusted 付きである"
+assert_contains "$darwin" 'brew "asmvik/formulae/skhd", trusted: true' \
+  "darwin: skhd が trusted 付きである"
+assert_contains "$darwin" 'brew "felixkratz/formulae/borders", trusted: true' \
+  "darwin: borders が trusted 付きである"
+assert_contains "$darwin" 'brew "felixkratz/formulae/sketchybar", trusted: true' \
+  "darwin: sketchybar が trusted 付きである"
+assert_contains "$darwin" 'brew "anomalyco/tap/opencode", trusted: true' \
+  "darwin: opencode が trusted 付きである"
+assert_contains "$linux" 'brew "anomalyco/tap/opencode", trusted: true' \
+  "linux: opencode が trusted 付きである"
 # sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
 # lua@5.4 が無いと sketchybar は起動しない。
 assert_contains "$darwin" 'brew "lua@5.4"' "darwin: sketchybar が要求する lua@5.4 がある"
