@@ -282,4 +282,16 @@ assert_not_contains "$sdd" "herdr pane split" "SDD: pane の手順を controller
 assert_not_contains "$sdd" "anchor-pane" "SDD: 廃止した引数が残っていない"
 assert_contains "$sdd" "worktrunk" "SDD: worktree は worktrunk が作ると書く"
 
+# braid の呼び方は共有パーシャルに 1 本だけ置く。
+braid_inv="$(render_template "agent-skills/_braid-invocation.md" "claude")"
+assert_contains "$braid_inv" "## braid の呼び方" "_braid-invocation: 節の見出しがある"
+assert_contains "$braid_inv" "command -v braid" "_braid-invocation: braid が PATH にあるか確かめる"
+assert_contains "$braid_inv" "git rev-parse --is-inside-work-tree" \
+  "_braid-invocation: cwd が git リポジトリか確かめる"
+assert_contains "$braid_inv" "--dry-run --json" "_braid-invocation: 本実行の前に dry-run を通す"
+assert_contains "$braid_inv" "braid cancel" "_braid-invocation: 停止の手段を書く"
+assert_contains "$braid_inv" "braid status" "_braid-invocation: run の追い方を書く"
+assert_contains "$braid_inv" "リトライしない" "_braid-invocation: 失敗を再試行しない"
+assert_not_contains "$braid_inv" "target/release/braid" "_braid-invocation: 開発中のパスを書かない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
