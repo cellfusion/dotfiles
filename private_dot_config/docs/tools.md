@@ -10,7 +10,7 @@
 |---|---|---|
 | Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
 | Homebrew | `~/.config/install/Brewfile` | `run_onchange_after_10-brew.sh` |
-| native installer（ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
+| native installer（chezmoi・ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
@@ -43,6 +43,10 @@ GUI のインストールダイアログが出て、入っていなければ `ch
 
 これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
 apply の中で上の表の 10 本が番号順に実行される。
+
+この 1 本目の chezmoi は install script の既定の BINDIR、つまり実行したディレクトリの
+`./bin` に置かれる。PATH には載らない。恒久的な chezmoi は apply の中で 20-runtimes が
+`~/.local/bin` に入れるので、apply が終わったら `./bin` は消してよい。
 
 各スクリプトは前提が無ければ自分で入れ、入れられなければ非ゼロで落ちる。chezmoi は
 非ゼロで終わったスクリプトを実行済みとして記録しないため、落ちたところから次の
@@ -84,12 +88,10 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 
 | ツール | 用途 |
 |---|---|
-| chezmoi | dotfiles 管理 |
 | git | バージョン管理 |
 | gh | GitHub CLI |
 | ghq | リポジトリのローカル管理 |
 | git-lfs | Git Large File Storage |
-| git-filter-repo | Git 履歴の書き換え |
 | lazygit | git の TUI クライアント |
 | worktrunk | git worktree マネージャ（`wt`）。herdr と併用する |
 | neovim | エディタ |
@@ -102,32 +104,17 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 | television | ファジーファインダー |
 | zoxide | 賢い cd |
 | herdr | ターミナルマルチプレクサ |
-| hyperfine | ベンチマーク計測 |
-| hunk | diff/hunk 操作 |
-| sevenzip | 7z アーカイブ |
-| pandoc | 文書変換 |
-| chafa | 画像を端末に表示 |
-| ffmpeg | 音声・動画処理 |
 | opencode | AI コーディングエージェント |
 
-## 言語・ビルド
+## 開発ツール
 
-mise / bun / uv / rustup は native installer、go は mise が管理する。それぞれの節を見る。
+mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理する。
+それぞれの節を見る。
 
 | ツール | 用途 |
 |---|---|
-| cmake | ビルドシステム生成 |
-| ninja | ビルドシステム |
-| automake | ビルド自動化 |
-| zig | Zig 言語・ビルドツール |
-| protobuf | Protocol Buffers |
 | sccache | ビルドキャッシュ |
-| watchman | ファイル監視 |
-| semgrep | 静的解析 |
-| mkcert | ローカル用 TLS 証明書発行 |
-| lazydocker | Docker の TUI クライアント |
 | awscli | AWS CLI |
-| cloudflared | Cloudflare Tunnel クライアント |
 | grpcurl | gRPC 用 curl |
 
 ## macOS 専用
@@ -136,7 +123,6 @@ mise / bun / uv / rustup は native installer、go は mise が管理する。�
 |---|---|
 | coreutils | GNU coreutils |
 | switchaudio-osx | 音声出力デバイス切り替え |
-| nowplaying-cli | 再生中メディアの情報取得 |
 | yabai | タイリングウィンドウマネージャ |
 | skhd | ホットキーデーモン |
 | borders | ウィンドウ枠の強調表示 |
@@ -163,7 +149,6 @@ mise / bun / uv / rustup は native installer、go は mise が管理する。�
 | libimobiledevice | iOS デバイス通信ライブラリ |
 | xcodegen | Xcode プロジェクト生成 |
 | xcode-build-server | Xcode ビルドサーバー（LSP 連携） |
-| mint | Swift パッケージのバイナリ管理 |
 | apktool | APK の逆コンパイル・再構築 |
 | jadx | Android の逆コンパイラ |
 | kdoctor | Kotlin/Native 開発環境の診断 |
@@ -172,10 +157,16 @@ mise / bun / uv / rustup は native installer、go は mise が管理する。�
 ## native installer
 
 自己更新を持つツール、または Homebrew 版が別ビルドになるツールは brew に寄せない。
-未導入のときだけ入れて、更新は各ツールに任せる。
+未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup は
+`run_onchange_after_20-runtimes.sh` が、claude / codex は
+`run_onchange_after_40-ai-clis.sh` が入れる。
+
+chezmoi の install script の既定の BINDIR は `./bin`（実行時のカレントディレクトリ
+配下）である。`-b` を渡さないと、`.zshenv` が PATH に載せる `~/.local/bin` には入らない。
 
 | ツール | 導入 | 理由 |
 |---|---|---|
+| chezmoi | `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"` | 新マシンの起点になる。20-runtimes が未導入のときだけ入れる。brew 版を併せて入れると 2 本になる |
 | mise | `curl https://mise.run \| sh` | Homebrew 版は別ビルドで、公式の最適化されたリリースバイナリではない |
 | bun | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` で自己更新する |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `uv self update` で自己更新する |
@@ -253,6 +244,26 @@ brew 版は残っている。
 直したので参照されなくなった。
 
     rm -rf ~/.bun/bin/bin
+
+### Brewfile から外したもの
+
+2026-08-27 に Brewfile から外した。新マシンでは入らないが、現マシンには残っている。
+`nowplaying-cli` は macOS 26 で MediaRemote が塞がれていて動かない。残りは設定からも
+スクリプトからも参照されず、他の formula の依存にもなっていない。
+
+    brew uninstall nowplaying-cli hunk semgrep sevenzip chafa watchman \
+      hyperfine mint lazydocker git-filter-repo automake mkcert cloudflared \
+      cmake ninja zig protobuf pandoc ffmpeg
+
+**`chezmoi` はこのコマンドに含めていない。** 現マシンの chezmoi は brew 版しか無く
+（`~/.local/bin/chezmoi` は存在しない）、そのまま消すと chezmoi が使えなくなる。
+先に native installer で入れ、`which chezmoi` が `~/.local/bin/chezmoi` を指すことを
+確かめてから brew 版を消す。`-b` を落とすと既定の `./bin` に入り、PATH に載らない。
+
+    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+    hash -r
+    which chezmoi
+    brew uninstall chezmoi
 
 削除するときの例。
 

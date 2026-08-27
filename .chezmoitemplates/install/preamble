@@ -10,10 +10,14 @@ set -o pipefail
 
 # XDG の既定値。chezmoi のスクリプトは zsh の環境を継承するとは限らないので、
 # ~/.config/zsh/.zshenv と同じ値をここでも明示する。
+# XDG_CONFIG_HOME は Homebrew の trust store の場所も決める。設定しないと
+# ${XDG_CONFIG_HOME}/homebrew/trust.json ではなく ~/.homebrew/trust.json に書かれ、
+# zsh から brew を実行したときに別のファイルを読むことになる。
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CARGO_HOME="${CARGO_HOME:-$XDG_DATA_HOME/cargo}"
 RUSTUP_HOME="${RUSTUP_HOME:-$XDG_DATA_HOME/rustup}"
-export XDG_DATA_HOME CARGO_HOME RUSTUP_HOME
+export XDG_DATA_HOME XDG_CONFIG_HOME CARGO_HOME RUSTUP_HOME
 
 # 非ゼロで落ちる。chezmoi は非ゼロで終わった script を entryState に記録しないので、
 # ここで落ちたぶんは次の apply で再実行される。

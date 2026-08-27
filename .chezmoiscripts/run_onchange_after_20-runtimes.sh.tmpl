@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise / bun / uv / rustup を native installer で入れる。
+# chezmoi / mise / bun / uv / rustup を native installer で入れる。
 #
 # どれも自己更新を持ち、Homebrew 版は別ビルドになる。brew の rustup に至っては
 # keg-only で toolchain を持たない。未導入のときだけ入れて、更新は各ツールに任せる。
@@ -14,6 +14,22 @@ set -eu
 local_bin_env
 bun_env
 rust_env
+
+# chezmoi は Brewfile から外したので、恒久的な chezmoi を置く経路はここだけである。
+# 新マシンの起点 `sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion` が
+# 置くのは実行したディレクトリの ./bin 配下であり、PATH には入らない。
+if command -v chezmoi >/dev/null 2>&1; then
+  printf 'chezmoi は導入済みなので飛ばす\n'
+else
+  printf 'chezmoi を native installer で入れる\n'
+  # install script の既定の BINDIR は ./bin である。-b を渡さないと、.zshenv が PATH に
+  # 載せる ~/.local/bin ではなくカレントディレクトリ配下に置かれる。
+  # curl が落ちても sh -c "" は 0 で終わり、この || die は発火しない。
+  # 導入の成否は次の command -v で確かめる。
+  sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin" \
+    || die 'chezmoi の導入に失敗した'
+  command -v chezmoi >/dev/null 2>&1 || die 'chezmoi を導入したが PATH に見つからない'
+fi
 
 if command -v mise >/dev/null 2>&1; then
   printf 'mise は導入済みなので飛ばす\n'

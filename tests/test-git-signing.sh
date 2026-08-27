@@ -60,9 +60,14 @@ settings="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   < "$CHEZMOI_SOURCE/private_dot_config/claude/private_settings.json.tmpl" 2>&1 || true)"
 
 for r in 'Bash(git push *)' 'Bash(gh pr create *)' 'Bash(gh pr merge *)' \
-         'Bash(gh release create *)' 'Bash(gh api *)' 'Bash(gh repo delete *)'; do
+         'Bash(gh release create *)' 'Bash(gh repo delete *)'; do
   assert_contains "$settings" "$r" "gate: ask ルールがある: $r"
 done
+
+# gh api は 2026-08-27 に ask から外した。読み取りの呼び出しにも一致してしまい、
+# 調査のたびにプロンプトが出ていたためである。書き込みだけを狙うルールは書けないので、
+# gh api の書き込みはゲートを通らない。戻すなら doc の承認ゲートの節も一緒に直す。
+assert_not_contains "$settings" 'Bash(gh api *)' "gate: gh api は ask に入れない"
 
 # --- docs に apply 後の手順が記録されている ---
 # ~/.ssh/config と ~/.config/git/config は chezmoi 管理外なので apply では入らない。
@@ -94,9 +99,13 @@ assert_contains "$doc" "gpgsign = true" "docs: commit.gpgsign を写している
 assert_contains "$doc" "git-ssh-sign" "docs: provider ラッパーを写している"
 
 # 承認ゲートの 6 件
-for r in "Bash(git push *)" "Bash(gh api *)"; do
+for r in "Bash(git push *)" "Bash(gh repo delete *)"; do
   assert_contains "$doc" "$r" "docs: ask ルールを写している: $r"
 done
+# 外したルールを doc の ask 一覧に残さない。設定とドキュメントが食い違う。
+gate_json="$(printf '%s\n' "$doc" | sed -n '/^"ask": \[/,/^\]/p')"
+assert_not_contains "$gate_json" 'Bash(gh api *)' \
+  "docs: ask の一覧に gh api を残さない"
 
 # 鍵の生成元を指している
 assert_contains "$doc" "run_onchange_after_80-secure-enclave-keys" \

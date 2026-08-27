@@ -68,7 +68,6 @@ scope が無く、scope を広げると平文トークンの権限が増えて�
   "Bash(gh pr create *)",
   "Bash(gh pr merge *)",
   "Bash(gh release create *)",
-  "Bash(gh api *)",
   "Bash(gh repo delete *)",
   "Bash(gh issue create:*)"
 ]
@@ -83,13 +82,15 @@ scope が無く、scope を広げると平文トークンの権限が増えて�
 `~/.claude/settings.json` は管理外なので、`CLAUDE_CONFIG_DIR` を設定しないセッションを
 使うなら手で同じ `ask` を入れる。
 
-`Bash(gh api *)` は読み取りの呼び出しにも一致する。`gh api` の書き込みだけを狙う
-ルールは `-X POST` と `--method POST` と `-f key=value` の 3 つの形を取りうるため
-確実に書けない。広いルールを選んで摩擦を受け入れている。
+`Bash(gh api *)` は 2026-08-27 に ask から外した。このルールは読み取りの呼び出しにも
+一致するため、`gh api` を使う調査のたびにプロンプトが出ていた。`gh api` の書き込みだけを
+狙うルールは `-X POST` と `--method POST` と `-f key=value` の 3 つの形を取りうるため
+確実に書けない。**その結果、`gh api -X POST` などの書き込みはゲートを通らない。**
+摩擦を減らす代わりにこの穴を受け入れている。
 
-止められない経路がある。`env` は wrapper の strip 対象に入らないため `env git push` は
-一致しない。read（`git clone` と `git fetch`）は対象外である。別 pane で人間が打つ
-コマンドは Claude Code を通らない。
+止められない経路がほかにもある。`env` は wrapper の strip 対象に入らないため
+`env git push` は一致しない。read（`git clone` と `git fetch`）は対象外である。
+別 pane で人間が打つコマンドは Claude Code を通らない。
 
 ## 鍵の作成
 
@@ -265,9 +266,10 @@ Apple の `ssh-keychain.dylib` は `-t none` の鍵でも user presence フラ�
 新しく Claude Code のセッションを開いて確かめる。**起動中のセッションは設定を起動時に
 読むため、途中で入れたルールは反映されない。**
 
-Claude Code に `git push --dry-run` と `gh api /user` を実行させ、どちらでも承認
+Claude Code に `git push --dry-run` と `gh pr create --help` を実行させ、どちらでも承認
 プロンプトが出ること。`git status && git push --dry-run` のような複合コマンドでも、
-push 側でプロンプトが出ること。
+push 側でプロンプトが出ること。`gh api /user` ではプロンプトは出ない。`gh api` は
+ask から外したためである。
 
 ## 鍵の更新
 

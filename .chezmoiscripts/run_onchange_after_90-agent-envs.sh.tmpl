@@ -15,8 +15,6 @@ set -eu
 
 {{ includeTemplate "install/preamble" }}
 
-XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-
 command -v jq >/dev/null 2>&1 || die 'jq が見つからない。10-brew が失敗している'
 
 # 全プロファイル共通の MCP 定義。claude 本体の modify_dot_claude.json.tmpl と同じものを使う。
