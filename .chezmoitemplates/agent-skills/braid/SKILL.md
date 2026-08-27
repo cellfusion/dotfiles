@@ -3,7 +3,7 @@ name: braid
 description: >-
   複数のエージェントを組み合わせた作業を braid のレシピで実行するときに使う。
   観点を分けた調査、候補案の生成と採点、立場を分けた賛否、項目ごとの並行処理、
-  多観点レビュー、実装とレビューのループが対象。/braid で手動起動も可能。
+  多観点レビュー、実装とレビューのループが対象。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
@@ -27,8 +27,11 @@ braid は役割ごとに engine（codex / claude）を選び、複数のエー�
 | `implement` | 単発の実装とレビューループ | `requirements` | `implementer_role`, `reviewer_role`, `max_rounds` |
 | `waves` | 段階的な並行実装 | `waves`, `spec_dir` | `implementer_role`, `reviewer_role`, `re_reviewer_role`, `escalate_from`, `escalate_tier`, `escalate_engine`, `max_rounds` |
 
-`implement` と `waves` は write 役を含む。作業ツリーか index が clean でなければ braid が実行を
-拒否する。
+`implement` と `waves` は write 役を含む。作業ツリーと index が clean でなければ braid が実行を
+拒否する（`git status --porcelain --untracked-files=all` で見るため、untracked ファイルも
+dirty に数える）。
+
+表と実際の braid の引数が食い違ったら、`braid run <recipe> --dry-run` の出力が正である。
 
 ## はまらないとき
 

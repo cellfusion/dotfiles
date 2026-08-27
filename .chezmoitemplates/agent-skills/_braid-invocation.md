@@ -40,10 +40,22 @@ braid run <recipe> --arg k=v
 状態を持ち、プロセスが死ねば OS がロックを解放するので孤児 run が残らない。停止は
 `braid cancel`、進行の目視は TUI でできる。
 
+ノード 1 つあたりの既定の実行上限は 1200 秒で、`--timeout <秒>` で全ノード共通に変えられる。
+`review` はノード 4 つ、`implement` / `waves` はレビューループを回すため、シェル実行ツール側の
+コマンドタイムアウトが既定より短いなら明示的に伸ばす。伸ばしても足りない見込みなら
+`--detach` を付けて runId だけを受け取り、`braid status <runId>` で進行を追う。
+
 ### 引数
 
 すべて文字列で渡す。`requirements` / `review_file` / `spec_dir` のようにファイルを指す引数も、
 パスの文字列としてプロンプトへ埋め込まれる。読むのは役割エージェントである。
+
+役割エージェントが読める範囲は cwd に縛られる。claude の read 役は `--setting-sources ""` で
+`permissions.allow` を失うため、cwd の外を 1 つも読めない。braid が `--add-dir` を渡すのは
+`review_loop` が作る diff パッケージのディレクトリだけで、`--arg` で渡したパスには渡さない。
+隔離しないノードの cwd は `braid run` を打った場所である。したがって **`--arg` で渡すパスは
+実行時の cwd の下にあること**。cwd の外のパスを渡しても braid はエラーにせず、役割エージェントが
+読めずに劣化した結果を返すだけなので気づきにくい。
 
 配列は JSON string array で渡す。
 

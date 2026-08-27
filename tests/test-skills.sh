@@ -294,11 +294,27 @@ assert_contains "$braid_inv" "braid status" "_braid-invocation: run の追い方
 assert_contains "$braid_inv" "リトライしない" "_braid-invocation: 失敗を再試行しない"
 assert_not_contains "$braid_inv" "target/release/braid" "_braid-invocation: 開発中のパスを書かない"
 
+# レシピごとの必須引数。表の drift を検出するため、レシピ名だけでなく引数名も assert する。
+required_args_for() {
+  case "$1" in
+    research) echo "topic" ;;
+    decide) echo "problem" ;;
+    debate) echo "proposal" ;;
+    fanout) echo "items task" ;;
+    review) echo "requirements review_file" ;;
+    implement) echo "requirements" ;;
+    waves) echo "waves spec_dir" ;;
+  esac
+}
+
 # braid スキルはレシピ 7 本を表に持ち、呼び方は共有パーシャルから取り込む。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/braid/SKILL.md" "$tool")"
   for recipe in research decide debate fanout review implement waves; do
     assert_contains "$out" "\`$recipe\`" "braid/$tool: レシピ $recipe が表にある"
+    for arg in $(required_args_for "$recipe"); do
+      assert_contains "$out" "\`$arg\`" "braid/$tool: $recipe の必須引数 $arg が表にある"
+    done
   done
   assert_contains "$out" "## braid の呼び方" "braid/$tool: 呼び方の節が展開される"
 done
@@ -313,9 +329,13 @@ for tool in claude codex opencode; do
   out="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
   assert_contains "$out" "_cellfusion/reviews/" "rcr/$tool: package をリポジトリ内に作る"
   assert_contains "$out" "braid run review" "rcr/$tool: review レシピを呼ぶ"
+  assert_contains "$out" "--arg requirements=" "rcr/$tool: requirements 引数を渡す"
+  assert_contains "$out" "--arg review_file=" "rcr/$tool: review_file 引数を渡す"
   assert_contains "$out" "## braid の呼び方" "rcr/$tool: 呼び方の節が展開される"
   assert_not_contains "$out" "mktemp -t review" "rcr/$tool: /tmp に package を作らない"
+  assert_not_contains "$out" 'requirements=<' "rcr/$tool: bash ブロックの中で < をリダイレクトにしない"
   assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
+  assert_contains "$out" "cellfusion-workdir" "rcr/$tool: reviews を cellfusion-workdir 経由で作る"
 done
 
 rcr_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")"

@@ -4,12 +4,16 @@ description: >-
   作業の区切り、大きめの機能の実装後、merge 前にレビューを依頼するときに使う。
   レビュアー subagent に精密に組み立てた文脈だけを渡し、
   自分の context を調整のために温存する。
+  SDD の外で単発に依頼する場合はレビュアー subagent の代わりに braid の
+  review レシピを呼ぶ。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
 # コードレビューを依頼する
 
-レビュアー subagent を dispatch して、問題が波及する前に捕まえる。レビュアーには**評価のために精密に組み立てた文脈**を渡す。あなたのセッション履歴は渡さない。
+レビュアー subagent を dispatch するか、SDD の外なら braid の review レシピを呼んで、問題が
+波及する前に捕まえる。どちらの経路でも、レビュー側には**評価のために精密に組み立てた文脈**を
+渡す。あなたのセッション履歴は渡さない。
 
 **中核**: 早く、こまめにレビューする。
 
@@ -45,7 +49,7 @@ SDD の外で単発に依頼する場合は、リポジトリ内の `_cellfusion
 `~/.agents/skills/_shared/scripts/cellfusion-workdir` が作る。
 
 ```bash
-REVIEWS="$(git rev-parse --show-toplevel)/_cellfusion/reviews"
+REVIEWS="$(~/.agents/skills/_shared/scripts/cellfusion-workdir)/reviews"
 mkdir -p "$REVIEWS"
 OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
 {
@@ -68,6 +72,9 @@ SDD の中では従来経路を維持する。[dispatch-subagent: sdd-final-revi
 - 先送りされた指摘や park された指摘のリスト（あれば）
 
 SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上の 4 項目をレシピの 2 引数へ移す。
+必ずリポジトリルートで実行する。「braid の呼び方」の「引数」節が定めるとおり、`--arg` で渡す
+パスは実行時の cwd の下になければ read 役が読めない。`requirements` に渡す要件ファイルが
+リポジトリ外にあるなら、package と同じ `$REVIEWS` へ複製してからそのパスを渡す。
 
 | 渡すもの | 移す先 |
 |---|---|
@@ -77,8 +84,11 @@ SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上�
 | 先送り・park された指摘のリスト | `requirements` に含める |
 
 ```bash
-braid run review --arg requirements=<パスまたは要件の文字列> --arg review_file="$OUT"
+REQ=<パスまたは要件の文字列>
+braid run review --arg requirements="$REQ" --arg review_file="$OUT"
 ```
+
+呼び方は下の「braid の呼び方」に従う。dry-run を先に通す。
 
 `review` レシピは 3 つの `reviewer` を並列に走らせ、後段の `reviewer` が統合して `PASS` /
 `FAIL` と findings を返す。critical と important が 0 件のときだけ `PASS` になる。
