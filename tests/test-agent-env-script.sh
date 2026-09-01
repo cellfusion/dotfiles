@@ -97,6 +97,67 @@ assert_contains "$warn" "claude_gone" "定義に無い環境を警告する"
 assert_eq "$([ -d "$fixture/claude_gone" ] && echo yes || echo no)" "yes" \
   "定義に無い環境を削除しない"
 
+# --- Paseo の provider に AGENT_ENV を注入する ---
+# Paseo は HERDR_SESSION を注入しないので、provider の env が環境名を伝える。
+paseo_cfg="$fixture/paseo-config.json"
+cat > "$paseo_cfg" <<'EOF'
+{
+  "version": 1,
+  "daemon": { "listen": "127.0.0.1:6767" },
+  "agents": {
+    "providers": {
+      "copilot": { "enabled": false }
+    }
+  }
+}
+EOF
+if PASEO_CONFIG_FILE="$paseo_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
+then paseo_status=0; else paseo_status=$?; fi
+assert_eq "$paseo_status" "0" "Paseo の設定があってもスクリプトが 0 で終わる"
+
+assert_eq "$(jq -r '.agents.providers.claude.env.AGENT_ENV' < "$paseo_cfg")" "default" \
+  "先頭環境: 組み込み claude に AGENT_ENV を足す"
+assert_eq "$(jq -r '.agents.providers.codex.env.AGENT_ENV' < "$paseo_cfg")" "default" \
+  "先頭環境: 組み込み codex に AGENT_ENV を足す"
+assert_eq "$(jq -r '.agents.providers["claude-work"].extends' < "$paseo_cfg")" "claude" \
+  "2 つ目: claude-work が claude を継承する"
+assert_eq "$(jq -r '.agents.providers["claude-work"].env.AGENT_ENV' < "$paseo_cfg")" "work" \
+  "2 つ目: claude-work に AGENT_ENV を足す"
+assert_eq "$(jq -r '.agents.providers["claude-work"].env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
+  "$fixture/claude_work" "2 つ目: claude-work に CLAUDE_CONFIG_DIR を足す"
+assert_eq "$(jq -r '.agents.providers["claude-work"].label' < "$paseo_cfg")" "Claude (P2)" \
+  "2 つ目: label に private-data.toml の label が入る"
+assert_eq "$(jq -r '.agents.providers | has("codex-work")' < "$paseo_cfg")" "false" \
+  "codex を持たない環境に codex-<session> を作らない"
+assert_eq "$(jq -r '.agents.providers["codex-solo"].env.CODEX_HOME' < "$paseo_cfg")" \
+  "$fixture/codex_solo" "3 つ目: codex-solo に CODEX_HOME を足す"
+assert_eq "$(jq -r '.agents.providers | has("claude-solo")' < "$paseo_cfg")" "false" \
+  "claude を持たない環境に claude-<session> を作らない"
+
+# --- Paseo が書いた他の設定を壊さない ---
+assert_eq "$(jq -r '.agents.providers.copilot.enabled' < "$paseo_cfg")" "false" \
+  "他の provider を壊さない"
+assert_eq "$(jq -r '.daemon.listen' < "$paseo_cfg")" "127.0.0.1:6767" \
+  "daemon の設定を壊さない"
+assert_eq "$(jq -r '.version' < "$paseo_cfg")" "1" "version を壊さない"
+
+# --- 既存の env を消さない。2 回目でも壊れない ---
+jq '.agents.providers["claude-work"].env.EXISTING = "keep"' < "$paseo_cfg" > "$paseo_cfg.t"
+mv "$paseo_cfg.t" "$paseo_cfg"
+PASEO_CONFIG_FILE="$paseo_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
+assert_eq "$(jq -r '.agents.providers["claude-work"].env.EXISTING' < "$paseo_cfg")" "keep" \
+  "既存の env のキーを消さない"
+assert_eq "$(jq -r '.agents.providers["claude-work"].env.AGENT_ENV' < "$paseo_cfg")" "work" \
+  "2 回目の実行後も AGENT_ENV が残る"
+
+# --- Paseo の設定が無いマシンでは何もしない ---
+missing_cfg="$fixture/no-such-paseo.json"
+if PASEO_CONFIG_FILE="$missing_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
+then missing_status=0; else missing_status=$?; fi
+assert_eq "$missing_status" "0" "Paseo の設定が無くても 0 で終わる"
+assert_eq "$([ -e "$missing_cfg" ] && echo yes || echo no)" "no" \
+  "Paseo の設定が無いとき作らない"
+
 # --- 環境名がソースに漏れていない ---
 tmpl="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
 assert_not_contains "$tmpl" "secondary" "テンプレートに固定の環境名が残っていない"
