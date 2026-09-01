@@ -2,7 +2,7 @@
 name: dev-env
 description: >-
   この環境固有の開発運用手順。Cloudflare のアカウント切り替え、
-  1Password による CLI 認証とシークレット取得、herdr セッション別の環境変数を扱う。
+  1Password による CLI 認証とシークレット取得、AI 環境（herdr / Paseo）別の環境変数を扱う。
   デプロイ・認証情報・環境変数・アカウント切り替えに触れる作業の前に読む。
   /dev-env で手動起動も可能。
 ---
@@ -17,7 +17,7 @@ description: >-
 |---|---|
 | Cloudflare にデプロイする。アカウントを切り替える | `references/cloudflare.md` |
 | API トークンや認証情報が必要になる | `references/secrets.md` |
-| セッションごとに環境変数を変える | `references/herdr.md` |
+| AI 環境ごとに環境変数を変える | `references/herdr.md` |
 
 ## 共通の前提
 

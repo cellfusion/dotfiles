@@ -140,6 +140,16 @@ assert_eq "$(run_env '' 'echo $CLAUDE_CONFIG_DIR' "$EMPTY_ZSH")" "/xdg/claude" \
 assert_eq "$(run_env '' 'echo $AGENT_ENV_AGENTS' "$EMPTY_ZSH")" "claude codex" \
   "定義が無い場合は claude と codex の両方を持つ"
 
+# --- 参照ドキュメントが解決規則と一致している ---
+# Paseo は HERDR_SESSION を注入せず、provider 定義が AGENT_ENV を注入する。
+# 参照ドキュメントが HERDR_SESSION だけを書いていると、環境がずれたときに
+# 読んだ人もエージェントも原因の変数へ辿り着けない。
+ref="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/dev-env/references/herdr.md")"
+assert_contains "$ref" '`AGENT_ENV` → `HERDR_SESSION` → 先頭環境' \
+  "参照ドキュメント: 環境名の解決の優先順位を書いている"
+assert_contains "$ref" "Paseo" \
+  "参照ドキュメント: AGENT_ENV を注入する Paseo の provider 定義に触れている"
+
 # --- 環境名がソースに漏れていない ---
 tmpl="$(cat "$CHEZMOI_SOURCE/private_dot_config/zsh/agent-environments.zsh.tmpl")"
 assert_not_contains "$tmpl" "secondary" \
