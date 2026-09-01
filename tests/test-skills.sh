@@ -41,6 +41,14 @@ assert_contains "$preview" '; exit' "_preview-tab: エディタ終了で pane �
 assert_contains "$preview" "読み直す" "_preview-tab: 手編集の取り込みを指示する"
 assert_not_contains "$preview" "herdr tab close" "_preview-tab: タブを閉じない"
 
+# Paseo は HERDR_ENV を持たない。端末を作って glow で表示する経路を別に持つ。
+assert_contains "$preview" "PASEO_AGENT_ID" "_preview-tab: Paseo 環境かを判定する"
+assert_contains "$preview" "paseo terminal create --cwd" \
+  "_preview-tab: Paseo では端末を作る"
+assert_contains "$preview" "glow -p" "_preview-tab: Paseo では glow で表示する"
+assert_not_contains "$preview" "paseo terminal kill" \
+  "_preview-tab: Paseo の端末を閉じない"
+
 # [todo] の対応先は実在するツールでなければならない。TaskCreate / TaskUpdate は
 # 手元の Claude Code に無い。
 claude_runtime="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_runtime/claude.md")"
