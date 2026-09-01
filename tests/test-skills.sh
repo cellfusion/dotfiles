@@ -41,6 +41,24 @@ assert_contains "$preview" '; exit' "_preview-tab: エディタ終了で pane �
 assert_contains "$preview" "読み直す" "_preview-tab: 手編集の取り込みを指示する"
 assert_not_contains "$preview" "herdr tab close" "_preview-tab: タブを閉じない"
 
+# Paseo は HERDR_ENV を持たない。端末を作って glow で表示する経路を別に持つ。
+assert_contains "$preview" "PASEO_AGENT_ID" "_preview-tab: Paseo 環境かを判定する"
+assert_contains "$preview" "paseo terminal create --cwd" \
+  "_preview-tab: Paseo では端末を作る"
+assert_contains "$preview" "glow -p" "_preview-tab: Paseo では glow で表示する"
+assert_not_contains "$preview" "paseo terminal kill" \
+  "_preview-tab: Paseo の端末を閉じない"
+
+# [todo] の対応先は実在するツールでなければならない。TaskCreate / TaskUpdate は
+# 手元の Claude Code に無い。
+claude_runtime="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_runtime/claude.md")"
+assert_not_contains "$claude_runtime" "TaskCreate" \
+  "claude runtime: 実在しないツール名を指さない"
+assert_not_contains "$claude_runtime" "TaskUpdate" \
+  "claude runtime: 実在しないツール名を指さない（TaskUpdate）"
+assert_contains "$claude_runtime" "ledger ファイルで代替" \
+  "claude runtime: todo の代替手段を書く"
+
 # sandbox の permission denied だけは承認付きで同じプレビューを一度だけ再試行する。
 for tool in claude codex opencode; do
   runtime="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_runtime/$tool.md")"
@@ -239,7 +257,12 @@ assert_eq "$(printf '%s' "$using" | grep -c '`\.worktrees/` の ignore を確認
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
   assert_contains "$out" "sdd-run 経路" "$tool: sdd-run 経路の節がある"
-  assert_contains "$out" "HERDR_ENV" "$tool: 起動条件を書いている"
+  assert_contains "$out" "command -v codex" "$tool: 起動条件を書いている"
+  # CLI のバイナリは AI 環境に関係なく PATH にある。claude しか持たない AI 環境で
+  # codex を起動すると ~/.codex の既定アカウントで走るので、agents も条件に要る。
+  assert_contains "$out" "AGENT_ENV_AGENTS" "$tool: 起動条件が AI 環境の agents を見る"
+  assert_not_contains "$out" 'が `1` なら、役割ごとにエンジンを選べる' \
+    "$tool: 旧 HERDR_ENV 条件が残っていない"
   assert_contains "$out" "sdd-run" "$tool: orchestrator を指している"
   assert_contains "$out" "routing.json" "$tool: エンジンの決め方を指している"
 done
@@ -250,8 +273,8 @@ for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
   assert_contains "$out" "この節が他のすべての経路に優先する" "$tool: sdd-run 経路の優先を明示する"
 done
-assert_contains "$claude_out" "HERDR_ENV\` が \`1\` でないときの既定" \
-  "sdd/claude: [deterministic-loop] は HERDR_ENV=1 でないときの既定"
+assert_contains "$claude_out" "sdd-run の前提が揃わないときの既定" \
+  "sdd/claude: [deterministic-loop] は sdd-run の前提が揃わないときの既定"
 assert_not_contains "$claude_out" "[deterministic-loop] が使えるならそちらが既定" \
   "sdd/claude: 既定を名乗る経路が 2 つにならない"
 

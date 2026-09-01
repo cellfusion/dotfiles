@@ -105,6 +105,7 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 | fd | 高速 find |
 | ripgrep | 高速 grep |
 | bat | シンタックスハイライト付き cat |
+| glow | マークダウンを整形して表示するページャ |
 | eza | 高機能 ls |
 | jq | JSON 処理 |
 | television | ファジーファインダー |

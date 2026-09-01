@@ -161,6 +161,15 @@ assert_contains "$native_section" "chezmoi" \
 assert_contains "$doc" "--no-upgrade" "docs: 手で回すコマンドが --no-upgrade を付けている"
 assert_contains "$doc" "upgrade は行わない" "docs: upgrade を行わない旨が書かれている"
 
+# --- Brewfile の core にあるものが棚卸しの core にも載っている ---
+# 逆向き（棚卸しにあって Brewfile に無い）だけを見ていると、Brewfile に足した
+# formula を棚卸しに書き忘れても落ちない。読んだ人が入っているツールを把握できなくなる。
+core_formulas="$(printf '%s\n' "$brewfile" \
+  | sed -n '/^# --- core/,/^$/p' | sed -n 's/^brew "\(.*\)"$/\1/p')"
+for f in $core_formulas; do
+  assert_contains "$core_section" "| $f |" "整合: Brewfile の core の $f が棚卸しの core に載っている"
+done
+
 # --- Brewfile に無いものを core として載せていない ---
 for f in yazi helix gitui; do
   assert_not_contains "$brewfile" "brew \"$f\"" "整合: $f は Brewfile に無い"
