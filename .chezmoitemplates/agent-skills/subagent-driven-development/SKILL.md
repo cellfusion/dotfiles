@@ -83,13 +83,23 @@ digraph when_to_use {
 
 ### sdd-run 経路（前提が揃えば既定）
 
-次の 2 つが揃っているなら、役割ごとにエンジンを選べる `sdd-run` 経路を使う。
+次の 3 つが揃っているなら、役割ごとにエンジンを選べる `sdd-run` 経路を使う。
 実装を codex、レビューを claude というように分けられる。対応は
 `~/.agents/agent-defs/routing.json` が持つ。
 
 ```bash
-test -r ~/.agents/agent-defs/routing.json && command -v claude && command -v codex
+sdd_agents="${AGENT_ENV_AGENTS-claude codex}"
+test -r ~/.agents/agent-defs/routing.json &&
+  command -v claude && command -v codex &&
+  printf '%s\n' "$sdd_agents" | grep -qw claude &&
+  printf '%s\n' "$sdd_agents" | grep -qw codex
 ```
+
+CLI のバイナリは AI 環境に関係なく PATH にあるので、`command -v` だけでは足りない。
+いまの AI 環境が使ってよいエージェントは `AGENT_ENV_AGENTS` が持つ。
+claude だけの AI 環境では `CODEX_HOME` が unset なので、codex を起動すると
+既定の `~/.codex` を読み、意図しないアカウントで実装タスクが走る。
+`AGENT_ENV_AGENTS` を持たないマシンでは CLI の有無だけで判定する。
 
 **前提が揃っているとき、この節が他のすべての経路に優先する。下の経路の節は読まない。**
 

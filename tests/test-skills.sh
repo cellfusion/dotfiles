@@ -258,6 +258,9 @@ for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
   assert_contains "$out" "sdd-run 経路" "$tool: sdd-run 経路の節がある"
   assert_contains "$out" "command -v codex" "$tool: 起動条件を書いている"
+  # CLI のバイナリは AI 環境に関係なく PATH にある。claude しか持たない AI 環境で
+  # codex を起動すると ~/.codex の既定アカウントで走るので、agents も条件に要る。
+  assert_contains "$out" "AGENT_ENV_AGENTS" "$tool: 起動条件が AI 環境の agents を見る"
   assert_not_contains "$out" 'が `1` なら、役割ごとにエンジンを選べる' \
     "$tool: 旧 HERDR_ENV 条件が残っていない"
   assert_contains "$out" "sdd-run" "$tool: orchestrator を指している"
