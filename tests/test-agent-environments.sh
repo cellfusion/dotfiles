@@ -51,6 +51,12 @@ run_env() {
   HERDR_SESSION="$1" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$file'; $2" 2>&1
 }
 
+# $1 の AGENT_ENV と $2 の HERDR_SESSION で $ENV_ZSH を source し、$3 を評価する。
+# run_env と同じ理由で XDG_CONFIG_HOME はコマンド文字列の内側で設定する。
+run_env_both() {
+  AGENT_ENV="$1" HERDR_SESSION="$2" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$ENV_ZSH'; $3" 2>&1
+}
+
 # --- 先頭環境（primary）はサフィックスの無いパスを使う ---
 assert_eq "$(run_env default 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude" \
   "先頭環境の CLAUDE_CONFIG_DIR は ~/.config/claude"
@@ -96,6 +102,23 @@ assert_eq "$(run_env nosuchsession 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude" \
   "フォールバック後は先頭環境の値になる"
 assert_eq "$(run_env nosuchsession ':')" "" \
   "フォールバックは警告を出さない"
+
+# --- AGENT_ENV は HERDR_SESSION より優先する ---
+# Paseo は HERDR_SESSION を注入しない。provider 定義が AGENT_ENV を注入する。
+assert_eq "$(run_env_both work '' 'echo $AGENT_ENV_SESSION')" "work" \
+  "AGENT_ENV が定義済みの環境名ならその環境に解決する"
+assert_eq "$(run_env_both work default 'echo $AGENT_ENV_SESSION')" "work" \
+  "両方あるとき AGENT_ENV が優先する"
+assert_eq "$(run_env_both '' work 'echo $AGENT_ENV_SESSION')" "work" \
+  "AGENT_ENV が空なら HERDR_SESSION を使う"
+assert_eq "$(run_env_both nosuchsession '' 'echo $AGENT_ENV_SESSION')" "default" \
+  "AGENT_ENV が定義に無い名前なら先頭環境へ落ちる"
+assert_eq "$(run_env_both '' '' 'echo $AGENT_ENV_SESSION')" "default" \
+  "どちらも未設定なら先頭環境へ落ちる"
+assert_eq "$(run_env_both work '' 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude_work" \
+  "AGENT_ENV で解決した環境のパスが使われる"
+assert_eq "$(run_env_both work '' 'echo $CODEX_HOME')" "" \
+  "AGENT_ENV で解決しても agents の制限が効く"
 
 # --- AGENT_ENV_* を export する ---
 assert_eq "$(run_env work 'echo $AGENT_ENV_AGENTS')" "claude" \
