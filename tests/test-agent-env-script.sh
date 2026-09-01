@@ -28,6 +28,12 @@ chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-for
 fixture="$(mktemp -d)"
 trap 'rm -rf "$SCRIPT" "$cfg" "$fixture"' EXIT
 
+# 以降のすべてのスクリプト実行に、実在の ~/.paseo/config.json ではなく fixture の
+# パスを使わせる。個々の呼び出しで渡し忘れると実マシンの設定を書き換えてしまうため、
+# ここで export して既定にする。存在しないファイルへのフォールバックが必要な
+# ケースだけ、その呼び出しに限って別のパスを渡す。
+export PASEO_CONFIG_FILE="$fixture/paseo-config.json"
+
 # 先頭環境のディレクトリは chezmoi 本体が配る。fixture では手で用意する。
 mkdir -p "$fixture/claude/agents" "$fixture/claude/commands" "$fixture/claude/skills" \
          "$fixture/claude/hooks" "$fixture/codex/agents"
@@ -99,7 +105,7 @@ assert_eq "$([ -d "$fixture/claude_gone" ] && echo yes || echo no)" "yes" \
 
 # --- Paseo の provider に AGENT_ENV を注入する ---
 # Paseo は HERDR_SESSION を注入しないので、provider の env が環境名を伝える。
-paseo_cfg="$fixture/paseo-config.json"
+paseo_cfg="$PASEO_CONFIG_FILE"
 cat > "$paseo_cfg" <<'EOF'
 {
   "version": 1,
@@ -111,7 +117,7 @@ cat > "$paseo_cfg" <<'EOF'
   }
 }
 EOF
-if PASEO_CONFIG_FILE="$paseo_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
+if XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
 then paseo_status=0; else paseo_status=$?; fi
 assert_eq "$paseo_status" "0" "Paseo の設定があってもスクリプトが 0 で終わる"
 
@@ -144,7 +150,7 @@ assert_eq "$(jq -r '.version' < "$paseo_cfg")" "1" "version を壊さない"
 # --- 既存の env を消さない。2 回目でも壊れない ---
 jq '.agents.providers["claude-work"].env.EXISTING = "keep"' < "$paseo_cfg" > "$paseo_cfg.t"
 mv "$paseo_cfg.t" "$paseo_cfg"
-PASEO_CONFIG_FILE="$paseo_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
+XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
 assert_eq "$(jq -r '.agents.providers["claude-work"].env.EXISTING' < "$paseo_cfg")" "keep" \
   "既存の env のキーを消さない"
 assert_eq "$(jq -r '.agents.providers["claude-work"].env.AGENT_ENV' < "$paseo_cfg")" "work" \
