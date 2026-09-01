@@ -100,6 +100,29 @@ def iter_agent_records(agents_root: Path):
             yield provider, cwd, session_id
 
 
+def find_transcript(roots, session_id, preferred_project_dir):
+    """`<sessionId>.jsonl` を探す。cwd から作った名前を先に見る。
+
+    Claude Code は cwd に対応するディレクトリへ transcript を置く。session の
+    途中で agent が worktree に移ると、Paseo が登録している cwd とは別の
+    ディレクトリに移る。その場合は projects 配下を session id で探す。
+    """
+    name = "{}.jsonl".format(session_id)
+    unique_roots = []
+    for root in roots:
+        if root and root not in unique_roots:
+            unique_roots.append(root)
+    for root in unique_roots:
+        candidate = Path(root) / "projects" / preferred_project_dir / name
+        if candidate.is_file():
+            return candidate
+    for root in unique_roots:
+        for candidate in sorted((Path(root) / "projects").glob("*/" + name)):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 class Report:
     """出力をためて、最後にまとめて書き出す。"""
 
@@ -212,21 +235,28 @@ def main() -> int:
     for name, path in sorted(provider_dirs.items()):
         report.line("provider {}: {}".format(name, path))
 
+    # cwd の違いで張った symlink は daemon 側を指す。掃除の対象にも含める。
+    link_roots = provider_roots + [str(dest_root)]
+
     if args.remove:
-        remove_links(dest_root, provider_roots, report, args.dry_run)
+        remove_links(dest_root, link_roots, report, args.dry_run)
         report.flush()
         return 0
 
     for provider, cwd, session_id in iter_agent_records(paseo_home / "agents"):
-        src_root = provider_dirs.get(provider)
-        if src_root is None or Path(src_root) == dest_root:
-            continue
+        provider_root = provider_dirs.get(provider)
+        # provider 側と daemon 側の両方を探す。session を始めたあとに provider の
+        # env が変わった場合、transcript が daemon 側に残っていることがある。
+        search_roots = [provider_root, str(dest_root)] if provider_root else [str(dest_root)]
         project_dir = encode_project_dir(cwd)
-        src = Path(src_root) / "projects" / project_dir / "{}.jsonl".format(session_id)
         dst = dest_root / "projects" / project_dir / "{}.jsonl".format(session_id)
-        if not src.is_file():
+        src = find_transcript(search_roots, session_id, project_dir)
+        if src is None:
             # 会話が消されたか、まだ 1 度も応答していない agent である。
             report.count("missing-src")
+            continue
+        if src == dst:
+            report.count("ok")
             continue
         status = make_link(src, dst, args.dry_run)
         report.count(status, noteworthy=status != "ok")
@@ -239,7 +269,7 @@ def main() -> int:
             report.count("sidechain-" + side_status, noteworthy=side_status != "ok")
 
     if args.prune:
-        prune_links(dest_root, provider_roots, report, args.dry_run)
+        prune_links(dest_root, link_roots, report, args.dry_run)
 
     report.flush()
     return 0

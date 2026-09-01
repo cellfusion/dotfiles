@@ -36,6 +36,17 @@ Paseo 0.7.0 で再現することを確認した。
 `Info.plist` の `ElectronAsarIntegrity` が `app.asar` の SHA256 を持っており、
 書き換えると整合性の検査に落ちる。
 
+## 履歴が出ないもう 1 つの原因
+
+`resolveHistoryPath` は `cwd` からディレクトリ名を作る。Paseo が使う `cwd` は
+agent を作ったときのディレクトリで固定される。一方 Claude Code は、session の
+途中で cwd が変わると transcript を新しい cwd のディレクトリへ移す。
+agent が `.claude/worktrees/<名前>` に移って作業すると、transcript は worktree の
+ディレクトリに移り、Paseo は元の cwd のディレクトリを見続けるため見つけられない。
+
+こちらは `CLAUDE_CONFIG_DIR` とは無関係で、組み込みの provider でも起きる。
+スクリプトは transcript を session id で探すので、両方の原因に効く。
+
 ## スクリプトの動き
 
 1. `~/.paseo/config.json` を読み、`claude` を `extends` する provider ごとの
@@ -44,7 +55,10 @@ Paseo 0.7.0 で再現することを確認した。
    `persistence.sessionId` を読む。
 3. `cwd` からディレクトリ名を作る。英数字以外を `-` に置き換え、200 文字を超えたら
    切って hash を付ける。Paseo 側の `claudeProjectDirSync` と同じ規則である。
-4. provider 側の `.jsonl` へ、daemon 側の同じ名前のパスから symlink を張る。
+   この名前が、Paseo が履歴を探しに行く場所になる。
+4. `<sessionId>.jsonl` を探す。3 で作った名前を provider 側と daemon 側の順で見て、
+   無ければ両方の `projects` 配下を session id で探す。
+5. 見つけた `.jsonl` へ、3 で作った名前のパスから symlink を張る。
    subagent の履歴が入るディレクトリが並んでいれば、それも張る。
 
 ## 使い方
