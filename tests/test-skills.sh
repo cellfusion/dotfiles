@@ -353,7 +353,7 @@ done
 # スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
 # プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
 # 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
-for skill in braid requesting-code-review; do
+for skill in braid requesting-code-review pr-review; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
     blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
