@@ -362,6 +362,17 @@ for skill in braid requesting-code-review multi-agent-development; do
   done
 done
 
+# MAD のスクリプトは PATH に無い。bash ブロックは裸の mad-run ではなくフルパスで書く。
+# コピーして実行する読者が command not found にならないよう、テストで縛る。
+for name in "agent-skills/multi-agent-development/SKILL.md" "agent-skills/_mad-invocation.md"; do
+  out="$(render_template "$name" "claude")"
+  blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
+  bare="$(printf '%s\n' "$blocks" | grep -c '^[[:space:]]*mad-run' || true)"
+  assert_eq "$bare" "0" "$name: bash ブロックに裸の mad-run を書かない"
+  assert_contains "$blocks" "~/.agents/skills/multi-agent-development/scripts/mad-run" \
+    "$name: mad-run をフルパスで書く"
+done
+
 # MAD の呼び方は共有パーシャルに 1 本だけ置く。
 mad_inv="$(render_template "agent-skills/_mad-invocation.md" "claude")"
 assert_contains "$mad_inv" "## mad-run の呼び方" "_mad-invocation: 節の見出しがある"

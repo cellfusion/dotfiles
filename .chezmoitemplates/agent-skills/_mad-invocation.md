@@ -47,7 +47,8 @@ Paseo の側から `paseo ls` と `paseo stop` で追える。
 すべて `--arg k=v` の形で渡す。配列は JSON の文字列配列で渡す。
 
 ```bash
-mad-run research --arg 'topic=対象' --arg 'perspectives=["現状","制約","代替案"]'
+~/.agents/skills/multi-agent-development/scripts/mad-run research \
+  --arg 'topic=対象' --arg 'perspectives=["現状","制約","代替案"]'
 ```
 
 役割エージェントが読める範囲は `--cwd` に縛られる。`mad-run` はレシピを打った場所を

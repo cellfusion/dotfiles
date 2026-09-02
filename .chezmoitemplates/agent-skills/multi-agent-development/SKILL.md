@@ -46,9 +46,10 @@ Paseo アプリで追える。
 ## 例
 
 ```bash
-mad-run research --arg 'topic=どの方式で生死を判定するか'
-mad-run decide --arg 'problem=run store の置き場所をどこにするか'
-mad-run fanout --arg 'items=["a.ts","b.ts","c.ts"]' --arg 'task=型定義を洗い出す'
+MAD=~/.agents/skills/multi-agent-development/scripts/mad-run
+"$MAD" research --arg 'topic=どの方式で生死を判定するか'
+"$MAD" decide --arg 'problem=run store の置き場所をどこにするか'
+"$MAD" fanout --arg 'items=["a.ts","b.ts","c.ts"]' --arg 'task=型定義を洗い出す'
 ```
 
 {{ includeTemplate "agent-skills/_mad-invocation.md" . }}
