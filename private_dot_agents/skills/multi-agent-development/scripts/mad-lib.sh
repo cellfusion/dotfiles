@@ -36,13 +36,21 @@ mad_run_node() {
     # 失敗しても出力ファイルは作る。mad_collect が読む先を欠かさないため。
     local route
     printf '{}\n' > "$of"
-    route="$("$MAD_SCRIPTS/mad-route" "$role")" || return 1
+    route="$("$MAD_SCRIPTS/mad-route" "$role")" || {
+      printf 'mad-lib: ノード %s（役割 %s）の provider を解決できない\n' "$name" "$role" >&2
+      return 1
+    }
     printf 'node=%s role=%s %s prompt_chars=%s\n' \
       "$name" "$role" "$route" "$(wc -c < "$pf" | tr -d ' ')"
     return 0
   fi
   "$MAD_SCRIPTS/mad-agent" --role "$role" --prompt-file "$pf" --cwd "$PWD" \
     --out "$of" --log "$lf" --timeout "$MAD_TIMEOUT" --title "mad/$MAD_RUN_ID/$name"
+  local status=$?
+  # 失敗したノードの名前を出す。背景で走る分もここを通る。
+  [ "$status" -eq 0 ] || printf 'mad-lib: ノード %s（役割 %s）が失敗した。ログ: %s\n' \
+    "$name" "$role" "$lf" >&2
+  return "$status"
 }
 
 # ノードを背景で走らせる。dry-run のときは順に走らせる。
