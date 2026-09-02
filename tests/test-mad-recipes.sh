@@ -84,4 +84,31 @@ assert_contains "$out" "node=synthesis role=synthesizer" "fanout: 統合は synt
 dry fanout --arg task=x >/dev/null 2>&1
 assert_eq "$?" "2" "fanout: items が無いと 2 で終わる"
 
+# decide: 案 3 つ + 採点 1 つ。
+out="$(dry decide --arg problem=課題)"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=candidate-')" "3" "decide: 案の数だけノードを作る"
+assert_contains "$out" "node=candidate-1 role=researcher" "decide: 案は researcher"
+assert_contains "$out" "node=verdict role=judge" "decide: 採点は judge"
+
+dry decide >/dev/null 2>&1
+assert_eq "$?" "2" "decide: problem が無いと 2 で終わる"
+
+# debate: 立場 2 つ + 裁定 1 つ。
+out="$(dry debate --arg proposal=提案)"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=position-')" "2" "debate: 立場の数だけノードを作る"
+assert_contains "$out" "node=position-1 role=researcher" "debate: 立場は researcher"
+assert_contains "$out" "node=verdict role=judge" "debate: 裁定は judge"
+
+dry debate >/dev/null 2>&1
+assert_eq "$?" "2" "debate: proposal が無いと 2 で終わる"
+
+# review: 観点 3 つ + 統合 1 つ。
+out="$(dry review --arg requirements=req.md --arg review_file=diff.md)"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=review-')" "3" "review: 観点の数だけノードを作る"
+assert_contains "$out" "node=review-1 role=reviewer" "review: 観点は reviewer"
+assert_contains "$out" "node=final role=reviewer" "review: 統合も reviewer"
+
+dry review --arg requirements=req.md >/dev/null 2>&1
+assert_eq "$?" "2" "review: review_file が無いと 2 で終わる"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
