@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# 役割から provider / model / thinking / mode を解決して 1 行で出す。
+#
+#   eval "$(mad-route researcher)"
+set -u
+
+DEFS="${MAD_DEFS_DIR:-$HOME/.agents/agent-defs}"
+PASEO="${MAD_PASEO_BIN:-paseo}"
+GIT="${MAD_GIT_BIN:-git}"
+CACHE="${MAD_CACHE_DIR:-}"
+
+role="${1:-}"
+if [ -z "$role" ]; then
+  printf 'usage: mad-route <role>\n' >&2
+  exit 2
+fi
+
+die() { printf 'mad-route: %s\n' "$1" >&2; exit 1; }
+
+manifests="$DEFS/manifests.json"
+routing="$DEFS/paseo-routing.json"
+providers="$DEFS/paseo-providers.json"
+project="$DEFS/paseo-project-routing.json"
+for f in "$manifests" "$routing" "$providers"; do
+  [ -f "$f" ] || die "$f が無い"
+done
+
+tier="$(jq -r --arg r "$role" '.[$r].tier // empty' "$manifests")"
+access="$(jq -r --arg r "$role" '.[$r].access // empty' "$manifests")"
+[ -n "$tier" ] || die "manifests.json に $role が無い"
+
+candidates="$(jq -c --arg r "$role" '.[$r] // empty' "$routing")"
+[ -n "$candidates" ] || die "paseo-routing.json に $role が無い"
+
+# プロジェクトごとの規則を当てる。最初に一致した 1 つだけを使う。
+rule=default
+if [ -f "$project" ]; then
+  root="$("$GIT" rev-parse --show-toplevel 2>/dev/null)" || root="$PWD"
+  remote="$("$GIT" remote get-url origin 2>/dev/null)" || remote=""
+  # ssh 形式 (git@host:path) と https 形式のどちらも "host/path" に正規化して比べる。
+  remote_norm="$(printf '%s' "$remote" |
+    sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^@/]+@([^:/]+)[:/]#\1/#; s#\.git$##')"
+  matched="$(jq -c --arg remote "$remote_norm" --arg path "$root" '
+    [ .rules[]?
+      | select(
+          ((.match.remote // "") as $mr | $mr != "" and ($remote | contains($mr)))
+          or ((.match.path // "") as $mp | $mp != "" and ($path | startswith($mp)))
+        ) ] | first // empty' "$project")"
+  if [ -n "$matched" ]; then
+    rule="$(printf '%s' "$matched" | jq -r '.name // "unnamed"')"
+    override="$(printf '%s' "$matched" | jq -c --arg r "$role" '.roles[$r] // empty')"
+    [ -n "$override" ] && candidates="$override"
+    map="$(printf '%s' "$matched" | jq -c '.providerMap // {}')"
+    candidates="$(printf '%s' "$candidates" |
+      jq -c --argjson m "$map" '[ .[] | .provider = ($m[.provider] // .provider) ]')"
+  fi
+fi
+
+# Paseo への問い合わせは、CACHE があれば run 内で使い回す。
+[ -n "$CACHE" ] && mkdir -p "$CACHE"
+query() {
+  local key="$1"; shift
+  local file=""
+  [ -n "$CACHE" ] && file="$CACHE/$key.json"
+  if [ -n "$file" ] && [ -s "$file" ]; then
+    cat "$file"
+    return 0
+  fi
+  local out
+  out="$("$PASEO" "$@" 2>/dev/null)" || return 1
+  [ -n "$file" ] && printf '%s' "$out" > "$file"
+  printf '%s' "$out"
+}
+
+avail="$(query providers provider ls --json)" || die "paseo provider ls に失敗した"
+
+n="$(printf '%s' "$candidates" | jq 'length')"
+i=0
+while [ "$i" -lt "$n" ]; do
+  c="$(printf '%s' "$candidates" | jq -c ".[$i]")"
+  i=$((i + 1))
+  p="$(printf '%s' "$c" | jq -r '.provider')"
+  ctier="$(printf '%s' "$c" | jq -r --arg t "$tier" '.tier // $t')"
+  cmode="$(printf '%s' "$c" | jq -r '.mode // empty')"
+
+  ok="$(printf '%s' "$avail" | jq -r --arg p "$p" '
+    [ .[] | select(.provider == $p and .status == "available" and .enabled == "Enabled") ] | length')"
+  [ "$ok" -ge 1 ] || continue
+
+  entry="$(jq -c --arg p "$p" '.[$p] // empty' "$providers")"
+  [ -n "$entry" ] || continue
+
+  model="$(printf '%s' "$entry" | jq -r --arg t "$ctier" '.models[$t] // empty')"
+  thinking="$(printf '%s' "$entry" | jq -r --arg t "$ctier" '.thinking[$t] // empty')"
+  mode="$cmode"
+  [ -n "$mode" ] || mode="$(printf '%s' "$entry" | jq -r --arg a "$access" '.modes[$a] // empty')"
+  [ -n "$model" ] || continue
+
+  models="$(query "models-$p" provider models "$p" --json)" || continue
+  has="$(printf '%s' "$models" | jq -r --arg m "$model" --arg th "$thinking" '
+    [ .[] | select(.id == $m)
+          | select($th == "" or ((.thinkingOptionIds // []) | index($th) != null)) ] | length')"
+  [ "$has" -ge 1 ] || continue
+
+  printf 'provider=%s model=%s thinking=%s mode=%s access=%s tier=%s rule=%s\n' \
+    "$p" "$model" "$thinking" "$mode" "$access" "$ctier" "$rule"
+  exit 0
+done
+
+die "$role に使える provider が無い（rule=$rule）"
