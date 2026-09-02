@@ -37,6 +37,10 @@ fi
 if [ "${FAKE_EMPTY:-0}" = "1" ]; then
   exit 0
 fi
+if [ "${FAKE_BAD:-0}" = "1" ]; then
+  printf 'エージェントの説明文であって JSON ではない\n'
+  exit 0
+fi
 cat "$FAKE_DIR/out.json"
 FAKE
 chmod +x "$FIXTURE/bin/paseo"
@@ -108,6 +112,12 @@ assert_contains "$(cat "$FIXTURE/out2.log")" "boom" "標準エラーを log に�
   agent --role researcher --prompt-file "$FIXTURE/prompt.txt" \
     --out "$FIXTURE/out3.json" --log "$FIXTURE/out3.log" >/dev/null 2>&1 )
 assert_eq "$?" "1" "構造化出力が空なら失敗する"
+
+# 出力が JSON として読めないと失敗する。
+( export FAKE_BAD=1
+  agent --role researcher --prompt-file "$FIXTURE/prompt.txt" \
+    --out "$FIXTURE/out4.json" --log "$FIXTURE/out4.log" >/dev/null 2>&1 )
+assert_eq "$?" "1" "構造化出力が JSON でなければ失敗する"
 
 # 必須の引数が無いと 2 で終わる。
 agent --role researcher >/dev/null 2>&1

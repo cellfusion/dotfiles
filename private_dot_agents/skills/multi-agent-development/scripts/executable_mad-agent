@@ -61,3 +61,8 @@ if [ ! -s "$out" ]; then
   printf 'mad-agent: %s が構造化出力を返さなかった\n' "$role" >&2
   exit 1
 fi
+if ! jq empty "$out" >/dev/null 2>&1; then
+  printf 'mad-agent: %s の出力が JSON ではない\n' "$role" >&2
+  tail -n 20 "$out" >&2
+  exit 1
+fi

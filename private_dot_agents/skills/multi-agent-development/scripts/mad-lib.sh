@@ -73,7 +73,11 @@ mad_collect() {
   local acc="[]" name
   for name in ${MAD_NODES:-}; do
     acc="$(printf '%s' "$acc" | jq -c --arg n "$name" \
-      --slurpfile o "$MAD_RUN_DIR/$name.json" '. + [{node: $n, output: $o[0]}]')"
+      --slurpfile o "$MAD_RUN_DIR/$name.json" '. + [{node: $n, output: $o[0]}]')" || {
+      printf 'mad-lib: ノード %s の出力を JSON として読めない\n' "$name" >&2
+      MAD_NODES=""
+      return 1
+    }
   done
   MAD_NODES=""
   printf '%s' "$acc"

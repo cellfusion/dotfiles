@@ -22,9 +22,10 @@ while [ "$i" -lt "$n" ]; do
 done
 mad_join || exit 1
 
+collected="$(mad_collect)" || exit 1
 {
   printf '作業「%s」の項目ごとの結果を、重複を除き、食い違いを明示して統合する。\n\n' "$task"
-  mad_collect | jq .
+  printf '%s' "$collected" | jq .
 } | mad_prompt synthesis
 mad_run_node synthesis "$synthesizer_role" || exit 1
 cat "$MAD_RUN_DIR/synthesis.json"

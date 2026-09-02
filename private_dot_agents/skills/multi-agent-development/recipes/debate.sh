@@ -22,9 +22,10 @@ while [ "$i" -lt "$n" ]; do
 done
 mad_join || exit 1
 
+collected="$(mad_collect)" || exit 1
 {
   printf '提案「%s」への次の主張を突き合わせ、どちらが妥当かを裁定する。\n\n' "$proposal"
-  mad_collect | jq .
+  printf '%s' "$collected" | jq .
 } | mad_prompt verdict
 mad_run_node verdict "$judge_role" || exit 1
 cat "$MAD_RUN_DIR/verdict.json"

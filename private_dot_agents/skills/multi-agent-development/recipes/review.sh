@@ -23,10 +23,11 @@ while [ "$i" -lt "$n" ]; do
 done
 mad_join || exit 1
 
+collected="$(mad_collect)" || exit 1
 {
   printf '要件「%s」に対する次のレビュー結果を統合し、重複を除いて最終の PASS か FAIL を返す。\n\n' \
     "$requirements"
-  mad_collect | jq .
+  printf '%s' "$collected" | jq .
 } | mad_prompt final
 mad_run_node final "$final_reviewer_role" || exit 1
 cat "$MAD_RUN_DIR/final.json"

@@ -23,10 +23,11 @@ while [ "$i" -lt "$n" ]; do
 done
 mad_join || exit 1
 
+collected="$(mad_collect)" || exit 1
 {
   printf '課題「%s」への次の候補を、%s の観点で採点し、1 案を選ぶ。\n\n' \
     "$problem" "$(printf '%s' "$criteria" | jq -r 'join("、")')"
-  mad_collect | jq .
+  printf '%s' "$collected" | jq .
 } | mad_prompt verdict
 mad_run_node verdict "$judge_role" || exit 1
 cat "$MAD_RUN_DIR/verdict.json"

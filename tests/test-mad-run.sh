@@ -34,6 +34,16 @@ printf 'missing=%s\n' "$(mad_arg nothere fallback)"
 printf 'list=%s\n' "$(mad_arg_array items '["x"]')"
 RECIPE
 
+# ノードの出力が JSON でないときの mad_collect の返り値を見るレシピ。
+cat > "$FIXTURE/recipes/collect.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+MAD_NODES="n1"
+printf 'これは JSON ではない\n' > "$MAD_RUN_DIR/n1.json"
+mad_collect >/dev/null || exit 5
+exit 0
+RECIPE
+
 run() {
   MAD_RECIPES_DIR="$FIXTURE/recipes" \
   MAD_GIT_BIN="$FIXTURE/bin/git" \
@@ -84,6 +94,10 @@ run_with_watchdog probe --arg topic=abc --timeout
 assert_eq "$?" "2" "値のない --timeout は 2 で終わる"
 run_with_watchdog probe --arg
 assert_eq "$?" "2" "値のない --arg は 2 で終わる"
+
+# ノードの出力が JSON として読めないと mad_collect が非ゼロで返る。
+run collect >/dev/null 2>&1
+assert_eq "$?" "5" "出力が JSON でなければ mad_collect は非ゼロで返る"
 
 # レシピの終了コードをそのまま返す。
 printf 'exit 7\n' > "$FIXTURE/recipes/fail.sh"
