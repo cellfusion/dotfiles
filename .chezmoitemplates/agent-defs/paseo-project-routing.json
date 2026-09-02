@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "name": "pxgrid",
+      "match": { "remote": "github.com/pxgrid/" },
+      "providerMap": { "claude": "claude-pxgrid", "codex": "codex-pxgrid" }
+    }
+  ]
+}
