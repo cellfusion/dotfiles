@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid pr-review"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
