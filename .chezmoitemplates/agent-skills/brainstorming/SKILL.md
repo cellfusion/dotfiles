@@ -44,7 +44,7 @@ digraph brainstorming {
     "設計を承認?" [shape=diamond];
     "spec を書く" [shape=box];
     "self-review して直す" [shape=box];
-    "プレビューを別タブで開く" [shape=box];
+    "プレビューを開く" [shape=box];
     "承認 gate" [shape=diamond];
     "issue を立てて番号を追記" [shape=box];
     "writing-plans へ" [shape=doublecircle];
@@ -58,8 +58,8 @@ digraph brainstorming {
     "設計を承認?" -> "設計をセクションごとに提示" [label="修正"];
     "設計を承認?" -> "spec を書く" [label="承認"];
     "spec を書く" -> "self-review して直す";
-    "self-review して直す" -> "プレビューを別タブで開く";
-    "プレビューを別タブで開く" -> "承認 gate";
+    "self-review して直す" -> "プレビューを開く";
+    "プレビューを開く" -> "承認 gate";
     "承認 gate" -> "spec を書く" [label="その他（修正）"];
     "承認 gate" -> "writing-plans へ" [label="承認&継続"];
     "承認 gate" -> "ここで終わる" [label="承認のみ"];
