@@ -206,7 +206,7 @@ assert_contains "$default_env" 'export CODEX_HOME="$XDG_CONFIG_HOME/codex"' \
 # 11. usage helper と Claude statusline の対象パスが存在する。
 assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_config/sketchybar/helpers/executable_usage.sh.tmpl" ] && echo yes)" "yes" \
   "sketchybar usage helper が存在する"
-assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh.tmpl" ] && echo yes)" "yes" \
+assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh" ] && echo yes)" "yes" \
   "Claude statusline が存在する"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
