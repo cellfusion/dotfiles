@@ -138,10 +138,10 @@
 
 ## Session Handoff
 
-context が逼迫したら、劣化する前に新しい herdr pane でクリーンな後継セッションを起動し、引き継ぎドキュメントを渡してバトンを渡す。手順は **`/handoff` スキル参照**。
+herdr 管理下（`HERDR_ENV=1`）でのみ行う。context が逼迫したら、劣化する前に新しい herdr pane でクリーンな後継セッションを起動し、引き継ぎドキュメントを渡してバトンを渡す。手順は **`/handoff` スキル参照**。
 
-- **起動する**: context 使用率が目安 60% を超えたと自己判断したとき。auto-compact / context 上限の警告が出たら確実にそのタイミング
-- **起動しない**: atomic な作業ステップの途中。`HERDR_ENV=1` 未設定のとき（通常の auto-compact に任せる）。ハンドオフ直後（最低 1 つの実作業ステップを完了してから次の判断）
+- **起動する**: `HERDR_ENV=1` で、context 使用率が目安 60% を超えたと自己判断したとき。auto-compact / context 上限の警告が出たら確実にそのタイミング
+- **起動しない**: `HERDR_ENV=1` 未設定のとき。Paseo もこれに当たり、通常の auto-compact に任せる。atomic な作業ステップの途中。ハンドオフ直後（最低 1 つの実作業ステップを完了してから次の判断）
 
 ## Conventional Commits
 

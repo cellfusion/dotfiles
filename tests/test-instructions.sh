@@ -70,4 +70,15 @@ assert_contains "$claude_tmpl" '端末多重化ツールを自分で起動しな
 assert_not_contains "$claude_tmpl" '## Shell Execution with Herdr' \
   "Claude CLAUDE.md: 節の見出しが herdr 固定でない"
 
+# --- Session Handoff が herdr 限定であることを本文の先頭で言う ---
+# 条件が箇条書きに埋もれていると、herdr の無い環境でも手順に入ろうとする。
+assert_contains "$claude_tmpl" 'herdr 管理下（`HERDR_ENV=1`）でのみ行う' \
+  "Claude CLAUDE.md: handoff の前提が本文の先頭にある"
+assert_contains "$claude_tmpl" 'Paseo もこれに当たり' \
+  "Claude CLAUDE.md: Paseo では handoff しないと書いてある"
+
+handoff_skill="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/handoff/SKILL.md")"
+assert_contains "$handoff_skill" 'herdr を起動してはならない' \
+  "handoff: herdr を自分で起動しない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
