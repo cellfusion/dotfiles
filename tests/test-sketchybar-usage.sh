@@ -277,14 +277,18 @@ case "${CLAUDE_CONFIG_DIR##*/}" in
 esac
 printf 'Current week (all models): %s%% used · resets %s at %s (Asia/Tokyo)\n' \
   "$u" "$FAKE_DAY" "$FAKE_TIME"
+# launchd では PATH に node が無く、プラグインのフックが毎回落ちる。
+printf 'SessionEnd hook [node "x.mjs" SessionEnd] failed: node: command not found\n' >&2
+printf 'Auth error: token expired\n' >&2
 FAKE
 chmod +x "$fake_claude"
 mkdir -p "$fixture_home/.config/claude" "$fixture_home/.config/claude_work"
 rm -f "$fixture_home/.cache/sketchybar-usage/default-claude.json" \
   "$fixture_home/.cache/sketchybar-usage/work-claude.json" \
   "$fixture_home/.cache/sketchybar-usage/solo-claude.json"
+collect_stderr="$fixture_home/collect.stderr"
 HOME="$fixture_home" USAGE_CLAUDE_BIN="$fake_claude" \
-  FAKE_DAY="$usage_day" FAKE_TIME="$usage_time" "$COLLECT_SH" >/dev/null 2>&1
+  FAKE_DAY="$usage_day" FAKE_TIME="$usage_time" "$COLLECT_SH" >/dev/null 2>"$collect_stderr"
 collect_rc=$?
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
   "$(printf '11\t%s\tok' "$usage_expect")" "採取: 先頭環境の値を default-claude に書く"
@@ -293,6 +297,13 @@ assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/clau
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_solo" solo-claude)" \
   "$(printf -- '-\t-\terror')" "採取: 設定ディレクトリが無い環境は飛ばす"
 assert_eq "$collect_rc" "1" "採取: 失敗した環境があれば終了ステータスで知らせる"
+
+# 採取に影響しないフックの失敗で launchd の err.log を埋めない。ただし他の
+# 失敗は残す。両方落とすと認証切れの原因が分からなくなる。
+assert_not_contains "$(cat "$collect_stderr")" 'SessionEnd hook' \
+  "採取: フックの失敗はログへ流さない"
+assert_contains "$(cat "$collect_stderr")" 'Auth error: token expired' \
+  "採取: フック以外の失敗はログへ流す"
 
 collect_body="$(cat "$COLLECT_SH")"
 assert_contains "$collect_body" 'collect_env "$HOME/.config/claude" default-claude' \
