@@ -27,7 +27,7 @@ chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-for
   > "$USAGE_SH"
 chmod +x "$USAGE_SH"
 trap 'rm -f "$USAGE_SH" "$cfg"' EXIT
-STATUSLINE_SH="$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh.tmpl"
+STATUSLINE_SH="$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh"
 usage_lua="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
   < "$CHEZMOI_SOURCE/private_dot_config/sketchybar/items/usage.lua.tmpl")"
 fixture_home="$(mktemp -d)"
@@ -125,8 +125,10 @@ assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/clau
   "$(printf '71\t%s\tok' "$secondary_reset")" "work Claude のキャッシュを読む"
 
 statusline=$(cat "$STATUSLINE_SH")
-assert_contains "$statusline" 'AGENT_ENV_SESSION' "statusline は AGENT_ENV_SESSION からキャッシュキーを作る"
-assert_not_contains "$statusline" 'claude_secondary) key=' "statusline に固定の環境名の写像が残っていない"
+assert_not_contains "$statusline" 'sketchybar-usage' \
+  "statusline はキャッシュのパスを持たない"
+assert_not_contains "$statusline" 'AGENT_ENV_SESSION' \
+  "statusline は環境名を解決しない"
 
 aggregate=$(HOME="$fixture_home" "$USAGE_SH")
 assert_eq "$(printf '%s\n' "$aggregate" | awk 'END { print NR }')" "5" "無引数実行は定義された環境別レコードを出す"
@@ -172,27 +174,25 @@ assert_contains "$usage_sh_body" 'emit_record P3 claude "$HOME/.config/claude_so
 assert_not_contains "$usage_sh_body" 'codex_solo' \
   "codex を持たない環境の emit_record は出さない"
 
-# --- statusline のキャッシュキーが AGENT_ENV_SESSION から作られる ---
+# --- statusline は使用量キャッシュを書かない ---
+# 書き手は usage_collect_claude.sh だけにする。statusline は Paseo の非対話
+# モードでは実行されないうえ、herdr の外では AGENT_ENV_SESSION が先頭環境の
+# ままになるため、別の環境の枠へ書く余地があった。
 statusline_body="$(cat "$STATUSLINE_SH")"
-assert_contains "$statusline_body" 'AGENT_ENV_SESSION' \
-  "statusline は AGENT_ENV_SESSION を使う"
-assert_not_contains "$statusline_body" 'claude_secondary) key=' \
-  "statusline に固定の環境名の写像が残っていない"
+assert_not_contains "$statusline_body" 'dump_usage_cache' \
+  "statusline: 使用量を書き出す関数を残さない"
+assert_not_contains "$statusline_body" 'sketchybar' \
+  "statusline: SketchyBar 連携の記述を残さない"
+assert_not_contains "$statusline_body" '{{' \
+  "statusline: 環境定義を埋め込まなくなったのでテンプレート構文が無い"
+assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh" ] && echo yes)" "yes" \
+  "statusline: テンプレートではない実体として置く"
+assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh.tmpl" ] && echo yes)" "" \
+  "statusline: .tmpl を残さない"
 
 # --- 環境名がソースに漏れていない ---
 assert_not_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/sketchybar/items/usage.lua.tmpl")" \
   "secondary" "usage.lua.tmpl に固定の環境名が残っていない"
-
-# --- statusline の fallback キーがウィジェットの読むキーと一致する ---
-# AGENT_ENV_SESSION は Claude Code から起動された statusline には届くが、
-# 届かない経路では以前 basename をキーにしていた。usage.sh が読むのは
-# <session>-claude なので、basename のままだとウィジェットからは永久に読まれない。
-statusline_rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
-  < "$CHEZMOI_SOURCE/private_dot_config/claude/executable_statusline.sh.tmpl" 2>/dev/null)"
-assert_contains "$statusline_rendered" 'key="default-claude"' \
-  "statusline: AGENT_ENV_SESSION が無いときは先頭環境の session でキーを作る"
-assert_not_contains "$statusline_rendered" 'basename "$CLAUDE_CONFIG_DIR"' \
-  "statusline: fallback で basename を使わない"
 
 # --- Claude の使用量を採取する usage_collect_claude.sh ---
 # Paseo は Claude Code を非対話モードで起動する。statusLine は対話 UI の描画時にしか
