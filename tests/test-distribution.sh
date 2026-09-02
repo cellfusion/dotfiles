@@ -32,7 +32,7 @@ for s in review-package sdd-workspace task-brief task-waves \
 done
 
 # SKILL.md は 3 ツールすべてに配られる。
-for skill in brainstorming writing-plans using-git-worktrees braid; do
+for skill in brainstorming writing-plans using-git-worktrees braid pr-review; do
   assert_contains "$managed" ".config/claude/skills/$skill/SKILL.md" \
     "$skill: claude へ配られる"
   assert_contains "$managed" ".config/opencode/skills/$skill/SKILL.md" \
@@ -40,6 +40,9 @@ for skill in brainstorming writing-plans using-git-worktrees braid; do
   assert_contains "$managed" ".agents/skills/$skill/SKILL.md" \
     "$skill: ~/.agents へ配られる"
 done
+
+assert_contains "$managed" ".config/claude/commands/pr-review.md" \
+  "pr-review: Claude command を配る"
 
 # codex の設定は実運用の CODEX_HOME（~/.config/codex）へ配る。
 assert_contains "$managed" ".config/codex/AGENTS.md" \
