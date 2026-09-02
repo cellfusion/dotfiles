@@ -70,6 +70,17 @@ assert_contains "$claude_tmpl" '端末多重化ツールを自分で起動しな
 assert_not_contains "$claude_tmpl" '## Shell Execution with Herdr' \
   "Claude CLAUDE.md: 節の見出しが herdr 固定でない"
 
+# --- herdr の経路が参照先のスキル無しで実行できる ---
+# `/herdr` スキルはこのリポジトリが配っていない。判定表の中にコマンドを書き切る。
+assert_not_contains "$claude_tmpl" '`/herdr` スキル' \
+  "Claude CLAUDE.md: 配っていない /herdr スキルを参照しない"
+assert_contains "$claude_tmpl" 'herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus' \
+  "Claude CLAUDE.md: herdr の pane 作成コマンドがフラグごと書いてある"
+assert_contains "$claude_tmpl" 'herdr pane run <pane_id>' \
+  "Claude CLAUDE.md: herdr pane run に pane ID を渡すと書いてある"
+assert_contains "$claude_tmpl" '`--current` は使わない' \
+  "Claude CLAUDE.md: --current を禁じている"
+
 # --- Session Handoff が herdr 限定であることを本文の先頭で言う ---
 # 条件が箇条書きに埋もれていると、herdr の無い環境でも手順に入ろうとする。
 assert_contains "$claude_tmpl" 'herdr 管理下（`HERDR_ENV=1`）でのみ行う' \
