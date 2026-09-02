@@ -91,13 +91,13 @@ collect_env() {
   # claude の標準エラー出力は通す。捨てると認証切れのような失敗の原因が
   # launchd の err.log から分からなくなる。ただしフックの失敗だけは落とす。
   # launchd の PATH に node が無いためプラグインのフックが毎回落ち、採取に
-  # 影響しない行で err.log が埋まる。
+  # 影響しない行で err.log が埋まる。フックが出す空行も同じ理由で落とす。
   err_file="$CACHE_DIR/$cache_key.stderr"
   output=$(cd "$CACHE_DIR" 2>/dev/null || cd /; CLAUDE_CONFIG_DIR="$config_dir" \
     "$CLAUDE_BIN" -p /usage --no-session-persistence \
     --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"hooks":{}}' \
     < /dev/null 2>"$err_file")
-  grep -v 'hook \[' "$err_file" >&2
+  grep -v -e 'hook \[' -e '^[[:space:]]*$' "$err_file" >&2
   rm -f "$err_file"
   if [ -z "$output" ]; then
     printf '%s から使用量を取れなかった\n' "$config_dir" >&2

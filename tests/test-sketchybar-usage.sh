@@ -280,6 +280,7 @@ printf 'Current week (all models): %s%% used · resets %s at %s (Asia/Tokyo)\n' 
 # launchd では PATH に node が無く、プラグインのフックが毎回落ちる。
 printf 'SessionEnd hook [node "x.mjs" SessionEnd] failed: node: command not found\n' >&2
 printf 'Auth error: token expired\n' >&2
+printf '\n' >&2
 FAKE
 chmod +x "$fake_claude"
 mkdir -p "$fixture_home/.config/claude" "$fixture_home/.config/claude_work"
@@ -304,6 +305,10 @@ assert_not_contains "$(cat "$collect_stderr")" 'SessionEnd hook' \
   "採取: フックの失敗はログへ流さない"
 assert_contains "$(cat "$collect_stderr")" 'Auth error: token expired' \
   "採取: フック以外の失敗はログへ流す"
+# 残るのは、設定ディレクトリが有る 2 環境の Auth error と、無い 1 環境を
+# 飛ばした知らせの 3 行だけである。空行が残ると 15 分ごとに 2 行ずつ増える。
+assert_eq "$(wc -l < "$collect_stderr" | tr -d ' ')" "3" \
+  "採取: ログに空行を残さない"
 
 collect_body="$(cat "$COLLECT_SH")"
 assert_contains "$collect_body" 'collect_env "$HOME/.config/claude" default-claude' \
