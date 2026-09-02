@@ -68,7 +68,8 @@ query() {
   fi
   local out
   out="$("$PASEO" "$@" 2>/dev/null)" || return 1
-  [ -n "$file" ] && printf '%s' "$out" > "$file"
+  # 同じ run の中で複数の mad-route が同時に書く。別名に書いてから rename する。
+  [ -n "$file" ] && { printf '%s' "$out" > "$file.$$" && mv -f "$file.$$" "$file"; }
   printf '%s' "$out"
 }
 
