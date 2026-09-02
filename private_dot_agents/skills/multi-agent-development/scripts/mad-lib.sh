@@ -33,11 +33,12 @@ mad_run_node() {
   local of="$MAD_RUN_DIR/$name.json"
   local lf="$MAD_RUN_DIR/$name.log"
   if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
+    # 失敗しても出力ファイルは作る。mad_collect が読む先を欠かさないため。
     local route
+    printf '{}\n' > "$of"
     route="$("$MAD_SCRIPTS/mad-route" "$role")" || return 1
     printf 'node=%s role=%s %s prompt_chars=%s\n' \
       "$name" "$role" "$route" "$(wc -c < "$pf" | tr -d ' ')"
-    printf '{}\n' > "$of"
     return 0
   fi
   "$MAD_SCRIPTS/mad-agent" --role "$role" --prompt-file "$pf" --cwd "$PWD" \
@@ -67,6 +68,7 @@ mad_join() {
 }
 
 # 走らせたノードの出力を 1 つの JSON 配列にまとめる。
+# 呼ぶ前に mad_join が成功していること。失敗したノードがあるまま呼ばない。
 mad_collect() {
   local acc="[]" name
   for name in ${MAD_NODES:-}; do
