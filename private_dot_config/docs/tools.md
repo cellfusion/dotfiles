@@ -223,6 +223,13 @@ braid。複数の AI エージェントを組み合わせたフローを実行�
 `~/Workspaces/github.com/cellfusion/braid` にあり、`cargo build --release` でビルドし、
 `target/release/braid` を `~/.local/bin` へ置く。
 
+paseo。複数のコーディングエージェントを走らせる macOS アプリで、`multi-agent-development`
+スキルが CLI の `paseo` を PATH に置くことを前提にする。アプリは https://paseo.sh/download
+から入れ、`/Applications/Paseo.app` に置く。CLI はアプリに同梱された
+`/Applications/Paseo.app/Contents/Resources/bin/paseo` で、`~/.local/bin/paseo` を
+そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
+である。daemon はアプリが持つので、別に入れるものは無い。
+
 ## 削除候補
 
 過去の作業で入ったまま使っていないもの。**削除は自動化しない。**
