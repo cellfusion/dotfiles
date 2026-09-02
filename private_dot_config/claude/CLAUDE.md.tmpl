@@ -120,13 +120,21 @@
 - **仕様変更はドキュメント先行** — 正式なドキュメント（`docs/`）を実装より先に更新して仕様と実装の乖離を防ぐ。spec は `_cellfusion/specs/`、実装プランは `_cellfusion/plans/`。`_cellfusion/` は git 追跡外の作業ディレクトリで、`docs/` は正式なドキュメント専用にする
 - **検証コマンド** — `/verify`（ビルド・型・lint・テスト）と `/pre-commit-review`（セキュリティ・品質）。`finishing-a-development-branch` の Step 1 がこれらを回す
 
-## Shell Execution with Herdr
+## Shell Execution
 
-普段の作業環境は herdr。**開発サーバー・ビルド・ウォッチャーなど時間がかかる／常駐するプロセスは、Bash ツール内で直接動かさず herdr の別 pane に委譲する**。Bash ツール内で起動した長時間プロセスは孤児として残留することがあり、別 pane ならユーザー側からも実行状況を目視でき、停止・後始末がしやすい。
+開発サーバー・ウォッチャーなど、止めるまで終わらないプロセスは Bash ツール内で直接動かさない。Bash ツール内で起動すると孤児として残留することがあり、ユーザーからは実行状況が見えない。別の端末に置けば、ユーザーが状況を見て停止できる。
 
-- `ls` / `git` / `grep` / 一度で終わるビルドなど短時間で完了するものは従来どおり Bash ツールでよい
-- 委譲は `HERDR_ENV=1` のときのみ有効。未設定なら通常どおり Bash ツールで実行する
-- コマンドの使い方は **`/herdr` スキル参照**（この委譲を行うときはスキルを読み込んでよい）
+置き場所は環境で決まる。上から順に判定し、最初に当たった経路だけを実行する。
+
+| 条件 | 経路 |
+|---|---|
+| `$PASEO_AGENT_ID` が非空 | `paseo terminal create --cwd "$PWD" --name <用途> --json` で端末を作り、`paseo terminal send-keys <id> '<コマンド>' Enter` で走らせる。出力は `paseo terminal capture`、片付けは `paseo terminal kill` |
+| `$HERDR_ENV` が `1` | 自分の pane の隣に `herdr pane split "$HERDR_PANE_ID"` で pane を作り、`herdr pane run` で走らせる。コマンドの詳細は **`/herdr` スキル参照** |
+| どちらでもない | Bash ツールの `run_in_background` で走らせる |
+
+- **端末多重化ツールを自分で起動しない。** `$HERDR_ENV` が `1` でない環境で herdr を起動してはならない。端末を開いて herdr を立ち上げ、その中の pane で動かす、という手順を取らない。Paseo も同じで、`$PASEO_AGENT_ID` が空なら Paseo の端末は作らない
+- `ls` / `git` / `grep` / 一度で終わるビルドやテストなど、実行すれば終わるコマンドは Bash ツールで実行する。この判定の対象は、止めるまで終わらないプロセスに限る
+- 常駐プロセスなので、`paseo terminal send-keys` に渡すコマンドの末尾に `; exit` は付けない
 
 ## Session Handoff
 

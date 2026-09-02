@@ -55,4 +55,19 @@ assert_contains "$tool_adopt" "private_dot_config/docs/tools.md" \
 assert_contains "$tool_adopt" "private_dot_config/herdr/" \
   "tool-adopt: Herdr の設定先を指す"
 
+# --- Claude の CLAUDE.md が常駐プロセスの置き場所を実行環境で分ける ---
+# herdr が動いていない環境で、端末を開いて herdr を起動しようとした事故があった。
+# 判定表と「多重化ツールを自分で起動しない」の禁止をこのファイルが持つ。
+claude_tmpl="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/CLAUDE.md.tmpl")"
+assert_contains "$claude_tmpl" 'PASEO_AGENT_ID' \
+  "Claude CLAUDE.md: Paseo 環境を判定する"
+assert_contains "$claude_tmpl" 'HERDR_ENV' \
+  "Claude CLAUDE.md: herdr 環境を判定する"
+assert_contains "$claude_tmpl" 'run_in_background' \
+  "Claude CLAUDE.md: どちらでもない環境の経路がある"
+assert_contains "$claude_tmpl" '端末多重化ツールを自分で起動しない' \
+  "Claude CLAUDE.md: 多重化ツールを自分で起動しない"
+assert_not_contains "$claude_tmpl" '## Shell Execution with Herdr' \
+  "Claude CLAUDE.md: 節の見出しが herdr 固定でない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
