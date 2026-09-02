@@ -1,46 +1,19 @@
-{
-  "claude": {
-    "family": "claude",
-    "models": {
-      "fast": "claude-sonnet-5",
-      "work": "claude-sonnet-5",
-      "think": "claude-opus-5",
-      "deep": "claude-opus-5"
-    },
-    "thinking": { "fast": "medium", "work": "high", "think": "high", "deep": "max" },
-    "modes": { "read": "plan", "write": "bypassPermissions" }
-  },
-  "claude-pxgrid": {
-    "family": "claude",
-    "models": {
-      "fast": "claude-sonnet-5",
-      "work": "claude-sonnet-5",
-      "think": "claude-opus-5",
-      "deep": "claude-opus-5"
-    },
-    "thinking": { "fast": "medium", "work": "high", "think": "high", "deep": "max" },
-    "modes": { "read": "plan", "write": "bypassPermissions" }
-  },
-  "codex": {
-    "family": "codex",
-    "models": {
-      "fast": "gpt-5.6-luna",
-      "work": "gpt-5.6-luna",
-      "think": "gpt-5.6-terra",
-      "deep": "gpt-5.6-sol"
-    },
-    "thinking": { "fast": "medium", "work": "high", "think": "high", "deep": "high" },
-    "modes": { "read": "auto", "write": "auto" }
-  },
-  "codex-pxgrid": {
-    "family": "codex",
-    "models": {
-      "fast": "gpt-5.6-luna",
-      "work": "gpt-5.6-luna",
-      "think": "gpt-5.6-terra",
-      "deep": "gpt-5.6-sol"
-    },
-    "thinking": { "fast": "medium", "work": "high", "think": "high", "deep": "high" },
-    "modes": { "read": "auto", "write": "auto" }
-  }
-}
+{{- $claude := dict
+      "family" "claude"
+      "models" (dict "fast" "claude-sonnet-5" "work" "claude-sonnet-5" "think" "claude-opus-5" "deep" "claude-opus-5")
+      "thinking" (dict "fast" "medium" "work" "high" "think" "high" "deep" "max")
+      "modes" (dict "read" "plan" "write" "bypassPermissions") -}}
+{{- $codex := dict
+      "family" "codex"
+      "models" (dict "fast" "gpt-5.6-luna" "work" "gpt-5.6-luna" "think" "gpt-5.6-terra" "deep" "gpt-5.6-sol")
+      "thinking" (dict "fast" "medium" "work" "high" "think" "high" "deep" "high")
+      "modes" (dict "read" "auto" "write" "auto") -}}
+{{- $base := dict "claude" $claude "codex" $codex -}}
+{{- $out := dict "claude" $claude "codex" $codex -}}
+{{- $extra := (index ((index . "mad") | default dict) "providers") | default dict -}}
+{{- range $id, $family := $extra -}}
+{{-   if hasKey $base $family -}}
+{{-     $out = set $out $id (index $base $family) -}}
+{{-   end -}}
+{{- end -}}
+{{ $out | toPrettyJson }}

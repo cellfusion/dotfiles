@@ -50,6 +50,27 @@ for role in researcher synthesizer judge reviewer implementer; do
   assert_eq "$known" "true" "routing: $role がある"
 done
 
+# 既定の provider は claude と codex の 2 つである。
+for p in claude codex; do
+  known="$(jq -r --arg p "$p" 'has($p)' "$FIXTURE/paseo-providers.json")"
+  assert_eq "$known" "true" "providers: 既定に $p がある"
+done
+fam="$(jq -r '.claude.family' "$FIXTURE/paseo-providers.json")"
+assert_eq "$fam" "claude" "providers: claude の family は claude"
+fam="$(jq -r '.codex.family' "$FIXTURE/paseo-providers.json")"
+assert_eq "$fam" "codex" "providers: codex の family は codex"
+
+# 規則は配列である。データが無い環境では 0 件になる。
+kind="$(jq -r '.rules | type' "$FIXTURE/paseo-project-routing.json")"
+assert_eq "$kind" "array" "project-routing: rules は配列"
+
+# 2 つのアセットは chezmoi のテンプレートで、追加分を data から読む。
+prov_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/paseo-providers.json")"
+assert_contains "$prov_src" 'index . "mad"' "providers: テンプレートが mad のデータを読む"
+assert_contains "$prov_src" '"providers"' "providers: テンプレートが mad.providers を読む"
+rules_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/paseo-project-routing.json")"
+assert_contains "$rules_src" '"projectRules"' "project-routing: テンプレートが mad.projectRules を読む"
+
 # プロジェクト規則は name と match を持ち、providerMap の置換先が providers にある。
 n="$(jq '.rules | length' "$FIXTURE/paseo-project-routing.json")"
 i=0
