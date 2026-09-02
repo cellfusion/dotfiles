@@ -29,7 +29,7 @@ todo リストでも 1 関数のユーティリティでも設定変更でも、
 4. **設計を提示する** — セクションごとに合意を取る
 5. **spec を書く** — `_cellfusion/specs/YYYY-MM-DD-<topic>-design.md`
 6. **spec を self-review する** — placeholder / 内部矛盾 / スコープ / 曖昧さ
-7. **プレビューを開く** — herdr の別タブに `$EDITOR` で開く
+7. **プレビューを開く** — 実行環境に応じた別の端末で spec を開く
 8. **承認 gate** — [ask-user] で承認を取り、選ばれた処理を実行する
 9. **writing-plans を起動する**（承認 gate で継続を選んだ場合のみ）
 

@@ -49,6 +49,11 @@ assert_contains "$preview" "glow -p" "_preview-tab: Paseo では glow で表示�
 assert_not_contains "$preview" "paseo terminal kill" \
   "_preview-tab: Paseo の端末を閉じない"
 
+# チェックリストは経路を書かない。手順は _preview-tab.md が環境ごとに分岐して持つ。
+brainstorming_out="$(render_template "agent-skills/brainstorming/SKILL.md" "claude")"
+assert_not_contains "$brainstorming_out" "herdr の別タブに" \
+  "brainstorming: チェックリストが herdr 固定でない"
+
 # [todo] の対応先は実在するツールでなければならない。TaskCreate / TaskUpdate は
 # 手元の Claude Code に無い。
 claude_runtime="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_runtime/claude.md")"
