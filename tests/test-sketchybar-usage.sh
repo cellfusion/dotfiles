@@ -308,6 +308,9 @@ assert_not_contains "$collect_body" 'codex' \
 # /usage は Claude Code の中で処理され、モデルへのリクエストを出さない。
 # 通常のプロンプトを送る形に戻すと、採取のたびに使用量そのものが増える。
 assert_contains "$collect_body" '-p /usage' "採取: モデルを呼ばない /usage を使う"
+# launchd から動かすと stdin が繋がっていない。閉じずに呼ぶと claude が 3 秒待って
+# 「no stdin data received」を出し、環境ごとに待ち時間が増える。
+assert_contains "$collect_body" '< /dev/null' "採取: stdin を閉じて呼ぶ"
 assert_not_contains "$collect_body" '--model' "採取: モデルを指定しない"
 
 # --- 採取を回す launchd ジョブ ---

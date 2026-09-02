@@ -88,9 +88,12 @@ collect_env() {
     FAILED=1
     return 1
   fi
+  # claude の標準エラー出力はそのまま通す。launchd の err.log に残さないと、
+  # 認証切れのような失敗の原因が分からなくなる。
   output=$(cd "$CACHE_DIR" 2>/dev/null || cd /; CLAUDE_CONFIG_DIR="$config_dir" \
     "$CLAUDE_BIN" -p /usage --no-session-persistence \
-    --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"hooks":{}}' 2>/dev/null)
+    --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"hooks":{}}' \
+    < /dev/null)
   if [ -z "$output" ]; then
     printf '%s から使用量を取れなかった\n' "$config_dir" >&2
     FAILED=1
