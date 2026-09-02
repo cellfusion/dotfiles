@@ -215,4 +215,24 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.gitignore")" ".DS_Store" \
 assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
   ".chezmoiignore: .DS_Store を配らない"
 
+# MAD のスクリプトとレシピは ~/.agents/skills 側にだけ配られる。
+for s in mad-route mad-agent mad-run mad-lib.sh; do
+  assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
+    "MAD: スクリプトを共有パスへ配る: $s"
+done
+for r in research fanout decide debate review; do
+  assert_contains "$managed" ".agents/skills/multi-agent-development/recipes/$r.sh" \
+    "MAD: レシピを共有パスへ配る: $r"
+done
+assert_contains "$managed" ".config/claude/skills/multi-agent-development/SKILL.md" \
+  "MAD: claude へ配られる"
+assert_contains "$managed" ".config/opencode/skills/multi-agent-development/SKILL.md" \
+  "MAD: opencode へ配られる"
+assert_contains "$managed" ".agents/skills/multi-agent-development/SKILL.md" \
+  "MAD: ~/.agents へ配られる"
+for f in paseo-providers paseo-routing paseo-project-routing; do
+  assert_contains "$managed" ".agents/agent-defs/$f.json" \
+    "MAD: 設定アセットを配る: $f"
+done
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid multi-agent-development"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
@@ -353,13 +353,45 @@ done
 # スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
 # プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
 # 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
-for skill in braid requesting-code-review; do
+for skill in braid requesting-code-review multi-agent-development; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
     blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
     ok="$(printf '%s\n' "$blocks" | bash -n 2>/dev/null && echo yes || echo no)"
     assert_eq "$ok" "yes" "$skill/$tool: bash ブロックが構文として妥当"
   done
+done
+
+# MAD の呼び方は共有パーシャルに 1 本だけ置く。
+mad_inv="$(render_template "agent-skills/_mad-invocation.md" "claude")"
+assert_contains "$mad_inv" "## mad-run の呼び方" "_mad-invocation: 節の見出しがある"
+assert_contains "$mad_inv" "command -v paseo" "_mad-invocation: paseo が PATH にあるか確かめる"
+assert_contains "$mad_inv" "mad-run" "_mad-invocation: mad-run を呼ぶ"
+assert_contains "$mad_inv" "--dry-run" "_mad-invocation: 本実行の前に dry-run を通す"
+assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を再試行しない"
+
+# MAD スキルはレシピ 5 本を表に持ち、呼び方は共有パーシャルから取り込む。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review; do
+    assert_contains "$out" "\`$recipe\`" "mad/$tool: レシピ $recipe が表にある"
+  done
+  for arg in topic problem proposal items task requirements review_file; do
+    assert_contains "$out" "\`$arg\`" "mad/$tool: 必須引数 $arg が表にある"
+  done
+  assert_contains "$out" "## mad-run の呼び方" "mad/$tool: 呼び方の節が展開される"
+done
+
+mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+assert_contains "$mad_src" 'includeTemplate "agent-skills/_mad-invocation.md"' \
+  "mad: 呼び方を共有パーシャルから取り込む"
+assert_not_contains "$mad_src" "command -v paseo" "mad: 呼び方の本文を自前で持たない"
+
+for d in private_dot_agents/skills \
+         private_dot_config/claude/skills \
+         private_dot_config/opencode/skills; do
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/$d/multi-agent-development/SKILL.md.tmpl" ] && echo yes || echo no)" \
+            "yes" "mad: 配布先に .tmpl がある: $d"
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
