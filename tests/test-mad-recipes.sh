@@ -19,15 +19,39 @@ for f in manifests paseo-providers paseo-routing paseo-project-routing; do
     "{{ includeTemplate \"agent-defs/$f.json\" . }}" > "$FIXTURE/defs/$f.json"
 done
 
+# 偽の paseo。provider の一覧のほか、run では title からノード名を読んで固定の JSON を返す。
+# FAKE_FAIL_MARK を含むプロンプトのときだけ非ゼロで終わる。
 cat > "$FIXTURE/bin/paseo" <<'FAKE'
 #!/usr/bin/env bash
 case "$1 $2" in
-  "provider ls") cat "$FAKE_DIR/providers.json" ;;
-  "provider models") cat "$FAKE_DIR/models.json" ;;
-  *) exit 1 ;;
+  "provider ls") cat "$FAKE_DIR/providers.json"; exit 0 ;;
+  "provider models") cat "$FAKE_DIR/models.json"; exit 0 ;;
 esac
+[ "$1" = "run" ] || exit 1
+prompt="${!#}"
+if [ -n "${FAKE_FAIL_MARK:-}" ]; then
+  case "$prompt" in
+    *"$FAKE_FAIL_MARK"*) printf 'boom\n' >&2; exit 3 ;;
+  esac
+fi
+title=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --title) title="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '{ "summary": "出力 %s" }\n' "${title##*/}"
 FAKE
 chmod +x "$FIXTURE/bin/paseo"
+
+# 本実行は役割ごとの system prompt とスキーマを読む。
+mkdir -p "$FIXTURE/defs/prompts" "$FIXTURE/defs/schemas"
+for role in researcher synthesizer; do
+  printf 'あなたは %s である。\n' "$role" > "$FIXTURE/defs/prompts/$role.md"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$FIXTURE/defs/schemas/$role.json"
+done
 
 cat > "$FIXTURE/bin/git" <<FAKE
 #!/usr/bin/env bash
@@ -110,5 +134,58 @@ assert_contains "$out" "node=final role=reviewer" "review: 統合も reviewer"
 
 dry review --arg requirements=req.md >/dev/null 2>&1
 assert_eq "$?" "2" "review: review_file が無いと 2 で終わる"
+
+# --- 本実行の経路（--dry-run 無し）---
+# 並行して起動したノードの出力を統合ノードが受け取ること、1 つ落ちたら run 全体が
+# 止まることを、偽の paseo で確かめる。実エージェントは 1 つも起動しない。
+live() {
+  MAD_RECIPES_DIR="$SRC/recipes" \
+  MAD_DEFS_DIR="$FIXTURE/defs" \
+  MAD_PASEO_BIN="$FIXTURE/bin/paseo" \
+  MAD_GIT_BIN="$FIXTURE/bin/git" \
+  FAKE_DIR="$FIXTURE/paseo" \
+  bash "$FIXTURE/scripts/mad-run" "$@"
+}
+
+# mad-run は標準エラーに run の id を出す。同じ秒に作られた run と取り違えないよう、
+# ディレクトリの新しさではなく id で run ディレクトリを引く。
+run_dir_from() {
+  local id
+  id="$(grep -o '[0-9]\{8\}T[0-9]\{6\}-[0-9a-f]\{6\}' "$1" | head -1)"
+  printf '%s' "$FIXTURE/repo/_cellfusion/mad/$id"
+}
+
+out="$(live research --arg topic=対象 \
+  --arg 'perspectives=["観点A","観点B","観点C"]' 2>"$FIXTURE/live-ok.err")"
+assert_eq "$?" "0" "本実行: すべてのノードが成功すると 0 で終わる"
+assert_contains "$out" "出力 synthesis" "本実行: 統合ノードの JSON を標準出力に出す"
+
+run_dir="$(run_dir_from "$FIXTURE/live-ok.err")"
+prompt="$(cat "$run_dir/synthesis.prompt")"
+for n in 1 2 3; do
+  assert_contains "$prompt" "\"node\": \"research-$n\"" "本実行: 統合プロンプトに research-$n が入る"
+  assert_contains "$prompt" "出力 research-$n" "本実行: 統合プロンプトに research-$n の出力が入る"
+done
+
+# 3 つの mad-route が同じキャッシュに同時に書く。別名を経由するので、残骸も壊れた内容も出ない。
+assert_eq "$(ls "$run_dir/.cache" | grep -c '\.json\.[0-9][0-9]*$')" \
+          "0" "本実行: キャッシュの一時ファイルを残さない"
+assert_eq "$(jq -e type "$run_dir/.cache/providers.json" >/dev/null 2>&1 && echo yes || echo no)" \
+          "yes" "本実行: 同時に書いたキャッシュが JSON として読める"
+
+# シェル関数への環境変数の前置は bash では呼び出し後も残るので、subshell に閉じる。
+( export FAKE_FAIL_MARK=観点B
+  live research --arg topic=対象 \
+    --arg 'perspectives=["観点A","観点B","観点C"]' >/dev/null 2>"$FIXTURE/live-ng.err" )
+status=$?
+err="$(cat "$FIXTURE/live-ng.err")"
+assert_eq "$status" "1" "本実行: 1 つ落ちると非ゼロで終わる"
+assert_contains "$err" "research-2" "本実行: 失敗したノードの名前を出す"
+assert_contains "$err" "boom" "本実行: 失敗したノードの標準エラーの末尾を出す"
+assert_contains "$err" "_cellfusion/mad/" "本実行: run ディレクトリのパスを出す"
+
+run_dir="$(run_dir_from "$FIXTURE/live-ng.err")"
+assert_eq "$([ -f "$run_dir/synthesis.json" ] && echo yes || echo no)" \
+          "no" "本実行: 失敗したら統合ノードを走らせない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
