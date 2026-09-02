@@ -18,13 +18,19 @@ if [ ! -f "$RECIPES/$recipe.sh" ]; then
   exit 2
 fi
 
+# 値を取る引数は、値が無ければ 2 で終わる。shift 2 が空回りして無限ループになるのを防ぐ。
+need_value() {
+  [ $# -ge 2 ] || { printf 'mad-run: %s には値が要る\n' "$1" >&2; exit 2; }
+}
+
 args='{}'
 dry=0
 timeout=1200
 while [ $# -gt 0 ]; do
   case "$1" in
     --arg)
-      kv="${2:-}"
+      need_value "$@"
+      kv="$2"
       case "$kv" in
         *=*) ;;
         *) printf 'mad-run: --arg は k=v の形で渡す\n' >&2; exit 2 ;;
@@ -33,7 +39,7 @@ while [ $# -gt 0 ]; do
         jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '.[$k] = $v')"
       shift 2 ;;
     --dry-run) dry=1; shift ;;
-    --timeout) timeout="${2:-}"; shift 2 ;;
+    --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
     *) printf 'mad-run: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
   esac
 done

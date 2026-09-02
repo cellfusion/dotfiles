@@ -66,6 +66,25 @@ assert_eq "$?" "2" "未知のレシピは 2 で終わる"
 run probe --bogus >/dev/null 2>&1
 assert_eq "$?" "2" "未知の引数は 2 で終わる"
 
+# 値を取る引数に値が無いと 2 で終わる。直っていないと無限ループになるので、5 秒で殺す。
+run_with_watchdog() {
+  # 番人を殺したときのジョブの通知を出さないよう、subshell の標準エラーごと捨てる。
+  (
+    run "$@" >/dev/null 2>&1 &
+    pid=$!
+    ( sleep 5; kill -9 "$pid" 2>/dev/null ) &
+    guard=$!
+    wait "$pid"; rc=$?
+    kill "$guard" 2>/dev/null
+    exit "$rc"
+  ) 2>/dev/null
+}
+
+run_with_watchdog probe --arg topic=abc --timeout
+assert_eq "$?" "2" "値のない --timeout は 2 で終わる"
+run_with_watchdog probe --arg
+assert_eq "$?" "2" "値のない --arg は 2 で終わる"
+
 # レシピの終了コードをそのまま返す。
 printf 'exit 7\n' > "$FIXTURE/recipes/fail.sh"
 run fail >/dev/null 2>&1
