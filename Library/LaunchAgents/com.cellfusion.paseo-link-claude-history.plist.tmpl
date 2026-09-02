@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cellfusion.paseo-link-claude-history</string>
+    <!-- Paseo の custom Claude provider の履歴を daemon から見えるようにする。
+         背景は ~/.config/docs/paseo-history-symlink.md にある。
+         python は stdlib だけを使うので、mise を通さず /usr/bin/python3 を呼ぶ。 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>{{ .chezmoi.homeDir }}/.local/bin/paseo-link-claude-history</string>
+        <string>--daemon-config-dir</string>
+        <string>{{ .chezmoi.homeDir }}/.config/claude</string>
+        <string>--quiet</string>
+        <string>--prune</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/paseo-link-claude-history.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/paseo-link-claude-history.err.log</string>
+</dict>
+</plist>
