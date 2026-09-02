@@ -51,6 +51,11 @@ assert_contains "$doc" "自己更新" "docs: brew に寄せない理由が書か
 # 2026-08-27 に Brewfile から外した。現マシンには残っている。
 assert_contains "$doc" "aquaskk" "docs: AquaSKK の扱いが記録されている"
 
+# --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
+# plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
+assert_contains "$doc" "sketchybar-usage-claude" \
+  "docs: 使用量採取ジョブの読み込み手順が書かれている"
+
 # --- 削除を自動化しないことが明記されている ---
 assert_contains "$doc" "削除は自動化しない" "docs: 削除を自動化しない旨が書かれている"
 

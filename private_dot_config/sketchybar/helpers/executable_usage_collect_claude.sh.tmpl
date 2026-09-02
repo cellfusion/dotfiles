@@ -1,0 +1,122 @@
+#!/bin/sh
+# SketchyBar の usage ウィジェットが読む Claude のキャッシュを書く。
+# launchd の com.cellfusion.sketchybar-usage-claude が定期的に実行する。
+# 背景と有効化の手順は ~/.config/docs/sketchybar-usage.md にある。
+#
+# 無引数: 定義された環境ごとに claude を 1 回実行し、週次の使用率を
+#         ~/.cache/sketchybar-usage/<環境名>-claude.json へ書く。
+# parse:  標準入力の /usage の出力から used_pct<TAB>resets_at を出す。
+# record <cache_key>: 標準入力を parse してキャッシュへ書く。
+set -u
+
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+
+CACHE_DIR="$HOME/.cache/sketchybar-usage"
+CLAUDE_BIN="${USAGE_CLAUDE_BIN:-claude}"
+FAILED=0
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# 「Sep 3 7pm」の形の日時を epoch 秒にする。/usage は年を書かず、分がちょうどの
+# ときは分を省く。今年として解釈し、週次のリセットは常に 7 日以内の未来にあるため、
+# 1 日より過去になったときだけ翌年として解釈し直す。秒は 0 に丸める。
+epoch_of() {
+  stamp="${1:-}"
+  [ -n "$stamp" ] || return 1
+  # date -j は書式に無い項目を現在時刻で埋める。分を持たない「7pm」をそのまま
+  # 読むと、分が実行時刻の分になるため、先に「7:00pm」へ直して 1 つの書式で読む。
+  # 秒は書式に入れられないので、epoch を 60 秒単位へ丸めて落とす。
+  case "$stamp" in
+    *:*) : ;;
+    *) stamp=$(printf '%s' "$stamp" | sed 's/\([0-9]\)\([apAP][mM]\)$/\1:00\2/') ;;
+  esac
+  fmt="%b %e %I:%M%p %Y"
+  now=$(date +%s)
+  year=$(date +%Y)
+  for y in "$year" $((year + 1)); do
+    ts=$(LC_ALL=C date -j -f "$fmt" "$stamp $y" +%s 2>/dev/null)
+    case "$ts" in ''|*[!0-9]*) continue;; esac
+    ts=$((ts - ts % 60))
+    [ "$ts" -ge $((now - 86400)) ] || continue
+    printf '%s' "$ts"
+    return 0
+  done
+  return 1
+}
+
+# 標準入力の /usage の出力から、週次の使用率とリセット時刻を取り出す。
+parse_usage() {
+  line=$(grep -m1 'Current week (all models)')
+  [ -n "$line" ] || return 1
+
+  pct=$(printf '%s' "$line" | sed -n 's/.*: *\([0-9][0-9]*\)% used.*/\1/p')
+  case "$pct" in ''|*[!0-9]*) return 1;; esac
+
+  # 「resets Sep 3 at 7pm (Asia/Tokyo)」から日時だけを取り出す。
+  stamp=$(printf '%s' "$line" | sed -n 's/.*resets \([^(]*\)(.*/\1/p' | sed 's/ at / /; s/ *$//')
+  [ -n "$stamp" ] || return 1
+
+  reset=$(epoch_of "$stamp") || return 1
+  printf '%s\t%s' "$pct" "$reset"
+}
+
+# 標準入力を parse して、キャッシュを書き換える。失敗したら前の値を残す。
+record_usage() {
+  cache_key="${1:-}"
+  [ -n "$cache_key" ] || return 1
+  have jq || return 1
+  values=$(parse_usage) || return 1
+  pct=$(printf '%s' "$values" | cut -f1)
+  reset=$(printf '%s' "$values" | cut -f2)
+  [ -n "$pct" ] && [ -n "$reset" ] || return 1
+
+  mkdir -p "$CACHE_DIR" 2>/dev/null || return 1
+  cache_file="$CACHE_DIR/$cache_key.json"
+  jq -n --argjson ts "$(date +%s)" --arg p "$pct" --arg r "$reset" \
+    '{ts:$ts, used_pct:$p, resets_at:$r}' > "$cache_file.tmp" 2>/dev/null || return 1
+  mv "$cache_file.tmp" "$cache_file" 2>/dev/null || return 1
+}
+
+# collect_env <config_dir> <cache_key>
+# /usage は Claude Code の中で処理され、モデルへのリクエストを出さない。
+# セッションを保存せず、MCP サーバーもフックも起動しない指定で呼ぶ。
+collect_env() {
+  config_dir="${1:-}"
+  cache_key="${2:-}"
+  if [ ! -d "$config_dir" ]; then
+    printf '設定ディレクトリが無いので飛ばす: %s\n' "$config_dir" >&2
+    FAILED=1
+    return 1
+  fi
+  output=$(cd "$CACHE_DIR" 2>/dev/null || cd /; CLAUDE_CONFIG_DIR="$config_dir" \
+    "$CLAUDE_BIN" -p /usage --no-session-persistence \
+    --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"hooks":{}}' 2>/dev/null)
+  if [ -z "$output" ]; then
+    printf '%s から使用量を取れなかった\n' "$config_dir" >&2
+    FAILED=1
+    return 1
+  fi
+  if ! printf '%s\n' "$output" | record_usage "$cache_key"; then
+    printf '%s の使用量を解釈できなかった\n' "$config_dir" >&2
+    FAILED=1
+    return 1
+  fi
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  parse) parse_usage; exit $? ;;
+  record) shift; record_usage "${1:-}"; exit $? ;;
+esac
+
+mkdir -p "$CACHE_DIR" 2>/dev/null || :
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
+{{- range $i, $env := $envs }}
+{{- $suffix := ternary (printf "_%s" $env.session) "" (ne $i 0) }}
+{{- if has "claude" $env.agents }}
+collect_env "$HOME/.config/claude{{ $suffix }}" {{ $env.session }}-claude
+{{- end }}
+{{- end }}
+
+exit "$FAILED"

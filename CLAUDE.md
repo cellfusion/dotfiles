@@ -49,7 +49,8 @@ git push
   - `ghostty/`, `herdr/`, `zsh/` - terminal, multiplexer, shell
   - `yabai/`, `skhd/`, `borders/`, `sketchybar/` - macOS window management and status bar
   - `claude/`, `codex/`, `opencode/` - AI coding agent configuration
-  - `docs/` - tool inventory, keybindings and worktree notes, distributed to `~/.config/docs/`
+  - `docs/` - tool inventory, keybindings, worktree notes and the SketchyBar usage
+    collector, distributed to `~/.config/docs/`
 - `private_dot_agents/` - shared skills and agent definitions distributed to `~/.agents`
 - `.chezmoitemplates/` - templates shared across targets (Brewfile, agent skills, MCP lists)
 - `.chezmoiscripts/` - install scripts run by `chezmoi apply` when a manifest changes

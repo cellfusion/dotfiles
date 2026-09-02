@@ -194,4 +194,136 @@ assert_contains "$statusline_rendered" 'key="default-claude"' \
 assert_not_contains "$statusline_rendered" 'basename "$CLAUDE_CONFIG_DIR"' \
   "statusline: fallback で basename を使わない"
 
+# --- Claude の使用量を採取する usage_collect_claude.sh ---
+# Paseo は Claude Code を非対話モードで起動する。statusLine は対話 UI の描画時にしか
+# 動かないので、launchd から回す採取スクリプトがキャッシュを書く唯一の経路になる。
+# 背景は private_dot_config/docs/sketchybar-usage.md にある。
+COLLECT_SH="$(mktemp)"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
+  < "$CHEZMOI_SOURCE/private_dot_config/sketchybar/helpers/executable_usage_collect_claude.sh.tmpl" \
+  > "$COLLECT_SH"
+chmod +x "$COLLECT_SH"
+trap 'rm -f "$USAGE_SH" "$cfg" "$COLLECT_SH"; rm -rf "$fixture_home"' EXIT
+
+# /usage は「resets Sep 3 at 6:59pm」の形で出し、年を書かない。3 日後の日時で
+# 組み立てて、秒を落とした epoch と一致するかを見る。
+usage_target=$(( $(date +%s) + 259200 ))
+usage_expect=$(( usage_target - usage_target % 60 ))
+usage_day="$(LC_ALL=C date -r "$usage_target" '+%b %d')"
+usage_time="$(LC_ALL=C date -r "$usage_target" '+%I:%M' | sed 's/^0//')$(LC_ALL=C date -r "$usage_target" '+%p' | tr '[:upper:]' '[:lower:]')"
+
+usage_text=$(cat <<TXT
+You are currently using your subscription to power your Claude Code usage
+
+Current session: 13% used · resets $usage_day at $usage_time (Asia/Tokyo)
+Current week (all models): 42% used · resets $usage_day at $usage_time (Asia/Tokyo)
+Current week (Fable): 0% used
+TXT
+)
+
+assert_eq "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" \
+  "$(printf '42\t%s' "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
+
+# 5 時間の窓（Current session）や Fable の行を拾うと、別の数字と時刻が入る。
+assert_not_contains "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" "13" \
+  "採取: 5 時間の窓の使用率を週次として拾わない"
+
+# 分がちょうどのとき /usage は「7pm」と分を省く。date -j は書式に無い項目を
+# 現在時刻で埋めるため、分のある書式で読むと分が実行時刻の分になる。
+hour_expect=$(( usage_target - usage_target % 3600 ))
+hour_day="$(LC_ALL=C date -r "$hour_expect" '+%b %d')"
+hour_time="$(LC_ALL=C date -r "$hour_expect" '+%I' | sed 's/^0//')$(LC_ALL=C date -r "$hour_expect" '+%p' | tr '[:upper:]' '[:lower:]')"
+assert_eq "$(printf 'Current week (all models): 42%% used · resets %s at %s (Asia/Tokyo)\n' "$hour_day" "$hour_time" | "$COLLECT_SH" parse)" \
+  "$(printf '42\t%s' "$hour_expect")" "採取: 分を省いた書き方のリセット時刻を読む"
+
+no_week=$(cat <<TXT
+You are currently using your subscription to power your Claude Code usage
+
+Current session: 13% used · resets $usage_day at $usage_time (Asia/Tokyo)
+TXT
+)
+no_week_out=$(printf '%s\n' "$no_week" | "$COLLECT_SH" parse)
+no_week_rc=$?
+assert_eq "$no_week_rc" "1" "採取: 週次の行が無ければ失敗を返す"
+assert_eq "$no_week_out" "" "採取: 取れなかったときは何も出さない"
+
+no_reset_out=$(printf 'Current week (all models): 42%% used\n' | "$COLLECT_SH" parse)
+no_reset_rc=$?
+assert_eq "$no_reset_rc" "1" "採取: リセット時刻が無ければ失敗を返す"
+assert_eq "$no_reset_out" "" "採取: リセット時刻が無ければ何も出さない"
+
+printf '%s\n' "$usage_text" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
+  "$(printf '42\t%s\tok' "$usage_expect")" "採取: 書いたキャッシュを usage.sh が ok として読む"
+
+kept_cache=$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")
+printf '%s\n' "$no_week" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
+record_rc=$?
+assert_eq "$record_rc" "1" "採取: 取れなかった環境では失敗を返す"
+assert_eq "$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")" "$kept_cache" \
+  "採取: 取れなかった環境のキャッシュは書き換えない"
+
+# 環境とキャッシュキーの対応を確かめる。Paseo は provider ごとに CLAUDE_CONFIG_DIR
+# だけを差し替え、AGENT_ENV_SESSION は先頭環境の値のまま渡す。採取スクリプトが
+# 実行時の AGENT_ENV_SESSION を見ていると、2 つ目の環境の値が先頭環境の枠に入る。
+fake_claude="$fixture_home/fake-claude"
+cat > "$fake_claude" <<'FAKE'
+#!/bin/sh
+case "${CLAUDE_CONFIG_DIR##*/}" in
+  claude) u=11 ;;
+  claude_work) u=22 ;;
+  claude_solo) u=33 ;;
+  *) u=0 ;;
+esac
+printf 'Current week (all models): %s%% used · resets %s at %s (Asia/Tokyo)\n' \
+  "$u" "$FAKE_DAY" "$FAKE_TIME"
+FAKE
+chmod +x "$fake_claude"
+mkdir -p "$fixture_home/.config/claude" "$fixture_home/.config/claude_work"
+rm -f "$fixture_home/.cache/sketchybar-usage/default-claude.json" \
+  "$fixture_home/.cache/sketchybar-usage/work-claude.json" \
+  "$fixture_home/.cache/sketchybar-usage/solo-claude.json"
+HOME="$fixture_home" USAGE_CLAUDE_BIN="$fake_claude" \
+  FAKE_DAY="$usage_day" FAKE_TIME="$usage_time" "$COLLECT_SH" >/dev/null 2>&1
+collect_rc=$?
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
+  "$(printf '11\t%s\tok' "$usage_expect")" "採取: 先頭環境の値を default-claude に書く"
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_work" work-claude)" \
+  "$(printf '22\t%s\tok' "$usage_expect")" "採取: 2 つ目の環境の値を work-claude に書く"
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_solo" solo-claude)" \
+  "$(printf -- '-\t-\terror')" "採取: 設定ディレクトリが無い環境は飛ばす"
+assert_eq "$collect_rc" "1" "採取: 失敗した環境があれば終了ステータスで知らせる"
+
+collect_body="$(cat "$COLLECT_SH")"
+assert_contains "$collect_body" 'collect_env "$HOME/.config/claude" default-claude' \
+  "採取: 先頭環境はサフィックス無しのパスを見る"
+assert_contains "$collect_body" 'collect_env "$HOME/.config/claude_work" work-claude' \
+  "採取: 2 つ目の環境は suffix 付きのパスを見る"
+assert_contains "$collect_body" 'collect_env "$HOME/.config/claude_solo" solo-claude' \
+  "採取: 3 つ目の環境は suffix 付きのパスを見る"
+assert_not_contains "$collect_body" 'AGENT_ENV_SESSION' \
+  "採取: 実行時の AGENT_ENV_SESSION に依存しない"
+assert_not_contains "$collect_body" 'codex' \
+  "採取: Codex は sessions のログから読むので採取しない"
+# /usage は Claude Code の中で処理され、モデルへのリクエストを出さない。
+# 通常のプロンプトを送る形に戻すと、採取のたびに使用量そのものが増える。
+assert_contains "$collect_body" '-p /usage' "採取: モデルを呼ばない /usage を使う"
+assert_not_contains "$collect_body" '--model' "採取: モデルを指定しない"
+
+# --- 採取を回す launchd ジョブ ---
+usage_plist="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
+  < "$CHEZMOI_SOURCE/Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist.tmpl")"
+assert_contains "$usage_plist" '<string>com.cellfusion.sketchybar-usage-claude</string>' \
+  "plist: Label を固定する"
+assert_contains "$usage_plist" '/.config/sketchybar/helpers/usage_collect_claude.sh' \
+  "plist: 採取スクリプトを実行する"
+assert_contains "$usage_plist" '<key>StartInterval</key>' "plist: 定期実行にする"
+assert_contains "$usage_plist" '<integer>900</integer>' "plist: 15 分ごとに実行する"
+assert_contains "$usage_plist" 'sketchybar-usage-claude.err.log' "plist: 失敗を記録する"
+plist_file="$(mktemp)"
+printf '%s\n' "$usage_plist" > "$plist_file"
+plutil -lint "$plist_file" >/dev/null 2>&1
+assert_eq "$?" "0" "plist: plutil の検査を通る"
+rm -f "$plist_file"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

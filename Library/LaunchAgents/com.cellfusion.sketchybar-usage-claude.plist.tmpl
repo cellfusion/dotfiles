@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cellfusion.sketchybar-usage-claude</string>
+    <!-- SketchyBar の usage ウィジェットが読む Claude のキャッシュを更新する。
+         Paseo は Claude Code を非対話で起動し、statusLine を実行しないため、
+         キャッシュを書く経路がこのジョブだけになる。
+         背景は ~/.config/docs/sketchybar-usage.md にある。 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{ .chezmoi.homeDir }}/.config/sketchybar/helpers/usage_collect_claude.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{ .chezmoi.homeDir }}/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>StandardOutPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/sketchybar-usage-claude.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ .chezmoi.homeDir }}/Library/Logs/sketchybar-usage-claude.err.log</string>
+</dict>
+</plist>

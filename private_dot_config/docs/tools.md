@@ -64,7 +64,7 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
 
 ## apply 後に手でやること
 
-自動化できないものが 5 つある。
+自動化できないものが 6 つある。
 
 1. **アクセシビリティ権限の付与**（yabai と skhd）。システム設定 → プライバシーと
    セキュリティ → アクセシビリティ で許可する。付与するまでウィンドウ操作と
@@ -84,6 +84,12 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
    Key type の選択を間違えると push か Verified のどちらかが通らない。
    秘密鍵は Secure Enclave から出ないため、この登録だけは自動化できない。
    詳細は `~/.config/docs/git-signing.md` にある
+6. **SketchyBar の使用量採取ジョブの読み込み**。`chezmoi apply` は
+   `~/Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist` を置くだけである。
+   次のログインを待たずに有効にするなら
+   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist`
+   を実行する。読み込むまで Claude の週次使用率は更新されない。
+   詳細は `~/.config/docs/sketchybar-usage.md` にある
 
 sketchybar のカレンダー表示を使う場合は、フルディスクアクセスの付与も要る。
 システム設定 → プライバシーとセキュリティ → フルディスクアクセス に
