@@ -33,7 +33,7 @@ Paseo アプリで追える。
 ## 役割と provider
 
 役割から provider を決めるのは `mad-route` である。`~/.agents/agent-defs/paseo-routing.json`
-が役割ごとの候補の優先順を持ち、使えない provider は次の候補に落ちる。仕事先のリポジトリで
+が役割ごとの候補の優先順を持ち、使えない provider があれば次の候補を使う。仕事先のリポジトリで
 別アカウントの provider を使う指定は `paseo-project-routing.json` が持ち、git の remote か
 リポジトリのパスで引く。
 
@@ -46,9 +46,9 @@ Paseo アプリで追える。
 ## 例
 
 ```bash
-mad-run research --arg topic=どの方式で生死を判定するか
-mad-run decide --arg problem=run store の置き場所をどこにするか
-mad-run fanout --arg 'items=["a.ts","b.ts","c.ts"]' --arg task=型定義を洗い出す
+mad-run research --arg 'topic=どの方式で生死を判定するか'
+mad-run decide --arg 'problem=run store の置き場所をどこにするか'
+mad-run fanout --arg 'items=["a.ts","b.ts","c.ts"]' --arg 'task=型定義を洗い出す'
 ```
 
 {{ includeTemplate "agent-skills/_mad-invocation.md" . }}
