@@ -16,6 +16,7 @@
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
 | ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
+| Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` | `run_onchange_after_90-agent-envs.sh` |
 
@@ -48,7 +49,7 @@ GUI のインストールダイアログが出て、入っていなければ `ch
     sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion
 
 これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
-apply の中で上の表の 10 本が番号順に実行される。
+apply の中で上の表の 11 本が番号順に実行される。
 
 この 1 本目の chezmoi は install script の既定の BINDIR、つまり実行したディレクトリの
 `./bin` に置かれる。PATH には載らない。恒久的な chezmoi は apply の中で 20-runtimes が
@@ -235,6 +236,24 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 `/Applications/Paseo.app/Contents/Resources/bin/paseo` で、`~/.local/bin/paseo` を
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
+
+### Paseo プラグイン pr-review
+
+サイドバーの「PR レビュー」からプロジェクトと PR を選ぶと、worktree の workspace を
+1 つ作って `/pr-review <番号>` の agent を起動する。PR が `CLAUDE.md`、`AGENTS.md`、
+`.claude/`、`.agents/` のいずれかを変更している場合は、base から分岐した worktree に
+切り替える。レビューする agent が PR 側の指示を受け取らないようにするためである。
+
+プラグインは trusted・unsandboxed なコードである。daemon 側のコードは daemon マシンの
+ファイル・プロセス・認証情報・ネットワークに触れられる。有効化は手で行う。
+
+1. Paseo の Settings → Plugins → Enable plugins を開く
+2. `chezmoi apply` を実行する。`run_onchange_after_75-paseo-plugins.sh` が
+   `paseo plugin install` を実行する
+3. `paseo plugin ls` で `pr-review` が `running` になっていることを確認する
+
+レビューに使う provider は、daemon config の `agentProfiles` に `pr-review` という
+`name` の profile があればそれを使う。無ければ `claude/claude-opus-5` を使う。
 
 ## 削除候補
 
