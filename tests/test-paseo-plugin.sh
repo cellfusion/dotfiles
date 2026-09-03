@@ -149,6 +149,22 @@ assert_contains "$surface" '"[base] "' \
   "paseo-plugin: base から分岐した workspace の title に印を付ける"
 assert_contains "$surface" "startingNumber" \
   "paseo-plugin: 起動中は PR 行を押せないようにする"
+assert_contains "$surface" '@getpaseo/plugin/react-native' \
+  "paseo-plugin: Paseo の Modal と toast を使う"
+assert_contains "$surface" "useToast" "paseo-plugin: 通知を toast で出す"
+assert_contains "$surface" "<Modal" "paseo-plugin: 確認を Modal で出す"
+assert_contains "$surface" "describeReviewPlan" \
+  "paseo-plugin: 確認の説明文を純粋関数から組み立てる"
+assert_contains "$surface" "confirmReview" \
+  "paseo-plugin: 確認を押してから workspace を作る"
+assert_contains "$surface" "providers.listAvailable" \
+  "paseo-plugin: provider の一覧を型の付いた API から取る"
+assert_not_contains "$surface" "paseo.config.get" \
+  "paseo-plugin: daemon config の内部構造に依存しない"
+assert_not_contains "$surface" "setStatus" \
+  "paseo-plugin: 画面下部の status テキストを持たない"
+assert_not_contains "$surface" "styles.status" \
+  "paseo-plugin: status のスタイルを残さない"
 
 assert_contains "$index" "addSurface" "paseo-plugin: surface を登録する"
 assert_contains "$index" "addSidebarItem" "paseo-plugin: サイドバー項目を登録する"
