@@ -47,7 +47,7 @@ chmod +x "$FIXTURE/bin/paseo"
 
 # 本実行は役割ごとの system prompt とスキーマを読む。
 mkdir -p "$FIXTURE/defs/prompts" "$FIXTURE/defs/schemas"
-for role in researcher synthesizer; do
+for role in researcher synthesizer judge reviewer implementer writer; do
   printf 'あなたは %s である。\n' "$role" > "$FIXTURE/defs/prompts/$role.md"
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$FIXTURE/defs/schemas/$role.json"
@@ -134,6 +134,21 @@ assert_contains "$out" "node=final role=reviewer" "review: 統合も reviewer"
 
 dry review --arg requirements=req.md >/dev/null 2>&1
 assert_eq "$?" "2" "review: review_file が無いと 2 で終わる"
+
+# triage: 観点 4 つ + 裁定 1 つ。
+out="$(dry triage --arg symptom=症状)"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=angle-')" "4" "triage: 観点の数だけノードを作る"
+assert_contains "$out" "node=angle-1 role=researcher" "triage: 観点は researcher"
+assert_contains "$out" "node=verdict role=judge" "triage: 裁定は judge"
+
+out="$(dry triage --arg symptom=症状 --arg 'angles=["a","b"]')"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=angle-')" "2" "triage: 観点を差し替えられる"
+
+dry triage >/dev/null 2>&1
+assert_eq "$?" "2" "triage: symptom が無いと 2 で終わる"
+
+dry triage --arg symptom=症状 --arg angle=x >/dev/null 2>&1
+assert_eq "$?" "2" "triage: 宣言に無い引数は 2 で終わる"
 
 # --- 本実行の経路（--dry-run 無し）---
 # 並行して起動したノードの出力を統合ノードが受け取ること、1 つ落ちたら run 全体が
