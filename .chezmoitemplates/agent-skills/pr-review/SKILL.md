@@ -377,7 +377,7 @@ P0 は即時対応が必要な blocker、P1 は merge 前に直すべき重要 d
 - `metadata.json`、`findings.json`、`checks.json`、`review.md` の絶対 path
 - 投稿方式が GitHub Pull Request Reviews API の `event: COMMENT` であり、approve / request-changes ではないこと
 
-確認前は外部への write を一切行わない。特に `gh api --method POST`、GitHub review 操作、Paseo workspace archive、Herdr / native / git worktree cleanup を行わない。確認拒否、無回答、投稿を望まない応答では posting を `not_requested` として成果物と worktree を保持する。
+確認前は外部への write を一切行わない。特に `gh api --method POST`、GitHub review 操作、Paseo workspace archive、Herdr / native / git worktree cleanup を行わない。確認拒否、無回答、投稿を望まない応答では posting を `not_requested` として成果物と worktree を保持する。成果物は `REVIEW_ROOT` にあるので、worktree を片付けても残る。
 
 明示的な確認を受けた後、投稿直前に同じ repository と PR へ次を実行する。
 
@@ -437,7 +437,7 @@ comment_url=$(printf '%s' "$response" | jq -er '.html_url')
 
 base または head SHA が一つでも変わっていた場合は競合として投稿を中止する。`stale` または `BLOCKED` を metadata と Markdown に保存し、レビュー本文を新しい revision に流用せず、worktree を保持して再レビューを促す。SHA の再検証を省略してはならない。
 
-投稿成功と comment URL の検証が完了したときだけ、作成した隔離経路を所有者の手順で片付ける。Paseo は作成した `REVIEW_WS` と `AGENT_WS` に対して `archive_workspace`、Herdr は作成した `WS` に対して `herdr worktree remove --workspace "$WS" --force`、native は native cleanup、git は今回作成した `REVIEW_WORKTREE` に対して `git worktree remove` を使う。既存の workspace / worktree を消さず、投稿失敗・SHA 不一致・確認拒否・agent / check 失敗時は片付けない。
+投稿成功と comment URL の検証が完了したときだけ、自分が作成した隔離経路を所有者の手順で片付ける。Paseo は作成した `REVIEW_WS` と `AGENT_WS` に対して `archive_workspace`、Herdr は作成した `WS` に対して `herdr worktree remove --workspace "$WS" --force`、native は native cleanup、git は今回作成した `REVIEW_WORKTREE` に対して `git worktree remove` を使う。Paseo 経路で `REVIEW_WS` が空のときだけ、その `REVIEW_WORKTREE` は呼び出し元が用意したものなので archive も remove も行わない。Herdr・native・git の経路はこの skill が worktree を作るので、上のとおり片付ける。既存の workspace / worktree を消さず、投稿失敗・SHA 不一致・確認拒否・agent / check 失敗時は片付けない。
 
 ## 公式のレビュー基準
 

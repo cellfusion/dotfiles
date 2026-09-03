@@ -172,6 +172,8 @@ assert_contains "$skill" "SHA 不一致" "pr-review: SHA 不一致時は成果�
 assert_contains "$skill" "確認拒否" "pr-review: 確認拒否時は成果物を保持する"
 assert_contains "$skill" "投稿成功時" "pr-review: 投稿成功時だけ cleanup する"
 assert_contains "$skill" "片付け" "pr-review: worktree の片付け条件を定義する"
+assert_contains "$skill" "呼び出し元の所有物" "pr-review: 呼び出し元の worktree を片付けない"
+assert_contains "$skill" "自分が作成した" "pr-review: 片付けの対象を自分の作成物に限る"
 assert_contains "$skill" "HEAD と status" "pr-review: agent 前後の worktree 不変性を検証する"
 assert_contains "$skill" 'REVIEW_WORKTREE` へ `cd` しない' "pr-review: current agent を PR worktree に移動しない"
 assert_not_contains "$skill" "using-git-worktrees の setup" "pr-review: worktree skill の setup をそのまま実行しない"
