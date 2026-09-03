@@ -34,6 +34,19 @@ mad_arg() {
   jq -r --arg n "$1" --arg d "${2-}" '.[$n] // $d' "$MAD_RUN_DIR/args.json"
 }
 
+# 1 以上の整数の引数を取り出す。第 2 引数は既定値。外れた値は 2 で返るので、
+# 呼び出し側は `|| exit 2` を付ける。ラウンド数が数値でないとループが終わらなくなる。
+mad_int() {
+  local v
+  v="$(mad_arg "$1" "$2")"
+  case "$v" in
+    ''|*[!0-9]*) ;;
+    *) if [ "$v" -ge 1 ]; then printf '%s' "$v"; return 0; fi ;;
+  esac
+  printf 'mad-lib: 引数 %s には 1 以上の整数が要る: %s\n' "$1" "$v" >&2
+  return 2
+}
+
 # 配列の引数を JSON 配列で取り出す。渡された値は JSON 配列の文字列として読む。
 mad_arg_array() {
   local v

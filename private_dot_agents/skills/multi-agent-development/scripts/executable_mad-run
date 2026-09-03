@@ -39,6 +39,17 @@ need_value() {
   [ $# -ge 2 ] || { printf 'mad-run: %s には値が要る\n' "$1" >&2; exit 2; }
 }
 
+# 秒数と同時実行数は 1 以上の整数だけを受け取る。0 と負の数は空きを待つループが
+# 戻らなくなり、数値でない値は run.json を書く jq が失敗する。
+need_positive_int() {
+  case "$2" in
+    ''|*[!0-9]*) ;;
+    *) [ "$2" -ge 1 ] && return 0 ;;
+  esac
+  printf 'mad-run: %s には 1 以上の整数が要る: %s\n' "$1" "$2" >&2
+  exit 2
+}
+
 args='{}'
 dry=0
 detach=0
@@ -59,8 +70,12 @@ while [ $# -gt 0 ]; do
       shift 2 ;;
     --dry-run) dry=1; shift ;;
     --detach) detach=1; shift ;;
-    --timeout) need_value "$@"; timeout="$2"; timeout_explicit=1; shift 2 ;;
-    --max-parallel) need_value "$@"; max_parallel="$2"; shift 2 ;;
+    --timeout)
+      need_value "$@"; need_positive_int --timeout "$2"
+      timeout="$2"; timeout_explicit=1; shift 2 ;;
+    --max-parallel)
+      need_value "$@"; need_positive_int --max-parallel "$2"
+      max_parallel="$2"; shift 2 ;;
     *) printf 'mad-run: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
   esac
 done

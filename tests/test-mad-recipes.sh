@@ -240,6 +240,12 @@ assert_eq "$(printf '%s\n' "$out" | grep -c '^node=implement-')" "1" \
 dry implement >/dev/null 2>&1
 assert_eq "$?" "2" "implement: requirements が無いと 2 で終わる"
 
+# max_rounds が 1 以上の整数でないと、FAIL が続く限りループが終わらない。
+for v in 0 abc; do
+  dry implement --arg 'requirements=要件' --arg "max_rounds=$v" >/dev/null 2>&1
+  assert_eq "$?" "2" "implement: max_rounds=$v は 2 で終わる"
+done
+
 # HEAD が detached だと base が決まらないので 2 で終わる。
 ( export FAKE_BRANCH=""
   dry implement --arg 'requirements=要件' >/dev/null 2>&1 )
@@ -303,6 +309,12 @@ refine_run --arg goal=x --dry-run >/dev/null 2>&1
 assert_eq "$?" "2" "refine: file が無いと 2 で終わる"
 refine_run --arg file=nosuch.md --arg goal=x --dry-run >/dev/null 2>&1
 assert_eq "$?" "2" "refine: 対象ファイルが無いと 2 で終わる"
+
+for v in 0 abc; do
+  refine_run --arg file=draft.md --arg goal=x --arg "max_rounds=$v" --dry-run \
+    >/dev/null 2>&1
+  assert_eq "$?" "2" "refine: max_rounds=$v は 2 で終わる"
+done
 
 out="$(refine_run --arg file=draft.md --arg goal=読みやすくする 2>"$FIXTURE/refine-ok.err")"
 assert_eq "$?" "0" "refine: PASS なら 0 で終わる"

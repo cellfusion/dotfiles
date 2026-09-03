@@ -8,7 +8,7 @@ mad_default_timeout 3600
 requirements="$(mad_text requirements)" || exit 1
 implementer_role="$(mad_arg implementer_role implementer)"
 reviewer_role="$(mad_arg reviewer_role reviewer)"
-max_rounds="$(mad_arg max_rounds 3)"
+max_rounds="$(mad_int max_rounds 3)" || exit 2
 branch="$(mad_arg branch "mad/$MAD_RUN_ID")"
 
 base="$(mad_base)" || exit 2

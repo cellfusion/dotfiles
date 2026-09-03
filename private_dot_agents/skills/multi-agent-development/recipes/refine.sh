@@ -6,7 +6,7 @@ mad_declare 'file goal' 'max_rounds writer_role critic_role'
 
 file="$(mad_arg file)"
 goal="$(mad_arg goal)"
-max_rounds="$(mad_arg max_rounds 2)"
+max_rounds="$(mad_int max_rounds 2)" || exit 2
 writer_role="$(mad_arg writer_role writer)"
 critic_role="$(mad_arg critic_role reviewer)"
 
