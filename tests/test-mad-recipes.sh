@@ -26,6 +26,10 @@ cat > "$FIXTURE/bin/paseo" <<'FAKE'
 case "$1 $2" in
   "provider ls") cat "$FAKE_DIR/providers.json"; exit 0 ;;
   "provider models") cat "$FAKE_DIR/models.json"; exit 0 ;;
+  "workspace create")
+    printf '{"workspaceId":"wks_fake","project":"p","name":"n","isolation":"worktree","cwd":"%s/wt"}\n' \
+      "$FAKE_DIR"
+    exit 0 ;;
 esac
 [ "$1" = "run" ] || exit 1
 prompt="${!#}"
@@ -41,7 +45,17 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-printf '{ "summary": "出力 %s" }\n' "${title##*/}"
+node="${title##*/}"
+case "$node" in
+  review-*|final)
+    printf '{ "status": "%s", "findings": [], "strengths": null }\n' \
+      "${FAKE_REVIEW_STATUS-PASS}" ;;
+  implement-*|spike-*)
+    printf '{ "baseHead": "abc123", "changedFiles": ["a.txt"], "summary": "出力 %s" }\n' \
+      "$node" ;;
+  *)
+    printf '{ "summary": "出力 %s" }\n' "$node" ;;
+esac
 FAKE
 chmod +x "$FIXTURE/bin/paseo"
 
@@ -58,6 +72,8 @@ cat > "$FIXTURE/bin/git" <<FAKE
 case "\$*" in
   "rev-parse --show-toplevel") printf '%s\n' "$FIXTURE/repo" ;;
   "remote get-url origin") printf '\n' ;;
+  "branch --show-current") printf '%s\n' "\${FAKE_BRANCH-main}" ;;
+  *diff*) printf '+変更した行\n' ;;
   *) exit 1 ;;
 esac
 FAKE
@@ -205,6 +221,49 @@ assert_eq "$([ -f "$run_dir/synthesis.json" ] && echo yes || echo no)" \
 
 # ノードごとの状態ファイルが残る。
 node_field() { sed -n "s/^$2=//p" "$1"; }
+
+# implement: worktree を作り、実装とレビューを回す。
+out="$(dry implement --arg 'requirements=要件の本文')"
+assert_contains "$out" "node=implement-1 role=implementer" "implement: 実装は implementer"
+assert_contains "$out" "node=review-1 role=reviewer" "implement: レビューは reviewer"
+assert_contains "$out" "workspace=dry-run" "implement: dry-run では workspace を作らない"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=implement-')" "1" \
+  "implement: dry-run は 1 ラウンドで止まる"
+
+dry implement >/dev/null 2>&1
+assert_eq "$?" "2" "implement: requirements が無いと 2 で終わる"
+
+# HEAD が detached だと base が決まらないので 2 で終わる。
+( export FAKE_BRANCH=""
+  dry implement --arg 'requirements=要件' >/dev/null 2>&1 )
+assert_eq "$?" "2" "implement: base のブランチが決まらないと 2 で終わる"
+
+out="$(live implement --arg 'requirements=要件の本文' 2>"$FIXTURE/impl-ok.err")"
+assert_eq "$?" "0" "implement: PASS なら 0 で終わる"
+assert_eq "$(printf '%s' "$out" | jq -r '.status')" "PASS" "implement: status を返す"
+assert_eq "$(printf '%s' "$out" | jq -r '.rounds')" "1" "implement: PASS なら 1 ラウンド"
+assert_eq "$(printf '%s' "$out" | jq -r '.workspaceId')" "wks_fake" \
+  "implement: workspace の id を返す"
+assert_contains "$(printf '%s' "$out" | jq -r '.branch')" "mad/" "implement: ブランチ名を返す"
+assert_eq "$(printf '%s' "$out" | jq -r '.changedFiles[0]')" "a.txt" \
+  "implement: 変更したファイルを返す"
+
+run_dir="$(run_dir_from "$FIXTURE/impl-ok.err")"
+assert_eq "$(node_field "$run_dir/implement-1.state" workspace)" "wks_fake" \
+  "implement: ノードの状態に workspace を書く"
+assert_eq "$(jq -r '.base' "$run_dir/run.json")" "main" "implement: run.json に base を書く"
+assert_contains "$(cat "$run_dir/review-1.prompt")" "+変更した行" \
+  "implement: レビューのプロンプトに差分を埋める"
+
+# FAIL なら max_rounds まで回る。
+( export FAKE_REVIEW_STATUS=FAIL
+  live implement --arg 'requirements=要件' --arg max_rounds=2 \
+    >"$FIXTURE/impl-ng.out" 2>"$FIXTURE/impl-ng.err" )
+assert_eq "$(jq -r '.rounds' "$FIXTURE/impl-ng.out")" "2" \
+  "implement: FAIL なら max_rounds まで回る"
+run_dir="$(run_dir_from "$FIXTURE/impl-ng.err")"
+assert_contains "$(cat "$run_dir/implement-2.prompt")" "指摘" \
+  "implement: 2 ラウンド目のプロンプトに指摘を渡す"
 
 out="$(live research --arg topic=対象 \
   --arg 'perspectives=["観点A","観点B"]' 2>"$FIXTURE/live-state.err")"
