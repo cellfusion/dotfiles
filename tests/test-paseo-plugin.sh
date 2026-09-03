@@ -12,9 +12,9 @@ console.log(resolveProviderFamily(process.argv[1], process.argv[2] || undefined,
 " -- "$1" "$2" "$3" 2>&1
 }
 
-assert_eq "$(resolve_provider claude default '["claude","claude-pxgrid"]')" "claude" "paseo-plugin: default は無印 claude を使う"
-assert_eq "$(resolve_provider claude '' '["claude","claude-pxgrid"]')" "claude" "paseo-plugin: 未設定は無印 claude を使う"
-assert_eq "$(resolve_provider claude pxgrid '["claude","claude-pxgrid"]')" "claude-pxgrid" "paseo-plugin: 環境別 claude を優先する"
+assert_eq "$(resolve_provider claude default '["claude","claude-work"]')" "claude" "paseo-plugin: default は無印 claude を使う"
+assert_eq "$(resolve_provider claude '' '["claude","claude-work"]')" "claude" "paseo-plugin: 未設定は無印 claude を使う"
+assert_eq "$(resolve_provider claude work '["claude","claude-work"]')" "claude-work" "paseo-plugin: 環境別 claude を優先する"
 assert_eq "$(resolve_provider codex staging '["codex","codex-staging"]')" "codex-staging" "paseo-plugin: 任意の環境名を使える"
 assert_eq "$(resolve_provider claude staging '["claude"]')" "claude" "paseo-plugin: 環境別 provider が無ければフォールバックする"
 
@@ -117,14 +117,14 @@ assert_contains "$checkout_lines" "claude/claude-opus-5" \
 
 branch_lines="$(describe_review_plan \
   '{"action":"branch-off","baseRefName":"main","branchName":"pr-review/42-base","instructionsChanged":true}' \
-  'claude-pxgrid/claude-opus-5')"
+  'claude-work/claude-opus-5')"
 assert_contains "$branch_lines" "pr-review/42-base" \
   "paseo-plugin: branch-off では新しいブランチ名を出す"
 assert_contains "$branch_lines" "main" \
   "paseo-plugin: branch-off では base のブランチ名を出す"
 assert_contains "$branch_lines" "CLAUDE.md" \
   "paseo-plugin: 指示ファイルを変更している理由を出す"
-assert_contains "$branch_lines" "claude-pxgrid/claude-opus-5" \
+assert_contains "$branch_lines" "claude-work/claude-opus-5" \
   "paseo-plugin: branch-off でも使う provider を出す"
 
 assert_eq "$([ -f "$plugin_dir/main.client.tsx" ] && echo yes || echo no)" "yes" \

@@ -75,6 +75,8 @@ assert_contains "$skill" "checkout-pr" "pr-review: Paseo の checkout-pr mode �
 assert_contains "$skill" "呼び出し元が既にレビュー対象 revision を持つ" \
   "pr-review: 呼び出し元が PR head を持つ場合を扱う"
 assert_contains "$skill" 'REVIEW_WS=""' "pr-review: 自分で作らなかった workspace を空で表す"
+assert_contains "$skill" "$(printf 'REVIEW_WS=""\nREVIEW_WORKTREE=""')" \
+  "pr-review: REVIEW_WS と REVIEW_WORKTREE を対で初期化する"
 assert_contains "$skill" 'git -C "$PARENT_ROOT" rev-parse HEAD' \
   "pr-review: 呼び出し元の HEAD を検証する"
 assert_contains "$skill" "create_workspace" "pr-review: Paseo workspace を作る"

@@ -96,15 +96,16 @@ Paseo の workspace / connector が利用可能なら最優先で使う。
 
 ```bash
 REVIEW_WS=""
+REVIEW_WORKTREE=""
 if [ "$(git -C "$PARENT_ROOT" rev-parse HEAD)" = "$HEAD_OID" ] \
   && [ -z "$(git -C "$PARENT_ROOT" status --porcelain)" ]; then
   REVIEW_WORKTREE="$PARENT_ROOT"
 fi
 ```
 
-`REVIEW_WORKTREE` が設定された場合、下の 1 を飛ばして 2 から実行する。この worktree は
+`REVIEW_WORKTREE` が空でない場合、下の 1 を飛ばして 2 から実行する。この worktree は
 呼び出し元の所有物であり、この skill が作ったものではない。`REVIEW_WS` は空のままにする。
-HEAD が一致しない場合、または作業ツリーが汚れている場合は、`REVIEW_WORKTREE` を設定せずに
+HEAD が一致しない場合、または作業ツリーが汚れている場合は、`REVIEW_WORKTREE` を空のままにして
 1 から実行する。
 
 1. `create_workspace` を `isolation: "worktree"`、`mode: "checkout-pr"`、`prNumber: PR_NUMBER`、GitHub の `forge`、元 checkout の `projectPath` で呼ぶ。返された review workspace ID と worktree path を JSON から読み、`REVIEW_WS` / `REVIEW_WORKTREE` に保存する。予測で補わない。

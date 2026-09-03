@@ -44,6 +44,18 @@ assert_contains "$paseo_plugin_s" "pluginsEnabled" \
 assert_contains "$paseo_plugin_s" ".local/share/paseo-plugins/pr-review" \
   "paseo-plugin: 配布先の絶対 path を登録する"
 
+# --- manifest hash がプラグインの全ソースを含む ---
+# 漏れたファイルだけを変えて apply しても展開結果が変わらず、chezmoi がスクリプトを
+# 再実行しないので daemon 上のプラグインが古いコードのまま残る。
+paseo_plugin_tmpl_src="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_75-paseo-plugins.sh.tmpl")"
+plugin_src_dir="$CHEZMOI_SOURCE/private_dot_local/private_share/paseo-plugins/pr-review"
+for f in "$plugin_src_dir"/*.ts "$plugin_src_dir"/*.tsx; do
+  [ -f "$f" ] || continue
+  name="$(basename "$f")"
+  assert_contains "$paseo_plugin_tmpl_src" "pr-review/$name\")" \
+    "paseo-plugin: manifest hash に $name を含む"
+done
+
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
 for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
