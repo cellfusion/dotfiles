@@ -2,12 +2,10 @@
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 
+mad_declare 'items task' 'worker_role synthesizer_role'
+
 items="$(mad_arg_array items '')" || exit 2
 task="$(mad_arg task)"
-if [ -z "$items" ] || [ -z "$task" ]; then
-  printf 'fanout: items と task が要る\n' >&2
-  exit 2
-fi
 worker_role="$(mad_arg worker_role researcher)"
 synthesizer_role="$(mad_arg synthesizer_role synthesizer)"
 

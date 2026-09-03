@@ -2,11 +2,9 @@
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 
+mad_declare 'topic' 'perspectives researcher_role synthesizer_role'
+
 topic="$(mad_arg topic)"
-if [ -z "$topic" ]; then
-  printf 'research: topic が要る\n' >&2
-  exit 2
-fi
 perspectives="$(mad_arg_array perspectives '["現状と確認済みの事実","制約とリスク","代替案"]')" || exit 2
 researcher_role="$(mad_arg researcher_role researcher)"
 synthesizer_role="$(mad_arg synthesizer_role synthesizer)"

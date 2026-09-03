@@ -8,7 +8,23 @@ GIT="${MAD_GIT_BIN:-git}"
 
 recipe="${1:-}"
 if [ -z "$recipe" ]; then
-  printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--timeout 秒]\n' >&2
+  # レシピごとに宣言を読み、名前と引数を出す。
+  list_recipes() {
+    local f name spec req opt
+    printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--timeout 秒]\n\n'
+    printf 'レシピ:\n'
+    for f in "$RECIPES"/*.sh; do
+      [ -f "$f" ] || continue
+      name="$(basename "$f" .sh)"
+      spec="$(MAD_SPEC_ONLY=1 MAD_RUN_DIR=/dev/null MAD_SCRIPTS="$SCRIPTS" \
+        bash "$f" 2>/dev/null)"
+      req="$(printf '%s\n' "$spec" | sed -n 's/^required=//p')"
+      opt="$(printf '%s\n' "$spec" | sed -n 's/^optional=//p')"
+      printf '  %s\n    必須: %s\n    省略可: %s\n' \
+        "$name" "${req:-なし}" "${opt:-なし}"
+    done
+  }
+  list_recipes
   exit 2
 fi
 shift

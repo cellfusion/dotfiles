@@ -2,11 +2,9 @@
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 
+mad_declare 'proposal' 'positions advocate_role judge_role'
+
 proposal="$(mad_arg proposal)"
-if [ -z "$proposal" ]; then
-  printf 'debate: proposal が要る\n' >&2
-  exit 2
-fi
 positions="$(mad_arg_array positions '["賛成","反対"]')" || exit 2
 advocate_role="$(mad_arg advocate_role researcher)"
 judge_role="$(mad_arg judge_role judge)"
