@@ -408,17 +408,21 @@ assert_contains "$mad_inv" "command -v paseo" "_mad-invocation: paseo が PATH �
 assert_contains "$mad_inv" "mad-run" "_mad-invocation: mad-run を呼ぶ"
 assert_contains "$mad_inv" "--dry-run" "_mad-invocation: 本実行の前に dry-run を通す"
 assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を再試行しない"
+assert_contains "$mad_inv" "--detach" "_mad-invocation: 切り離し実行を書く"
+assert_contains "$mad_inv" "mad-runs" "_mad-invocation: run を追うスクリプトを書く"
+assert_contains "$mad_inv" "--max-parallel" "_mad-invocation: 同時実行数の上限を書く"
 
-# MAD スキルはレシピ 5 本を表に持ち、呼び方は共有パーシャルから取り込む。
+# MAD スキルはレシピ 9 本を表に持ち、呼び方は共有パーシャルから取り込む。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
-  for recipe in research decide debate fanout review; do
+  for recipe in research decide debate fanout review triage implement spike refine; do
     assert_contains "$out" "\`$recipe\`" "mad/$tool: レシピ $recipe が表にある"
   done
-  for arg in topic problem proposal items task requirements review_file; do
+  for arg in topic problem proposal items task requirements review_file symptom file goal; do
     assert_contains "$out" "\`$arg\`" "mad/$tool: 必須引数 $arg が表にある"
   done
   assert_contains "$out" "## mad-run の呼び方" "mad/$tool: 呼び方の節が展開される"
+  assert_contains "$out" "作業ツリー" "mad/$tool: write 役の前提を書く"
 done
 
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
