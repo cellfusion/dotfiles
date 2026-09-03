@@ -5,6 +5,19 @@ set -u
 
 plugin_dir="$CHEZMOI_SOURCE/private_dot_local/private_share/paseo-plugins/pr-review"
 
+resolve_provider() {
+  node --no-warnings --input-type=module -e "
+const { resolveProviderFamily } = await import('$plugin_dir/provider-resolution.ts');
+console.log(resolveProviderFamily(process.argv[1], process.argv[2] || undefined, JSON.parse(process.argv[3])));
+" -- "$1" "$2" "$3" 2>&1
+}
+
+assert_eq "$(resolve_provider claude default '["claude","claude-pxgrid"]')" "claude" "paseo-plugin: default は無印 claude を使う"
+assert_eq "$(resolve_provider claude '' '["claude","claude-pxgrid"]')" "claude" "paseo-plugin: 未設定は無印 claude を使う"
+assert_eq "$(resolve_provider claude pxgrid '["claude","claude-pxgrid"]')" "claude-pxgrid" "paseo-plugin: 環境別 claude を優先する"
+assert_eq "$(resolve_provider codex staging '["codex","codex-staging"]')" "codex-staging" "paseo-plugin: 任意の環境名を使える"
+assert_eq "$(resolve_provider claude staging '["claude"]')" "claude" "paseo-plugin: 環境別 provider が無ければフォールバックする"
+
 for name in paseo-plugin.json package.json tsconfig.json contracts.ts; do
   assert_eq "$([ -f "$plugin_dir/$name" ] && echo yes || echo no)" "yes" \
     "paseo-plugin: $name がある"
@@ -86,8 +99,9 @@ assert_contains "$surface" "layout.compact" "paseo-plugin: 余白を layout か�
 assert_contains "$surface" "paseo.projects.list" "paseo-plugin: プロジェクト一覧を SDK から取る"
 assert_contains "$surface" "paseo.workspaces.create" "paseo-plugin: workspace を SDK で作る"
 assert_contains "$surface" "change_request" "paseo-plugin: PR のチェックアウトを指定する"
-assert_contains "$surface" "claude/claude-opus-5" "paseo-plugin: provider の既定値を持つ"
-assert_contains "$surface" "agentProfiles" "paseo-plugin: agent profile があれば使う"
+assert_contains "$surface" "process.env.AGENT_ENV" "paseo-plugin: AGENT_ENV を参照する"
+assert_contains "$surface" "resolveProviderFamily" "paseo-plugin: 環境別 provider resolver を使う"
+assert_not_contains "$surface" "PROFILE_NAME" "paseo-plugin: 固定 profile 名に依存しない"
 assert_contains "$surface" 'prompt: `/pr-review ${number}`' \
   "paseo-plugin: prompt を pr-review スキルの引数の契約に合わせる"
 # スキルは引数を正の整数 1 個だけと定めている。説明を連結すると引数が一致しない。

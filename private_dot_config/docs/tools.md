@@ -262,8 +262,10 @@ Enable plugins より先に `chezmoi apply` を実行した場合、`run_onchang
 paseo plugin install "$HOME/.local/share/paseo-plugins/pr-review"
 ```
 
-レビューに使う provider は、daemon config の `agentProfiles` に `pr-review` という
-`name` の profile があればそれを使う。無ければ `claude/claude-opus-5` を使う。
+レビューに使う provider は、Paseo daemon の `process.env.AGENT_ENV` に応じて選ぶ。
+`default` なら無印 provider、それ以外なら `claude-<AGENT_ENV>` を優先し、無ければ
+`claude` にフォールバックする。環境名付き provider は `~/.paseo/config.json` の
+`agents.providers` に存在するものだけを使う。
 
 ## 削除候補
 
