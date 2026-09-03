@@ -89,6 +89,44 @@ for path in README.md src/claude.ts docs/claude-notes.md; do
     "paseo-plugin: $path を指示ファイルと判定しない"
 done
 
+# 確認 Modal に出す説明文を実際に組み立てて固定する。
+assert_eq "$([ -f "$plugin_dir/review-plan.ts" ] && echo yes || echo no)" "yes" \
+  "paseo-plugin: review-plan.ts がある"
+
+assert_contains "$contracts" "PreparedPlanSchema" \
+  "paseo-plugin: 起動準備の出力に名前を付ける"
+assert_contains "$contracts" "export type PreparedPlan" \
+  "paseo-plugin: 起動準備の出力の型を export する"
+
+describe_review_plan() {
+  node --no-warnings --input-type=module -e "
+const { describeReviewPlan } = await import('$plugin_dir/review-plan.ts');
+console.log(describeReviewPlan(JSON.parse(process.argv[1]), process.argv[2]).join('\\n'));
+" -- "$1" "$2" 2>&1
+}
+
+checkout_lines="$(describe_review_plan \
+  '{"action":"checkout","baseRefName":"main","branchName":null,"instructionsChanged":false}' \
+  'claude/claude-opus-5')"
+assert_contains "$checkout_lines" "PR head" \
+  "paseo-plugin: checkout では PR head を使うと書く"
+assert_not_contains "$checkout_lines" "新しいブランチ" \
+  "paseo-plugin: checkout では新しいブランチの行を出さない"
+assert_contains "$checkout_lines" "claude/claude-opus-5" \
+  "paseo-plugin: 使う provider を出す"
+
+branch_lines="$(describe_review_plan \
+  '{"action":"branch-off","baseRefName":"main","branchName":"pr-review/42-base","instructionsChanged":true}' \
+  'claude-pxgrid/claude-opus-5')"
+assert_contains "$branch_lines" "pr-review/42-base" \
+  "paseo-plugin: branch-off では新しいブランチ名を出す"
+assert_contains "$branch_lines" "main" \
+  "paseo-plugin: branch-off では base のブランチ名を出す"
+assert_contains "$branch_lines" "CLAUDE.md" \
+  "paseo-plugin: 指示ファイルを変更している理由を出す"
+assert_contains "$branch_lines" "claude-pxgrid/claude-opus-5" \
+  "paseo-plugin: branch-off でも使う provider を出す"
+
 assert_eq "$([ -f "$plugin_dir/main.client.tsx" ] && echo yes || echo no)" "yes" \
   "paseo-plugin: main.client.tsx がある"
 
