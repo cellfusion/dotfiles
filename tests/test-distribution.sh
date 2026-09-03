@@ -238,4 +238,11 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
     "MAD: 設定アセットを配る: $f"
 done
 
+# Paseo プラグインの npm 成果物は配らない。chezmoi はソース側のドットで始まる項目を
+# 配らないため、node_modules を配ると .bin と .package-lock.json を欠いた依存ツリーになる。
+assert_contains "$managed" ".local/share/paseo-plugins/pr-review/index.ts" \
+  "paseo-plugin: プラグインのソースを配る"
+assert_not_contains "$managed" "paseo-plugins/pr-review/node_modules" \
+  "paseo-plugin: node_modules を配らない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
