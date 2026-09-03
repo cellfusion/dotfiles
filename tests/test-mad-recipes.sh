@@ -52,6 +52,11 @@ case "$node" in
       "${FAKE_REVIEW_STATUS-PASS}" ;;
   verdict)
     printf '{ "winner": "spike-1", "scores": [], "reason": "理由" }\n' ;;
+  critique-*)
+    printf '{ "status": "%s", "findings": [], "strengths": null }\n' \
+      "${FAKE_REVIEW_STATUS-PASS}" ;;
+  revise-*)
+    printf '{ "files": ["draft.md"], "changes": ["直した"], "skipped": null }\n' ;;
   implement-*|spike-*)
     printf '{ "baseHead": "abc123", "changedFiles": ["a.txt"], "summary": "出力 %s" }\n' \
       "$node" ;;
@@ -279,6 +284,43 @@ assert_eq "$(printf '%s\n' "$out" | grep -c '^node=spike-')" "2" "spike: 方針�
 
 dry spike >/dev/null 2>&1
 assert_eq "$?" "2" "spike: requirements が無いと 2 で終わる"
+
+# refine: cwd の対象ファイルを批評して改稿する。
+printf '草稿の本文\n' > "$FIXTURE/repo/draft.md"
+
+refine_run() {
+  ( cd "$FIXTURE/repo" && MAD_RECIPES_DIR="$SRC/recipes" MAD_DEFS_DIR="$FIXTURE/defs" \
+    MAD_PASEO_BIN="$FIXTURE/bin/paseo" MAD_GIT_BIN="$FIXTURE/bin/git" \
+    FAKE_DIR="$FIXTURE/paseo" \
+    bash "$FIXTURE/scripts/mad-run" refine "$@" )
+}
+
+out="$(refine_run --arg file=draft.md --arg goal=読みやすくする --dry-run 2>/dev/null)"
+assert_contains "$out" "node=critique-1 role=reviewer" "refine: 批評は reviewer"
+assert_contains "$out" "workspace=none" "refine: workspace を作らない"
+
+refine_run --arg goal=x --dry-run >/dev/null 2>&1
+assert_eq "$?" "2" "refine: file が無いと 2 で終わる"
+refine_run --arg file=nosuch.md --arg goal=x --dry-run >/dev/null 2>&1
+assert_eq "$?" "2" "refine: 対象ファイルが無いと 2 で終わる"
+
+out="$(refine_run --arg file=draft.md --arg goal=読みやすくする 2>"$FIXTURE/refine-ok.err")"
+assert_eq "$?" "0" "refine: PASS なら 0 で終わる"
+assert_eq "$(printf '%s' "$out" | jq -r '.status')" "PASS" "refine: status を返す"
+assert_eq "$(printf '%s' "$out" | jq -r '.revisions')" "0" "refine: PASS なら改稿しない"
+assert_eq "$(printf '%s' "$out" | jq -r '.file')" "draft.md" "refine: 対象ファイルを返す"
+
+( export FAKE_REVIEW_STATUS=FAIL
+  refine_run --arg file=draft.md --arg goal=x --arg max_rounds=2 \
+    >"$FIXTURE/refine-ng.out" 2>"$FIXTURE/refine-ng.err" )
+assert_eq "$(jq -r '.revisions' "$FIXTURE/refine-ng.out")" "2" \
+  "refine: FAIL なら max_rounds 回改稿する"
+run_dir="$(run_dir_from "$FIXTURE/refine-ng.err")"
+assert_eq "$(node_field "$run_dir/revise-1.state" role)" "writer" "refine: 改稿は writer"
+assert_eq "$([ -f "$run_dir/refine-1.before" ] && echo yes || echo no)" "yes" \
+  "refine: 改稿の前のファイルを残す"
+assert_eq "$(ls "$run_dir" | grep -c '^critique-[0-9]*\.json$')" "3" \
+  "refine: 改稿 2 回のあいだに批評を 3 回行う"
 
 out="$(live spike --arg 'requirements=要件' --arg 'approaches=["案A","案B"]' \
   2>"$FIXTURE/spike.err")"
