@@ -48,4 +48,22 @@ assert_contains "$index" "gh pr diff" "paseo-plugin: gh pr diff で変更パス�
 assert_contains "$index" "CLAUDE.md" "paseo-plugin: 指示ファイルを検査する"
 assert_contains "$index" ".agents/" "paseo-plugin: .agents 配下も検査する"
 
+assert_eq "$([ -f "$plugin_dir/main.client.tsx" ] && echo yes || echo no)" "yes" \
+  "paseo-plugin: main.client.tsx がある"
+
+surface="$(cat "$plugin_dir/main.client.tsx" 2>/dev/null || true)"
+assert_contains "$surface" "PullRequestSurface" "paseo-plugin: 画面を名前付きで export する"
+assert_contains "$surface" "theme.colors" "paseo-plugin: 文字色を theme から取る"
+assert_contains "$surface" "layout.compact" "paseo-plugin: 余白を layout から決める"
+assert_contains "$surface" "paseo.projects.list" "paseo-plugin: プロジェクト一覧を SDK から取る"
+assert_contains "$surface" "paseo.workspaces.create" "paseo-plugin: workspace を SDK で作る"
+assert_contains "$surface" "change_request" "paseo-plugin: PR のチェックアウトを指定する"
+assert_contains "$surface" "claude/claude-opus-5" "paseo-plugin: provider の既定値を持つ"
+assert_contains "$surface" "agentProfiles" "paseo-plugin: agent profile があれば使う"
+assert_contains "$surface" "/pr-review " "paseo-plugin: pr-review スキルを起動する"
+
+assert_contains "$index" "addSurface" "paseo-plugin: surface を登録する"
+assert_contains "$index" "addSidebarItem" "paseo-plugin: サイドバー項目を登録する"
+assert_contains "$index" "addCommandCenterItem" "paseo-plugin: Command Center 項目を登録する"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
