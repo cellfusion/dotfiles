@@ -29,4 +29,23 @@ gitignore="$(cat "$CHEZMOI_SOURCE/.gitignore" 2>/dev/null || true)"
 assert_contains "$gitignore" "paseo-plugins/pr-review/node_modules" \
   "paseo-plugin: node_modules を git 追跡から外す"
 
+for name in commands.ts index.ts; do
+  assert_eq "$([ -f "$plugin_dir/$name" ] && echo yes || echo no)" "yes" \
+    "paseo-plugin: $name がある"
+done
+
+commands="$(cat "$plugin_dir/commands.ts" 2>/dev/null || true)"
+assert_contains "$commands" "/opt/homebrew/bin" \
+  "paseo-plugin: daemon の PATH に Homebrew を足す"
+assert_contains "$commands" "execFile" "paseo-plugin: shell を経由せずに実行する"
+
+index="$(cat "$plugin_dir/index.ts" 2>/dev/null || true)"
+assert_contains "$index" "plugin.handle(listPullRequests" \
+  "paseo-plugin: PR 一覧の RPC を登録する"
+assert_contains "$index" "plugin.handle(preparePullRequest" \
+  "paseo-plugin: 起動準備の RPC を登録する"
+assert_contains "$index" "gh pr diff" "paseo-plugin: gh pr diff で変更パスを取る"
+assert_contains "$index" "CLAUDE.md" "paseo-plugin: 指示ファイルを検査する"
+assert_contains "$index" ".agents/" "paseo-plugin: .agents 配下も検査する"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
