@@ -18,6 +18,16 @@ export const listPullRequests = defineRpc({
   output: z.object({ pulls: z.array(PullRequestSchema) }),
 });
 
+/** preparePullRequest が返す、作る workspace の形。 */
+export const PreparedPlanSchema = z.object({
+  action: z.enum(["checkout", "branch-off"]),
+  baseRefName: z.string().min(1),
+  branchName: z.string().nullable(),
+  instructionsChanged: z.boolean(),
+});
+
+export type PreparedPlan = z.infer<typeof PreparedPlanSchema>;
+
 /**
  * 1 件の PR について、作る workspace の形を決める。PR が指示ファイルを変更していれば
  * base から分岐した worktree にし、そうでなければ PR head をチェックアウトする。
@@ -28,10 +38,5 @@ export const preparePullRequest = defineRpc({
     projectRootPath: z.string().min(1),
     number: z.number().int().positive(),
   }),
-  output: z.object({
-    action: z.enum(["checkout", "branch-off"]),
-    baseRefName: z.string().min(1),
-    branchName: z.string().nullable(),
-    instructionsChanged: z.boolean(),
-  }),
+  output: PreparedPlanSchema,
 });
