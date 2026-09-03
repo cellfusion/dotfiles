@@ -2,6 +2,7 @@
 # mad-run が run ディレクトリと引数を用意し、レシピを呼ぶことを検証する。
 set -u
 . "$(dirname "$0")/lib/assert.sh"
+. "$(dirname "$0")/lib/watchdog.sh"
 
 SRC="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts"
 
@@ -77,22 +78,9 @@ run probe --bogus >/dev/null 2>&1
 assert_eq "$?" "2" "未知の引数は 2 で終わる"
 
 # 値を取る引数に値が無いと 2 で終わる。直っていないと無限ループになるので、5 秒で殺す。
-run_with_watchdog() {
-  # 番人を殺したときのジョブの通知を出さないよう、subshell の標準エラーごと捨てる。
-  (
-    run "$@" >/dev/null 2>&1 &
-    pid=$!
-    ( sleep 5; kill -9 "$pid" 2>/dev/null ) &
-    guard=$!
-    wait "$pid"; rc=$?
-    kill "$guard" 2>/dev/null
-    exit "$rc"
-  ) 2>/dev/null
-}
-
-run_with_watchdog probe --arg topic=abc --timeout
+with_watchdog 5 run probe --arg topic=abc --timeout
 assert_eq "$?" "2" "値のない --timeout は 2 で終わる"
-run_with_watchdog probe --arg
+with_watchdog 5 run probe --arg
 assert_eq "$?" "2" "値のない --arg は 2 で終わる"
 
 # ノードの出力が JSON として読めないと mad_collect が非ゼロで返る。

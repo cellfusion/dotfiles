@@ -2,6 +2,7 @@
 # mad-agent が paseo run に渡す引数と、出力の落とし方を検証する。
 set -u
 . "$(dirname "$0")/lib/assert.sh"
+. "$(dirname "$0")/lib/watchdog.sh"
 
 SRC="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts"
 
@@ -124,23 +125,10 @@ agent --role researcher >/dev/null 2>&1
 assert_eq "$?" "2" "必須の引数が無いと 2 で終わる"
 
 # 値を取る引数に値が無いと 2 で終わる。直っていないと無限ループになるので、5 秒で殺す。
-# 番人を殺したときのジョブの通知を出さないよう、subshell の標準エラーごと捨てる。
-agent_with_watchdog() {
-  (
-    agent "$@" >/dev/null 2>&1 &
-    pid=$!
-    ( sleep 5; kill -9 "$pid" 2>/dev/null ) &
-    guard=$!
-    wait "$pid"; rc=$?
-    kill "$guard" 2>/dev/null
-    exit "$rc"
-  ) 2>/dev/null
-}
-
-agent_with_watchdog --role researcher --prompt-file "$FIXTURE/prompt.txt" \
+with_watchdog 5 agent --role researcher --prompt-file "$FIXTURE/prompt.txt" \
   --out "$FIXTURE/out5.json" --log "$FIXTURE/out5.log" --timeout
 assert_eq "$?" "2" "値のない --timeout は 2 で終わる"
-agent_with_watchdog --role
+with_watchdog 5 agent --role
 assert_eq "$?" "2" "値のない --role は 2 で終わる"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
