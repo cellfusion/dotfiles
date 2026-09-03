@@ -72,6 +72,11 @@ assert_contains "$skill" "baseRefOid" "pr-review: isolation 前に base SHA を�
 assert_contains "$skill" "headRefOid" "pr-review: isolation 前に head SHA を固定する"
 assert_contains "$skill" "headRepository" "pr-review: fork の head repository も取得する"
 assert_contains "$skill" "checkout-pr" "pr-review: Paseo の checkout-pr mode を使う"
+assert_contains "$skill" "呼び出し元が既にレビュー対象 revision を持つ" \
+  "pr-review: 呼び出し元が PR head を持つ場合を扱う"
+assert_contains "$skill" 'REVIEW_WS=""' "pr-review: 自分で作らなかった workspace を空で表す"
+assert_contains "$skill" 'git -C "$PARENT_ROOT" rev-parse HEAD' \
+  "pr-review: 呼び出し元の HEAD を検証する"
 assert_contains "$skill" "create_workspace" "pr-review: Paseo workspace を作る"
 assert_contains "$skill" "list_profiles" "pr-review: Paseo の agent profile を毎回確認する"
 assert_contains "$skill" "create_agent" "pr-review: Paseo の agent を起動する"
