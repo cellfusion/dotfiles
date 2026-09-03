@@ -221,11 +221,13 @@ Current week (Fable): 0% used
 TXT
 )
 
-assert_eq "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" \
+parsed_usage="$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)"
+assert_eq "$parsed_usage" \
   "$(printf '42\t%s' "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
 
-# 5 時間の窓（Current session）や Fable の行を拾うと、別の数字と時刻が入る。
-assert_not_contains "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" "13" \
+# 5 時間の窓（Current session）の使用率ではなく、週次の使用率を返す。
+# epoch 秒にも "13" が含まれ得るため、使用率フィールドだけを比較する。
+assert_eq "$(printf '%s' "$parsed_usage" | cut -f1)" "42" \
   "採取: 5 時間の窓の使用率を週次として拾わない"
 
 # 分がちょうどのとき /usage は「7pm」と分を省く。date -j は書式に無い項目を
