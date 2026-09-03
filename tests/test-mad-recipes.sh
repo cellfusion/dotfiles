@@ -253,6 +253,12 @@ assert_eq "$(printf '%s\n' "$out" | grep -c '^node=implement-')" "1" \
 dry implement >/dev/null 2>&1
 assert_eq "$?" "2" "implement: requirements が無いと 2 で終わる"
 
+# requirements のパスを打ち間違えたとき、その文字列を要件として実装させない。
+dry implement --arg 'requirements=_cellfusion/plans/nosuch.md' >/dev/null 2>&1
+assert_eq "$?" "1" "implement: requirements のパスが無いと 1 で終わる"
+dry spike --arg 'requirements=_cellfusion/plans/nosuch.md' >/dev/null 2>&1
+assert_eq "$?" "1" "spike: requirements のパスが無いと 1 で終わる"
+
 # max_rounds が 1 以上の整数でないと、FAIL が続く限りループが終わらない。
 for v in 0 abc; do
   dry implement --arg 'requirements=要件' --arg "max_rounds=$v" >/dev/null 2>&1

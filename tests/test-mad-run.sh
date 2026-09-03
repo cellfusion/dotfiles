@@ -311,6 +311,19 @@ printf 'x\n' > "$FIXTURE/outside.md"
 in_repo text --arg 'src=../outside.md' >/dev/null 2>&1
 assert_eq "$?" "1" "mad_text は cwd の外のファイルで 1 を返す"
 
+# パスの打ち間違いを本文として実装役に渡さない。
+for v in nosuch.md _cellfusion/plans/nosuch.md docs/nosuch; do
+  in_repo text --arg "src=$v" >/dev/null 2>&1
+  assert_eq "$?" "1" "mad_text は実在しないパス $v で 1 を返す"
+done
+
+err="$(in_repo text --arg 'src=nosuch.md' 2>&1 >/dev/null)"
+assert_contains "$err" "nosuch.md" "mad_text は無いパスを名指しする"
+
+out="$(in_repo text --arg 'src=要件を 3 つに分けて実装する' 2>/dev/null)"
+assert_contains "$out" "text=[要件を 3 つに分けて実装する]" \
+  "mad_text はパスらしくない文字列を本文として扱う"
+
 # --- mad_default_timeout ---
 cat > "$FIXTURE/recipes/to.sh" <<'RECIPE'
 set -u

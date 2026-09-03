@@ -68,6 +68,12 @@ mad_text() {
   local v abs
   v="$(mad_arg "$1")"
   if [ -z "$v" ] || [ ! -f "$v" ]; then
+    # パスらしい値が実在しないなら、打ち間違いを本文として扱わずに止める。
+    case "$v" in
+      */*|*.md)
+        printf 'mad-lib: 引数 %s のパス %s が無い\n' "$1" "$v" >&2
+        return 1 ;;
+    esac
     printf '%s' "$v"
     return 0
   fi
