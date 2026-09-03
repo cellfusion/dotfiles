@@ -1,6 +1,7 @@
 import type { PluginContext } from "@getpaseo/plugin";
 import { runCommand } from "./commands";
 import { listPullRequests, preparePullRequest } from "./contracts";
+import { PullRequestSurface } from "./main.client";
 
 // PR がこれらを変更していると、レビューする agent の指示が PR 側に置き換わる。
 // 末尾が "/" の項目は前方一致で判定する。
@@ -77,6 +78,24 @@ export default function contribute(plugin: PluginContext) {
       branchName: instructionsChanged ? `pr-review/${number}-base` : null,
       instructionsChanged,
     };
+  });
+
+  plugin.addSurface("pull-requests", PullRequestSurface);
+  plugin.addSidebarItem({
+    id: "pull-requests",
+    title: "PR レビュー",
+    icon: "GitPullRequest",
+    surface: "pull-requests",
+  });
+  plugin.addCommandCenterItem({
+    id: "open-pull-requests",
+    title: "PR をレビューする",
+    icon: "GitPullRequest",
+    keywords: ["pr", "review", "pull request", "レビュー"],
+    context: "global",
+    onSelect({ openSurface }) {
+      openSurface("pull-requests");
+    },
   });
 
   return () => {};
