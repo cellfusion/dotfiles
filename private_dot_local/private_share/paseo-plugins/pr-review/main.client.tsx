@@ -3,11 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text } from "react-native";
 import { listPullRequests, preparePullRequest } from "./contracts";
-
-// daemon config に pr-review という名前の profile があればそれを使う。
-// 無ければこの値を使う。
-const PROFILE_NAME = "pr-review";
-const DEFAULT_PROVIDER = "claude/claude-opus-5";
+import { resolveProviderFamily } from "./provider-resolution";
 
 export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
   const paseo = usePaseo();
@@ -72,14 +68,10 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
 
   async function resolveAgentConfig(): Promise<{ provider: string; modeId?: string; thinkingOptionId?: string }> {
     const { config } = await paseo.config.get();
-    const profile = config.agentProfiles?.find((entry) => entry.name === PROFILE_NAME);
-    if (profile === undefined) {
-      return { provider: DEFAULT_PROVIDER };
-    }
+    const configuredProviders = Object.keys(config.agents?.providers ?? {});
+    const provider = resolveProviderFamily("claude", process.env.AGENT_ENV, configuredProviders);
     return {
-      provider: profile.model === undefined ? profile.provider : `${profile.provider}/${profile.model}`,
-      modeId: profile.modeId,
-      thinkingOptionId: profile.thinkingOptionId,
+      provider: `${provider}/claude-opus-5`,
     };
   }
 
