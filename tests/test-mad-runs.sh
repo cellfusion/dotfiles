@@ -12,9 +12,13 @@ cp "$SRC/executable_mad-runs" "$FIXTURE/mad-runs"
 chmod +x "$FIXTURE/mad-runs"
 
 # archive の呼び出しを記録するだけの偽の paseo。
+# FAKE_ARCHIVE_FAIL を含む呼び出しだけ失敗させる。
 cat > "$FIXTURE/bin/paseo" <<FAKE
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$FIXTURE/archived.txt"
+case "\$*" in
+  *"\${FAKE_ARCHIVE_FAIL:-__none__}"*) printf 'boom\n' >&2; exit 1 ;;
+esac
 printf '{"status":"archived"}\n'
 FAKE
 chmod +x "$FIXTURE/bin/paseo"
@@ -80,6 +84,21 @@ assert_eq "$([ -d "$FIXTURE/runs/new-run" ] && echo yes || echo no)" "yes" \
   "clean: --yes でも新しい run は残す"
 assert_contains "$(cat "$FIXTURE/archived.txt")" "workspace archive wks_old-run" \
   "clean: --yes で workspace を archive する"
+
+# clean: archive に失敗した run のディレクトリは消さない。
+# workspaces.txt を消すと、どの run がどの workspace を作ったかの対応が失われる。
+mk_run keep-run research ok 30
+mk_run drop-run research ok 30
+rm -f "$FIXTURE/archived.txt"
+( export FAKE_ARCHIVE_FAIL=wks_keep-run
+  runs clean --older-than 7 --yes >/dev/null 2>"$FIXTURE/clean.err" )
+assert_eq "$?" "1" "clean: archive に失敗した run があると非ゼロで終わる"
+assert_eq "$([ -f "$FIXTURE/runs/keep-run/workspaces.txt" ] && echo yes || echo no)" "yes" \
+  "clean: archive に失敗した run は消さない"
+assert_eq "$([ -d "$FIXTURE/runs/drop-run" ] && echo yes || echo no)" "no" \
+  "clean: archive に失敗しても他の run の片付けは続ける"
+assert_contains "$(cat "$FIXTURE/clean.err")" "keep-run は archive に失敗したので残した" \
+  "clean: 残した run の id と理由を出す"
 
 # 未知のサブコマンドと引数
 runs bogus >/dev/null 2>&1

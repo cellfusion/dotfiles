@@ -73,7 +73,7 @@ cmd_show() {
 }
 
 cmd_clean() {
-  local days="" yes=0 targets d id ws rest
+  local days="" yes=0 targets d id ws rest archived rc=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --older-than) need_value "$@"; days="$2"; shift 2 ;;
@@ -103,18 +103,28 @@ cmd_clean() {
     printf '\n消していない。実際に消すには --yes を付ける。\n'
     return 0
   fi
+  # archive に失敗した run は残す。workspaces.txt を消すと、どの run がどの
+  # workspace を作ったかの対応が失われ、後から片付けられなくなる。
   for d in $targets; do
+    id="$(basename "$d")"
+    archived=1
     if [ -s "$d/workspaces.txt" ]; then
       while IFS="$(printf '\t')" read -r ws rest; do
         [ -n "$ws" ] || continue
-        "$PASEO" workspace archive "$ws" --json >/dev/null 2>&1 ||
-          printf 'mad-runs: workspace %s を archive できない\n' "$ws" >&2
+        "$PASEO" workspace archive "$ws" --json >/dev/null 2>&1 && continue
+        printf 'mad-runs: workspace %s を archive できない\n' "$ws" >&2
+        archived=0
       done < "$d/workspaces.txt"
     fi
-    id="$(basename "$d")"
-    rm -rf "$d"
-    printf 'mad-runs: %s を消した\n' "$id"
+    if [ "$archived" = "1" ]; then
+      rm -rf "$d"
+      printf 'mad-runs: %s を消した\n' "$id"
+    else
+      printf 'mad-runs: %s は archive に失敗したので残した\n' "$id" >&2
+      rc=1
+    fi
   done
+  return "$rc"
 }
 
 case "${1-}" in
