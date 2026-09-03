@@ -16,10 +16,24 @@ cat > "$FIXTURE/bin/git" <<FAKE
 #!/usr/bin/env bash
 case "\$*" in
   "rev-parse --show-toplevel") printf '%s\n' "$FIXTURE/repo" ;;
+  "branch --show-current") printf '%s\n' "\${FAKE_BRANCH-main}" ;;
   *) exit 1 ;;
 esac
 FAKE
 chmod +x "$FIXTURE/bin/git"
+
+cat > "$FIXTURE/bin/paseo-ws" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1 $2" = "workspace create" ] || exit 1
+printf '{"workspaceId":"wks_fake","project":"p","name":"n","isolation":"worktree","cwd":"/tmp/fake-wt"}\n'
+FAKE
+chmod +x "$FIXTURE/bin/paseo-ws"
+
+in_repo() {
+  ( cd "$FIXTURE/repo" && MAD_RECIPES_DIR="$FIXTURE/recipes" \
+    MAD_GIT_BIN="$FIXTURE/bin/git" MAD_PASEO_BIN="$FIXTURE/bin/paseo-ws" \
+    bash "$FIXTURE/scripts/mad-run" "$@" )
+}
 
 # 環境と引数をそのまま出すだけのレシピ。
 cat > "$FIXTURE/recipes/probe.sh" <<'RECIPE'
@@ -231,5 +245,113 @@ run par --max-parallel 3 >/dev/null 2>"$FIXTURE/par3.err"
 run_dir="$(run_dir_from "$FIXTURE/par3.err")"
 assert_eq "$(awk '/^start /{if(o){b=1} o=1} /^end /{o=0} END{print b+0}' \
   "$run_dir/order.txt")" "1" "上限 3: ノードが重なる"
+
+# --- mad_text ---
+# 呼び出し元の cwd を基準にするので、レシピは repo の中から呼ぶ。
+cat > "$FIXTURE/recipes/text.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' 'src'
+t="$(mad_text src)" || exit 1
+printf 'text=[%s]\n' "$t"
+RECIPE
+
+printf '要件の本文\n' > "$FIXTURE/repo/req.md"
+out="$(in_repo text --arg src=req.md 2>/dev/null)"
+assert_contains "$out" "text=[要件の本文" "mad_text はファイルの中身を読む"
+
+out="$(in_repo text --arg 'src=そのままの文字列' 2>/dev/null)"
+assert_contains "$out" "text=[そのままの文字列]" "mad_text は文字列をそのまま返す"
+
+printf 'x\n' > "$FIXTURE/outside.md"
+in_repo text --arg 'src=../outside.md' >/dev/null 2>&1
+assert_eq "$?" "1" "mad_text は cwd の外のファイルで 1 を返す"
+
+# --- mad_default_timeout ---
+cat > "$FIXTURE/recipes/to.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' ''
+mad_default_timeout 3600
+printf 'timeout=%s\n' "$MAD_TIMEOUT"
+RECIPE
+
+out="$(run to 2>/dev/null)"
+assert_contains "$out" "timeout=3600" "mad_default_timeout は既定を上書きする"
+out="$(run to --timeout 90 2>/dev/null)"
+assert_contains "$out" "timeout=90" "明示した --timeout は上書きされない"
+
+# --- mad_worktree ---
+cat > "$FIXTURE/recipes/wt.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' ''
+ws="$(mad_worktree 'mad/test' main)" || exit 1
+printf 'line=%s\n' "$ws"
+RECIPE
+
+wt() {
+  MAD_RECIPES_DIR="$FIXTURE/recipes" MAD_GIT_BIN="$FIXTURE/bin/git" \
+  MAD_PASEO_BIN="$FIXTURE/bin/paseo-ws" \
+  bash "$FIXTURE/scripts/mad-run" wt "$@"
+}
+
+out="$(wt 2>"$FIXTURE/wt.err")"
+assert_contains "$out" "line=workspace=wks_fake cwd=/tmp/fake-wt" \
+  "mad_worktree は id と cwd を 1 行で返す"
+run_dir="$(run_dir_from "$FIXTURE/wt.err")"
+assert_contains "$(cat "$run_dir/workspaces.txt")" "wks_fake" \
+  "mad_worktree は作った workspace を記録する"
+
+out="$(wt --dry-run 2>/dev/null)"
+assert_contains "$out" "workspace=dry-run" "mad_worktree は dry-run で workspace を作らない"
+
+# --- mad_diff ---
+cat > "$FIXTURE/bin/git-diff" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  "rev-parse --show-toplevel") printf '%s\n' "$FAKE_REPO" ;;
+  *diff*) i=1; while [ "$i" -le 20 ]; do printf '+行 %s\n' "$i"; i=$((i + 1)); done ;;
+  *) exit 1 ;;
+esac
+FAKE
+chmod +x "$FIXTURE/bin/git-diff"
+
+cat > "$FIXTURE/recipes/df.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' ''
+mad_diff /tmp/fake-wt main 5
+RECIPE
+
+out="$(FAKE_REPO="$FIXTURE/repo" MAD_RECIPES_DIR="$FIXTURE/recipes" \
+  MAD_GIT_BIN="$FIXTURE/bin/git-diff" \
+  bash "$FIXTURE/scripts/mad-run" df 2>/dev/null)"
+assert_contains "$out" "+行 5" "mad_diff は差分を出す"
+assert_not_contains "$out" "+行 6" "mad_diff は上限で切り詰める"
+assert_contains "$out" "20 行" "mad_diff は全体の行数を添える"
+
+# --- mad_base / mad_ws_field ---
+cat > "$FIXTURE/recipes/base.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' 'base'
+b="$(mad_base)" || exit 2
+printf 'base=%s\n' "$b"
+printf 'id=%s\n' "$(mad_ws_field 'workspace=wks_1 cwd=/tmp/a b' id)"
+printf 'cwd=%s\n' "$(mad_ws_field 'workspace=wks_1 cwd=/tmp/a b' cwd)"
+RECIPE
+
+out="$(run base 2>/dev/null)"
+assert_contains "$out" "base=main" "mad_base は現在のブランチを使う"
+assert_contains "$out" "id=wks_1" "mad_ws_field は workspace の id を取り出す"
+assert_contains "$out" "cwd=/tmp/a b" "mad_ws_field は空白を含む cwd も取り出す"
+
+out="$(run base --arg base=develop 2>/dev/null)"
+assert_contains "$out" "base=develop" "mad_base は引数の base を優先する"
+
+( export FAKE_BRANCH=""
+  run base >/dev/null 2>&1 )
+assert_eq "$?" "2" "mad_base は base が決まらないと非ゼロで返る"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
