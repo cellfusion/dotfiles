@@ -62,6 +62,16 @@ assert_contains "$out" "n1" "show: ノード名を出す"
 assert_contains "$out" "state=ok" "show: ノードの状態を出す"
 assert_contains "$out" "wks_old-run" "show: 作った workspace を出す"
 
+# --detach した run の最終出力は recipe.out にしかない。show がそこを出す。
+# clean の対象と混ざらないよう、新しい run を別に作る。
+mk_run detach-run implement ok 0
+printf '{"status":"PASS","branch":"mad/x","workspaceId":"wks_1"}\n' \
+  > "$FIXTURE/runs/detach-run/recipe.out"
+printf 'mad-run: implement（run detach-run）\n' > "$FIXTURE/runs/detach-run/recipe.err"
+out="$(runs show detach-run 2>&1)"
+assert_contains "$out" '"workspaceId":"wks_1"' "show: 切り離した実行の最終出力を出す"
+assert_contains "$out" "mad-run: implement" "show: 切り離した実行の標準エラーを出す"
+
 runs show nosuch >/dev/null 2>&1
 assert_eq "$?" "2" "show: 無い run は 2 で終わる"
 runs show >/dev/null 2>&1

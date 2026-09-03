@@ -70,6 +70,15 @@ cmd_show() {
     printf '\n失敗したノード %s のログ:\n' "$name"
     tail -n 20 "$d/$name.log" 2>/dev/null | sed 's/^/  /'
   done
+  # --detach した実行の標準出力は recipe.out に落ちる。最終ノードの JSON はここにしかない。
+  if [ -f "$d/recipe.out" ]; then
+    printf '\nレシピの出力:\n'
+    sed 's/^/  /' "$d/recipe.out"
+  fi
+  if [ -s "$d/recipe.err" ]; then
+    printf '\nレシピの標準エラー:\n'
+    tail -n 20 "$d/recipe.err" | sed 's/^/  /'
+  fi
 }
 
 cmd_clean() {
