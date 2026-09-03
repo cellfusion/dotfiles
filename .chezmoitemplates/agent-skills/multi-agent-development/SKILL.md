@@ -45,6 +45,13 @@ Paseo アプリで追える。
   片付けは `mad-runs clean` で行う
 - `refine` は worktree を作らない。対象が `_cellfusion/` の草稿になることが多く、
   `_cellfusion/` は git 追跡外なので branch-off で作った worktree には現れない
+- write 役が worktree の外に書かない保証は、役割のプロンプトの指示だけである。
+  `mad-route` は `manifests.json` の `access` を provider の mode に対応させるが、
+  claude の `write` が対応する `bypassPermissions` は許可の確認を出さないモードであり、
+  書き込めるパスの制限ではない。仕事のリポジトリで使うかどうかは利用者が判断する
+- `refine` は対象ファイルの控えしか run ディレクトリに残さない。writer が同じ
+  ディレクトリの別のファイルを書き換えた場合、`_cellfusion/` は git 追跡外なので
+  復元できない。`refine` を呼ぶ前に対象ディレクトリを退避する
 
 ## 役割と provider
 

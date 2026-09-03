@@ -411,6 +411,10 @@ assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を�
 assert_contains "$mad_inv" "--detach" "_mad-invocation: 切り離し実行を書く"
 assert_contains "$mad_inv" "mad-runs" "_mad-invocation: run を追うスクリプトを書く"
 assert_contains "$mad_inv" "--max-parallel" "_mad-invocation: 同時実行数の上限を書く"
+assert_contains "$mad_inv" ".status" \
+  "_mad-invocation: FAIL のまま 0 で終わるので出力の status を読むと書く"
+assert_contains "$mad_inv" "--workspace" \
+  "_mad-invocation: implement と spike のノードは worktree を読むと書く"
 
 # MAD スキルはレシピ 9 本を表に持ち、呼び方は共有パーシャルから取り込む。
 for tool in claude codex opencode; do
@@ -423,6 +427,10 @@ for tool in claude codex opencode; do
   done
   assert_contains "$out" "## mad-run の呼び方" "mad/$tool: 呼び方の節が展開される"
   assert_contains "$out" "作業ツリー" "mad/$tool: write 役の前提を書く"
+  assert_contains "$out" "bypassPermissions" \
+    "mad/$tool: write 役の mode がパスの制限ではないと書く"
+  assert_contains "$out" "対象ディレクトリを退避" \
+    "mad/$tool: refine が対象以外のファイルを復元できないと書く"
 done
 
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
