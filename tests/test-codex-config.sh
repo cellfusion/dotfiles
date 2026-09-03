@@ -22,6 +22,8 @@ model_reasoning_effort = "medium"
 approval_policy = "never"
 approvals_reviewer = "user"
 sandbox_mode = "danger-full-access"
+model_context_window = 123
+model_auto_compact_token_limit = 456
 
 notify = ["/path/to/notifier", "turn-ended"]
 
@@ -75,6 +77,8 @@ assert_not_contains "$out" 'gpt-5.2-codex' "古い model が残らない"
 
 # 2. model_reasoning_effort が設定される。
 assert_contains "$out" 'model_reasoning_effort = "medium"' "effort を medium にする"
+assert_contains "$out" 'model_context_window = 1000000' "コンテキストウィンドウを 1000000 にする"
+assert_contains "$out" 'model_auto_compact_token_limit = 900000' "自動圧縮閾値を 900000 にする"
 
 # 3. automode の推奨設定に置換される。
 assert_contains "$out" 'approval_policy = "on-request"' "承認ポリシーを on-request にする"
@@ -156,6 +160,8 @@ web_search = true
 nokey_out="$(run_modify "$NOKEY")"
 assert_contains "$nokey_out" 'model = "gpt-5.6-terra"' "model 行が無ければ追加する"
 assert_contains "$nokey_out" 'model_reasoning_effort = "medium"' "effort 行が無ければ追加する"
+assert_contains "$nokey_out" 'model_context_window = 1000000' "model_context_window 行が無ければ追加する"
+assert_contains "$nokey_out" 'model_auto_compact_token_limit = 900000' "model_auto_compact_token_limit 行が無ければ追加する"
 assert_contains "$nokey_out" 'approval_policy = "on-request"' "approval_policy 行が無ければ追加する"
 assert_contains "$nokey_out" 'approvals_reviewer = "auto_review"' "approvals_reviewer 行が無ければ追加する"
 assert_contains "$nokey_out" 'sandbox_mode = "workspace-write"' "sandbox_mode 行が無ければ追加する"
@@ -166,6 +172,8 @@ assert_contains "$nokey_out" 'web_search = true' "追加しても既存の内容
 empty_out="$(run_modify "")"
 assert_contains "$empty_out" 'model = "gpt-5.6-terra"' "空入力で model を出す"
 assert_contains "$empty_out" 'model_reasoning_effort = "medium"' "空入力で effort を出す"
+assert_contains "$empty_out" 'model_context_window = 1000000' "空入力で model_context_window を出す"
+assert_contains "$empty_out" 'model_auto_compact_token_limit = 900000' "空入力で model_auto_compact_token_limit を出す"
 assert_contains "$empty_out" 'approval_policy = "on-request"' "空入力で approval_policy を出す"
 assert_contains "$empty_out" 'approvals_reviewer = "auto_review"' "空入力で approvals_reviewer を出す"
 assert_contains "$empty_out" 'sandbox_mode = "workspace-write"' "空入力で sandbox_mode を出す"
@@ -174,6 +182,8 @@ assert_contains "$empty_out" 'network_access = false' "空入力で network_acce
 # 8. 推奨設定は重複せず、出力が TOML として妥当である。
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approval_policy =')" "1" "approval_policy を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approvals_reviewer =')" "1" "approvals_reviewer を重複させない"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^model_context_window =')" "1" "model_context_window を重複させない"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^model_auto_compact_token_limit =')" "1" "model_auto_compact_token_limit を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^sandbox_mode =')" "1" "sandbox_mode を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^\[sandbox_workspace_write\]$')" "1" "sandbox セクションを重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^network_access =')" "1" "network_access を重複させない"
@@ -183,10 +193,10 @@ printf '%s' "$out" > "$tmp_toml"
 parsed="$(python3 -c "
 import tomllib
 d = tomllib.load(open('$tmp_toml','rb'))
-print(d['model'], d['model_reasoning_effort'], d['approval_policy'], d['approvals_reviewer'], d['sandbox_mode'], d['sandbox_workspace_write']['network_access'], len(d['projects']), len(d['mcp_servers']))
+print(d['model'], d['model_reasoning_effort'], d['model_context_window'], d['model_auto_compact_token_limit'], d['approval_policy'], d['approvals_reviewer'], d['sandbox_mode'], d['sandbox_workspace_write']['network_access'], len(d['projects']), len(d['mcp_servers']))
 " 2>&1)"
 rm -f "$tmp_toml"
-assert_eq "$parsed" "gpt-5.6-terra medium on-request auto_review workspace-write False 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
+assert_eq "$parsed" "gpt-5.6-terra medium 1000000 900000 on-request auto_review workspace-write False 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
 
 # 9. CODEX_HOME は herdr セッションごとに切り替える。
 zshrc="$(cat "$CHEZMOI_SOURCE/private_dot_config/zsh/dot_zshrc")"

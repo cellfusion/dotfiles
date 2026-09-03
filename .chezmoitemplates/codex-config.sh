@@ -17,6 +17,8 @@ APPROVAL_POLICY='on-request'
 APPROVALS_REVIEWER='auto_review'
 SANDBOX_MODE='workspace-write'
 NETWORK_ACCESS='false'
+MODEL_CONTEXT_WINDOW='1000000'
+MODEL_AUTO_COMPACT_TOKEN_LIMIT='900000'
 
 # 最初のセクションヘッダ（[ で始まる行）より前だけを書き換える。
 # [mcp_servers.foo] の中に model キーがあっても触らない。
@@ -28,7 +30,9 @@ awk \
   -v approval_policy="$APPROVAL_POLICY" \
   -v approvals_reviewer="$APPROVALS_REVIEWER" \
   -v sandbox_mode="$SANDBOX_MODE" \
-  -v network_access="$NETWORK_ACCESS" '
+  -v network_access="$NETWORK_ACCESS" \
+  -v model_context_window="$MODEL_CONTEXT_WINDOW" \
+  -v model_auto_compact_token_limit="$MODEL_AUTO_COMPACT_TOKEN_LIMIT" '
 BEGIN {
   in_section = 0
   in_sandbox = 0
@@ -40,6 +44,8 @@ BEGIN {
   seen_sandbox_mode = 0
   seen_sandbox_section = 0
   seen_network_access = 0
+  seen_model_context_window = 0
+  seen_model_auto_compact_token_limit = 0
 }
 
 # 除外対象の mcp_servers テーブル（本体とその子テーブル）かどうか。
@@ -56,6 +62,16 @@ function add_top_level(added) {
   if (!seen_approval_policy)    { print "approval_policy = \"" approval_policy "\"";       seen_approval_policy = 1;    added = 1 }
   if (!seen_approvals_reviewer) { print "approvals_reviewer = \"" approvals_reviewer "\""; seen_approvals_reviewer = 1; added = 1 }
   if (!seen_sandbox_mode)       { print "sandbox_mode = \"" sandbox_mode "\"";             seen_sandbox_mode = 1;       added = 1 }
+  if (!seen_model_context_window) {
+    print "model_context_window = " model_context_window
+    seen_model_context_window = 1
+    added = 1
+  }
+  if (!seen_model_auto_compact_token_limit) {
+    print "model_auto_compact_token_limit = " model_auto_compact_token_limit
+    seen_model_auto_compact_token_limit = 1
+    added = 1
+  }
   return added
 }
 
@@ -110,6 +126,18 @@ skip_mcp { next }
 !in_section && /^sandbox_mode[ \t]*=/ {
   print "sandbox_mode = \"" sandbox_mode "\""
   seen_sandbox_mode = 1
+  next
+}
+
+!in_section && /^model_context_window[ \t]*=/ {
+  print "model_context_window = " model_context_window
+  seen_model_context_window = 1
+  next
+}
+
+!in_section && /^model_auto_compact_token_limit[ \t]*=/ {
+  print "model_auto_compact_token_limit = " model_auto_compact_token_limit
+  seen_model_auto_compact_token_limit = 1
   next
 }
 
