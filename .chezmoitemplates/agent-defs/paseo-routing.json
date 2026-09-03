@@ -3,5 +3,6 @@
   "synthesizer": [{ "provider": "claude" }, { "provider": "codex" }],
   "judge": [{ "provider": "claude" }, { "provider": "codex" }],
   "reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
-  "implementer": [{ "provider": "codex" }, { "provider": "claude" }]
+  "implementer": [{ "provider": "codex" }, { "provider": "claude" }],
+  "writer": [{ "provider": "claude" }, { "provider": "codex" }]
 }

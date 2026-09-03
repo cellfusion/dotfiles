@@ -44,11 +44,41 @@ for role in $(jq -r 'keys[]' "$FIXTURE/paseo-routing.json"); do
   done
 done
 
-# 5 つの汎用の役割がすべて routing にある。
-for role in researcher synthesizer judge reviewer implementer; do
+# 6 つの汎用の役割がすべて routing にある。
+for role in researcher synthesizer judge reviewer implementer writer; do
   known="$(jq -r --arg r "$role" 'has($r)' "$FIXTURE/paseo-routing.json")"
   assert_eq "$known" "true" "routing: $role がある"
 done
+
+# 汎用の役割には mad-agent が読む system prompt と出力スキーマが揃っている。
+for role in researcher synthesizer judge reviewer implementer writer; do
+  p="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/prompts/$role.md\" . }}" 2>/dev/null)"
+  assert_not_contains "|$p|" "||" "$role: prompt が展開できる"
+  s="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" 2>/dev/null)"
+  ok="$(printf '%s' "$s" | jq empty 2>/dev/null && echo yes || echo no)"
+  assert_eq "$ok" "yes" "$role: schema が JSON として妥当"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/prompts/$role.md.tmpl" ] \
+    && echo yes || echo no)" "yes" "$role: prompt の配布用 .tmpl がある"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/schemas/$role.json.tmpl" ] \
+    && echo yes || echo no)" "yes" "$role: schema の配布用 .tmpl がある"
+done
+
+# writer は書き込み可で、コミットしない。
+acc="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
+assert_eq "$acc" "write" "writer: access は write"
+tier="$(jq -r '.writer.tier' "$FIXTURE/manifests.json")"
+assert_eq "$tier" "work" "writer: tier は work"
+wp="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/prompts/writer.md" . }}')"
+assert_contains "$wp" "コミットしない" "writer: コミットしないと書いてある"
+assert_contains "$wp" "新しく作る" "writer: ファイルを新しく作ってよいと書いてある"
+ws="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/schemas/writer.json" . }}')"
+req="$(printf '%s' "$ws" | jq -r '.required | join(",")')"
+assert_contains "$req" "files" "writer: files は required"
+assert_contains "$req" "changes" "writer: changes は required"
 
 # 既定の provider は claude と codex の 2 つである。
 for p in claude codex; do
