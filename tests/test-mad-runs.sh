@@ -23,9 +23,12 @@ printf '{"status":"archived"}\n'
 FAKE
 chmod +x "$FIXTURE/bin/paseo"
 
+# run を作る先。空白を含むパスの検証で差し替える。
+RUNS_DIR="$FIXTURE/runs"
+
 mk_run() {
   local id="$1" recipe="$2" status="$3" age_days="$4"
-  local d="$FIXTURE/runs/$id"
+  local d="$RUNS_DIR/$id"
   mkdir -p "$d"
   printf '{"recipe":"%s","args":{},"cwd":"/tmp","base":"main","startedAt":"2026-09-01T00:00:00Z","timeout":1200,"maxParallel":4}\n' \
     "$recipe" > "$d/run.json"
@@ -44,7 +47,7 @@ mk_run old-run research ok 30
 mk_run new-run implement "" 0
 
 runs() {
-  MAD_RUNS_DIR="$FIXTURE/runs" MAD_PASEO_BIN="$FIXTURE/bin/paseo" \
+  MAD_RUNS_DIR="$RUNS_DIR" MAD_PASEO_BIN="$FIXTURE/bin/paseo" \
   bash "$FIXTURE/mad-runs" "$@"
 }
 
@@ -117,5 +120,33 @@ runs clean --older-than >/dev/null 2>&1
 assert_eq "$?" "2" "値のない --older-than は 2 で終わる"
 runs >/dev/null 2>&1
 assert_eq "$?" "2" "サブコマンドが無いと 2 で終わる"
+
+# --- 空白を含むパス ---
+# run のパスが途中で切れると、rm -rf が別のディレクトリに当たる。
+RUNS_DIR="$FIXTURE/with space/runs"
+mkdir -p "$RUNS_DIR"
+rm -f "$FIXTURE/archived.txt"
+mk_run sp-old research ok 30
+mk_run sp-new implement "" 0
+
+out="$(runs ls 2>&1)"
+assert_contains "$out" "sp-new  implement" "ls: 空白を含むパスでも run の id とレシピ名を出す"
+assert_contains "$out" "sp-old  research" "ls: 空白を含むパスでも古い run を出す"
+
+runs clean --older-than 7 --yes >/dev/null 2>&1
+assert_eq "$([ -d "$RUNS_DIR/sp-old" ] && echo yes || echo no)" "no" \
+  "clean: 空白を含むパスでも古い run を消す"
+assert_eq "$([ -d "$RUNS_DIR/sp-new" ] && echo yes || echo no)" "yes" \
+  "clean: 空白を含むパスでも新しい run は残す"
+assert_contains "$(cat "$FIXTURE/archived.txt")" "workspace archive wks_sp-old" \
+  "clean: 空白を含むパスでも workspace を archive する"
+
+# archive の失敗は、パスに空白があっても呼び出し元に返る。
+mk_run sp-fail research ok 30
+( export FAKE_ARCHIVE_FAIL=wks_sp-fail
+  runs clean --older-than 7 --yes >/dev/null 2>&1 )
+assert_eq "$?" "1" "clean: 空白を含むパスでも archive の失敗が返り値に出る"
+assert_eq "$([ -d "$RUNS_DIR/sp-fail" ] && echo yes || echo no)" "yes" \
+  "clean: 空白を含むパスでも archive に失敗した run は残す"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

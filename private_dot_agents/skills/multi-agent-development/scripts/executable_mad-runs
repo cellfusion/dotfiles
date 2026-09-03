@@ -31,8 +31,10 @@ cmd_ls() {
   local d id recipe status started
   [ -d "$RUNS" ] || { printf 'mad-runs: run がまだ無い（%s）\n' "$RUNS"; return 0; }
   printf 'run:\n'
-  for d in $(ls -dt "$RUNS"/*/ 2>/dev/null); do
+  # パスに空白があっても切れないよう、1 行を 1 つのパスとして読む。
+  ls -dt "$RUNS"/*/ 2>/dev/null | while IFS= read -r d; do
     d="${d%/}"
+    [ -n "$d" ] || continue
     id="$(basename "$d")"
     recipe="$(jq -r '.recipe // "?"' "$d/run.json" 2>/dev/null || printf '?')"
     started="$(jq -r '.startedAt // "?"' "$d/run.json" 2>/dev/null || printf '?')"
@@ -99,7 +101,8 @@ cmd_clean() {
     return 0
   fi
   printf '%s 日より古い run:\n' "$days"
-  for d in $targets; do
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
     id="$(basename "$d")"
     printf '  %s（%s）\n' "$id" "$(run_status "$d")"
     if [ -s "$d/workspaces.txt" ]; then
@@ -107,14 +110,18 @@ cmd_clean() {
         [ -n "$ws" ] && printf '    workspace %s\n' "$ws"
       done < "$d/workspaces.txt"
     fi
-  done
+  done <<TARGETS
+$targets
+TARGETS
   if [ "$yes" != "1" ]; then
     printf '\n消していない。実際に消すには --yes を付ける。\n'
     return 0
   fi
   # archive に失敗した run は残す。workspaces.txt を消すと、どの run がどの
   # workspace を作ったかの対応が失われ、後から片付けられなくなる。
-  for d in $targets; do
+  # rc を呼び出し元に残すため、パイプではなく heredoc から読む。
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
     id="$(basename "$d")"
     archived=1
     if [ -s "$d/workspaces.txt" ]; then
@@ -132,7 +139,9 @@ cmd_clean() {
       printf 'mad-runs: %s は archive に失敗したので残した\n' "$id" >&2
       rc=1
     fi
-  done
+  done <<TARGETS
+$targets
+TARGETS
   return "$rc"
 }
 
