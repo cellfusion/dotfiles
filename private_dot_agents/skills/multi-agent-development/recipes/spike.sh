@@ -38,6 +38,15 @@ while [ "$i" -lt "$n" ]; do
 done
 mad_join || exit 1
 
+# 差分を先に取る。取れなければ、中身の無い裁定依頼を出さずに止める。
+i=0
+while [ "$i" -lt "$n" ]; do
+  c="$(printf '%s' "$cands" | jq -c ".[$i]")"
+  i=$((i + 1))
+  mad_diff "$(printf '%s' "$c" | jq -r '.worktree')" "$base" 800 \
+    > "$MAD_RUN_DIR/spike-$i.diff" || exit 1
+done
+
 # 案ごとの差分を裁定役に並べて渡す。judge は worktree の中を読めないので埋める。
 {
   printf '同じ要件に対する %s 個の実装案を、%s の観点で採点し、1 つ選ぶ。\n' \
@@ -50,7 +59,7 @@ mad_join || exit 1
     printf '\n## %s（%s案）\n\n' \
       "$(printf '%s' "$c" | jq -r '.name')" "$(printf '%s' "$c" | jq -r '.approach')"
     printf '```diff\n'
-    mad_diff "$(printf '%s' "$c" | jq -r '.worktree')" "$base" 800
+    cat "$MAD_RUN_DIR/spike-$i.diff"
     printf '```\n'
   done
 } | mad_prompt verdict

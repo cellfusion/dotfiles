@@ -111,11 +111,25 @@ mad_worktree() {
 }
 
 # worktree の base からの差分を返す。上限を超えたら先頭だけを返す。
+# git の失敗は非ゼロで返し、差分が無いことと区別する。中身の無いレビュー依頼を
+# 作らないため、呼び出し側は失敗を受けて run を止める。
 mad_diff() {
-  local cwd="$1" base="$2" limit="${3:-2000}" d n
+  local cwd="$1" base="$2" limit="${3:-2000}" d n st ef
   [ "${MAD_DRY_RUN:-0}" = "1" ] && return 0
-  d="$("${MAD_GIT_BIN:-git}" -C "$cwd" diff "$base...HEAD" 2>/dev/null)" || return 0
-  [ -n "$d" ] || return 0
+  ef="$MAD_RUN_DIR/.diff.$$.err"
+  d="$("${MAD_GIT_BIN:-git}" -C "$cwd" diff "$base...HEAD" 2>"$ef")"
+  st=$?
+  if [ "$st" -ne 0 ]; then
+    printf 'mad-lib: %s の %s からの差分を取れない: %s\n' \
+      "$cwd" "$base" "$(cat "$ef" 2>/dev/null)" >&2
+    rm -f "$ef"
+    return 1
+  fi
+  rm -f "$ef"
+  if [ -z "$d" ]; then
+    printf '（差分が無い）\n'
+    return 0
+  fi
   n="$(printf '%s\n' "$d" | wc -l | tr -d ' ')"
   if [ "$n" -gt "$limit" ]; then
     printf '%s\n' "$d" | sed -n "1,${limit}p"

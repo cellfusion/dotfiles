@@ -36,10 +36,12 @@ while :; do
   fi
   mad_run_node "implement-$round" "$implementer_role" "$ws_id" || exit 1
 
+  # 差分を先に取る。取れなければ、中身の無いレビュー依頼を出さずに止める。
+  diff_text="$(mad_diff "$ws_cwd" "$base" 2000)" || exit 1
   {
     printf '次の要件に対する差分をレビューする。\n\n要件:\n%s\n\n差分:\n' "$requirements"
     printf '```diff\n'
-    mad_diff "$ws_cwd" "$base" 2000
+    printf '%s\n' "$diff_text"
     printf '```\n'
   } | mad_prompt "review-$round"
   mad_run_node "review-$round" "$reviewer_role" "$ws_id" || exit 1

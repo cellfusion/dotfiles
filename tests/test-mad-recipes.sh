@@ -80,7 +80,12 @@ case "\$*" in
   "rev-parse --show-toplevel") printf '%s\n' "$FIXTURE/repo" ;;
   "remote get-url origin") printf '\n' ;;
   "branch --show-current") printf '%s\n' "\${FAKE_BRANCH-main}" ;;
-  *diff*) printf '+変更した行\n' ;;
+  *diff*)
+    case "\${FAKE_DIFF_MODE-lines}" in
+      empty) exit 0 ;;
+      fail) printf 'fatal: bad revision\n' >&2; exit 128 ;;
+      *) printf '+変更した行\n' ;;
+    esac ;;
   *) exit 1 ;;
 esac
 FAKE
@@ -278,6 +283,23 @@ run_dir="$(run_dir_from "$FIXTURE/impl-ng.err")"
 assert_contains "$(cat "$run_dir/implement-2.prompt")" "指摘" \
   "implement: 2 ラウンド目のプロンプトに指摘を渡す"
 
+# 実装役がコミットしなかったとき、レビュー役に空のコードブロックを渡さない。
+( export FAKE_DIFF_MODE=empty
+  live implement --arg 'requirements=要件' >/dev/null 2>"$FIXTURE/impl-nodiff.err" )
+run_dir="$(run_dir_from "$FIXTURE/impl-nodiff.err")"
+assert_contains "$(cat "$run_dir/review-1.prompt")" "（差分が無い）" \
+  "implement: 差分が無いことをレビューのプロンプトに書く"
+
+# git が差分を返せないときは、レビュー役を起こさずに run を止める。
+( export FAKE_DIFF_MODE=fail
+  live implement --arg 'requirements=要件' >/dev/null 2>"$FIXTURE/impl-diffng.err" )
+assert_eq "$?" "1" "implement: 差分を取れないと非ゼロで終わる"
+err="$(cat "$FIXTURE/impl-diffng.err")"
+assert_contains "$err" "差分を取れない" "implement: 差分を取れない理由を出す"
+run_dir="$(run_dir_from "$FIXTURE/impl-diffng.err")"
+assert_eq "$([ -f "$run_dir/review-1.json" ] && echo yes || echo no)" "no" \
+  "implement: 差分を取れないとレビュー役を走らせない"
+
 # spike: 方針ごとに worktree を作り、並行実装して 1 つ選ぶ。
 out="$(dry spike --arg 'requirements=要件の本文')"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^node=spike-')" "3" "spike: 方針の数だけノードを作る"
@@ -348,6 +370,14 @@ assert_contains "$(cat "$run_dir/verdict.prompt")" "+変更した行" \
   "spike: 裁定のプロンプトに差分を埋める"
 assert_eq "$(grep -c 'wks_fake' "$run_dir/workspaces.txt")" "2" \
   "spike: 方針の数だけ workspace を作る"
+
+( export FAKE_DIFF_MODE=fail
+  live spike --arg 'requirements=要件' --arg 'approaches=["案A"]' \
+    >/dev/null 2>"$FIXTURE/spike-diffng.err" )
+assert_eq "$?" "1" "spike: 差分を取れないと非ゼロで終わる"
+run_dir="$(run_dir_from "$FIXTURE/spike-diffng.err")"
+assert_eq "$([ -f "$run_dir/verdict.json" ] && echo yes || echo no)" "no" \
+  "spike: 差分を取れないと裁定役を走らせない"
 
 out="$(live research --arg topic=対象 \
   --arg 'perspectives=["観点A","観点B"]' 2>"$FIXTURE/live-state.err")"

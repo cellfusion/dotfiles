@@ -355,7 +355,12 @@ cat > "$FIXTURE/bin/git-diff" <<'FAKE'
 #!/usr/bin/env bash
 case "$*" in
   "rev-parse --show-toplevel") printf '%s\n' "$FAKE_REPO" ;;
-  *diff*) i=1; while [ "$i" -le 20 ]; do printf '+行 %s\n' "$i"; i=$((i + 1)); done ;;
+  *diff*)
+    case "${FAKE_DIFF_MODE-lines}" in
+      empty) exit 0 ;;
+      fail) printf 'fatal: bad revision\n' >&2; exit 128 ;;
+      *) i=1; while [ "$i" -le 20 ]; do printf '+行 %s\n' "$i"; i=$((i + 1)); done ;;
+    esac ;;
   *) exit 1 ;;
 esac
 FAKE
@@ -365,15 +370,37 @@ cat > "$FIXTURE/recipes/df.sh" <<'RECIPE'
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 mad_declare '' ''
-mad_diff /tmp/fake-wt main 5
+mad_diff /tmp/fake-wt main 5 || exit 4
+printf 'run_dir=%s\n' "$MAD_RUN_DIR"
 RECIPE
 
-out="$(FAKE_REPO="$FIXTURE/repo" MAD_RECIPES_DIR="$FIXTURE/recipes" \
+df() {
+  FAKE_REPO="$FIXTURE/repo" MAD_RECIPES_DIR="$FIXTURE/recipes" \
   MAD_GIT_BIN="$FIXTURE/bin/git-diff" \
-  bash "$FIXTURE/scripts/mad-run" df 2>/dev/null)"
+  bash "$FIXTURE/scripts/mad-run" df
+}
+
+out="$(df 2>/dev/null)"
 assert_contains "$out" "+行 5" "mad_diff は差分を出す"
 assert_not_contains "$out" "+行 6" "mad_diff は上限で切り詰める"
 assert_contains "$out" "20 行" "mad_diff は全体の行数を添える"
+
+run_dir="$(printf '%s\n' "$out" | sed -n 's/^run_dir=//p')"
+assert_eq "$(ls -a "$run_dir" | grep -c '^\.diff\.')" "0" \
+  "mad_diff は標準エラーを受ける一時ファイルを残さない"
+
+# 差分が空のときと git が失敗したときを区別する。潰すと中身の無いレビュー依頼が通る。
+out="$(FAKE_DIFF_MODE=empty df 2>/dev/null)"
+assert_contains "$out" "（差分が無い）" "mad_diff は差分が無いことを 1 行で出す"
+
+FAKE_DIFF_MODE=fail df >"$FIXTURE/df-fail.out" 2>"$FIXTURE/df-fail.err"
+assert_eq "$?" "4" "mad_diff は git が失敗すると非ゼロで返る"
+assert_contains "$(cat "$FIXTURE/df-fail.err")" "差分を取れない" \
+  "mad_diff は git の失敗を標準エラーに出す"
+assert_contains "$(cat "$FIXTURE/df-fail.err")" "fatal: bad revision" \
+  "mad_diff は git の理由をそのまま添える"
+assert_not_contains "$(cat "$FIXTURE/df-fail.out")" "fatal" \
+  "mad_diff は git の標準エラーを差分に混ぜない"
 
 # --- mad_base / mad_ws_field ---
 cat > "$FIXTURE/recipes/base.sh" <<'RECIPE'
