@@ -15,13 +15,16 @@ base="$(mad_base)" || exit 2
 mad_record_base "$base"
 
 # 方針ごとに worktree を作り、実装を並行で起こす。
+# 途中で worktree を作れなくなっても、起動済みのノードを待ってから終わる。
+# 待たずに抜けると、失敗した run の worktree に実装役が書き込み続ける。
 cands='[]'
 n="$(printf '%s' "$approaches" | jq 'length')"
 i=0
+setup_failed=0
 while [ "$i" -lt "$n" ]; do
   a="$(printf '%s' "$approaches" | jq -r ".[$i]")"
   i=$((i + 1))
-  ws_line="$(mad_worktree "mad/$MAD_RUN_ID/spike-$i" "$base")" || exit 1
+  ws_line="$(mad_worktree "mad/$MAD_RUN_ID/spike-$i" "$base")" || { setup_failed=1; break; }
   ws_id="$(mad_ws_field "$ws_line" id)"
   ws_cwd="$(mad_ws_field "$ws_line" cwd)"
   cands="$(printf '%s' "$cands" | jq -c \
@@ -36,7 +39,8 @@ while [ "$i" -lt "$n" ]; do
   } | mad_prompt "spike-$i"
   mad_start_node "spike-$i" "$implementer_role" "$ws_id"
 done
-mad_join || exit 1
+mad_join || setup_failed=1
+[ "$setup_failed" = "0" ] || exit 1
 
 # 差分を先に取る。取れなければ、中身の無い裁定依頼を出さずに止める。
 i=0

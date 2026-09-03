@@ -27,11 +27,19 @@ case "$1 $2" in
   "provider ls") cat "$FAKE_DIR/providers.json"; exit 0 ;;
   "provider models") cat "$FAKE_DIR/models.json"; exit 0 ;;
   "workspace create")
+    # FAKE_WS_FAIL_AT 回目の呼び出しから先を失敗させる。
+    if [ -n "${FAKE_WS_FAIL_AT:-}" ]; then
+      printf 'x\n' >> "$FAKE_DIR/ws-calls.txt"
+      if [ "$(wc -l < "$FAKE_DIR/ws-calls.txt" | tr -d ' ')" -ge "$FAKE_WS_FAIL_AT" ]; then
+        printf 'boom\n' >&2; exit 1
+      fi
+    fi
     printf '{"workspaceId":"wks_fake","project":"p","name":"n","isolation":"worktree","cwd":"%s/wt"}\n' \
       "$FAKE_DIR"
     exit 0 ;;
 esac
 [ "$1" = "run" ] || exit 1
+[ -n "${FAKE_NODE_SLEEP:-}" ] && sleep "$FAKE_NODE_SLEEP"
 prompt="${!#}"
 if [ -n "${FAKE_FAIL_MARK:-}" ]; then
   case "$prompt" in
@@ -370,6 +378,18 @@ assert_contains "$(cat "$run_dir/verdict.prompt")" "+変更した行" \
   "spike: 裁定のプロンプトに差分を埋める"
 assert_eq "$(grep -c 'wks_fake' "$run_dir/workspaces.txt")" "2" \
   "spike: 方針の数だけ workspace を作る"
+
+# 2 つ目の worktree を作れなかったとき、1 つ目の実装役を放置しない。
+rm -f "$FIXTURE/paseo/ws-calls.txt"
+( export FAKE_WS_FAIL_AT=2 FAKE_NODE_SLEEP=2
+  live spike --arg 'requirements=要件' --arg 'approaches=["案A","案B"]' \
+    >/dev/null 2>"$FIXTURE/spike-wsng.err" )
+assert_eq "$?" "1" "spike: worktree を作れないと非ゼロで終わる"
+run_dir="$(run_dir_from "$FIXTURE/spike-wsng.err")"
+assert_eq "$(node_field "$run_dir/spike-1.state" state)" "ok" \
+  "spike: worktree の作成に失敗しても起動済みのノードを待ってから終わる"
+assert_eq "$([ -f "$run_dir/verdict.prompt" ] && echo yes || echo no)" "no" \
+  "spike: worktree の作成に失敗したら裁定へ進まない"
 
 ( export FAKE_DIFF_MODE=fail
   live spike --arg 'requirements=要件' --arg 'approaches=["案A"]' \
