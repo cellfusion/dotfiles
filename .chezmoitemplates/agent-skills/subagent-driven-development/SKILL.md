@@ -81,13 +81,27 @@ digraph when_to_use {
 
 ## 実行経路
 
-### sdd-run 経路（`HERDR_ENV=1` のとき既定）
+### sdd-run 経路（前提が揃えば既定）
 
-`HERDR_ENV` が `1` なら、役割ごとにエンジンを選べる `sdd-run` 経路を使う。
+次の 3 つが揃っているなら、役割ごとにエンジンを選べる `sdd-run` 経路を使う。
 実装を codex、レビューを claude というように分けられる。対応は
 `~/.agents/agent-defs/routing.json` が持つ。
 
-**`HERDR_ENV` が `1` のとき、この節が他のすべての経路に優先する。下の経路の節は読まない。**
+```bash
+sdd_agents="${AGENT_ENV_AGENTS-claude codex}"
+test -r ~/.agents/agent-defs/routing.json &&
+  command -v claude && command -v codex &&
+  printf '%s\n' "$sdd_agents" | grep -qw claude &&
+  printf '%s\n' "$sdd_agents" | grep -qw codex
+```
+
+CLI のバイナリは AI 環境に関係なく PATH にあるので、`command -v` だけでは足りない。
+いまの AI 環境が使ってよいエージェントは `AGENT_ENV_AGENTS` が持つ。
+claude だけの AI 環境では `CODEX_HOME` が unset なので、codex を起動すると
+既定の `~/.codex` を読み、意図しないアカウントで実装タスクが走る。
+`AGENT_ENV_AGENTS` を持たないマシンでは CLI の有無だけで判定する。
+
+**前提が揃っているとき、この節が他のすべての経路に優先する。下の経路の節は読まない。**
 
 プラン 1 本の実行全体を `sdd-run` が回す。**あなたが呼ぶのはこの 1 コマンドだけである。**
 
@@ -125,16 +139,19 @@ worktree とブランチの片付け、中断からの再開。
 `minor` と `cannotVerify` は ledger に書かれている。`cannotVerify` は
 **ledger に記録され、run が返った後にまとめて解消する**。sdd-run は全波を 1 回の呼び出しで回し切る。
 
-**失敗したタスクの worktree は残る。** 人が中を見るときは 2 手で入る。
+**失敗したタスクの worktree は残る。** `attention[].workdir` の絶対パスを報告する。
+
+herdr 管理下（`$HERDR_ENV` が `1`）なら、workspace として開いて人が中に入れる。
 
 ```bash
 herdr worktree open --cwd <feature worktree> --path <task worktree> --no-focus
 ```
 
-`<task worktree>` には `attention[].workdir` を渡す。
+`<task worktree>` には `attention[].workdir` を渡す。それ以外の環境では、
+パスを報告するだけにする。
 
-routing が codex を指しているのに `HERDR_ENV` が `1` でない場合、勝手に claude へ落とさない。
-[ask-user] で「claude に落として続行するか、止めるか」を聞く。
+routing が codex を指しているのに codex の CLI が PATH に無い場合、勝手に claude へ
+落とさない。[ask-user] で「claude だけで続行するか、止めるか」を聞く。
 
 {{ if ne .tool "claude" }}
 ### 手動経路（既定）
@@ -143,9 +160,9 @@ routing が codex を指しているのに `HERDR_ENV` が `1` でない場合�
 
 冒頭の対応表が [resume-subagent] を「継続する機構は無い」としている環境では、fix ラウンド 1-3 も新しい implementer を立て、報告ファイルで記憶を引き継ぐ。
 {{ else }}
-`HERDR_ENV` が `1` でなければ、タスクループは [deterministic-loop] 経路で回す。`HERDR_ENV` が `1` のときは上の `sdd-run` 経路が優先するので、この先は読まない。
+`sdd-run` の前提が揃わなければ、タスクループは [deterministic-loop] 経路で回す。前提が揃っているときは上の `sdd-run` 経路が優先するので、この先は読まない。
 
-### [deterministic-loop] 経路（`HERDR_ENV` が `1` でないときの既定）
+### [deterministic-loop] 経路（sdd-run の前提が揃わないときの既定）
 
 `workflows/sdd-task.js` が 1 タスク分の「実装 → タスクレビュー → fix ループ（最大 5 ラウンド）」を決定的に回す。1 タスクにつき 1 回呼ぶ。
 
@@ -238,7 +255,7 @@ node ~/.config/claude/skills/subagent-driven-development/workflows/test-workflow
 
 ## 波ごとの並行実行
 
-### `HERDR_ENV=1` の場合: sdd-run 経路
+### sdd-run 経路の場合
 
 `sdd-run` 経路では、波の計算・worktree・並行起動・マージ・片付けをすべて `sdd-run` が行う。
 **あなたはこの節の手順を実行しない。** 何が起きるかを知っておくために読む。
@@ -280,10 +297,10 @@ feature branch にマージしただけでは消えない）。
 **波の中で一部が失敗したら `sdd-run` は波を閉じずに返す。** 失敗したタスクの worktree は残る。
 裁定してから `--run-id` で再開する。完了済みのタスクは再 dispatch されない。
 
-### `HERDR_ENV` が未設定の場合: deterministic-loop / 手動経路
+### sdd-run 経路でない場合: deterministic-loop / 手動経路
 
-`HERDR_ENV` が未設定なら、claude は [deterministic-loop] 経路、codex と opencode は手動経路でこの手順を使う。
-ツール名ではなく `HERDR_ENV` の値で `sdd-run` 経路と分かれる。
+`sdd-run` の前提が揃わないなら、claude は [deterministic-loop] 経路、codex と opencode は手動経路でこの手順を使う。
+ツール名ではなく `sdd-run` の前提が揃うかどうかで分かれる。
 
 worktree を作るのは、同時に書くエージェントが 2 つ以上ある波だけである。
 **作った worktree では必ず `wt hook pre-start` を同期実行する。** これを飛ばすと実装エージェントが

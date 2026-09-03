@@ -14,6 +14,8 @@
       aws.opAccount           credential_process が使う 1Password アカウント
       aws.profiles            AWS プロファイル（配列）
       private.forbiddenWords  再汚染テストの禁止語（配列）
+      mad.providers           MAD が使う追加 provider（id → claude か codex の family 名）
+      mad.projectRules        MAD のプロジェクトごとの provider 上書き規則（配列）
 
   private-data.toml は無くてもよい。無ければ各テンプレートが既定値で描画される。
   AI 環境については「claude と codex を持つ default 環境 1 つ」が既定値になる。

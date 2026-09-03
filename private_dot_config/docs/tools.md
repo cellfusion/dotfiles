@@ -64,7 +64,7 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
 
 ## apply 後に手でやること
 
-自動化できないものが 5 つある。
+自動化できないものが 6 つある。
 
 1. **アクセシビリティ権限の付与**（yabai と skhd）。システム設定 → プライバシーと
    セキュリティ → アクセシビリティ で許可する。付与するまでウィンドウ操作と
@@ -84,6 +84,12 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
    Key type の選択を間違えると push か Verified のどちらかが通らない。
    秘密鍵は Secure Enclave から出ないため、この登録だけは自動化できない。
    詳細は `~/.config/docs/git-signing.md` にある
+6. **SketchyBar の使用量採取ジョブの読み込み**。`chezmoi apply` は
+   `~/Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist` を置くだけである。
+   次のログインを待たずに有効にするなら
+   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist`
+   を実行する。読み込むまで Claude の週次使用率は更新されない。
+   詳細は `~/.config/docs/sketchybar-usage.md` にある
 
 sketchybar のカレンダー表示を使う場合は、フルディスクアクセスの付与も要る。
 システム設定 → プライバシーとセキュリティ → フルディスクアクセス に
@@ -105,6 +111,7 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 | fd | 高速 find |
 | ripgrep | 高速 grep |
 | bat | シンタックスハイライト付き cat |
+| glow | マークダウンを整形して表示するページャ |
 | eza | 高機能 ls |
 | jq | JSON 処理 |
 | television | ファジーファインダー |
@@ -221,6 +228,13 @@ braid。複数の AI エージェントを組み合わせたフローを実行�
 `requesting-code-review` スキルが PATH にあることを前提にする。リポジトリは
 `~/Workspaces/github.com/cellfusion/braid` にあり、`cargo build --release` でビルドし、
 `target/release/braid` を `~/.local/bin` へ置く。
+
+paseo。複数のコーディングエージェントを走らせる macOS アプリで、`multi-agent-development`
+スキルが CLI の `paseo` を PATH に置くことを前提にする。アプリは https://paseo.sh/download
+から入れ、`/Applications/Paseo.app` に置く。CLI はアプリに同梱された
+`/Applications/Paseo.app/Contents/Resources/bin/paseo` で、`~/.local/bin/paseo` を
+そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
+である。daemon はアプリが持つので、別に入れるものは無い。
 
 ## 削除候補
 

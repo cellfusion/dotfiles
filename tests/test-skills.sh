@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid pr-review"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid multi-agent-development pr-review"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
@@ -40,6 +40,29 @@ assert_contains "$preview" 'EDITOR' '_preview-tab: $EDITOR で開く'
 assert_contains "$preview" '; exit' "_preview-tab: エディタ終了で pane を閉じる"
 assert_contains "$preview" "読み直す" "_preview-tab: 手編集の取り込みを指示する"
 assert_not_contains "$preview" "herdr tab close" "_preview-tab: タブを閉じない"
+
+# Paseo は HERDR_ENV を持たない。端末を作って glow で表示する経路を別に持つ。
+assert_contains "$preview" "PASEO_AGENT_ID" "_preview-tab: Paseo 環境かを判定する"
+assert_contains "$preview" "paseo terminal create --cwd" \
+  "_preview-tab: Paseo では端末を作る"
+assert_contains "$preview" "glow -p" "_preview-tab: Paseo では glow で表示する"
+assert_not_contains "$preview" "paseo terminal kill" \
+  "_preview-tab: Paseo の端末を閉じない"
+
+# チェックリストは経路を書かない。手順は _preview-tab.md が環境ごとに分岐して持つ。
+brainstorming_out="$(render_template "agent-skills/brainstorming/SKILL.md" "claude")"
+assert_not_contains "$brainstorming_out" "herdr の別タブに" \
+  "brainstorming: チェックリストが herdr 固定でない"
+
+# [todo] の対応先は実在するツールでなければならない。TaskCreate / TaskUpdate は
+# 手元の Claude Code に無い。
+claude_runtime="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_runtime/claude.md")"
+assert_not_contains "$claude_runtime" "TaskCreate" \
+  "claude runtime: 実在しないツール名を指さない"
+assert_not_contains "$claude_runtime" "TaskUpdate" \
+  "claude runtime: 実在しないツール名を指さない（TaskUpdate）"
+assert_contains "$claude_runtime" "ledger ファイルで代替" \
+  "claude runtime: todo の代替手段を書く"
 
 # sandbox の permission denied だけは承認付きで同じプレビューを一度だけ再試行する。
 for tool in claude codex opencode; do
@@ -239,7 +262,12 @@ assert_eq "$(printf '%s' "$using" | grep -c '`\.worktrees/` の ignore を確認
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
   assert_contains "$out" "sdd-run 経路" "$tool: sdd-run 経路の節がある"
-  assert_contains "$out" "HERDR_ENV" "$tool: 起動条件を書いている"
+  assert_contains "$out" "command -v codex" "$tool: 起動条件を書いている"
+  # CLI のバイナリは AI 環境に関係なく PATH にある。claude しか持たない AI 環境で
+  # codex を起動すると ~/.codex の既定アカウントで走るので、agents も条件に要る。
+  assert_contains "$out" "AGENT_ENV_AGENTS" "$tool: 起動条件が AI 環境の agents を見る"
+  assert_not_contains "$out" 'が `1` なら、役割ごとにエンジンを選べる' \
+    "$tool: 旧 HERDR_ENV 条件が残っていない"
   assert_contains "$out" "sdd-run" "$tool: orchestrator を指している"
   assert_contains "$out" "routing.json" "$tool: エンジンの決め方を指している"
 done
@@ -250,8 +278,8 @@ for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
   assert_contains "$out" "この節が他のすべての経路に優先する" "$tool: sdd-run 経路の優先を明示する"
 done
-assert_contains "$claude_out" "HERDR_ENV\` が \`1\` でないときの既定" \
-  "sdd/claude: [deterministic-loop] は HERDR_ENV=1 でないときの既定"
+assert_contains "$claude_out" "sdd-run の前提が揃わないときの既定" \
+  "sdd/claude: [deterministic-loop] は sdd-run の前提が揃わないときの既定"
 assert_not_contains "$claude_out" "[deterministic-loop] が使えるならそちらが既定" \
   "sdd/claude: 既定を名乗る経路が 2 つにならない"
 
@@ -353,13 +381,56 @@ done
 # スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
 # プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
 # 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
-for skill in braid requesting-code-review pr-review; do
+for skill in braid requesting-code-review multi-agent-development pr-review; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
     blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
     ok="$(printf '%s\n' "$blocks" | bash -n 2>/dev/null && echo yes || echo no)"
     assert_eq "$ok" "yes" "$skill/$tool: bash ブロックが構文として妥当"
   done
+done
+
+# MAD のスクリプトは PATH に無い。bash ブロックは裸の mad-run ではなくフルパスで書く。
+# コピーして実行する読者が command not found にならないよう、テストで縛る。
+for name in "agent-skills/multi-agent-development/SKILL.md" "agent-skills/_mad-invocation.md"; do
+  out="$(render_template "$name" "claude")"
+  blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
+  bare="$(printf '%s\n' "$blocks" | grep -c '^[[:space:]]*mad-run' || true)"
+  assert_eq "$bare" "0" "$name: bash ブロックに裸の mad-run を書かない"
+  assert_contains "$blocks" "~/.agents/skills/multi-agent-development/scripts/mad-run" \
+    "$name: mad-run をフルパスで書く"
+done
+
+# MAD の呼び方は共有パーシャルに 1 本だけ置く。
+mad_inv="$(render_template "agent-skills/_mad-invocation.md" "claude")"
+assert_contains "$mad_inv" "## mad-run の呼び方" "_mad-invocation: 節の見出しがある"
+assert_contains "$mad_inv" "command -v paseo" "_mad-invocation: paseo が PATH にあるか確かめる"
+assert_contains "$mad_inv" "mad-run" "_mad-invocation: mad-run を呼ぶ"
+assert_contains "$mad_inv" "--dry-run" "_mad-invocation: 本実行の前に dry-run を通す"
+assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を再試行しない"
+
+# MAD スキルはレシピ 5 本を表に持ち、呼び方は共有パーシャルから取り込む。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review; do
+    assert_contains "$out" "\`$recipe\`" "mad/$tool: レシピ $recipe が表にある"
+  done
+  for arg in topic problem proposal items task requirements review_file; do
+    assert_contains "$out" "\`$arg\`" "mad/$tool: 必須引数 $arg が表にある"
+  done
+  assert_contains "$out" "## mad-run の呼び方" "mad/$tool: 呼び方の節が展開される"
+done
+
+mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+assert_contains "$mad_src" 'includeTemplate "agent-skills/_mad-invocation.md"' \
+  "mad: 呼び方を共有パーシャルから取り込む"
+assert_not_contains "$mad_src" "command -v paseo" "mad: 呼び方の本文を自前で持たない"
+
+for d in private_dot_agents/skills \
+         private_dot_config/claude/skills \
+         private_dot_config/opencode/skills; do
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/$d/multi-agent-development/SKILL.md.tmpl" ] && echo yes || echo no)" \
+            "yes" "mad: 配布先に .tmpl がある: $d"
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

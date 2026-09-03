@@ -1,0 +1,2 @@
+{{- $rules := (index ((index . "mad") | default dict) "projectRules") | default (list) -}}
+{{ dict "rules" $rules | toPrettyJson }}

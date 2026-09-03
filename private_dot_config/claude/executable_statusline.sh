@@ -1,5 +1,3 @@
-{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
-{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
 #!/bin/zsh
 
 input=$(cat)
@@ -58,36 +56,6 @@ FIVE_H=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty'
 FIVE_H_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 WEEK=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 WEEK_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
-
-# --- SketchyBar usage widget 連携: 週次 rate_limits をキャッシュへ dump ---
-# ~/.cache/sketchybar-usage/<key>.json に {used_pct, resets_at, ts} を書く。
-# key は AGENT_ENV_SESSION から作る（<session>-claude）。資格情報は書かない。
-dump_usage_cache() {
-  local week="$1" reset="$2"
-  [ -n "$week" ] || return 0
-  [ -n "$CLAUDE_CONFIG_DIR" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  local key
-  # 環境名は ~/.config/zsh/agent-environments.zsh が AGENT_ENV_SESSION で伝える。
-  # 変数が届かない起動経路では先頭環境として扱う。agent-environments.zsh が
-  # 未定義セッションを先頭環境へ落とすのと揃える。basename に落とすと
-  # usage.sh が読む <session>-claude と一致せず、ウィジェットから永久に読まれない。
-  if [ -n "${AGENT_ENV_SESSION:-}" ]; then
-    key="${AGENT_ENV_SESSION}-claude"
-  else
-    key="{{ (index $envs 0).session }}-claude"
-  fi
-  local dir="$HOME/.cache/sketchybar-usage"
-  mkdir -p "$dir" 2>/dev/null || return 0
-  local pct now f
-  pct=$(printf '%.0f' "$week")
-  now=$(date +%s)
-  f="$dir/$key.json"
-  jq -n --argjson ts "$now" --arg p "$pct" --arg r "${reset:-}" \
-    '{ts:$ts, used_pct:$p, resets_at:(if $r=="" then "-" else $r end)}' \
-    > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f" 2>/dev/null
-}
-dump_usage_cache "$WEEK" "$WEEK_RESET"
 
 # Context window
 CTX=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)

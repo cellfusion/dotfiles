@@ -1,0 +1,7 @@
+{
+  "researcher": [{ "provider": "codex" }, { "provider": "claude" }],
+  "synthesizer": [{ "provider": "claude" }, { "provider": "codex" }],
+  "judge": [{ "provider": "claude" }, { "provider": "codex" }],
+  "reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
+  "implementer": [{ "provider": "codex" }, { "provider": "claude" }]
+}

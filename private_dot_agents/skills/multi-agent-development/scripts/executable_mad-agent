@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# 役割 1 回分を paseo run で走らせ、構造化出力をファイルに落とす。
+set -u
+
+DEFS="${MAD_DEFS_DIR:-$HOME/.agents/agent-defs}"
+PASEO="${MAD_PASEO_BIN:-paseo}"
+SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
+
+role=""; prompt_file=""; cwd="$PWD"; out=""; log=""; title=""
+timeout="${MAD_TIMEOUT:-1200}"
+
+# 値を取る引数は、値が無ければ 2 で終わる。shift 2 が空回りして無限ループになるのを防ぐ。
+need_value() {
+  [ $# -ge 2 ] || { printf 'mad-agent: %s には値が要る\n' "$1" >&2; exit 2; }
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --role) need_value "$@"; role="$2"; shift 2 ;;
+    --prompt-file) need_value "$@"; prompt_file="$2"; shift 2 ;;
+    --cwd) need_value "$@"; cwd="$2"; shift 2 ;;
+    --out) need_value "$@"; out="$2"; shift 2 ;;
+    --log) need_value "$@"; log="$2"; shift 2 ;;
+    --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
+    --title) need_value "$@"; title="$2"; shift 2 ;;
+    *) printf 'mad-agent: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+if [ -z "$role" ] || [ -z "$prompt_file" ] || [ -z "$out" ] || [ -z "$log" ]; then
+  printf 'usage: mad-agent --role R --prompt-file F --out O --log L [--cwd D] [--timeout N] [--title T]\n' >&2
+  exit 2
+fi
+[ -f "$prompt_file" ] || { printf 'mad-agent: %s が無い\n' "$prompt_file" >&2; exit 2; }
+
+route="$("$SCRIPTS/mad-route" "$role")" || exit 1
+eval "$route"
+
+sys="$DEFS/prompts/$role.md"
+schema="$DEFS/schemas/$role.json"
+[ -f "$sys" ] || { printf 'mad-agent: %s が無い\n' "$sys" >&2; exit 1; }
+[ -f "$schema" ] || { printf 'mad-agent: %s が無い\n' "$schema" >&2; exit 1; }
+
+prompt="$(cat "$sys"; printf '\n\n---\n\n'; cat "$prompt_file")"
+
+set -- run \
+  --provider "$provider" --model "$model" --thinking "$thinking" \
+  --output-schema "$schema" --cwd "$cwd" --wait-timeout "${timeout}s"
+[ -n "$mode" ] && set -- "$@" --mode "$mode"
+[ -n "$title" ] && set -- "$@" --title "$title"
+set -- "$@" "$prompt"
+
+"$PASEO" "$@" >"$out" 2>"$log"
+status=$?
+if [ "$status" -ne 0 ]; then
+  printf 'mad-agent: %s（%s）が失敗した。終了コード %d\n' "$role" "$provider" "$status" >&2
+  tail -n 20 "$log" >&2
+  exit "$status"
+fi
+if [ ! -s "$out" ]; then
+  printf 'mad-agent: %s が構造化出力を返さなかった\n' "$role" >&2
+  exit 1
+fi
+if ! jq empty "$out" >/dev/null 2>&1; then
+  printf 'mad-agent: %s の出力が JSON ではない\n' "$role" >&2
+  tail -n 20 "$out" >&2
+  exit 1
+fi

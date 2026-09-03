@@ -13,7 +13,7 @@ linux="$(render_brewfile linux)"
 
 # --- core は両 OS に載る ---
 for f in git gh ghq git-lfs lazygit neovim fzf fd ripgrep bat eza jq \
-         television zoxide herdr; do
+         television zoxide herdr glow; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: core に $f がある"
   assert_contains "$linux" "brew \"$f\"" "linux: core に $f がある"
 done

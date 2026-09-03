@@ -51,6 +51,18 @@ assert_contains "$doc" "自己更新" "docs: brew に寄せない理由が書か
 # 2026-08-27 に Brewfile から外した。現マシンには残っている。
 assert_contains "$doc" "aquaskk" "docs: AquaSKK の扱いが記録されている"
 
+# --- 手で入れるコマンドの入手方法が記録されている ---
+# braid と paseo はマニフェストに載らない。ここに書いていないと新マシンで入れられない。
+assert_contains "$doc" "cargo build --release" "docs: braid のビルド方法が書かれている"
+assert_contains "$doc" "paseo.sh/download" "docs: paseo の入手先が書かれている"
+assert_contains "$doc" "/Applications/Paseo.app/Contents/Resources/bin/paseo" \
+  "docs: paseo の CLI の在り処が書かれている"
+
+# --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
+# plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
+assert_contains "$doc" "sketchybar-usage-claude" \
+  "docs: 使用量採取ジョブの読み込み手順が書かれている"
+
 # --- 削除を自動化しないことが明記されている ---
 assert_contains "$doc" "削除は自動化しない" "docs: 削除を自動化しない旨が書かれている"
 
@@ -160,6 +172,15 @@ assert_contains "$native_section" "chezmoi" \
 # --- brew bundle の挙動と一致している ---
 assert_contains "$doc" "--no-upgrade" "docs: 手で回すコマンドが --no-upgrade を付けている"
 assert_contains "$doc" "upgrade は行わない" "docs: upgrade を行わない旨が書かれている"
+
+# --- Brewfile の core にあるものが棚卸しの core にも載っている ---
+# 逆向き（棚卸しにあって Brewfile に無い）だけを見ていると、Brewfile に足した
+# formula を棚卸しに書き忘れても落ちない。読んだ人が入っているツールを把握できなくなる。
+core_formulas="$(printf '%s\n' "$brewfile" \
+  | sed -n '/^# --- core/,/^$/p' | sed -n 's/^brew "\(.*\)"$/\1/p')"
+for f in $core_formulas; do
+  assert_contains "$core_section" "| $f |" "整合: Brewfile の core の $f が棚卸しの core に載っている"
+done
 
 # --- Brewfile に無いものを core として載せていない ---
 for f in yazi helix gitui; do

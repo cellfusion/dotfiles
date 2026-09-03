@@ -1,6 +1,8 @@
-# herdr セッション別の環境変数
+# AI 環境別の環境変数
 
-herdr は全ペインの環境に `$HERDR_SESSION` を注入する。zsh はその値を見てセッション固有の環境変数を読み込む。
+zsh は環境変数 1 つで AI 環境を決める。herdr は全ペインに `$HERDR_SESSION` を注入する。
+Paseo は provider 定義が `$AGENT_ENV` を注入する。zsh はその値に対応する環境の
+環境変数を読み込む。
 
 ## 読み込みの順序
 
@@ -11,8 +13,15 @@ herdr は全ペインの環境に `$HERDR_SESSION` を注入する。zsh はそ�
 ```
 
 `agent-environments.zsh` は chezmoi が生成する 1 ファイルで、全環境の定義を持つ。
-`$HERDR_SESSION` に一致する環境を適用し、一致しなければ先頭環境（primary）へ落とす。
-herdr の外（`$HERDR_SESSION` 未設定）も先頭環境になる。どちらの場合も警告は出ない。
+環境名は `AGENT_ENV` → `HERDR_SESSION` → 先頭環境（primary）の順で決まる。
+`$AGENT_ENV` が定義済みの環境名なら、`$HERDR_SESSION` の値より優先する。
+定義に無い名前を受け取った場合と、どちらも未設定の場合は先頭環境になる。
+どの場合も警告は出ない。
+
+Paseo は `HERDR_SESSION` を注入しない。代わりに `~/.paseo/config.json` の
+`agents.providers.<provider>.env.AGENT_ENV` が環境名を伝える。この env は
+`run_onchange_after_90-agent-envs.sh` が `jq` で書き込む。
+Paseo で環境がずれたときは、`HERDR_SESSION` ではなく provider の `AGENT_ENV` を見る。
 
 ## 環境の定義
 
@@ -29,7 +38,7 @@ herdr の外（`$HERDR_SESSION` 未設定）も先頭環境になる。どちら
 
 | フィールド | 意味 |
 |---|---|
-| `session` | `HERDR_SESSION` の値。ディレクトリ名のサフィックスにもなる |
+| `session` | `AGENT_ENV` と `HERDR_SESSION` が取る値。ディレクトリ名のサフィックスにもなる |
 | `label` | sketchybar の使用率ウィジェットに出る表示名 |
 | `agents` | `"claude"` / `"codex"` の部分集合 |
 | `cloudflareAccountId` | `CLOUDFLARE_ACCOUNT_ID` の値。省略すると export しない |
@@ -82,4 +91,4 @@ mv ~/.config/codex_secondary  ~/.config/codex_<session>
 - ここに書けるのは公開してよい値だけである。chezmoi 管理下なので git に入り、リポジトリは public である。環境を特定する値（環境名、Cloudflare のアカウント ID など）は `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` に置き、テンプレートからはループ変数として参照する。API トークンはどちらにも置かない（`secrets.md` を読む）。
 - `claude -p` や `claude --resume` で起動した場合も `$HERDR_SESSION` は継承される。
 - alt+c の新規タブランチャ（`~/.config/herdr/launch-claude-tab.sh`）も `agents` を見て、claude を持たない環境ではタブを作らずに終わる。判定は `AGENT_ENV_AGENTS` ではなく `$HERDR_SESSION` から行う。`type = "shell"` のキーコマンドは herdr サーバが detached で起動するため、focus 中の pane ではなくサーバの環境を継承し、サーバの `AGENT_ENV_*` はサーバを起動したシェル（＝先頭環境）の値だからである。
-- 現在のセッションは `echo $HERDR_SESSION` で確認する。空なら default だけが読まれている。
+- 解決結果は `echo $AGENT_ENV_SESSION` で確認する。入力側は `echo $AGENT_ENV $HERDR_SESSION` で確認する。両方が空なら先頭環境が読まれている。

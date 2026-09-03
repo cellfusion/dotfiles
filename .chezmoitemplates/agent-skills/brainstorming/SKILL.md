@@ -29,7 +29,7 @@ todo リストでも 1 関数のユーティリティでも設定変更でも、
 4. **設計を提示する** — セクションごとに合意を取る
 5. **spec を書く** — `_cellfusion/specs/YYYY-MM-DD-<topic>-design.md`
 6. **spec を self-review する** — placeholder / 内部矛盾 / スコープ / 曖昧さ
-7. **プレビューを開く** — herdr の別タブに `$EDITOR` で開く
+7. **プレビューを開く** — 実行環境に応じた別の端末で spec を開く
 8. **承認 gate** — [ask-user] で承認を取り、選ばれた処理を実行する
 9. **writing-plans を起動する**（承認 gate で継続を選んだ場合のみ）
 
@@ -44,7 +44,7 @@ digraph brainstorming {
     "設計を承認?" [shape=diamond];
     "spec を書く" [shape=box];
     "self-review して直す" [shape=box];
-    "プレビューを別タブで開く" [shape=box];
+    "プレビューを開く" [shape=box];
     "承認 gate" [shape=diamond];
     "issue を立てて番号を追記" [shape=box];
     "writing-plans へ" [shape=doublecircle];
@@ -58,8 +58,8 @@ digraph brainstorming {
     "設計を承認?" -> "設計をセクションごとに提示" [label="修正"];
     "設計を承認?" -> "spec を書く" [label="承認"];
     "spec を書く" -> "self-review して直す";
-    "self-review して直す" -> "プレビューを別タブで開く";
-    "プレビューを別タブで開く" -> "承認 gate";
+    "self-review して直す" -> "プレビューを開く";
+    "プレビューを開く" -> "承認 gate";
     "承認 gate" -> "spec を書く" [label="その他（修正）"];
     "承認 gate" -> "writing-plans へ" [label="承認&継続"];
     "承認 gate" -> "ここで終わる" [label="承認のみ"];

@@ -55,4 +55,41 @@ assert_contains "$tool_adopt" "private_dot_config/docs/tools.md" \
 assert_contains "$tool_adopt" "private_dot_config/herdr/" \
   "tool-adopt: Herdr の設定先を指す"
 
+# --- Claude の CLAUDE.md が常駐プロセスの置き場所を実行環境で分ける ---
+# herdr が動いていない環境で、端末を開いて herdr を起動しようとした事故があった。
+# 判定表と「多重化ツールを自分で起動しない」の禁止をこのファイルが持つ。
+claude_tmpl="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" < "$CHEZMOI_SOURCE/private_dot_config/claude/CLAUDE.md.tmpl")"
+assert_contains "$claude_tmpl" 'PASEO_AGENT_ID' \
+  "Claude CLAUDE.md: Paseo 環境を判定する"
+assert_contains "$claude_tmpl" 'HERDR_ENV' \
+  "Claude CLAUDE.md: herdr 環境を判定する"
+assert_contains "$claude_tmpl" 'run_in_background' \
+  "Claude CLAUDE.md: どちらでもない環境の経路がある"
+assert_contains "$claude_tmpl" '端末多重化ツールを自分で起動しない' \
+  "Claude CLAUDE.md: 多重化ツールを自分で起動しない"
+assert_not_contains "$claude_tmpl" '## Shell Execution with Herdr' \
+  "Claude CLAUDE.md: 節の見出しが herdr 固定でない"
+
+# --- herdr の経路が参照先のスキル無しで実行できる ---
+# `/herdr` スキルはこのリポジトリが配っていない。判定表の中にコマンドを書き切る。
+assert_not_contains "$claude_tmpl" '`/herdr` スキル' \
+  "Claude CLAUDE.md: 配っていない /herdr スキルを参照しない"
+assert_contains "$claude_tmpl" 'herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus' \
+  "Claude CLAUDE.md: herdr の pane 作成コマンドがフラグごと書いてある"
+assert_contains "$claude_tmpl" 'herdr pane run <pane_id>' \
+  "Claude CLAUDE.md: herdr pane run に pane ID を渡すと書いてある"
+assert_contains "$claude_tmpl" '`--current` は使わない' \
+  "Claude CLAUDE.md: --current を禁じている"
+
+# --- Session Handoff が herdr 限定であることを本文の先頭で言う ---
+# 条件が箇条書きに埋もれていると、herdr の無い環境でも手順に入ろうとする。
+assert_contains "$claude_tmpl" 'herdr 管理下（`HERDR_ENV=1`）でのみ行う' \
+  "Claude CLAUDE.md: handoff の前提が本文の先頭にある"
+assert_contains "$claude_tmpl" 'Paseo もこれに当たり' \
+  "Claude CLAUDE.md: Paseo では handoff しないと書いてある"
+
+handoff_skill="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/handoff/SKILL.md")"
+assert_contains "$handoff_skill" 'herdr を起動してはならない' \
+  "handoff: herdr を自分で起動しない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

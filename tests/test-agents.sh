@@ -62,4 +62,11 @@ impl_sum="$(render_template "agent-defs/prompts/sdd-implementer.md" claude | sha
 think_sum="$(render_template "agent-defs/prompts/sdd-implementer-think.md" claude | shasum | cut -d' ' -f1)"
 assert_eq "$think_sum" "$impl_sum" "implementer-think: プロンプト本文が implementer と同一"
 
+# レビュー役のプロンプトは herdr に触れない。SDD の実行経路は sdd-run /
+# deterministic-loop / 手動の 3 つで、herdr 経路は存在しない。
+for a in sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+  body="$(render_template "agent-defs/prompts/$a.md" claude)"
+  assert_not_contains "$body" "herdr" "$a: 存在しない herdr 経路を指さない"
+done
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

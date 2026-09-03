@@ -69,13 +69,44 @@ setup_codex() {
   mv "$f.tmp" "$f"
 }
 
+# Paseo は provider ごとに環境変数を注入する。AGENT_ENV を足すと、その provider で
+# 動くエージェントの子 shell が agent-environments.zsh で正しい環境に解決する。
+# Paseo アプリ自身が config.json を書き換えるので、必要なキーだけを更新する。
+PASEO_CONFIG="${PASEO_CONFIG_FILE:-$HOME/.paseo/config.json}"
+
+# $1=provider 名 $2=extends（空なら書かない） $3=label（空なら書かない）
+# $4=env のキー（空なら書かない） $5=env の値 $6=AGENT_ENV の値
+setup_paseo_provider() {
+  [ -f "$PASEO_CONFIG" ] || return 0
+  jq --arg p "$1" --arg ext "$2" --arg label "$3" \
+     --arg k "$4" --arg v "$5" --arg session "$6" '
+    .agents.providers[$p] = ((.agents.providers[$p] // {})
+      | (if $ext   != "" then .extends = $ext   else . end)
+      | (if $label != "" then .label   = $label else . end)
+      | .env = ((.env // {})
+          | .AGENT_ENV = $session
+          | (if $k != "" then .[$k] = $v else . end)))
+  ' < "$PASEO_CONFIG" > "$PASEO_CONFIG.tmp" \
+    || die "$PASEO_CONFIG の更新に失敗した"
+  mv "$PASEO_CONFIG.tmp" "$PASEO_CONFIG"
+}
+
 {{ range $i, $env := $envs }}
 {{- if $i }}
 {{- if has "claude" $env.agents }}
 setup_claude {{ $env.session | quote }}
+setup_paseo_provider {{ printf "claude-%s" $env.session | quote }} "claude" {{ printf "Claude (%s)" $env.label | quote }} "CLAUDE_CONFIG_DIR" "$XDG_CONFIG_HOME/claude_{{ $env.session }}" {{ $env.session | quote }}
 {{- end }}
 {{- if has "codex" $env.agents }}
 setup_codex {{ $env.session | quote }}
+setup_paseo_provider {{ printf "codex-%s" $env.session | quote }} "codex" {{ printf "Codex (%s)" $env.label | quote }} "CODEX_HOME" "$XDG_CONFIG_HOME/codex_{{ $env.session }}" {{ $env.session | quote }}
+{{- end }}
+{{- else }}
+{{- if has "claude" $env.agents }}
+setup_paseo_provider "claude" "" "" "" "" {{ $env.session | quote }}
+{{- end }}
+{{- if has "codex" $env.agents }}
+setup_paseo_provider "codex" "" "" "" "" {{ $env.session | quote }}
 {{- end }}
 {{- end }}
 {{- end }}

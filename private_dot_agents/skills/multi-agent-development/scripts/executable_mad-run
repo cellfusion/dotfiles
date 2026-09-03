@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# レシピを 1 本実行する。run ディレクトリを作り、引数を渡し、成果物をそこに残す。
+set -u
+
+SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
+RECIPES="${MAD_RECIPES_DIR:-$SCRIPTS/../recipes}"
+GIT="${MAD_GIT_BIN:-git}"
+
+recipe="${1:-}"
+if [ -z "$recipe" ]; then
+  printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--timeout 秒]\n' >&2
+  exit 2
+fi
+shift
+
+if [ ! -f "$RECIPES/$recipe.sh" ]; then
+  printf 'mad-run: 未知のレシピ %s\n' "$recipe" >&2
+  exit 2
+fi
+
+# 値を取る引数は、値が無ければ 2 で終わる。shift 2 が空回りして無限ループになるのを防ぐ。
+need_value() {
+  [ $# -ge 2 ] || { printf 'mad-run: %s には値が要る\n' "$1" >&2; exit 2; }
+}
+
+args='{}'
+dry=0
+timeout=1200
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --arg)
+      need_value "$@"
+      kv="$2"
+      case "$kv" in
+        *=*) ;;
+        *) printf 'mad-run: --arg は k=v の形で渡す\n' >&2; exit 2 ;;
+      esac
+      args="$(printf '%s' "$args" |
+        jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '.[$k] = $v')"
+      shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
+    *) printf 'mad-run: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+root="$("$GIT" rev-parse --show-toplevel 2>/dev/null)" || root="$PWD"
+
+# _cellfusion は git 追跡外の作業ディレクトリである。無ければ自己無視を置いて作る。
+if [ ! -f "$root/_cellfusion/.gitignore" ]; then
+  mkdir -p "$root/_cellfusion" || exit 1
+  printf '*\n' > "$root/_cellfusion/.gitignore"
+fi
+
+run_id="$(date +%Y%m%dT%H%M%S)-$(od -An -tx1 -N3 /dev/urandom | tr -d ' \n')"
+run_dir="$root/_cellfusion/mad/$run_id"
+mkdir -p "$run_dir/.cache" || exit 1
+printf '%s' "$args" > "$run_dir/args.json"
+
+export MAD_RUN_DIR="$run_dir"
+export MAD_RUN_ID="$run_id"
+export MAD_TIMEOUT="$timeout"
+export MAD_DRY_RUN="$dry"
+export MAD_SCRIPTS="$SCRIPTS"
+export MAD_CACHE_DIR="$run_dir/.cache"
+
+printf 'mad-run: %s（run %s）\n' "$recipe" "$run_id" >&2
+bash "$RECIPES/$recipe.sh"
+status=$?
+if [ "$status" -ne 0 ]; then
+  printf 'mad-run: 失敗した。run ディレクトリ: %s\n' "$run_dir" >&2
+fi
+exit "$status"

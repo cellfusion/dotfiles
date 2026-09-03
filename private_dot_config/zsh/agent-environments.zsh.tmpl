@@ -44,8 +44,10 @@ _agent_env_apply() {
   esac
 }
 
-# 定義の無いセッション名と、herdr の外（HERDR_SESSION 未設定）は先頭環境へ落とす。
-_agent_env_apply "${HERDR_SESSION:-}" || _agent_env_apply "{{ (index $envs 0).session }}"
+# 環境名は AGENT_ENV が正で、HERDR_SESSION は herdr が注入する別名である。
+# Paseo は HERDR_SESSION を持たないので、provider 定義が AGENT_ENV を注入する。
+# 定義の無い名前と、どちらも未設定の場合は先頭環境へ落とす。
+_agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_apply "{{ (index $envs 0).session }}"
 
 # この環境が持たないツールを関数で塞ぐ。持っているツールは前段の定義を外す。
 for _agent_env_tool in claude codex; do

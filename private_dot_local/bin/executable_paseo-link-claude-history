@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+# paseo-link-claude-history: Paseo の custom Claude provider の会話履歴を
+# daemon から見えるようにする。
+#
+# Paseo 0.7.0 は履歴の .jsonl を daemon 自身の CLAUDE_CONFIG_DIR から探す
+# (getpaseo/paseo#2005)。provider の env で CLAUDE_CONFIG_DIR を差し替えていると、
+# daemon の再起動後に UI の履歴が空になる。provider 側の .jsonl へ daemon 側から
+# symlink を張ることで履歴を読めるようにする。
+#
+# 背景と撤去手順は ~/.config/docs/paseo-history-symlink.md にある。
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import unicodedata
+from pathlib import Path
+
+# claudeProjectDirSync が使う上限。超えた分は切って hash を付ける。
+PROJECT_DIR_LENGTH_CAP = 200
+
+
+def encode_project_dir(cwd: str) -> str:
+    """Paseo の claudeProjectDirSync と同じ規則で cwd をディレクトリ名にする。"""
+    try:
+        canonical = os.path.realpath(cwd)
+    except OSError:
+        canonical = cwd
+    if sys.platform == "darwin":
+        canonical = unicodedata.normalize("NFC", canonical)
+    replaced = "".join(c if c.isascii() and c.isalnum() else "-" for c in canonical)
+    if len(replaced) <= PROJECT_DIR_LENGTH_CAP:
+        return replaced
+    return "{}-{}".format(replaced[:PROJECT_DIR_LENGTH_CAP], _hash_suffix(canonical))
+
+
+def _hash_suffix(text: str) -> str:
+    """Claude Agent SDK の hashSuffix と同じ 32 bit hash を base36 で返す。"""
+    h = 0
+    for ch in text:
+        h = ((h << 5) - h + ord(ch)) & 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+    n = abs(h)
+    if n == 0:
+        return "0"
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = []
+    while n:
+        n, r = divmod(n, 36)
+        out.append(digits[r])
+    return "".join(reversed(out))
+
+
+def resolve_provider_config_dirs(paseo_config: Path) -> dict:
+    """claude を extends する provider ごとの CLAUDE_CONFIG_DIR を返す。"""
+    if not paseo_config.is_file():
+        return {}
+    try:
+        config = json.loads(paseo_config.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit("{} を読めない: {}".format(paseo_config, error))
+    providers = config.get("agents", {}).get("providers", {})
+
+    def extends_claude(name: str, seen: set) -> bool:
+        if name == "claude":
+            return True
+        if name in seen:
+            return False
+        seen.add(name)
+        entry = providers.get(name)
+        if not isinstance(entry, dict):
+            return False
+        parent = entry.get("extends")
+        return isinstance(parent, str) and extends_claude(parent, seen)
+
+    result = {}
+    for name, entry in providers.items():
+        if not isinstance(entry, dict) or not extends_claude(name, set()):
+            continue
+        config_dir = (entry.get("env") or {}).get("CLAUDE_CONFIG_DIR")
+        if isinstance(config_dir, str) and config_dir:
+            result[name] = os.path.expanduser(config_dir)
+    return result
+
+
+def iter_agent_records(agents_root: Path):
+    """agent の記録から provider・cwd・sessionId を取り出す。"""
+    for path in sorted(agents_root.glob("*/*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        provider = record.get("provider")
+        cwd = record.get("cwd")
+        session_id = (record.get("persistence") or {}).get("sessionId")
+        if isinstance(provider, str) and isinstance(cwd, str) and isinstance(session_id, str):
+            yield provider, cwd, session_id
+
+
+def find_transcript(roots, session_id, preferred_project_dir):
+    """`<sessionId>.jsonl` を探す。cwd から作った名前を先に見る。
+
+    Claude Code は cwd に対応するディレクトリへ transcript を置く。session の
+    途中で agent が worktree に移ると、Paseo が登録している cwd とは別の
+    ディレクトリに移る。その場合は projects 配下を session id で探す。
+    """
+    name = "{}.jsonl".format(session_id)
+    unique_roots = []
+    for root in roots:
+        if root and root not in unique_roots:
+            unique_roots.append(root)
+    for root in unique_roots:
+        candidate = Path(root) / "projects" / preferred_project_dir / name
+        if candidate.is_file():
+            return candidate
+    for root in unique_roots:
+        for candidate in sorted((Path(root) / "projects").glob("*/" + name)):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+class Report:
+    """出力をためて、最後にまとめて書き出す。"""
+
+    def __init__(self, quiet: bool):
+        self.quiet = quiet
+        self.lines = []
+        self.counts = {}
+        self.noteworthy = False
+
+    def count(self, key: str, noteworthy: bool = False) -> None:
+        self.counts[key] = self.counts.get(key, 0) + 1
+        if noteworthy:
+            self.noteworthy = True
+
+    def line(self, text: str) -> None:
+        self.lines.append(text)
+
+    def flush(self) -> None:
+        # --quiet のときは、変化と問題があったときだけ書く。
+        if self.quiet and not self.noteworthy:
+            return
+        for text in self.lines:
+            print(text)
+        summary = ", ".join("{}={}".format(k, v) for k, v in sorted(self.counts.items()))
+        print("結果: " + (summary if summary else "対象なし"))
+
+
+def make_link(src: Path, dst: Path, dry_run: bool) -> str:
+    """src へ dst から symlink を張る。何をしたかを表す文字列を返す。"""
+    if dst.is_symlink():
+        return "ok" if os.readlink(dst) == str(src) else "conflict-symlink"
+    if dst.exists():
+        return "conflict-file"
+    if dry_run:
+        return "would-create"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.symlink_to(src)
+    return "created"
+
+
+def points_into(link: Path, roots: list) -> bool:
+    """symlink の参照先が provider 側のディレクトリかを判定する。"""
+    try:
+        target = Path(os.readlink(link))
+    except OSError:
+        return False
+    return any(str(target).startswith(str(Path(root)) + os.sep) for root in roots)
+
+
+def remove_links(dest_root: Path, provider_roots: list, report: Report, dry_run: bool) -> None:
+    projects = dest_root / "projects"
+    for link in sorted(projects.glob("*/*")):
+        if not link.is_symlink() or not points_into(link, provider_roots):
+            continue
+        label = "would-remove" if dry_run else "removed"
+        report.line("  {}: {}".format(label, link))
+        report.count(label, noteworthy=True)
+        if not dry_run:
+            link.unlink()
+
+
+def prune_links(dest_root: Path, provider_roots: list, report: Report, dry_run: bool) -> None:
+    projects = dest_root / "projects"
+    for link in sorted(projects.glob("*/*")):
+        if not link.is_symlink() or link.exists():
+            continue
+        if not points_into(link, provider_roots):
+            continue
+        label = "would-prune" if dry_run else "pruned"
+        report.line("  {}: {}".format(label, link))
+        report.count(label, noteworthy=True)
+        if not dry_run:
+            link.unlink()
+
+
+def main() -> int:
+    home = Path.home()
+    default_dest = Path(os.environ.get("XDG_CONFIG_HOME", str(home / ".config"))) / "claude"
+    parser = argparse.ArgumentParser(
+        description="Paseo の custom Claude provider の履歴を daemon から見えるようにする"
+    )
+    parser.add_argument(
+        "--daemon-config-dir",
+        default=str(default_dest),
+        help="daemon が持つ CLAUDE_CONFIG_DIR。symlink を置く側になる",
+    )
+    parser.add_argument("--paseo-home", default=str(home / ".paseo"))
+    parser.add_argument("--dry-run", action="store_true", help="変更せずに結果だけ出す")
+    parser.add_argument("--prune", action="store_true", help="参照先が消えた symlink を削除する")
+    parser.add_argument("--remove", action="store_true", help="張った symlink を全部削除する")
+    parser.add_argument("--quiet", action="store_true", help="変化が無ければ何も出さない")
+    args = parser.parse_args()
+
+    paseo_home = Path(args.paseo_home)
+    dest_root = Path(args.daemon_config_dir).expanduser()
+    report = Report(args.quiet)
+
+    provider_dirs = resolve_provider_config_dirs(paseo_home / "config.json")
+    if not provider_dirs:
+        print(
+            "CLAUDE_CONFIG_DIR を差し替える Claude provider が {} に無い".format(
+                paseo_home / "config.json"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    provider_roots = sorted(set(provider_dirs.values()))
+
+    report.line("daemon 側: {}".format(dest_root))
+    for name, path in sorted(provider_dirs.items()):
+        report.line("provider {}: {}".format(name, path))
+
+    # cwd の違いで張った symlink は daemon 側を指す。掃除の対象にも含める。
+    link_roots = provider_roots + [str(dest_root)]
+
+    if args.remove:
+        remove_links(dest_root, link_roots, report, args.dry_run)
+        report.flush()
+        return 0
+
+    for provider, cwd, session_id in iter_agent_records(paseo_home / "agents"):
+        provider_root = provider_dirs.get(provider)
+        # provider 側と daemon 側の両方を探す。session を始めたあとに provider の
+        # env が変わった場合、transcript が daemon 側に残っていることがある。
+        search_roots = [provider_root, str(dest_root)] if provider_root else [str(dest_root)]
+        project_dir = encode_project_dir(cwd)
+        dst = dest_root / "projects" / project_dir / "{}.jsonl".format(session_id)
+        src = find_transcript(search_roots, session_id, project_dir)
+        if src is None:
+            # 会話が消されたか、まだ 1 度も応答していない agent である。
+            report.count("missing-src")
+            continue
+        if src == dst:
+            report.count("ok")
+            continue
+        status = make_link(src, dst, args.dry_run)
+        report.count(status, noteworthy=status != "ok")
+        if status != "ok":
+            report.line("  {}: {}".format(status, dst))
+        # subagent の履歴は、同じ名前のディレクトリに並ぶ。
+        side_src = src.with_suffix("")
+        if side_src.is_dir():
+            side_status = make_link(side_src, dst.with_suffix(""), args.dry_run)
+            report.count("sidechain-" + side_status, noteworthy=side_status != "ok")
+
+    if args.prune:
+        prune_links(dest_root, link_roots, report, args.dry_run)
+
+    report.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
