@@ -240,9 +240,11 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 ### Paseo プラグイン pr-review
 
 サイドバーの「PR レビュー」からプロジェクトと PR を選ぶと、worktree の workspace を
-1 つ作って `/pr-review <番号>` の agent を起動する。PR が `CLAUDE.md`、`AGENTS.md`、
-`.claude/`、`.agents/` のいずれかを変更している場合は、base から分岐した worktree に
-切り替える。レビューする agent が PR 側の指示を受け取らないようにするためである。
+1 つ作って `/pr-review <番号>` の agent を起動する。PR が `CLAUDE.md`、`CLAUDE.local.md`、
+`AGENTS.md` のいずれかの名前のファイルか、`.claude` か `.agents` の配下を、リポジトリの
+どの階層であれ変更している場合は、base から分岐した worktree に切り替え、workspace の
+title の先頭に `[base]` を付ける。レビューする agent が PR 側の指示を受け取らない
+ようにするためである。
 
 プラグインは trusted・unsandboxed なコードである。daemon 側のコードは daemon マシンの
 ファイル・プロセス・認証情報・ネットワークに触れられる。有効化は手で行う。
@@ -251,6 +253,14 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 2. `chezmoi apply` を実行する。`run_onchange_after_75-paseo-plugins.sh` が
    `paseo plugin install` を実行する
 3. `paseo plugin ls` で `pr-review` が `running` になっていることを確認する
+
+Enable plugins より先に `chezmoi apply` を実行した場合、`run_onchange_after_75-paseo-plugins.sh`
+は「プラグインが無効なので飛ばす」で終わり、chezmoi はそれを実行済みとして記録する。
+以後スクリプトの内容が変わるまで再実行されないので、有効にした後で次を手で 1 回実行する。
+
+```bash
+paseo plugin install "$HOME/.local/share/paseo-plugins/pr-review"
+```
 
 レビューに使う provider は、daemon config の `agentProfiles` に `pr-review` という
 `name` の profile があればそれを使う。無ければ `claude/claude-opus-5` を使う。

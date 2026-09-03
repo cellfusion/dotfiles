@@ -1,11 +1,8 @@
 import type { PluginContext } from "@getpaseo/plugin";
 import { runCommand } from "./commands";
 import { listPullRequests, preparePullRequest } from "./contracts";
+import { touchesInstructions } from "./instructions";
 import { PullRequestSurface } from "./main.client";
-
-// PR がこれらを変更していると、レビューする agent の指示が PR 側に置き換わる。
-// 末尾が "/" の項目は前方一致で判定する。
-const INSTRUCTION_PATHS = ["CLAUDE.md", "AGENTS.md", ".claude/", ".agents/"];
 
 interface GhPullRequest {
   number: number;
@@ -13,14 +10,6 @@ interface GhPullRequest {
   author: { login?: string } | null;
   headRefName: string;
   updatedAt: string;
-}
-
-function touchesInstructions(changedPaths: string[]): boolean {
-  return changedPaths.some((path) =>
-    INSTRUCTION_PATHS.some((entry) =>
-      entry.endsWith("/") ? path.startsWith(entry) : path === entry,
-    ),
-  );
 }
 
 export default function contribute(plugin: PluginContext) {

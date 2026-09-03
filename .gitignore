@@ -5,5 +5,5 @@ private_dot_config/sketchybar/helpers/event_providers/spotify_events/bin/spotify
 .worktrees/
 .claude/worktrees/
 .DS_Store
-private_dot_local/share/paseo-plugins/pr-review/node_modules/
-private_dot_local/share/paseo-plugins/pr-review/package-lock.json
+private_dot_local/private_share/paseo-plugins/pr-review/node_modules/
+private_dot_local/private_share/paseo-plugins/pr-review/package-lock.json

@@ -5,17 +5,24 @@
 # true でないときは何もしない。有効化は人が Settings → Plugins から行う。
 #
 # manifest hash: {{ list
-    (include "private_dot_local/share/paseo-plugins/pr-review/paseo-plugin.json")
-    (include "private_dot_local/share/paseo-plugins/pr-review/package.json")
-    (include "private_dot_local/share/paseo-plugins/pr-review/tsconfig.json")
-    (include "private_dot_local/share/paseo-plugins/pr-review/contracts.ts")
-    (include "private_dot_local/share/paseo-plugins/pr-review/commands.ts")
-    (include "private_dot_local/share/paseo-plugins/pr-review/index.ts")
-    (include "private_dot_local/share/paseo-plugins/pr-review/main.client.tsx")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/paseo-plugin.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/package.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/tsconfig.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/contracts.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/commands.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/instructions.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/index.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/main.client.tsx")
     | join "" | sha256sum }}
 set -eu
 
 {{ includeTemplate "install/preamble" }}
+
+# paseo の実体は ~/.local/bin にあり、jq は Homebrew が入れる。chezmoi は
+# スクリプトごとに独立したプロセスを回すので、PATH をここで組み立てる。
+local_bin_env
+brew_env || die 'brew が見つからない。00-homebrew が失敗している'
+command -v jq >/dev/null 2>&1 || die 'jq が見つからない。10-brew が失敗している'
 
 plugin_dir="$HOME/.local/share/paseo-plugins/pr-review"
 

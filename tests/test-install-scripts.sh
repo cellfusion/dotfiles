@@ -22,6 +22,7 @@ agent_env_s="$(render_script run_onchange_after_90-agent-envs.sh.tmpl)"
 # --- 全スクリプト共通 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
             "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -45,7 +46,8 @@ assert_contains "$paseo_plugin_s" ".local/share/paseo-plugins/pr-review" \
 
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
-for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s"; do
+for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
   hash_line="$(printf '%s\n' "$body" | grep -cE '^# manifest hash: [0-9a-f]{64}$' || true)"
@@ -57,6 +59,7 @@ done
 # のではなく落ちることで、取りこぼしが次の apply で必ず再実行される。
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" \
             "mise:$mise_s" "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"

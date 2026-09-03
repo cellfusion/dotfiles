@@ -15,6 +15,9 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
   const prepare = useRpc(preparePullRequest);
   const [projectRootPath, setProjectRootPath] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // startReview の実行中はどの PR 行も押せないようにする。連打すると
+  // workspaces.create が複数回呼ばれ、同じ PR に worktree と agent が複数できる。
+  const [startingNumber, setStartingNumber] = useState<number | null>(null);
 
   const projects = useQuery({
     queryKey: ["pr-review", "projects"],
@@ -85,6 +88,7 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
       return;
     }
     setStatus(`PR #${number} の workspace を作っている`);
+    setStartingNumber(number);
     try {
       const plan = await prepare({ projectRootPath, number });
       const source =
@@ -102,31 +106,33 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
               branchName: plan.branchName ?? `pr-review/${number}-base`,
               baseBranch: plan.baseRefName,
             };
+      // 指示ファイルを変更した PR は base から分岐する。PR head のチェックアウトで
+      // ないことを workspace 一覧で見分けられるよう、title の先頭に印を付ける。
+      const titlePrefix = plan.instructionsChanged ? "[base] " : "";
       const workspace = await paseo.workspaces.create({
-        title: `pr-review #${number} ${title}`,
+        title: `${titlePrefix}pr-review #${number} ${title}`,
         source,
       });
-      const notice = plan.instructionsChanged
-        ? [
-            "",
-            "",
-            "この PR は CLAUDE.md / AGENTS.md / .claude/ / .agents/ のいずれかを変更している。",
-            `この workspace は ${plan.baseRefName} から分岐したもので、PR head のチェックアウトではない。`,
-            "レビュー対象の checkout は pr-review スキルの手順で別に作る。",
-          ].join("\n")
-        : "";
       const config = await resolveAgentConfig();
+      // pr-review スキルは引数を正の整数 1 個だけと定めている。説明を足すと
+      // 引数が数値に一致しなくなり、レビューが始まらない。
       await workspace.agents.create({
         config,
         title: `pr-review/${number}`,
-        prompt: `/pr-review ${number}${notice}`,
+        prompt: `/pr-review ${number}`,
       });
-      setStatus(`PR #${number} のレビューを開始した`);
+      setStatus(
+        plan.instructionsChanged
+          ? `PR #${number} のレビューを開始した。この PR は指示ファイルを変更しているので、${plan.baseRefName} から分岐した worktree で起動した`
+          : `PR #${number} のレビューを開始した`,
+      );
     } catch (error) {
       // 呼び出し側は startReview の Promise を待たないので、ここで握って画面に出す。
       // 再送出すると unhandled rejection になり、失敗が画面に出ない。
       const detail = error instanceof Error ? error.message : String(error);
       setStatus(`PR #${number} のレビューを開始できなかった: ${detail}`);
+    } finally {
+      setStartingNumber(null);
     }
   }
 
@@ -168,6 +174,7 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
               accessibilityRole="button"
               accessibilityLabel={`PR ${pull.number} をレビューする`}
               style={styles.row}
+              disabled={startingNumber !== null}
               onPress={() => {
                 void startReview(pull.number, pull.title);
               }}
