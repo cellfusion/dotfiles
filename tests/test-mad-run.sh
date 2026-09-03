@@ -106,6 +106,18 @@ assert_eq "$?" "2" "未知のレシピは 2 で終わる"
 run probe --bogus >/dev/null 2>&1
 assert_eq "$?" "2" "未知の引数は 2 で終わる"
 
+# レシピ名が recipes の外を指すと、そのスクリプトを実行せずに 2 で終わる。
+mkdir -p "$FIXTURE/outside"
+cat > "$FIXTURE/outside/evil.sh" <<RECIPE
+printf 'pwned\n' > "$FIXTURE/pwned.txt"
+RECIPE
+rm -f "$FIXTURE/pwned.txt"
+out="$(run ../outside/evil 2>&1)"
+assert_eq "$?" "2" "recipes の外を指すレシピ名は 2 で終わる"
+assert_eq "$([ -f "$FIXTURE/pwned.txt" ] && echo yes || echo no)" "no" \
+  "recipes の外のスクリプトを実行しない"
+assert_contains "$out" "../outside/evil" "不正なレシピ名をエラーに含める"
+
 # 値を取る引数に値が無いと 2 で終わる。直っていないと無限ループになるので、5 秒で殺す。
 run_with_watchdog() {
   # 番人を殺したときのジョブの通知を出さないよう、subshell の標準エラーごと捨てる。

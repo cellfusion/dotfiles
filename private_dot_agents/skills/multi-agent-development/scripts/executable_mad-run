@@ -29,6 +29,14 @@ if [ -z "$recipe" ]; then
 fi
 shift
 
+# レシピ名はそのままファイルのパスになる。`/` や `.` を含む名前を先に弾き、
+# recipes の外にあるスクリプトを実行できないようにする。
+case "$recipe" in
+  *[!a-z0-9_-]*)
+    printf 'mad-run: 不正なレシピ名 %s\n' "$recipe" >&2
+    exit 2 ;;
+esac
+
 if [ ! -f "$RECIPES/$recipe.sh" ]; then
   printf 'mad-run: 未知のレシピ %s\n' "$recipe" >&2
   exit 2
