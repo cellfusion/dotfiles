@@ -48,7 +48,8 @@ trap 'rm -f "$ENV_ZSH" "$EMPTY_ZSH" "$cfg" "$empty_cfg"' EXIT
 # 環境変数として前置しても上書きされてしまう。
 run_env() {
   local file="${3:-$ENV_ZSH}"
-  HERDR_SESSION="$1" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$file'; $2" 2>&1
+  env -u AGENT_ENV HERDR_SESSION="$1" \
+    zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$file'; $2" 2>&1
 }
 
 # $1 の AGENT_ENV と $2 の HERDR_SESSION で $ENV_ZSH を source し、$3 を評価する。
@@ -56,6 +57,11 @@ run_env() {
 run_env_both() {
   AGENT_ENV="$1" HERDR_SESSION="$2" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$ENV_ZSH'; $3" 2>&1
 }
+
+# run_env は HERDR_SESSION 単体の契約を検証するため、テスト実行元から
+# 継承した AGENT_ENV の影響を受けない。
+assert_eq "$(AGENT_ENV=default run_env work 'echo $AGENT_ENV_SESSION')" "work" \
+  "HERDR_SESSION 用の run_env は親の AGENT_ENV を遮断する"
 
 # --- 先頭環境（primary）はサフィックスの無いパスを使う ---
 assert_eq "$(run_env default 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude" \
