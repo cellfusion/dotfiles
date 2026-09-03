@@ -16,6 +16,7 @@ ai_s="$(render_script run_onchange_after_40-ai-clis.sh.tmpl)"
 npm_s="$(render_script run_onchange_after_50-npm-globals.sh.tmpl)"
 cargo_s="$(render_script run_onchange_after_60-cargo.sh.tmpl)"
 macos_s="$(render_script run_onchange_after_70-macos-services.sh.tmpl)"
+paseo_plugin_s="$(render_script run_onchange_after_75-paseo-plugins.sh.tmpl)"
 agent_env_s="$(render_script run_onchange_after_90-agent-envs.sh.tmpl)"
 
 # --- 全スクリプト共通 ---
@@ -32,6 +33,15 @@ for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$
   assert_contains "$body" 'XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"' \
     "$name: trust store の場所を XDG_CONFIG_HOME で固定している"
 done
+
+assert_contains "$paseo_plugin_s" "paseo plugin install" \
+  "paseo-plugin: install を実行する"
+assert_contains "$paseo_plugin_s" "paseo plugin reload" \
+  "paseo-plugin: reload を実行する"
+assert_contains "$paseo_plugin_s" "pluginsEnabled" \
+  "paseo-plugin: プラグインが無効なら何もしない"
+assert_contains "$paseo_plugin_s" ".local/share/paseo-plugins/pr-review" \
+  "paseo-plugin: 配布先の絶対 path を登録する"
 
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
@@ -191,6 +201,7 @@ assert_eq "$(render_script run_onchange_after_10-brew.sh.tmpl)" "$brew_s" \
 # --- bash の構文として妥当 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
             "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
