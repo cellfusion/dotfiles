@@ -188,4 +188,19 @@ run_dir="$(run_dir_from "$FIXTURE/live-ng.err")"
 assert_eq "$([ -f "$run_dir/synthesis.json" ] && echo yes || echo no)" \
           "no" "本実行: 失敗したら統合ノードを走らせない"
 
+# ノードごとの状態ファイルが残る。
+node_field() { sed -n "s/^$2=//p" "$1"; }
+
+out="$(live research --arg topic=対象 \
+  --arg 'perspectives=["観点A","観点B"]' 2>"$FIXTURE/live-state.err")"
+run_dir="$(run_dir_from "$FIXTURE/live-state.err")"
+assert_eq "$(node_field "$run_dir/research-1.state" state)" "ok" \
+  "本実行: 成功したノードの状態は ok"
+assert_eq "$(node_field "$run_dir/research-1.state" role)" "researcher" \
+  "本実行: 状態ファイルに役割を書く"
+assert_eq "$(node_field "$run_dir/synthesis.state" state)" "ok" \
+  "本実行: 統合ノードの状態も残る"
+started="$(node_field "$run_dir/synthesis.state" startedAt)"
+assert_not_contains "|$started|" "||" "本実行: 状態ファイルに開始時刻を書く"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
