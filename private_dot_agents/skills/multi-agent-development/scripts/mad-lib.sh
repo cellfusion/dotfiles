@@ -1,6 +1,34 @@
 # レシピが読み込む補助関数。mad-run が export した変数を前提にする。
 # MAD_RUN_DIR / MAD_RUN_ID / MAD_TIMEOUT / MAD_DRY_RUN / MAD_SCRIPTS
 
+# レシピが受け取る引数名を宣言する。第 1 引数は必須、第 2 引数は省略可で、
+# どちらも空白区切りの並びである。宣言に無いキーと必須の欠落は 2 で終わる。
+# MAD_SPEC_ONLY=1 のときは宣言だけを出して終わる。
+mad_declare() {
+  MAD_REQUIRED="${1-}"
+  MAD_OPTIONAL="${2-}"
+  if [ "${MAD_SPEC_ONLY:-0}" = "1" ]; then
+    printf 'required=%s\n' "$MAD_REQUIRED"
+    printf 'optional=%s\n' "$MAD_OPTIONAL"
+    exit 0
+  fi
+  local known=" $MAD_REQUIRED $MAD_OPTIONAL " k
+  for k in $(jq -r 'keys[]' "$MAD_RUN_DIR/args.json"); do
+    case "$known" in
+      *" $k "*) ;;
+      *)
+        printf 'mad-lib: 未知の引数 %s。受け取るのは%s\n' "$k" "$known" >&2
+        exit 2 ;;
+    esac
+  done
+  for k in $MAD_REQUIRED; do
+    if [ -z "$(jq -r --arg n "$k" '.[$n] // empty' "$MAD_RUN_DIR/args.json")" ]; then
+      printf 'mad-lib: 引数 %s が要る\n' "$k" >&2
+      exit 2
+    fi
+  done
+}
+
 # 文字列の引数を取り出す。第 2 引数は既定値。
 mad_arg() {
   jq -r --arg n "$1" --arg d "${2-}" '.[$n] // $d' "$MAD_RUN_DIR/args.json"

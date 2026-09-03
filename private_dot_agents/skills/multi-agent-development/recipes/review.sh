@@ -2,12 +2,10 @@
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 
+mad_declare 'requirements review_file' 'perspectives reviewer_role final_reviewer_role'
+
 requirements="$(mad_arg requirements)"
 review_file="$(mad_arg review_file)"
-if [ -z "$requirements" ] || [ -z "$review_file" ]; then
-  printf 'review: requirements と review_file が要る\n' >&2
-  exit 2
-fi
 perspectives="$(mad_arg_array perspectives '["要件適合","正しさとテスト","保守性と安全性"]')" || exit 2
 reviewer_role="$(mad_arg reviewer_role reviewer)"
 final_reviewer_role="$(mad_arg final_reviewer_role reviewer)"

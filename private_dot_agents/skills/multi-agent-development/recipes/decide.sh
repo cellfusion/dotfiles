@@ -2,11 +2,9 @@
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
 
+mad_declare 'problem' 'approaches criteria candidate_role judge_role'
+
 problem="$(mad_arg problem)"
-if [ -z "$problem" ]; then
-  printf 'decide: problem が要る\n' >&2
-  exit 2
-fi
 approaches="$(mad_arg_array approaches '["最小で単純な","堅牢でリスクを抑えた","異なる発想の"]')" || exit 2
 criteria="$(mad_arg_array criteria '["適合性","実現性","単純さ","リスク"]')" || exit 2
 candidate_role="$(mad_arg candidate_role researcher)"

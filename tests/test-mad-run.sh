@@ -25,6 +25,7 @@ chmod +x "$FIXTURE/bin/git"
 cat > "$FIXTURE/recipes/probe.sh" <<'RECIPE'
 set -u
 . "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' 'topic items nothere'
 printf 'run_dir=%s\n' "$MAD_RUN_DIR"
 printf 'run_id=%s\n' "$MAD_RUN_ID"
 printf 'timeout=%s\n' "$MAD_TIMEOUT"
@@ -42,6 +43,14 @@ MAD_NODES="n1"
 printf 'これは JSON ではない\n' > "$MAD_RUN_DIR/n1.json"
 mad_collect >/dev/null || exit 5
 exit 0
+RECIPE
+
+# 引数を宣言するレシピ。宣言の検証と spec モードの出力を見る。
+cat > "$FIXTURE/recipes/declared.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare 'topic' 'perspectives depth'
+printf 'topic=%s\n' "$(mad_arg topic)"
 RECIPE
 
 run() {
@@ -103,5 +112,29 @@ assert_eq "$?" "5" "出力が JSON でなければ mad_collect は非ゼロで�
 printf 'exit 7\n' > "$FIXTURE/recipes/fail.sh"
 run fail >/dev/null 2>&1
 assert_eq "$?" "7" "レシピの終了コードを返す"
+
+# --- 引数の宣言 ---
+out="$(run declared --arg topic=abc 2>/dev/null)"
+assert_contains "$out" "topic=abc" "宣言した引数は通る"
+
+run declared --arg topic=abc --arg 'perspective=x' >/dev/null 2>&1
+assert_eq "$?" "2" "宣言に無い引数は 2 で終わる"
+
+err="$(run declared --arg topic=abc --arg 'perspective=x' 2>&1 >/dev/null)"
+assert_contains "$err" "perspective" "宣言に無い引数の名前を出す"
+
+run declared >/dev/null 2>&1
+assert_eq "$?" "2" "必須の引数が無いと 2 で終わる"
+
+out="$(MAD_SPEC_ONLY=1 MAD_RUN_DIR=/dev/null MAD_SCRIPTS="$FIXTURE/scripts" \
+  bash "$FIXTURE/recipes/declared.sh" 2>/dev/null)"
+assert_contains "$out" "required=topic" "spec モードで必須の引数を出す"
+assert_contains "$out" "optional=perspectives depth" "spec モードで省略可の引数を出す"
+
+# --- レシピ一覧 ---
+out="$(run 2>&1)"
+assert_contains "$out" "declared" "引数なしで呼ぶとレシピ名を出す"
+assert_contains "$out" "必須: topic" "引数なしで呼ぶと必須の引数を出す"
+assert_contains "$out" "省略可: perspectives depth" "引数なしで呼ぶと省略可の引数を出す"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
