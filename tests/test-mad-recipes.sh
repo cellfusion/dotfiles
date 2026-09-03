@@ -50,6 +50,8 @@ case "$node" in
   review-*|final)
     printf '{ "status": "%s", "findings": [], "strengths": null }\n' \
       "${FAKE_REVIEW_STATUS-PASS}" ;;
+  verdict)
+    printf '{ "winner": "spike-1", "scores": [], "reason": "理由" }\n' ;;
   implement-*|spike-*)
     printf '{ "baseHead": "abc123", "changedFiles": ["a.txt"], "summary": "出力 %s" }\n' \
       "$node" ;;
@@ -264,6 +266,34 @@ assert_eq "$(jq -r '.rounds' "$FIXTURE/impl-ng.out")" "2" \
 run_dir="$(run_dir_from "$FIXTURE/impl-ng.err")"
 assert_contains "$(cat "$run_dir/implement-2.prompt")" "指摘" \
   "implement: 2 ラウンド目のプロンプトに指摘を渡す"
+
+# spike: 方針ごとに worktree を作り、並行実装して 1 つ選ぶ。
+out="$(dry spike --arg 'requirements=要件の本文')"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=spike-')" "3" "spike: 方針の数だけノードを作る"
+assert_contains "$out" "node=spike-1 role=implementer" "spike: 実装は implementer"
+assert_contains "$out" "node=verdict role=judge" "spike: 裁定は judge"
+assert_contains "$out" "workspace=dry-run" "spike: dry-run では workspace を作らない"
+
+out="$(dry spike --arg 'requirements=要件' --arg 'approaches=["a","b"]')"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^node=spike-')" "2" "spike: 方針を差し替えられる"
+
+dry spike >/dev/null 2>&1
+assert_eq "$?" "2" "spike: requirements が無いと 2 で終わる"
+
+out="$(live spike --arg 'requirements=要件' --arg 'approaches=["案A","案B"]' \
+  2>"$FIXTURE/spike.err")"
+assert_eq "$?" "0" "spike: すべて成功すると 0 で終わる"
+assert_eq "$(printf '%s' "$out" | jq -r '.winner')" "spike-1" "spike: 選んだ案を返す"
+assert_eq "$(printf '%s' "$out" | jq -r '.candidates | length')" "2" "spike: 案の一覧を添える"
+assert_eq "$(printf '%s' "$out" | jq -r '.candidates[0].workspaceId')" "wks_fake" \
+  "spike: 案ごとに workspace の id を添える"
+assert_eq "$(printf '%s' "$out" | jq -r '.candidates[1].approach')" "案B" \
+  "spike: 案ごとに方針を添える"
+run_dir="$(run_dir_from "$FIXTURE/spike.err")"
+assert_contains "$(cat "$run_dir/verdict.prompt")" "+変更した行" \
+  "spike: 裁定のプロンプトに差分を埋める"
+assert_eq "$(grep -c 'wks_fake' "$run_dir/workspaces.txt")" "2" \
+  "spike: 方針の数だけ workspace を作る"
 
 out="$(live research --arg topic=対象 \
   --arg 'perspectives=["観点A","観点B"]' 2>"$FIXTURE/live-state.err")"
