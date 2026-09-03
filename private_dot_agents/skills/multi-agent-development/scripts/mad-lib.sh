@@ -54,41 +54,86 @@ mad_prompt() {
   cat > "$MAD_RUN_DIR/$1.prompt"
 }
 
-# 書いてあるプロンプトでノードを走らせる。
+mad_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# ノードの状態を 1 ファイルに書く。並行するノードが同じファイルを取り合わない。
+mad_state_write() {
+  printf 'state=%s\nrole=%s\nworkspace=%s\nstartedAt=%s\nfinishedAt=%s\n' \
+    "$2" "$3" "$4" "$5" "$6" > "$MAD_RUN_DIR/$1.state"
+}
+
+# run.json の base を書き換える。worktree を作るレシピが 1 回呼ぶ。
+mad_record_base() {
+  local f="$MAD_RUN_DIR/run.json"
+  [ -f "$f" ] || return 0
+  jq --arg b "$1" '.base = $b' "$f" > "$f.$$" && mv -f "$f.$$" "$f"
+}
+
+# 書いてあるプロンプトでノードを走らせる。第 3 引数に workspace の id を渡すと、
+# その workspace の中で動かす。
 mad_run_node() {
-  local name="$1" role="$2"
+  local name="$1" role="$2" ws="${3-}"
   local pf="$MAD_RUN_DIR/$name.prompt"
   local of="$MAD_RUN_DIR/$name.json"
   local lf="$MAD_RUN_DIR/$name.log"
+  local started
+  started="$(mad_now)"
+  mad_state_write "$name" running "$role" "$ws" "$started" ""
   if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
     # 失敗しても出力ファイルは作る。mad_collect が読む先を欠かさないため。
     local route
     printf '{}\n' > "$of"
     route="$("$MAD_SCRIPTS/mad-route" "$role")" || {
+      mad_state_write "$name" failed "$role" "$ws" "$started" "$(mad_now)"
       printf 'mad-lib: ノード %s（役割 %s）の provider を解決できない\n' "$name" "$role" >&2
       return 1
     }
-    printf 'node=%s role=%s %s prompt_chars=%s\n' \
-      "$name" "$role" "$route" "$(wc -c < "$pf" | tr -d ' ')"
+    mad_state_write "$name" ok "$role" "$ws" "$started" "$(mad_now)"
+    printf 'node=%s role=%s %s workspace=%s prompt_chars=%s\n' \
+      "$name" "$role" "$route" "${ws:-none}" "$(wc -c < "$pf" | tr -d ' ')"
     return 0
   fi
-  "$MAD_SCRIPTS/mad-agent" --role "$role" --prompt-file "$pf" --cwd "$PWD" \
-    --out "$of" --log "$lf" --timeout "$MAD_TIMEOUT" --title "mad/$MAD_RUN_ID/$name"
+  set -- --role "$role" --prompt-file "$pf" --out "$of" --log "$lf" \
+    --timeout "$MAD_TIMEOUT" --title "mad/$MAD_RUN_ID/$name"
+  if [ -n "$ws" ]; then
+    set -- "$@" --workspace "$ws"
+  else
+    set -- "$@" --cwd "$PWD"
+  fi
+  "$MAD_SCRIPTS/mad-agent" "$@"
   local status=$?
-  # 失敗したノードの名前を出す。背景で走る分もここを通る。
-  [ "$status" -eq 0 ] || printf 'mad-lib: ノード %s（役割 %s）が失敗した。ログ: %s\n' \
-    "$name" "$role" "$lf" >&2
+  if [ "$status" -eq 0 ]; then
+    mad_state_write "$name" ok "$role" "$ws" "$started" "$(mad_now)"
+  else
+    mad_state_write "$name" failed "$role" "$ws" "$started" "$(mad_now)"
+    # 失敗したノードの名前を出す。背景で走る分もここを通る。
+    printf 'mad-lib: ノード %s（役割 %s）が失敗した。ログ: %s\n' "$name" "$role" "$lf" >&2
+  fi
   return "$status"
+}
+
+# 走っているノードが上限に達している間、空きを待つ。bash 3.2 に wait -n が無い。
+mad_wait_slot() {
+  local limit="${MAD_MAX_PARALLEL:-4}" alive pid
+  while :; do
+    alive=0
+    for pid in ${MAD_JOBS:-}; do
+      kill -0 "$pid" 2>/dev/null && alive=$((alive + 1))
+    done
+    [ "$alive" -lt "$limit" ] && return 0
+    sleep 1
+  done
 }
 
 # ノードを背景で走らせる。dry-run のときは順に走らせる。
 mad_start_node() {
   MAD_NODES="${MAD_NODES:-} $1"
   if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
-    mad_run_node "$1" "$2" || MAD_FAILED=1
+    mad_run_node "$1" "$2" "${3-}" || MAD_FAILED=1
     return 0
   fi
-  mad_run_node "$1" "$2" &
+  mad_wait_slot
+  mad_run_node "$1" "$2" "${3-}" &
   MAD_JOBS="${MAD_JOBS:-} $!"
 }
 

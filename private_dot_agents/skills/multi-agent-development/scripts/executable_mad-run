@@ -11,7 +11,7 @@ if [ -z "$recipe" ]; then
   # レシピごとに宣言を読み、名前と引数を出す。
   list_recipes() {
     local f name spec req opt
-    printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--timeout 秒]\n\n'
+    printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--detach] [--timeout 秒] [--max-parallel N]\n\n'
     printf 'レシピ:\n'
     for f in "$RECIPES"/*.sh; do
       [ -f "$f" ] || continue
@@ -41,7 +41,10 @@ need_value() {
 
 args='{}'
 dry=0
+detach=0
 timeout=1200
+timeout_explicit=0
+max_parallel=4
 while [ $# -gt 0 ]; do
   case "$1" in
     --arg)
@@ -55,10 +58,17 @@ while [ $# -gt 0 ]; do
         jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '.[$k] = $v')"
       shift 2 ;;
     --dry-run) dry=1; shift ;;
-    --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
+    --detach) detach=1; shift ;;
+    --timeout) need_value "$@"; timeout="$2"; timeout_explicit=1; shift 2 ;;
+    --max-parallel) need_value "$@"; max_parallel="$2"; shift 2 ;;
     *) printf 'mad-run: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+if [ "$detach" = "1" ] && [ "$dry" = "1" ]; then
+  printf 'mad-run: --detach と --dry-run は同時に渡せない\n' >&2
+  exit 2
+fi
 
 root="$("$GIT" rev-parse --show-toplevel 2>/dev/null)" || root="$PWD"
 
@@ -76,12 +86,43 @@ printf '%s' "$args" > "$run_dir/args.json"
 export MAD_RUN_DIR="$run_dir"
 export MAD_RUN_ID="$run_id"
 export MAD_TIMEOUT="$timeout"
+export MAD_TIMEOUT_EXPLICIT="$timeout_explicit"
 export MAD_DRY_RUN="$dry"
 export MAD_SCRIPTS="$SCRIPTS"
 export MAD_CACHE_DIR="$run_dir/.cache"
+export MAD_MAX_PARALLEL="$max_parallel"
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+jq -n --arg recipe "$recipe" --argjson args "$args" --arg cwd "$PWD" \
+  --arg base "" --arg startedAt "$(now)" \
+  --argjson timeout "$timeout" --argjson maxParallel "$max_parallel" \
+  '{recipe: $recipe, args: $args, cwd: $cwd, base: $base,
+    startedAt: $startedAt, timeout: $timeout, maxParallel: $maxParallel}' \
+  > "$run_dir/run.json" || exit 1
+
+# レシピを走らせ、終わったら結果を残す。切り離し実行でも同じ経路を通る。
+exec_recipe() {
+  local st label
+  bash "$RECIPES/$recipe.sh"
+  st=$?
+  if [ "$st" -eq 0 ]; then label=ok; else label=failed; fi
+  jq -n --arg status "$label" --arg finishedAt "$(now)" --argjson exitCode "$st" \
+    '{status: $status, finishedAt: $finishedAt, exitCode: $exitCode}' \
+    > "$run_dir/result.json"
+  return "$st"
+}
 
 printf 'mad-run: %s（run %s）\n' "$recipe" "$run_id" >&2
-bash "$RECIPES/$recipe.sh"
+
+if [ "$detach" = "1" ]; then
+  # 親が終わっても走り続ける。SIGHUP を無視して背景に置く。
+  ( trap '' HUP; exec_recipe ) >"$run_dir/recipe.out" 2>"$run_dir/recipe.err" &
+  printf '%s\n' "$run_id"
+  exit 0
+fi
+
+exec_recipe
 status=$?
 if [ "$status" -ne 0 ]; then
   printf 'mad-run: 失敗した。run ディレクトリ: %s\n' "$run_dir" >&2

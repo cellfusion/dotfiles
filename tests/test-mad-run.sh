@@ -59,6 +59,13 @@ run() {
   bash "$FIXTURE/scripts/mad-run" "$@"
 }
 
+# mad-run は標準エラーに run の id を出す。同じ秒に作られた run と取り違えないよう、
+# ディレクトリの新しさではなく id で引く。
+run_dir_from() {
+  printf '%s' "$FIXTURE/repo/_cellfusion/mad/$(grep -o \
+    '[0-9]\{8\}T[0-9]\{6\}-[0-9a-f]\{6\}' "$1" | head -1)"
+}
+
 out="$(run probe --arg topic=abc --arg 'items=["a","b"]' --timeout 60 2>/dev/null)"
 assert_contains "$out" "topic=abc" "文字列の引数を渡す"
 assert_contains "$out" "missing=fallback" "無い引数は既定値になる"
@@ -136,5 +143,93 @@ out="$(run 2>&1)"
 assert_contains "$out" "declared" "引数なしで呼ぶとレシピ名を出す"
 assert_contains "$out" "必須: topic" "引数なしで呼ぶと必須の引数を出す"
 assert_contains "$out" "省略可: perspectives depth" "引数なしで呼ぶと省略可の引数を出す"
+
+# --- run のメタ情報 ---
+out="$(run probe --arg topic=abc --timeout 60 --max-parallel 2 2>/dev/null)"
+run_dir="$(printf '%s\n' "$out" | sed -n 's/^run_dir=//p')"
+assert_eq "$(jq -r '.recipe' "$run_dir/run.json")" "probe" "run.json にレシピ名を書く"
+assert_eq "$(jq -r '.args.topic' "$run_dir/run.json")" "abc" "run.json に引数を書く"
+assert_eq "$(jq -r '.timeout' "$run_dir/run.json")" "60" "run.json にタイムアウトを書く"
+assert_eq "$(jq -r '.maxParallel' "$run_dir/run.json")" "2" "run.json に同時実行数の上限を書く"
+assert_eq "$(jq -r '.base' "$run_dir/run.json")" "" "run.json の base は空で始まる"
+assert_eq "$(jq -r '.status' "$run_dir/result.json")" "ok" "成功したら result.json は ok"
+
+out="$(run probe --arg topic=abc 2>/dev/null)"
+run_dir="$(printf '%s\n' "$out" | sed -n 's/^run_dir=//p')"
+assert_eq "$(jq -r '.maxParallel' "$run_dir/run.json")" "4" "同時実行数の上限は既定 4"
+
+printf 'exit 3\n' > "$FIXTURE/recipes/broken.sh"
+run broken >/dev/null 2>"$FIXTURE/broken.err"
+run_dir="$(run_dir_from "$FIXTURE/broken.err")"
+assert_eq "$(jq -r '.status' "$run_dir/result.json")" "failed" "失敗したら result.json は failed"
+assert_eq "$(jq -r '.exitCode' "$run_dir/result.json")" "3" "result.json に終了コードを書く"
+
+# --- 切り離し実行 ---
+cat > "$FIXTURE/recipes/slow.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' ''
+sleep 2
+printf 'done\n' > "$MAD_RUN_DIR/slow.txt"
+RECIPE
+
+id="$(run slow --detach 2>/dev/null | tail -1)"
+assert_contains "$id" "T" "--detach は run id を返す"
+assert_eq "$([ -f "$FIXTURE/repo/_cellfusion/mad/$id/slow.txt" ] && echo yes || echo no)" \
+          "no" "--detach は待たずに返る"
+i=0
+while [ "$i" -lt 30 ] && [ ! -f "$FIXTURE/repo/_cellfusion/mad/$id/result.json" ]; do
+  sleep 1; i=$((i + 1))
+done
+assert_eq "$([ -f "$FIXTURE/repo/_cellfusion/mad/$id/slow.txt" ] && echo yes || echo no)" \
+          "yes" "--detach したレシピは背景で走り切る"
+assert_eq "$(jq -r '.status' "$FIXTURE/repo/_cellfusion/mad/$id/result.json")" \
+          "ok" "--detach でも result.json を書く"
+
+run slow --detach --dry-run >/dev/null 2>&1
+assert_eq "$?" "2" "--detach と --dry-run は同時に渡せない"
+
+# --- 同時実行数の上限 ---
+# 偽の mad-agent が開始と終了を 1 つのファイルに追記する。上限 1 なら重ならない。
+cat > "$FIXTURE/scripts/mad-agent" <<'FAKE'
+#!/usr/bin/env bash
+out=""; title=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out) out="$2"; shift 2 ;;
+    --title) title="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'start %s\n' "${title##*/}" >> "$MAD_RUN_DIR/order.txt"
+sleep 1
+printf 'end %s\n' "${title##*/}" >> "$MAD_RUN_DIR/order.txt"
+printf '{"summary":"ok"}\n' > "$out"
+FAKE
+chmod +x "$FIXTURE/scripts/mad-agent"
+
+cat > "$FIXTURE/recipes/par.sh" <<'RECIPE'
+set -u
+. "$MAD_SCRIPTS/mad-lib.sh"
+mad_declare '' ''
+i=1
+while [ "$i" -le 3 ]; do
+  printf 'x\n' | mad_prompt "p$i"
+  mad_start_node "p$i" researcher
+  i=$((i + 1))
+done
+mad_join || exit 1
+RECIPE
+
+run par --max-parallel 1 >/dev/null 2>"$FIXTURE/par.err"
+run_dir="$(run_dir_from "$FIXTURE/par.err")"
+assert_eq "$(grep -c '^start ' "$run_dir/order.txt")" "3" "上限 1: 3 ノードすべて走る"
+assert_eq "$(awk '/^start /{if(o){b=1} o=1} /^end /{o=0} END{print b+0}' \
+  "$run_dir/order.txt")" "0" "上限 1: ノードが重ならない"
+
+run par --max-parallel 3 >/dev/null 2>"$FIXTURE/par3.err"
+run_dir="$(run_dir_from "$FIXTURE/par3.err")"
+assert_eq "$(awk '/^start /{if(o){b=1} o=1} /^end /{o=0} END{print b+0}' \
+  "$run_dir/order.txt")" "1" "上限 3: ノードが重なる"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
