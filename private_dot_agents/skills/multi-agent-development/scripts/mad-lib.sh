@@ -49,6 +49,94 @@ mad_arg_array() {
   printf '%s' "$v" | jq -c .
 }
 
+# 値が cwd 配下の実在するファイルならその中身を、そうでなければ値そのものを返す。
+# 実装レシピは worktree の中で動くので、呼び出し元でしか読めないファイルはここで読む。
+mad_text() {
+  local v abs
+  v="$(mad_arg "$1")"
+  if [ -z "$v" ] || [ ! -f "$v" ]; then
+    printf '%s' "$v"
+    return 0
+  fi
+  abs="$(cd "$(dirname "$v")" && pwd)/$(basename "$v")"
+  case "$abs" in
+    "$PWD"/*) cat "$v" ;;
+    *)
+      printf 'mad-lib: %s は cwd の外にある\n' "$v" >&2
+      return 1 ;;
+  esac
+}
+
+# --timeout が明示されなかったときだけ、レシピごとの既定に差し替える。
+mad_default_timeout() {
+  [ "${MAD_TIMEOUT_EXPLICIT:-0}" = "1" ] && return 0
+  MAD_TIMEOUT="$1"
+  export MAD_TIMEOUT
+}
+
+# worktree の workspace を作り、"workspace=<id> cwd=<パス>" を 1 行で返す。
+mad_worktree() {
+  local branch="$1" base="$2" out id cwd
+  if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
+    printf 'workspace=dry-run cwd=%s/dry-worktree/%s\n' "$MAD_RUN_DIR" "$branch"
+    return 0
+  fi
+  out="$("${MAD_PASEO_BIN:-paseo}" workspace create --isolation worktree \
+    --mode branch-off --path "$PWD" --new-branch "$branch" --base "$base" \
+    --title "$branch" --json 2>&1)" || {
+    printf 'mad-lib: workspace を作れない: %s\n' "$out" >&2
+    return 1
+  }
+  id="$(printf '%s' "$out" | jq -r '.workspaceId // empty' 2>/dev/null)"
+  cwd="$(printf '%s' "$out" | jq -r '.cwd // empty' 2>/dev/null)"
+  if [ -z "$id" ] || [ -z "$cwd" ]; then
+    printf 'mad-lib: workspace の応答に id か cwd が無い: %s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\t%s\t%s\n' "$id" "$cwd" "$branch" >> "$MAD_RUN_DIR/workspaces.txt"
+  printf 'workspace=%s cwd=%s\n' "$id" "$cwd"
+}
+
+# worktree の base からの差分を返す。上限を超えたら先頭だけを返す。
+mad_diff() {
+  local cwd="$1" base="$2" limit="${3:-2000}" d n
+  [ "${MAD_DRY_RUN:-0}" = "1" ] && return 0
+  d="$("${MAD_GIT_BIN:-git}" -C "$cwd" diff "$base...HEAD" 2>/dev/null)" || return 0
+  [ -n "$d" ] || return 0
+  n="$(printf '%s\n' "$d" | wc -l | tr -d ' ')"
+  if [ "$n" -gt "$limit" ]; then
+    printf '%s\n' "$d" | sed -n "1,${limit}p"
+    printf '\n（差分は %s 行あり、先頭 %s 行だけを示した）\n' "$n" "$limit"
+  else
+    printf '%s\n' "$d"
+  fi
+}
+
+# base のブランチを決める。base 引数が空なら現在のブランチを使う。
+# detached HEAD では両方とも空になるので 1 で返る。
+mad_base() {
+  local b
+  b="$(mad_arg base)"
+  if [ -z "$b" ]; then
+    b="$("${MAD_GIT_BIN:-git}" branch --show-current 2>/dev/null)"
+  fi
+  if [ -z "$b" ]; then
+    printf 'mad-lib: base のブランチが決まらない。HEAD が detached である\n' >&2
+    return 1
+  fi
+  printf '%s' "$b"
+}
+
+# mad_worktree が返した 1 行から、workspace の id か cwd を取り出す。
+mad_ws_field() {
+  local v
+  case "$2" in
+    id) v="${1#workspace=}"; printf '%s' "${v%% *}" ;;
+    cwd) printf '%s' "${1#*cwd=}" ;;
+    *) printf 'mad-lib: 未知の項目 %s\n' "$2" >&2; return 1 ;;
+  esac
+}
+
 # ノードのプロンプトを標準入力から書く。
 mad_prompt() {
   cat > "$MAD_RUN_DIR/$1.prompt"
