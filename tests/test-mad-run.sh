@@ -311,7 +311,7 @@ printf 'x\n' > "$FIXTURE/outside.md"
 in_repo text --arg 'src=../outside.md' >/dev/null 2>&1
 assert_eq "$?" "1" "mad_text は cwd の外のファイルで 1 を返す"
 
-# パスの打ち間違いを本文として実装役に渡さない。
+# 空白類の無いパスの打ち間違いを、本文として実装役に渡さない。
 for v in nosuch.md _cellfusion/plans/nosuch.md docs/nosuch; do
   in_repo text --arg "src=$v" >/dev/null 2>&1
   assert_eq "$?" "1" "mad_text は実在しないパス $v で 1 を返す"
@@ -323,6 +323,18 @@ assert_contains "$err" "nosuch.md" "mad_text は無いパスを名指しする"
 out="$(in_repo text --arg 'src=要件を 3 つに分けて実装する' 2>/dev/null)"
 assert_contains "$out" "text=[要件を 3 つに分けて実装する]" \
   "mad_text はパスらしくない文字列を本文として扱う"
+
+# 本文にパスが出るのは普通なので、空白類を含む値はパスとして扱わない。
+out="$(in_repo text --arg 'src=src/foo.ts のバグを直す' 2>/dev/null)"
+assert_contains "$out" "text=[src/foo.ts のバグを直す]" \
+  "mad_text は空白を含む値をパスとして扱わない"
+
+out="$(in_repo text --arg "$(printf 'src=行1\n_cellfusion/plans/nosuch.md を直す')" 2>/dev/null)"
+assert_contains "$out" "_cellfusion/plans/nosuch.md を直す" \
+  "mad_text は改行を含む値をパスとして扱わない"
+
+in_repo text --arg 'src=_cellfusion/plans/nosuch.md' >/dev/null 2>&1
+assert_eq "$?" "1" "mad_text は空白類の無い実在しないパスで止まる"
 
 # --- mad_default_timeout ---
 cat > "$FIXTURE/recipes/to.sh" <<'RECIPE'

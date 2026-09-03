@@ -259,6 +259,11 @@ assert_eq "$?" "1" "implement: requirements のパスが無いと 1 で終わる
 dry spike --arg 'requirements=_cellfusion/plans/nosuch.md' >/dev/null 2>&1
 assert_eq "$?" "1" "spike: requirements のパスが無いと 1 で終わる"
 
+# 本文にパスが出るのは普通なので、空白を含む要件はそのまま実装役へ渡す。
+out="$(dry implement --arg 'requirements=src/foo.ts のバグを直す')"
+assert_contains "$out" "node=implement-1 role=implementer" \
+  "implement: 本文にパスが出ても要件として渡す"
+
 # max_rounds が 1 以上の整数でないと、FAIL が続く限りループが終わらない。
 for v in 0 abc; do
   dry implement --arg 'requirements=要件' --arg "max_rounds=$v" >/dev/null 2>&1
