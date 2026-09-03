@@ -81,9 +81,26 @@ digraph when_to_use {
 
 ## 実行経路
 
-### sdd-run 経路（前提が揃えば既定）
+### MAD経路（既定）
 
-次の 3 つが揃っているなら、役割ごとにエンジンを選べる `sdd-run` 経路を使う。
+MADで表現できる作業は、`sdd-run`ではなくMADをオーケストレーターとして実行する。実装タスクを項目ごとに並行処理するときは`fanout`、複数観点レビューは`review`、不具合や設計判断の調査は`research`を使う。
+
+実行前に必ずPaseoの状態を確認し、MADのdry-runで引数・役割・provider解決を検証する。
+
+```bash
+command -v paseo
+paseo status
+~/.agents/skills/multi-agent-development/scripts/mad-run RECIPE --arg k=v --dry-run
+~/.agents/skills/multi-agent-development/scripts/mad-run RECIPE --arg k=v
+```
+
+dry-runが失敗した場合は本実行せず、失敗ノードとrunディレクトリを報告する。同じ条件でリトライしない。MADレシピで表現できない作業だけ、下の単独エージェント経路へフォールバックする。
+
+**この節が他のすべての経路に優先する。下の`sdd-run`節は、MADを利用できない場合の調査用レガシー経路である。**
+
+### sdd-run 経路（MADが利用できない場合のレガシー）
+
+MADが利用できない場合に限り、次の 3 つが揃っていれば役割ごとにエンジンを選べる `sdd-run` 経路を使う。
 実装を codex、レビューを claude というように分けられる。対応は
 `~/.agents/agent-defs/routing.json` が持つ。
 
@@ -101,7 +118,7 @@ claude だけの AI 環境では `CODEX_HOME` が unset なので、codex を起
 既定の `~/.codex` を読み、意図しないアカウントで実装タスクが走る。
 `AGENT_ENV_AGENTS` を持たないマシンでは CLI の有無だけで判定する。
 
-**前提が揃っているとき、この節が他のすべての経路に優先する。下の経路の節は読まない。**
+**MADが利用できない場合に限り、この節を読む。**
 
 プラン 1 本の実行全体を `sdd-run` が回す。**あなたが呼ぶのはこの 1 コマンドだけである。**
 
