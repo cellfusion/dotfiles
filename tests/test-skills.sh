@@ -41,13 +41,15 @@ assert_contains "$preview" '; exit' "_preview-tab: エディタ終了で pane �
 assert_contains "$preview" "読み直す" "_preview-tab: 手編集の取り込みを指示する"
 assert_not_contains "$preview" "herdr tab close" "_preview-tab: タブを閉じない"
 
-# Paseo は HERDR_ENV を持たない。端末を作って glow で表示する経路を別に持つ。
+# Paseo は HERDR_ENV を持たない。端末を作らず、ファイルリンクで表示する。
 assert_contains "$preview" "PASEO_AGENT_ID" "_preview-tab: Paseo 環境かを判定する"
-assert_contains "$preview" "paseo terminal create --cwd" \
-  "_preview-tab: Paseo では端末を作る"
-assert_contains "$preview" "glow -p" "_preview-tab: Paseo では glow で表示する"
-assert_not_contains "$preview" "paseo terminal kill" \
-  "_preview-tab: Paseo の端末を閉じない"
+assert_contains "$preview" "Paseo のファイルリンクを出す" \
+  "_preview-tab: Paseo ではファイルリンクを出す"
+assert_contains "$preview" "[specを閲覧する]" \
+  "_preview-tab: Paseo ではspecリンクを出す"
+assert_not_contains "$preview" "paseo terminal create" \
+  "_preview-tab: Paseo では端末を作らない"
+assert_not_contains "$preview" "glow -p" "_preview-tab: Paseo ではglowを使わない"
 
 # チェックリストは経路を書かない。手順は _preview-tab.md が環境ごとに分岐して持つ。
 brainstorming_out="$(render_template "agent-skills/brainstorming/SKILL.md" "claude")"
@@ -77,13 +79,9 @@ assert_contains "$codex_runtime" 'sandbox_permissions=require_escalated' \
 assert_contains "$codex_runtime" 'justification' \
   "codex runtime: 再試行時に承認理由を付ける"
 assert_contains "$preview" "PermissionDenied" \
-  "_preview-tab: sandbox の権限拒否を識別する"
+  "_preview-tab: Herdrのsandbox権限拒否を識別する"
 assert_contains "$preview" '[retry-outside-sandbox]' \
-  "_preview-tab: 権限拒否時だけ sandbox 外で再試行する"
-assert_contains "$preview" "同じプレビューコマンドを 1 回だけ再実行" \
-  "_preview-tab: 無限再試行しない"
-assert_contains "$preview" "permission denied 以外" \
-  "_preview-tab: 他の失敗を権限問題として扱わない"
+  "_preview-tab: Herdrの権限拒否時だけsandbox外で再試行する"
 
 # 承認 gate も共有パーシャルに 1 本だけ置き、各スキルは自前の本文を持たない。
 for skill in brainstorming writing-plans; do
@@ -188,6 +186,12 @@ done
 # SDD のエスカレーションは model 上書きではなく agent の切り替えで表す。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
+  assert_contains "$out" "### MAD経路（既定）" "sdd/$tool: MADを既定経路にする"
+  assert_contains "$out" "multi-agent-development/scripts/mad-run" "sdd/$tool: MADをフルパスで呼ぶ"
+  assert_contains "$out" "fanout" "sdd/$tool: 実装の並行処理にfanoutを使う"
+  assert_contains "$out" "review" "sdd/$tool: レビューにreviewを使う"
+  assert_contains "$out" "research" "sdd/$tool: 調査にresearchを使う"
+  assert_contains "$out" "--dry-run" "sdd/$tool: 本実行前にdry-runする"
   assert_contains "$out" "sdd-implementer-think" "sdd/$tool: 昇格用 agent を指す"
   assert_not_contains "$out" 'model: opus' "sdd/$tool: model 上書きを指示しない"
   assert_contains "$out" "[deterministic-loop]" "sdd/$tool: 論理名で経路を書く"
