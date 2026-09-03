@@ -128,7 +128,7 @@ assert_eq "$?" "2" "値のない --arg は 2 で終わる"
 # --- 数値の引数 ---
 # 0 と負の数を通すと mad_wait_slot が空きを待ち続ける。数値でない値は run.json を
 # 書く jq が失敗し、run.json の無い run ディレクトリが残る。
-for v in 0 -1 abc 1.5; do
+for v in 0 -1 abc 1.5 99999999999999999999999; do
   run probe --arg topic=abc --max-parallel "$v" >/dev/null 2>&1
   assert_eq "$?" "2" "--max-parallel $v は 2 で終わる"
   run probe --arg topic=abc --timeout "$v" >/dev/null 2>&1
@@ -161,7 +161,7 @@ assert_contains "$out" "rounds=3" "mad_int は既定値を返す"
 out="$(run rounds --arg max_rounds=5 2>/dev/null)"
 assert_contains "$out" "rounds=5" "mad_int は整数をそのまま返す"
 
-for v in 0 -2 abc 2.5; do
+for v in 0 -2 abc 2.5 99999999999999999999999; do
   run rounds --arg "max_rounds=$v" >/dev/null 2>&1
   assert_eq "$?" "2" "mad_int は max_rounds=$v で 2 で終わる"
 done

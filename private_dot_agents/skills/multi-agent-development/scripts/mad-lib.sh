@@ -41,7 +41,8 @@ mad_int() {
   v="$(mad_arg "$1" "$2")"
   case "$v" in
     ''|*[!0-9]*) ;;
-    *) if [ "$v" -ge 1 ]; then printf '%s' "$v"; return 0; fi ;;
+    # 桁が多すぎる値は bash の test が扱えない。その旨を出させずに弾く。
+    *) if [ "$v" -ge 1 ] 2>/dev/null; then printf '%s' "$v"; return 0; fi ;;
   esac
   printf 'mad-lib: 引数 %s には 1 以上の整数が要る: %s\n' "$1" "$v" >&2
   return 2
