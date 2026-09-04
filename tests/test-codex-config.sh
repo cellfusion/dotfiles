@@ -179,6 +179,55 @@ assert_contains "$empty_out" 'approvals_reviewer = "auto_review"' "空入力で 
 assert_contains "$empty_out" 'sandbox_mode = "workspace-write"' "空入力で sandbox_mode を出す"
 assert_contains "$empty_out" 'network_access = true' "空入力で network_access を出す"
 
+# 7b. [sandbox_workspace_write] はあるが network_access が無い入力。awk には
+# 後続セクションの直前で足す経路とファイル末尾で足す経路があるので、別々に覆う。
+SECTION_NO_KEY='model = "old"
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
+
+[tools]
+web_search = true
+'
+section_out="$(run_modify "$SECTION_NO_KEY")"
+assert_contains "$section_out" 'network_access = true' \
+  "表があって network_access が無ければ追加する"
+assert_contains "$section_out" 'writable_roots = ["/tmp"]' \
+  "表の既存キーを壊さない"
+assert_eq "$(printf '%s\n' "$section_out" | grep -c '^\[sandbox_workspace_write\]$')" "1" \
+  "表があるときに表を二重に作らない"
+section_tmp="$(mktemp)"
+printf '%s' "$section_out" > "$section_tmp"
+section_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$section_tmp','rb'))
+sw = d['sandbox_workspace_write']
+print(sw['network_access'], sw['writable_roots'], 'tools' in d)
+" 2>&1)"
+rm -f "$section_tmp"
+assert_eq "$section_parsed" "True ['/tmp'] True" \
+  "後続セクションがあっても network_access が表の中に入る"
+
+SECTION_NO_KEY_EOF='model = "old"
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
+'
+eof_out="$(run_modify "$SECTION_NO_KEY_EOF")"
+assert_eq "$(printf '%s\n' "$eof_out" | grep -c '^\[sandbox_workspace_write\]$')" "1" \
+  "表がファイル末尾にあるときに表を二重に作らない"
+eof_tmp="$(mktemp)"
+printf '%s' "$eof_out" > "$eof_tmp"
+eof_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$eof_tmp','rb'))
+sw = d['sandbox_workspace_write']
+print(sw['network_access'], sw['writable_roots'])
+" 2>&1)"
+rm -f "$eof_tmp"
+assert_eq "$eof_parsed" "True ['/tmp']" \
+  "表がファイル末尾にあっても network_access を足す"
+
 # 8. 推奨設定は重複せず、出力が TOML として妥当である。
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approval_policy =')" "1" "approval_policy を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approvals_reviewer =')" "1" "approvals_reviewer を重複させない"
