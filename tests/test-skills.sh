@@ -419,6 +419,8 @@ assert_contains "$mad_inv" ".status" \
   "_mad-invocation: FAIL のまま 0 で終わるので出力の status を読むと書く"
 assert_contains "$mad_inv" "--workspace" \
   "_mad-invocation: implement と spike のノードは worktree を読むと書く"
+assert_contains "$mad_inv" "PASEO_AGENT_ID" \
+  "_mad-invocation: Paseo のエージェントの中では --cwd が無視されると書く"
 assert_contains "$mad_inv" "Local Daemon" \
   "_mad-invocation: paseo status の終了コードではなく出力を読むと書く"
 assert_contains "$mad_inv" "[retry-outside-sandbox]" \
