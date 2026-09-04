@@ -47,6 +47,8 @@ schema_consistent="$(jq -n -e \
     and (($findings.findings | map(.id) | unique | length) == $findings.findingCount)
     and ($findings.findings | all(.priority | IN("P0", "P1", "P2", "P3")))
     and ($findings.findings | all(.confidence | IN("high", "medium", "low")))
+    and ($metadata.specialistReviews | all(.status | IN("completed", "not_run", "blocked")))
+    and ($metadata.delegation.agents | IN("paseo", "herdr", "current-agent"))
   ' >/dev/null && echo yes || echo no)"
 assert_eq "$schema_consistent" "yes" "pr-review schema: 3 JSON の identity と finding 集合が一致する"
 

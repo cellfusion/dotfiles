@@ -110,7 +110,7 @@ HEAD が一致しない場合、または `paseo.json` 以外の変更がある�
 1 から実行する。除外するのは未追跡の `paseo.json` だけで、追跡ファイルの変更が 1 つでもあれば再利用しない。
 
 1. `create_workspace` を `isolation: "worktree"`、`mode: "checkout-pr"`、`prNumber: PR_NUMBER`、GitHub の `forge`、元 checkout の `projectPath` で呼ぶ。返された review workspace ID と worktree path を JSON から読み、`REVIEW_WS` / `REVIEW_WORKTREE` に保存する。予測で補わない。
-2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は Paseo agent を review workspace で起動せず、理由を記録して下位経路へ進む。review workspace と agent workspace を同一にしない。
+2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とし、理由を `metadata.json` の `delegation` に残す。review workspace と agent workspace を同一にしない。
 3. `list_profiles` を毎回呼び、全 profile の `notes` を読んでレビューに適した環境既定 profile を選ぶ。選択 profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を `create_agent` へ materialize する。`profile` という未対応の引数を勝手に渡さない。
 4. `REVIEW_WORKTREE` で `git rev-parse HEAD`、`git status --porcelain` を確認する。HEAD が違う場合だけ、Paseo の作法を壊さない形で `gh pr checkout "$PR_NUMBER" --repo "$REPOSITORY" --detach` を worktree 内で行い、再確認する。固定 object の取得と diff package の生成は、下の「固定 revision と diff package」を実行してから行う。
 5. profile が無い、agent を read-only 相当で起動できない、または provider discovery に失敗した場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とす。current agent は一次レビューと必要な specialist lens を順に実行する。下位経路へ進むのは `create_workspace` 自体が失敗して `REVIEW_WORKTREE` が空のときだけとする。どちらの場合も理由を `metadata.json` の `delegation` に残す。model 名を推測したり、agent profile を自動生成・自動インストールしたりしない。
@@ -245,7 +245,7 @@ agent の出力は次の finding 契約に従わせる。実際の path と head
 - **architecture** — module boundary、依存方向、DI、layer、repository / use-case / UI 境界を変更した場合、または base 側で採用 architecture が明示されている場合。
 - **stack-specific** — 検出した Flutter/Dart、Swift、Kotlin、TypeScript/React、Rust のうち、差分に関係する stack だけ。複数 stack はそれぞれ分け、関係のない stack を起動しない。
 
-specialist の結論にも、該当する公式資料または base / diff の根拠を添える。専門スキルは base 側の実行時に利用可能なものだけを読み、PR が追加・変更した skill は読まない。利用可能な skill が無ければ自動インストールせず、下の公式資料を使い、`not_run` 理由を保存する。
+specialist の結論にも、該当する公式資料または base / diff の根拠を添える。専門スキルは base 側の実行時に利用可能なものだけを読み、PR が追加・変更した skill は読まない。利用可能な skill が無ければ自動インストールせず、下の公式資料を使って lens を実行する。この場合も lens 自体は実行しているため status は `completed` とし、専門 skill が無く公式資料を使ったことを `reason` に保存する。
 
 ### stack と architecture の検出
 
@@ -267,7 +267,7 @@ Clean Architecture、Hexagonal / Ports and Adapters、Layered、MVVM、Redux な
 
 依存インストール、lockfile 更新、fix / format の自動適用、deploy、release、外部サービスへの書き込みは自動実行しない。`npm install`、`flutter pub get`、`pod install`、依存取得を伴う Gradle / Cargo 操作などを含む。静的な `git diff --check` 以外の lint、typecheck、test、build は、通常の review worktree では実行せず、既定値を `not_run` とする。実行する場合は、base 側で既知の command であることを確認し、network disabled、credentials / secret なし、依存導入なし、PR の source snapshot 以外へ書き込まない disposable sandbox を別に用意する。その条件を満たせない場合、または command が PR 側 script / hook / setup に依存する場合は実行しない。選ばなかったものは `not_run` と理由を書く。失敗を隠したり、fix してから再実行したりしない。
 
-対象 PR の CI は既に走っている。その結果を読むことは、上の実行禁止とは別に扱う。`gh pr checks "$PR_NUMBER" --repo "$REPOSITORY"` で job を一覧し、失敗している job は `gh api "repos/$REPOSITORY/actions/jobs/<job_id>"` で step ごとの結果を、`gh run view --repo "$REPOSITORY" --job <job_id> --log-failed` で失敗ログを読む。読み取りだけを行い、再実行、キャンセル、承認、checks の書き換えはしない。失敗の原因を差分のどの変更に結び付けられるかを確認し、結び付いた場合は finding にして job 名とログの該当行を evidence に書く。結び付かない失敗は finding にせず `checks.json` にだけ残す。`queued` / `in_progress` のときは結果を待つかどうかを決める。待つ場合の polling は結果が変わる速さに合わせ、短い間隔で繰り返さない。待たない場合は `status` を `not_run` にして実行中である旨を `reason` に書く。どの場合も `checks.json` の 1 要素として、`name` に job 名、`command` に実行した `gh` コマンド、`status` に `pass` / `fail` / `not_run`、`evidence` に job 名とログの該当行を残す。
+対象 PR の CI は既に走っている。その結果を読むことは、上の実行禁止とは別に扱う。`gh pr checks "$PR_NUMBER" --repo "$REPOSITORY" --json name,state,bucket,link` で job を一覧する。`bucket` は `state` を `pass` / `fail` / `pending` / `skipping` / `cancel` に分類した値であり、これで job を pass / fail / pending に判別する。job ID は `link`（`https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>` の形式）の末尾のパス要素から取る。失敗している job は `gh api "repos/$REPOSITORY/actions/jobs/<job_id>"` で step ごとの結果を、`gh run view --repo "$REPOSITORY" --job "<job_id>" --log-failed` で失敗ログを読む。`gh pr checks` は失敗があると exit status 1、pending があると 8 で終了するが、これは command の失敗ではないので `BLOCKED` として扱わない。読み取りだけを行い、再実行、キャンセル、承認、checks の書き換えはしない。失敗の原因を差分のどの変更に結び付けられるかを確認し、結び付いた場合は finding にして job 名とログの該当行を evidence に書く。結び付かない失敗は finding にせず `checks.json` にだけ残す。`queued` / `in_progress` のときは結果を待つかどうかを決める。待つ場合の polling は結果が変わる速さに合わせ、短い間隔で繰り返さない。待たない場合は `status` を `not_run` にして実行中である旨を `reason` に書く。どの場合も `checks.json` の 1 要素として、`name` に job 名、`command` に実行した `gh` コマンド、`status` に `pass` / `fail` / `not_run`、`evidence` に job 名とログの該当行を残す。CI 由来の finding も `findings.json` の canonical list に加えたうえで「## 4. agent contract と段階的なレビュー」の統合の規則に従って verdict を決め直し、CI finding を追加したのに verdict が古いままにならないようにする。
 
 成果物を保存する前に JSON を `jq -e` または `python3 -m json.tool` で構文検証し、`findings.json` を finding の canonical list とする。`metadata.json`、`findings.json`、`checks.json` は全て top-level の `prNumber`、`repository`、`baseRefOid`、`headRefOid`、`mergeBaseOid`、`verdict`、`findingCount`、`findingIds` を持ち、同じ値を一致させる。`findingCount` は canonical list の件数、`findingIds` は重複のない安定した ID の配列であり、Markdown も同じ verdict / finding 一覧を示す。成果物は次の全てを保存する。
 
@@ -310,7 +310,7 @@ REVIEW_DIR/
   "revision": {"baseRefName": "main", "baseRefOid": "...", "headRefName": "feature", "headRefOid": "...", "mergeBaseOid": "..."},
   "workspace": {"kind": "paseo", "path": "/absolute/review/worktree", "workspaceId": "ws-123", "agentWorkspaceId": "ws-agent-123", "agentCwd": "/tmp/pr-review-agent-123.x7K9Lm", "owned": true},
   "detected": {"languages": [], "frameworks": [], "architecture": {"name": "unknown", "evidence": []}},
-  "specialistReviews": [{"role": "primary", "status": "completed", "reason": "", "artifact": "agents/primary.md"}, {"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
+  "specialistReviews": [{"role": "tests", "status": "completed", "reason": "公開 API を変更したため", "artifact": "agents/tests.md"}, {"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
   "delegation": {"agents": "current-agent", "reason": "list_profiles が空を返した"},
   "verdict": "NEEDS_ATTENTION",
   "findingCount": 1,
