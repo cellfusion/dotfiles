@@ -146,6 +146,8 @@ assert_contains "$skill" "stack-specific" "pr-review: stack-specific lens の条
 assert_contains "$skill" "テスト" "pr-review: tests lens の条件がある"
 assert_contains "$skill" "依存インストール" "pr-review: 依存インストールを自動実行しない"
 assert_contains "$skill" "deploy" "pr-review: deploy を自動実行しない"
+assert_contains "$skill" "gh pr checks" "pr-review: 対象 PR の CI 結果を読み取る"
+assert_contains "$skill" "--log-failed" "pr-review: 失敗した job のログを読む"
 
 # レビュー agent は読み取りとコメント投稿だけを行う。GitHub の review 操作は使わない。
 assert_contains "$skill" "commit" "pr-review: commit 禁止を明示する"
