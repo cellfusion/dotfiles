@@ -84,6 +84,7 @@ assert_contains "$skill" "create_workspace" "pr-review: Paseo workspace を作�
 assert_contains "$skill" "list_profiles" "pr-review: Paseo の agent profile を毎回確認する"
 assert_contains "$skill" "create_agent" "pr-review: Paseo の agent を起動する"
 assert_contains "$skill" "archive_workspace" "pr-review: Paseo workspace を成功時だけ archive する"
+assert_contains "$skill" "worktree を作り直さない" "pr-review: agent を起動できない理由で worktree を作り直さない"
 assert_contains "$skill" "gh pr checkout" "pr-review: worktree 内で PR を checkout する"
 assert_contains "$skill" "--detach" "pr-review: head SHA を detached checkout に固定する"
 assert_contains "$skill" "herdr agent start" "pr-review: Herdr の agent start を使う"
@@ -126,6 +127,7 @@ assert_contains "$skill" "base SHA と head SHA" "pr-review: 成果物に base/h
 assert_contains "$skill" "findingCount" "pr-review: finding 件数を全成果物で一致させる"
 assert_contains "$skill" "findingIds" "pr-review: finding ID を全成果物で一致させる"
 assert_contains "$skill" "agentWorkspaceId" "pr-review: Paseo agent workspace の所有情報を保存する"
+assert_contains "$skill" "delegation" "pr-review: agent の実行主体を metadata に残す"
 
 # PR 側の指示を実行せず、base 側の指示と利用可能な専門 skill を使う。
 assert_contains "$skill" "base 側" "pr-review: base 側の指示を使う"
