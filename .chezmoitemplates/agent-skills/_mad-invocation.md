@@ -12,11 +12,22 @@
 command -v paseo
 ```
 
-Paseo の daemon が動いていること。
+Paseo の daemon につながること。`paseo status` は daemon に届かなくても 0 で終わるので、
+終了コードではなく出力を読む。`Local Daemon` が `running` で、`Connected Daemon` が
+`reachable` であることを確かめる。
 
 ```bash
-paseo status
+paseo status | grep -E '^(Local Daemon|Connected Daemon)'
 ```
+
+`unresponsive` か `unreachable` なら、daemon が止まっているか、シェルが daemon に
+つなげない。`paseo` の CLI は `127.0.0.1:6767` の daemon へ WebSocket でつなぐので、
+ネットワークを遮断するサンドボックスの中では届かない。Codex の `auto` と `auto-review`
+がこれに当たる。この場合は `mad-run` と `mad-runs` を `[retry-outside-sandbox]` で
+サンドボックスの外に出して実行する。理由には「Paseo の daemon に接続してエージェントを
+起動するため」と書く。
+
+サンドボックスの外に出せないなら、MAD は使えない。実行方法が無いことを報告して止まる。
 
 ### 手順
 
