@@ -419,6 +419,12 @@ assert_contains "$mad_inv" ".status" \
   "_mad-invocation: FAIL のまま 0 で終わるので出力の status を読むと書く"
 assert_contains "$mad_inv" "--workspace" \
   "_mad-invocation: implement と spike のノードは worktree を読むと書く"
+assert_contains "$mad_inv" "Local Daemon" \
+  "_mad-invocation: paseo status の終了コードではなく出力を読むと書く"
+assert_contains "$mad_inv" "[retry-outside-sandbox]" \
+  "_mad-invocation: サンドボックスの外で実行する手段を書く"
+assert_contains "$mad_inv" "network_access" \
+  "_mad-invocation: Codex の sandbox 内ネットワークの設定に触れる"
 
 # MAD スキルはレシピ 9 本を表に持ち、呼び方は共有パーシャルから取り込む。
 for tool in claude codex opencode; do

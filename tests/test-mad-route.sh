@@ -13,12 +13,19 @@ for f in manifests paseo-providers paseo-routing paseo-project-routing; do
     "{{ includeTemplate \"agent-defs/$f.json\" . }}" > "$FIXTURE/defs/$f.json"
 done
 
-# 偽の paseo。provider ls と provider models だけを返す。
+# 偽の paseo。provider ls と provider models だけを返す。models の定義が無い provider は、
+# daemon に届かないときの paseo と同じく、標準エラーへ JSON を出して 1 で終わる。
 cat > "$FIXTURE/bin/paseo" <<'FAKE'
 #!/usr/bin/env bash
 case "$1 $2" in
   "provider ls") cat "$FAKE_DIR/providers.json" ;;
-  "provider models") cat "$FAKE_DIR/models-$3.json" 2>/dev/null || exit 1 ;;
+  "provider models")
+    if [ -f "$FAKE_DIR/models-$3.json" ]; then
+      cat "$FAKE_DIR/models-$3.json"
+    else
+      printf '{ "error": { "code": "UNKNOWN_ERROR", "message": "Transport closed (code 1006)" } }\n' >&2
+      exit 1
+    fi ;;
   *) exit 1 ;;
 esac
 FAKE
@@ -134,6 +141,15 @@ else
   _pass "候補が全滅したら失敗する"
 fi
 TESTS_RUN=$((TESTS_RUN + 1))
+
+# paseo への問い合わせが失敗したら、その理由を報告する。候補が 1 つも残らない理由と、
+# provider の一覧に載っているのに model を引けない理由は別物である。
+rm -f "$FIXTURE/paseo/models-codex.json" "$FIXTURE/paseo/models-claude.json"
+err="$(route researcher 2>&1 >/dev/null)"
+assert_contains "$err" "Transport closed (code 1006)" "問い合わせの失敗理由を出す"
+assert_contains "$err" "codex" "失敗した provider の名前を出す"
+assert_contains "$err" "claude" "次の候補の失敗も出す"
+assert_contains "$err" "paseo status" "daemon の確かめ方を出す"
 
 # 未知の役割は失敗する。
 if route no-such-role >/dev/null 2>&1; then
