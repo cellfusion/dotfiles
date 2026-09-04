@@ -103,6 +103,7 @@ assert_contains "$skill" "一次レビュー" "pr-review: 一次レビューを�
 assert_contains "$skill" "差分リスク" "pr-review: 差分リスクを評価する"
 assert_contains "$skill" "専門レビュー" "pr-review: リスクに応じて専門レビューを追加する"
 assert_contains "$skill" "routing.json" "pr-review: 専門レビューの routing を参照する"
+assert_contains "$skill" "生成ファイル" "pr-review: 依存追加が lockfile と CI に追随しているかを見る"
 assert_contains "$skill" "Markdown" "pr-review: Markdown 成果物を保存する"
 assert_contains "$skill" "JSON" "pr-review: JSON 成果物を保存する"
 assert_contains "$skill" "REVIEW_ROOT" "pr-review: 成果物の親を REVIEW_ROOT で固定する"
