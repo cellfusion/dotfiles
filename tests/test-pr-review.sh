@@ -58,6 +58,7 @@ assert_contains "$skill" "^[1-9][0-9]*$" "pr-review: 正の整数だけを受け
 assert_contains "$skill" "gh pr view" "pr-review: GitHub CLI で PR を取得する"
 assert_contains "$skill" "GitHub" "pr-review: GitHub 専用であることを明示する"
 assert_contains "$skill" "git fetch" "pr-review: 固定 SHA がローカルに無い場合も取得する"
+assert_contains "$skill" '${BASE_OID}:' "pr-review: SHA と path の連結を zsh で壊れない形で書く"
 assert_contains "$skill" "MERGE_BASE" "pr-review: PR の merge-base から差分を作る"
 assert_contains "$skill" "context/diff.patch" "pr-review: 固定 diff package を作る"
 assert_contains "$skill" "context/pr-body.md" "pr-review: PR 本文を未信頼データとして保存する"
