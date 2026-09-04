@@ -22,10 +22,13 @@ paseo status | grep -E '^(Local Daemon|Connected Daemon)'
 
 `unresponsive` か `unreachable` なら、daemon が止まっているか、シェルが daemon に
 つなげない。`paseo` の CLI は `127.0.0.1:6767` の daemon へ WebSocket でつなぐので、
-ネットワークを遮断するサンドボックスの中では届かない。Codex の `auto` と `auto-review`
-がこれに当たる。この場合は `mad-run` と `mad-runs` を `[retry-outside-sandbox]` で
-サンドボックスの外に出して実行する。理由には「Paseo の daemon に接続してエージェントを
-起動するため」と書く。
+ネットワークを遮断するサンドボックスの中では届かない。
+
+この環境の Codex は `$CODEX_HOME/config.toml` の `[sandbox_workspace_write]` で
+`network_access` を `true` にしているため、`auto` と `auto-review` でも daemon に届く。
+設定がまだ配られていないマシンでは届かない。その場合は `mad-run` と `mad-runs` を
+`[retry-outside-sandbox]` でサンドボックスの外に出して実行する。理由には「Paseo の
+daemon に接続してエージェントを起動するため」と書く。
 
 サンドボックスの外に出せないなら、MAD は使えない。実行方法が無いことを報告して止まる。
 
