@@ -48,5 +48,10 @@
     "tier": "work",
     "access": "write",
     "description": "実装役。作業ディレクトリの中で変更を行い、Conventional Commits でコミットする"
+  },
+  "writer": {
+    "tier": "work",
+    "access": "write",
+    "description": "文章を書き直す役。対象ファイルを書き換え、必要ならファイルを新しく作る。コミットはしない"
   }
 }

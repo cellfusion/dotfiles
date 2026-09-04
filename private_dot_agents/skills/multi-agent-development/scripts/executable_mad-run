@@ -8,10 +8,34 @@ GIT="${MAD_GIT_BIN:-git}"
 
 recipe="${1:-}"
 if [ -z "$recipe" ]; then
-  printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--timeout 秒]\n' >&2
+  # レシピごとに宣言を読み、名前と引数を出す。
+  list_recipes() {
+    local f name spec req opt
+    printf 'usage: mad-run <recipe> [--arg k=v ...] [--dry-run] [--detach] [--timeout 秒] [--max-parallel N]\n\n'
+    printf 'レシピ:\n'
+    for f in "$RECIPES"/*.sh; do
+      [ -f "$f" ] || continue
+      name="$(basename "$f" .sh)"
+      spec="$(MAD_SPEC_ONLY=1 MAD_RUN_DIR=/dev/null MAD_SCRIPTS="$SCRIPTS" \
+        bash "$f" 2>/dev/null)"
+      req="$(printf '%s\n' "$spec" | sed -n 's/^required=//p')"
+      opt="$(printf '%s\n' "$spec" | sed -n 's/^optional=//p')"
+      printf '  %s\n    必須: %s\n    省略可: %s\n' \
+        "$name" "${req:-なし}" "${opt:-なし}"
+    done
+  }
+  list_recipes
   exit 2
 fi
 shift
+
+# レシピ名はそのままファイルのパスになる。`/` や `.` を含む名前を先に弾き、
+# recipes の外にあるスクリプトを実行できないようにする。
+case "$recipe" in
+  *[!a-z0-9_-]*)
+    printf 'mad-run: 不正なレシピ名 %s\n' "$recipe" >&2
+    exit 2 ;;
+esac
 
 if [ ! -f "$RECIPES/$recipe.sh" ]; then
   printf 'mad-run: 未知のレシピ %s\n' "$recipe" >&2
@@ -23,9 +47,24 @@ need_value() {
   [ $# -ge 2 ] || { printf 'mad-run: %s には値が要る\n' "$1" >&2; exit 2; }
 }
 
+# 秒数と同時実行数は 1 以上の整数だけを受け取る。0 と負の数は空きを待つループが
+# 戻らなくなり、数値でない値は run.json を書く jq が失敗する。
+need_positive_int() {
+  case "$2" in
+    ''|*[!0-9]*) ;;
+    # 桁が多すぎる値は bash の test が扱えない。その旨を出させずに弾く。
+    *) [ "$2" -ge 1 ] 2>/dev/null && return 0 ;;
+  esac
+  printf 'mad-run: %s には 1 以上の整数が要る: %s\n' "$1" "$2" >&2
+  exit 2
+}
+
 args='{}'
 dry=0
+detach=0
 timeout=1200
+timeout_explicit=0
+max_parallel=4
 while [ $# -gt 0 ]; do
   case "$1" in
     --arg)
@@ -39,10 +78,21 @@ while [ $# -gt 0 ]; do
         jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '.[$k] = $v')"
       shift 2 ;;
     --dry-run) dry=1; shift ;;
-    --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
+    --detach) detach=1; shift ;;
+    --timeout)
+      need_value "$@"; need_positive_int --timeout "$2"
+      timeout="$2"; timeout_explicit=1; shift 2 ;;
+    --max-parallel)
+      need_value "$@"; need_positive_int --max-parallel "$2"
+      max_parallel="$2"; shift 2 ;;
     *) printf 'mad-run: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+if [ "$detach" = "1" ] && [ "$dry" = "1" ]; then
+  printf 'mad-run: --detach と --dry-run は同時に渡せない\n' >&2
+  exit 2
+fi
 
 root="$("$GIT" rev-parse --show-toplevel 2>/dev/null)" || root="$PWD"
 
@@ -60,12 +110,43 @@ printf '%s' "$args" > "$run_dir/args.json"
 export MAD_RUN_DIR="$run_dir"
 export MAD_RUN_ID="$run_id"
 export MAD_TIMEOUT="$timeout"
+export MAD_TIMEOUT_EXPLICIT="$timeout_explicit"
 export MAD_DRY_RUN="$dry"
 export MAD_SCRIPTS="$SCRIPTS"
 export MAD_CACHE_DIR="$run_dir/.cache"
+export MAD_MAX_PARALLEL="$max_parallel"
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+jq -n --arg recipe "$recipe" --argjson args "$args" --arg cwd "$PWD" \
+  --arg base "" --arg startedAt "$(now)" \
+  --argjson timeout "$timeout" --argjson maxParallel "$max_parallel" \
+  '{recipe: $recipe, args: $args, cwd: $cwd, base: $base,
+    startedAt: $startedAt, timeout: $timeout, maxParallel: $maxParallel}' \
+  > "$run_dir/run.json" || exit 1
+
+# レシピを走らせ、終わったら結果を残す。切り離し実行でも同じ経路を通る。
+exec_recipe() {
+  local st label
+  bash "$RECIPES/$recipe.sh"
+  st=$?
+  if [ "$st" -eq 0 ]; then label=ok; else label=failed; fi
+  jq -n --arg status "$label" --arg finishedAt "$(now)" --argjson exitCode "$st" \
+    '{status: $status, finishedAt: $finishedAt, exitCode: $exitCode}' \
+    > "$run_dir/result.json"
+  return "$st"
+}
 
 printf 'mad-run: %s（run %s）\n' "$recipe" "$run_id" >&2
-bash "$RECIPES/$recipe.sh"
+
+if [ "$detach" = "1" ]; then
+  # 親が終わっても走り続ける。SIGHUP を無視して背景に置く。
+  ( trap '' HUP; exec_recipe ) >"$run_dir/recipe.out" 2>"$run_dir/recipe.err" &
+  printf '%s\n' "$run_id"
+  exit 0
+fi
+
+exec_recipe
 status=$?
 if [ "$status" -ne 0 ]; then
   printf 'mad-run: 失敗した。run ディレクトリ: %s\n' "$run_dir" >&2

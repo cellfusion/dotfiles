@@ -1,9 +1,51 @@
 # レシピが読み込む補助関数。mad-run が export した変数を前提にする。
 # MAD_RUN_DIR / MAD_RUN_ID / MAD_TIMEOUT / MAD_DRY_RUN / MAD_SCRIPTS
 
+# レシピが受け取る引数名を宣言する。第 1 引数は必須、第 2 引数は省略可で、
+# どちらも空白区切りの並びである。宣言に無いキーと必須の欠落は 2 で終わる。
+# MAD_SPEC_ONLY=1 のときは宣言だけを出して終わる。
+mad_declare() {
+  MAD_REQUIRED="${1-}"
+  MAD_OPTIONAL="${2-}"
+  if [ "${MAD_SPEC_ONLY:-0}" = "1" ]; then
+    printf 'required=%s\n' "$MAD_REQUIRED"
+    printf 'optional=%s\n' "$MAD_OPTIONAL"
+    exit 0
+  fi
+  local known=" $MAD_REQUIRED $MAD_OPTIONAL " k
+  for k in $(jq -r 'keys[]' "$MAD_RUN_DIR/args.json"); do
+    case "$known" in
+      *" $k "*) ;;
+      *)
+        printf 'mad-lib: 未知の引数 %s。受け取るのは%s\n' "$k" "$known" >&2
+        exit 2 ;;
+    esac
+  done
+  for k in $MAD_REQUIRED; do
+    if [ -z "$(jq -r --arg n "$k" '.[$n] // empty' "$MAD_RUN_DIR/args.json")" ]; then
+      printf 'mad-lib: 引数 %s が要る\n' "$k" >&2
+      exit 2
+    fi
+  done
+}
+
 # 文字列の引数を取り出す。第 2 引数は既定値。
 mad_arg() {
   jq -r --arg n "$1" --arg d "${2-}" '.[$n] // $d' "$MAD_RUN_DIR/args.json"
+}
+
+# 1 以上の整数の引数を取り出す。第 2 引数は既定値。外れた値は 2 で返るので、
+# 呼び出し側は `|| exit 2` を付ける。ラウンド数が数値でないとループが終わらなくなる。
+mad_int() {
+  local v
+  v="$(mad_arg "$1" "$2")"
+  case "$v" in
+    ''|*[!0-9]*) ;;
+    # 桁が多すぎる値は bash の test が扱えない。その旨を出させずに弾く。
+    *) if [ "$v" -ge 1 ] 2>/dev/null; then printf '%s' "$v"; return 0; fi ;;
+  esac
+  printf 'mad-lib: 引数 %s には 1 以上の整数が要る: %s\n' "$1" "$v" >&2
+  return 2
 }
 
 # 配列の引数を JSON 配列で取り出す。渡された値は JSON 配列の文字列として読む。
@@ -21,46 +63,201 @@ mad_arg_array() {
   printf '%s' "$v" | jq -c .
 }
 
+# 値が cwd 配下の実在するファイルならその中身を、そうでなければ値そのものを返す。
+# 実装レシピは worktree の中で動くので、呼び出し元でしか読めないファイルはここで読む。
+mad_text() {
+  local v abs
+  v="$(mad_arg "$1")"
+  if [ -z "$v" ] || [ ! -f "$v" ]; then
+    # 空白・タブ・改行を含む値は要件の本文と見なし、実在を確かめない。
+    # 空白類の無い値がパスらしいのに実在しないなら、打ち間違いとして止める。
+    case "$v" in
+      *[[:space:]]*) ;;
+      */*|*.md)
+        printf 'mad-lib: 引数 %s のパス %s が無い\n' "$1" "$v" >&2
+        return 1 ;;
+    esac
+    printf '%s' "$v"
+    return 0
+  fi
+  abs="$(cd "$(dirname "$v")" && pwd)/$(basename "$v")"
+  case "$abs" in
+    "$PWD"/*) cat "$v" ;;
+    *)
+      printf 'mad-lib: %s は cwd の外にある\n' "$v" >&2
+      return 1 ;;
+  esac
+}
+
+# --timeout が明示されなかったときだけ、レシピごとの既定に差し替える。
+mad_default_timeout() {
+  [ "${MAD_TIMEOUT_EXPLICIT:-0}" = "1" ] && return 0
+  MAD_TIMEOUT="$1"
+  export MAD_TIMEOUT
+}
+
+# worktree の workspace を作り、"workspace=<id> cwd=<パス>" を 1 行で返す。
+mad_worktree() {
+  local branch="$1" base="$2" out id cwd
+  if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
+    printf 'workspace=dry-run cwd=%s/dry-worktree/%s\n' "$MAD_RUN_DIR" "$branch"
+    return 0
+  fi
+  out="$("${MAD_PASEO_BIN:-paseo}" workspace create --isolation worktree \
+    --mode branch-off --path "$PWD" --new-branch "$branch" --base "$base" \
+    --title "$branch" --json 2>&1)" || {
+    printf 'mad-lib: workspace を作れない: %s\n' "$out" >&2
+    return 1
+  }
+  id="$(printf '%s' "$out" | jq -r '.workspaceId // empty' 2>/dev/null)"
+  cwd="$(printf '%s' "$out" | jq -r '.cwd // empty' 2>/dev/null)"
+  if [ -z "$id" ] || [ -z "$cwd" ]; then
+    printf 'mad-lib: workspace の応答に id か cwd が無い: %s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\t%s\t%s\n' "$id" "$cwd" "$branch" >> "$MAD_RUN_DIR/workspaces.txt"
+  printf 'workspace=%s cwd=%s\n' "$id" "$cwd"
+}
+
+# worktree の base からの差分を返す。上限を超えたら先頭だけを返す。
+# git の失敗は非ゼロで返し、差分が無いことと区別する。中身の無いレビュー依頼を
+# 作らないため、呼び出し側は失敗を受けて run を止める。
+mad_diff() {
+  local cwd="$1" base="$2" limit="${3:-2000}" d n st ef
+  [ "${MAD_DRY_RUN:-0}" = "1" ] && return 0
+  ef="$MAD_RUN_DIR/.diff.$$.err"
+  d="$("${MAD_GIT_BIN:-git}" -C "$cwd" diff "$base...HEAD" 2>"$ef")"
+  st=$?
+  if [ "$st" -ne 0 ]; then
+    printf 'mad-lib: %s の %s からの差分を取れない: %s\n' \
+      "$cwd" "$base" "$(cat "$ef" 2>/dev/null)" >&2
+    rm -f "$ef"
+    return 1
+  fi
+  rm -f "$ef"
+  if [ -z "$d" ]; then
+    printf '（差分が無い）\n'
+    return 0
+  fi
+  n="$(printf '%s\n' "$d" | wc -l | tr -d ' ')"
+  if [ "$n" -gt "$limit" ]; then
+    printf '%s\n' "$d" | sed -n "1,${limit}p"
+    printf '\n（差分は %s 行あり、先頭 %s 行だけを示した）\n' "$n" "$limit"
+  else
+    printf '%s\n' "$d"
+  fi
+}
+
+# base のブランチを決める。base 引数が空なら現在のブランチを使う。
+# detached HEAD では両方とも空になるので 1 で返る。
+mad_base() {
+  local b
+  b="$(mad_arg base)"
+  if [ -z "$b" ]; then
+    b="$("${MAD_GIT_BIN:-git}" branch --show-current 2>/dev/null)"
+  fi
+  if [ -z "$b" ]; then
+    printf 'mad-lib: base のブランチが決まらない。HEAD が detached である\n' >&2
+    return 1
+  fi
+  printf '%s' "$b"
+}
+
+# mad_worktree が返した 1 行から、workspace の id か cwd を取り出す。
+mad_ws_field() {
+  local v
+  case "$2" in
+    id) v="${1#workspace=}"; printf '%s' "${v%% *}" ;;
+    cwd) printf '%s' "${1#*cwd=}" ;;
+    *) printf 'mad-lib: 未知の項目 %s\n' "$2" >&2; return 1 ;;
+  esac
+}
+
 # ノードのプロンプトを標準入力から書く。
 mad_prompt() {
   cat > "$MAD_RUN_DIR/$1.prompt"
 }
 
-# 書いてあるプロンプトでノードを走らせる。
+mad_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# ノードの状態を 1 ファイルに書く。並行するノードが同じファイルを取り合わない。
+mad_state_write() {
+  printf 'state=%s\nrole=%s\nworkspace=%s\nstartedAt=%s\nfinishedAt=%s\n' \
+    "$2" "$3" "$4" "$5" "$6" > "$MAD_RUN_DIR/$1.state"
+}
+
+# run.json の base を書き換える。worktree を作るレシピが 1 回呼ぶ。
+mad_record_base() {
+  local f="$MAD_RUN_DIR/run.json"
+  [ -f "$f" ] || return 0
+  jq --arg b "$1" '.base = $b' "$f" > "$f.$$" && mv -f "$f.$$" "$f"
+}
+
+# 書いてあるプロンプトでノードを走らせる。第 3 引数に workspace の id を渡すと、
+# その workspace の中で動かす。
 mad_run_node() {
-  local name="$1" role="$2"
+  local name="$1" role="$2" ws="${3-}"
   local pf="$MAD_RUN_DIR/$name.prompt"
   local of="$MAD_RUN_DIR/$name.json"
   local lf="$MAD_RUN_DIR/$name.log"
+  local started
+  started="$(mad_now)"
+  mad_state_write "$name" running "$role" "$ws" "$started" ""
   if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
     # 失敗しても出力ファイルは作る。mad_collect が読む先を欠かさないため。
     local route
     printf '{}\n' > "$of"
     route="$("$MAD_SCRIPTS/mad-route" "$role")" || {
+      mad_state_write "$name" failed "$role" "$ws" "$started" "$(mad_now)"
       printf 'mad-lib: ノード %s（役割 %s）の provider を解決できない\n' "$name" "$role" >&2
       return 1
     }
-    printf 'node=%s role=%s %s prompt_chars=%s\n' \
-      "$name" "$role" "$route" "$(wc -c < "$pf" | tr -d ' ')"
+    mad_state_write "$name" ok "$role" "$ws" "$started" "$(mad_now)"
+    printf 'node=%s role=%s %s workspace=%s prompt_chars=%s\n' \
+      "$name" "$role" "$route" "${ws:-none}" "$(wc -c < "$pf" | tr -d ' ')"
     return 0
   fi
-  "$MAD_SCRIPTS/mad-agent" --role "$role" --prompt-file "$pf" --cwd "$PWD" \
-    --out "$of" --log "$lf" --timeout "$MAD_TIMEOUT" --title "mad/$MAD_RUN_ID/$name"
+  set -- --role "$role" --prompt-file "$pf" --out "$of" --log "$lf" \
+    --timeout "$MAD_TIMEOUT" --title "mad/$MAD_RUN_ID/$name"
+  if [ -n "$ws" ]; then
+    set -- "$@" --workspace "$ws"
+  else
+    set -- "$@" --cwd "$PWD"
+  fi
+  "$MAD_SCRIPTS/mad-agent" "$@"
   local status=$?
-  # 失敗したノードの名前を出す。背景で走る分もここを通る。
-  [ "$status" -eq 0 ] || printf 'mad-lib: ノード %s（役割 %s）が失敗した。ログ: %s\n' \
-    "$name" "$role" "$lf" >&2
+  if [ "$status" -eq 0 ]; then
+    mad_state_write "$name" ok "$role" "$ws" "$started" "$(mad_now)"
+  else
+    mad_state_write "$name" failed "$role" "$ws" "$started" "$(mad_now)"
+    # 失敗したノードの名前を出す。背景で走る分もここを通る。
+    printf 'mad-lib: ノード %s（役割 %s）が失敗した。ログ: %s\n' "$name" "$role" "$lf" >&2
+  fi
   return "$status"
+}
+
+# 走っているノードが上限に達している間、空きを待つ。bash 3.2 に wait -n が無い。
+mad_wait_slot() {
+  local limit="${MAD_MAX_PARALLEL:-4}" alive pid
+  while :; do
+    alive=0
+    for pid in ${MAD_JOBS:-}; do
+      kill -0 "$pid" 2>/dev/null && alive=$((alive + 1))
+    done
+    [ "$alive" -lt "$limit" ] && return 0
+    sleep 1
+  done
 }
 
 # ノードを背景で走らせる。dry-run のときは順に走らせる。
 mad_start_node() {
   MAD_NODES="${MAD_NODES:-} $1"
   if [ "${MAD_DRY_RUN:-0}" = "1" ]; then
-    mad_run_node "$1" "$2" || MAD_FAILED=1
+    mad_run_node "$1" "$2" "${3-}" || MAD_FAILED=1
     return 0
   fi
-  mad_run_node "$1" "$2" &
+  mad_wait_slot
+  mad_run_node "$1" "$2" "${3-}" &
   MAD_JOBS="${MAD_JOBS:-} $!"
 }
 

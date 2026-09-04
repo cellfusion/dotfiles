@@ -6,7 +6,7 @@ DEFS="${MAD_DEFS_DIR:-$HOME/.agents/agent-defs}"
 PASEO="${MAD_PASEO_BIN:-paseo}"
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 
-role=""; prompt_file=""; cwd="$PWD"; out=""; log=""; title=""
+role=""; prompt_file=""; cwd="$PWD"; out=""; log=""; title=""; workspace=""
 timeout="${MAD_TIMEOUT:-1200}"
 
 # 値を取る引数は、値が無ければ 2 で終わる。shift 2 が空回りして無限ループになるのを防ぐ。
@@ -23,12 +23,13 @@ while [ $# -gt 0 ]; do
     --log) need_value "$@"; log="$2"; shift 2 ;;
     --timeout) need_value "$@"; timeout="$2"; shift 2 ;;
     --title) need_value "$@"; title="$2"; shift 2 ;;
+    --workspace) need_value "$@"; workspace="$2"; shift 2 ;;
     *) printf 'mad-agent: 未知の引数 %s\n' "$1" >&2; exit 2 ;;
   esac
 done
 
 if [ -z "$role" ] || [ -z "$prompt_file" ] || [ -z "$out" ] || [ -z "$log" ]; then
-  printf 'usage: mad-agent --role R --prompt-file F --out O --log L [--cwd D] [--timeout N] [--title T]\n' >&2
+  printf 'usage: mad-agent --role R --prompt-file F --out O --log L [--cwd D] [--workspace ID] [--timeout N] [--title T]\n' >&2
   exit 2
 fi
 [ -f "$prompt_file" ] || { printf 'mad-agent: %s が無い\n' "$prompt_file" >&2; exit 2; }
@@ -45,7 +46,13 @@ prompt="$(cat "$sys"; printf '\n\n---\n\n'; cat "$prompt_file")"
 
 set -- run \
   --provider "$provider" --model "$model" --thinking "$thinking" \
-  --output-schema "$schema" --cwd "$cwd" --wait-timeout "${timeout}s"
+  --output-schema "$schema" --wait-timeout "${timeout}s"
+# workspace を渡したときは cwd を渡さない。paseo が workspace の cwd を使う。
+if [ -n "$workspace" ]; then
+  set -- "$@" --workspace "$workspace"
+else
+  set -- "$@" --cwd "$cwd"
+fi
 [ -n "$mode" ] && set -- "$@" --mode "$mode"
 [ -n "$title" ] && set -- "$@" --title "$title"
 set -- "$@" "$prompt"

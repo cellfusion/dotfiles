@@ -219,11 +219,11 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
   ".chezmoiignore: .DS_Store を配らない"
 
 # MAD のスクリプトとレシピは ~/.agents/skills 側にだけ配られる。
-for s in mad-route mad-agent mad-run mad-lib.sh; do
+for s in mad-route mad-agent mad-run mad-runs mad-lib.sh; do
   assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
     "MAD: スクリプトを共有パスへ配る: $s"
 done
-for r in research fanout decide debate review; do
+for r in research fanout decide debate review triage implement spike refine; do
   assert_contains "$managed" ".agents/skills/multi-agent-development/recipes/$r.sh" \
     "MAD: レシピを共有パスへ配る: $r"
 done
@@ -237,6 +237,11 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
   assert_contains "$managed" ".agents/agent-defs/$f.json" \
     "MAD: 設定アセットを配る: $f"
 done
+# writer 役の prompt と schema も配る。
+assert_contains "$managed" ".agents/agent-defs/prompts/writer.md" \
+  "MAD: writer の prompt を配る"
+assert_contains "$managed" ".agents/agent-defs/schemas/writer.json" \
+  "MAD: writer の schema を配る"
 
 # Paseo プラグインの npm 成果物は配らない。chezmoi はソース側のドットで始まる項目を
 # 配らないため、node_modules を配ると .bin と .package-lock.json を欠いた依存ツリーになる。

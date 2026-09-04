@@ -42,6 +42,25 @@ Paseo の側から `paseo ls` と `paseo stop` で追える。
 ノード 1 つあたりの既定の実行上限は 1200 秒で、`--timeout <秒>` で全ノード共通に変えられる。
 シェル実行ツール側のコマンドタイムアウトが既定より短いなら明示的に伸ばす。
 
+**3. 長いレシピは切り離す。**
+
+`implement` と `spike` は実装とレビューを何ラウンドも回すので、シェル実行ツールの
+コマンドタイムアウトに先に当たる。`--detach` を付けると run id だけが返る。
+
+```bash
+~/.agents/skills/multi-agent-development/scripts/mad-run implement \
+  --arg 'requirements=要件' --detach
+```
+
+進行は `mad-runs` で追う。
+
+```bash
+~/.agents/skills/multi-agent-development/scripts/mad-runs ls
+~/.agents/skills/multi-agent-development/scripts/mad-runs show RUN_ID
+```
+
+`--detach` と `--dry-run` は同時に渡せない。同時に渡すと 2 で終わる。
+
 ### 引数
 
 すべて `--arg k=v` の形で渡す。配列は JSON の文字列配列で渡す。
@@ -54,10 +73,27 @@ Paseo の側から `paseo ls` と `paseo stop` で追える。
 役割エージェントが読める範囲は `--cwd` に縛られる。`mad-run` はレシピを打った場所を
 そのまま渡すので、**`--arg` で渡すパスは実行時の cwd の下にあること**。
 
+例外は `implement` と `spike` のノードである。どちらも `--cwd` ではなく `--workspace` で
+動くので、読める範囲は作った worktree になる。`--arg` で渡すパスは `mad-run` を打った
+場所で読むので、この違いは引数の渡し方には影響しない。
+
+レシピが受け取らない引数名を渡すと 2 で終わる。受け取る引数の一覧は、`mad-run` を
+引数なしで呼ぶと出る。
+
+```bash
+~/.agents/skills/multi-agent-development/scripts/mad-run
+```
+
+同時に起こすエージェントの数は既定で 4 である。`--max-parallel <数>` で変えられる。
+`fanout` に項目を多く渡すときだけ触る。
+
 ### 出力
 
 成功すると最終ノードの構造化 JSON が標準出力に出る。ノードごとのプロンプト・出力・ログは
 run ディレクトリ `_cellfusion/mad/<runId>/` に残る。
+
+`implement` と `refine` は、レビューが `FAIL` のまま `max_rounds` に達しても 0 で終わる。
+終了コードだけでは通ったかどうかが分からないので、呼び出し側が出力の `.status` を読む。
 
 ### 失敗したとき
 
@@ -73,3 +109,10 @@ paseo stop "$id"      # 停止
 ```
 
 エージェントの title は `mad/<runId>/<ノード名>` になっている。
+
+run ディレクトリと、実装レシピが作った worktree は自動では消えない。片付けは
+`mad-runs clean --older-than <日数>` で対象を確かめてから、`--yes` を付けて実行する。
+
+```bash
+~/.agents/skills/multi-agent-development/scripts/mad-runs clean --older-than 7
+```
