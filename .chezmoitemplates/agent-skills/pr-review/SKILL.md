@@ -97,16 +97,17 @@ Paseo の workspace / connector が利用可能なら最優先で使う。
 ```bash
 REVIEW_WS=""
 REVIEW_WORKTREE=""
-if [ "$(git -C "$PARENT_ROOT" rev-parse HEAD)" = "$HEAD_OID" ] \
-  && [ -z "$(git -C "$PARENT_ROOT" status --porcelain)" ]; then
+# Paseo は workspace に paseo.json を置く。runtime の作業ファイルは汚れと見なさない
+PARENT_DIRT=$(git -C "$PARENT_ROOT" status --porcelain | grep -v '^?? paseo\.json$' || true)
+if [ "$(git -C "$PARENT_ROOT" rev-parse HEAD)" = "$HEAD_OID" ] && [ -z "$PARENT_DIRT" ]; then
   REVIEW_WORKTREE="$PARENT_ROOT"
 fi
 ```
 
 `REVIEW_WORKTREE` が空でない場合、下の 1 を飛ばして 2 から実行する。この worktree は
 呼び出し元の所有物であり、この skill が作ったものではない。`REVIEW_WS` は空のままにする。
-HEAD が一致しない場合、または作業ツリーが汚れている場合は、`REVIEW_WORKTREE` を空のままにして
-1 から実行する。
+HEAD が一致しない場合、または `paseo.json` 以外の変更がある場合は、`REVIEW_WORKTREE` を空のままにして
+1 から実行する。除外するのは未追跡の `paseo.json` だけで、追跡ファイルの変更が 1 つでもあれば再利用しない。
 
 1. `create_workspace` を `isolation: "worktree"`、`mode: "checkout-pr"`、`prNumber: PR_NUMBER`、GitHub の `forge`、元 checkout の `projectPath` で呼ぶ。返された review workspace ID と worktree path を JSON から読み、`REVIEW_WS` / `REVIEW_WORKTREE` に保存する。予測で補わない。
 2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は Paseo agent を review workspace で起動せず、理由を記録して下位経路へ進む。review workspace と agent workspace を同一にしない。
