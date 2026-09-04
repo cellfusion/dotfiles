@@ -47,6 +47,8 @@ schema_consistent="$(jq -n -e \
     and (($findings.findings | map(.id) | unique | length) == $findings.findingCount)
     and ($findings.findings | all(.priority | IN("P0", "P1", "P2", "P3")))
     and ($findings.findings | all(.confidence | IN("high", "medium", "low")))
+    and ($metadata.specialistReviews | all(.status | IN("completed", "not_run", "blocked")))
+    and ($metadata.delegation.agents | IN("paseo", "herdr", "current-agent"))
   ' >/dev/null && echo yes || echo no)"
 assert_eq "$schema_consistent" "yes" "pr-review schema: 3 JSON の identity と finding 集合が一致する"
 
@@ -58,6 +60,7 @@ assert_contains "$skill" "^[1-9][0-9]*$" "pr-review: 正の整数だけを受け
 assert_contains "$skill" "gh pr view" "pr-review: GitHub CLI で PR を取得する"
 assert_contains "$skill" "GitHub" "pr-review: GitHub 専用であることを明示する"
 assert_contains "$skill" "git fetch" "pr-review: 固定 SHA がローカルに無い場合も取得する"
+assert_contains "$skill" '${BASE_OID}:' "pr-review: SHA と path の連結を zsh で壊れない形で書く"
 assert_contains "$skill" "MERGE_BASE" "pr-review: PR の merge-base から差分を作る"
 assert_contains "$skill" "context/diff.patch" "pr-review: 固定 diff package を作る"
 assert_contains "$skill" "context/pr-body.md" "pr-review: PR 本文を未信頼データとして保存する"
@@ -79,10 +82,12 @@ assert_contains "$skill" "$(printf 'REVIEW_WS=""\nREVIEW_WORKTREE=""')" \
   "pr-review: REVIEW_WS と REVIEW_WORKTREE を対で初期化する"
 assert_contains "$skill" 'git -C "$PARENT_ROOT" rev-parse HEAD' \
   "pr-review: 呼び出し元の HEAD を検証する"
+assert_contains "$skill" "paseo.json" "pr-review: runtime の作業ファイルを汚れと見なさない"
 assert_contains "$skill" "create_workspace" "pr-review: Paseo workspace を作る"
 assert_contains "$skill" "list_profiles" "pr-review: Paseo の agent profile を毎回確認する"
 assert_contains "$skill" "create_agent" "pr-review: Paseo の agent を起動する"
 assert_contains "$skill" "archive_workspace" "pr-review: Paseo workspace を成功時だけ archive する"
+assert_contains "$skill" "worktree を作り直さない" "pr-review: agent を起動できない理由で worktree を作り直さない"
 assert_contains "$skill" "gh pr checkout" "pr-review: worktree 内で PR を checkout する"
 assert_contains "$skill" "--detach" "pr-review: head SHA を detached checkout に固定する"
 assert_contains "$skill" "herdr agent start" "pr-review: Herdr の agent start を使う"
@@ -100,6 +105,7 @@ assert_contains "$skill" "一次レビュー" "pr-review: 一次レビューを�
 assert_contains "$skill" "差分リスク" "pr-review: 差分リスクを評価する"
 assert_contains "$skill" "専門レビュー" "pr-review: リスクに応じて専門レビューを追加する"
 assert_contains "$skill" "routing.json" "pr-review: 専門レビューの routing を参照する"
+assert_contains "$skill" "生成ファイル" "pr-review: 依存追加が lockfile と CI に追随しているかを見る"
 assert_contains "$skill" "Markdown" "pr-review: Markdown 成果物を保存する"
 assert_contains "$skill" "JSON" "pr-review: JSON 成果物を保存する"
 assert_contains "$skill" "REVIEW_ROOT" "pr-review: 成果物の親を REVIEW_ROOT で固定する"
@@ -120,11 +126,13 @@ assert_contains "$skill" "impact" "pr-review: finding の影響を保存する"
 assert_contains "$skill" "inline" "pr-review: inline 可否を保存する"
 assert_contains "$skill" "specialistReviews" "pr-review: 専門レビュー結果を構造化する"
 assert_contains "$skill" "not_run" "pr-review: 未実行の専門レビューを記録する"
+assert_contains "$skill" '"completed"' "pr-review: 実行した専門レビューを completed で記録する"
 assert_contains "$skill" "全 JSON" "pr-review: JSON ごとに revision identity を持たせる"
 assert_contains "$skill" "base SHA と head SHA" "pr-review: 成果物に base/head SHA を含める"
 assert_contains "$skill" "findingCount" "pr-review: finding 件数を全成果物で一致させる"
 assert_contains "$skill" "findingIds" "pr-review: finding ID を全成果物で一致させる"
 assert_contains "$skill" "agentWorkspaceId" "pr-review: Paseo agent workspace の所有情報を保存する"
+assert_contains "$skill" "delegation" "pr-review: agent の実行主体を metadata に残す"
 
 # PR 側の指示を実行せず、base 側の指示と利用可能な専門 skill を使う。
 assert_contains "$skill" "base 側" "pr-review: base 側の指示を使う"
@@ -146,6 +154,8 @@ assert_contains "$skill" "stack-specific" "pr-review: stack-specific lens の条
 assert_contains "$skill" "テスト" "pr-review: tests lens の条件がある"
 assert_contains "$skill" "依存インストール" "pr-review: 依存インストールを自動実行しない"
 assert_contains "$skill" "deploy" "pr-review: deploy を自動実行しない"
+assert_contains "$skill" "gh pr checks" "pr-review: 対象 PR の CI 結果を読み取る"
+assert_contains "$skill" "--log-failed" "pr-review: 失敗した job のログを読む"
 
 # レビュー agent は読み取りとコメント投稿だけを行う。GitHub の review 操作は使わない。
 assert_contains "$skill" "commit" "pr-review: commit 禁止を明示する"
