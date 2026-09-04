@@ -84,7 +84,7 @@ PR 本文は `context/pr-body.md` に保存する未信頼データである。�
 
 ## 3. 専用 worktree を作る
 
-開始前に `paseo`、`herdr`、`using-git-worktrees` の skill を読み直し、各環境の現在の CLI / MCP syntax と ownership を正とする。`using-git-worktrees` は ownership 確認と worktree 作成の該当部分だけを参照し、依存導入、baseline test、`.gitignore` の自動変更・commit はこの skill の禁止事項であるため実行しない。既存のユーザー管理 workspace / worktree は所有物として扱わない。作成した経路、workspace ID、pane ID、絶対 path、所有者、cleanup 状態を metadata に記録する。全経路で最終的に checkout の `HEAD` が `HEAD_OID` と完全一致することを確認する。
+開始前に `paseo`、`herdr`、`using-git-worktrees` の skill を読み直し、各環境の現在の CLI / MCP syntax と ownership を正とする。`using-git-worktrees` は ownership 確認と worktree 作成の該当部分だけを参照し、依存導入、baseline test、`.gitignore` の自動変更・commit はこの skill の禁止事項であるため実行しない。既存のユーザー管理 workspace / worktree は所有物として扱わない。作成した経路、workspace ID、pane ID、絶対 path、所有者、cleanup 状態を metadata に記録する。全経路で最終的に checkout の `HEAD` が `HEAD_OID` と完全一致することを確認する。worktree の作成経路と agent の実行経路は独立に決める。worktree が作れていれば、agent を起動できない理由で worktree を作り直さない。
 
 ### Paseo
 
@@ -112,7 +112,7 @@ HEAD が一致しない場合、または作業ツリーが汚れている場合
 2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は Paseo agent を review workspace で起動せず、理由を記録して下位経路へ進む。review workspace と agent workspace を同一にしない。
 3. `list_profiles` を毎回呼び、全 profile の `notes` を読んでレビューに適した環境既定 profile を選ぶ。選択 profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を `create_agent` へ materialize する。`profile` という未対応の引数を勝手に渡さない。
 4. `REVIEW_WORKTREE` で `git rev-parse HEAD`、`git status --porcelain` を確認する。HEAD が違う場合だけ、Paseo の作法を壊さない形で `gh pr checkout "$PR_NUMBER" --repo "$REPOSITORY" --detach` を worktree 内で行い、再確認する。固定 object の取得と diff package の生成は、下の「固定 revision と diff package」を実行してから行う。
-5. profile が無い、agent を read-only 相当で起動できない、workspace path が空、または provider discovery に失敗した場合は、理由を metadata に残して下位経路へ進むか `BLOCKED` とする。model 名を推測したり、agent profile を自動生成・自動インストールしたりしない。
+5. profile が無い、agent を read-only 相当で起動できない、または provider discovery に失敗した場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とす。current agent は一次レビューと必要な specialist lens を順に実行する。下位経路へ進むのは `create_workspace` 自体が失敗して `REVIEW_WORKTREE` が空のときだけとする。どちらの場合も理由を `metadata.json` の `delegation` に残す。model 名を推測したり、agent profile を自動生成・自動インストールしたりしない。
 
 Paseo agent へは `create_agent` の `workspaceId` に `AGENT_WS`、`title` に `pr-review/<PR_NUMBER>/<role>`、`initialPrompt` に後述の agent contract と絶対 path を渡す。agent workspace の cwd は `AGENT_CWD` であり、PR head worktree を project path にしない。一次レビューが完了して成果物を確認してから、必要な specialist を同じ `AGENT_WS` で段階的に起動する。完了通知を待ち、実行中に `list_agents` をポーリングして負荷を増やさない。
 
@@ -293,7 +293,7 @@ REVIEW_DIR/
     stack-specific-<stack>.md
 ```
 
-不要な specialist の中間ファイルは作らず、agent別中間成果物と `metadata.json` の `specialistReviews` に `not_run` の理由を残す。JSON の最小 schema は次である。
+不要な specialist の中間ファイルは作らず、agent別中間成果物と `metadata.json` の `specialistReviews` に `not_run` の理由を残す。`delegation.agents` は agent の実行主体で、`paseo` / `herdr` / `current-agent` のいずれかとする。JSON の最小 schema は次である。
 
 `metadata.json`:
 
@@ -310,6 +310,7 @@ REVIEW_DIR/
   "workspace": {"kind": "paseo", "path": "/absolute/review/worktree", "workspaceId": "ws-123", "agentWorkspaceId": "ws-agent-123", "agentCwd": "/tmp/pr-review-agent-123.x7K9Lm", "owned": true},
   "detected": {"languages": [], "frameworks": [], "architecture": {"name": "unknown", "evidence": []}},
   "specialistReviews": [{"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
+  "delegation": {"agents": "current-agent", "reason": "list_profiles が空を返した"},
   "verdict": "NEEDS_ATTENTION",
   "findingCount": 1,
   "findingIds": ["F-001"],
