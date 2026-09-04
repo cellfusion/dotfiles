@@ -294,7 +294,7 @@ REVIEW_DIR/
     stack-specific-<stack>.md
 ```
 
-不要な specialist の中間ファイルは作らず、agent別中間成果物と `metadata.json` の `specialistReviews` に `not_run` の理由を残す。`delegation.agents` は agent の実行主体で、`paseo` / `herdr` / `current-agent` のいずれかとする。JSON の最小 schema は次である。
+不要な specialist の中間ファイルは作らず、agent別中間成果物と `metadata.json` の `specialistReviews` に `not_run` の理由を残す。`specialistReviews[].status` は `completed` / `not_run` / `blocked` のいずれかとする。`completed` は lens を実行したこと、`not_run` は trigger に該当せず実行しなかったこと、`blocked` は trigger に該当したが実行できなかったことを表す。`delegation.agents` は agent の実行主体で、`paseo` / `herdr` / `current-agent` のいずれかとする。JSON の最小 schema は次である。
 
 `metadata.json`:
 
@@ -310,7 +310,7 @@ REVIEW_DIR/
   "revision": {"baseRefName": "main", "baseRefOid": "...", "headRefName": "feature", "headRefOid": "...", "mergeBaseOid": "..."},
   "workspace": {"kind": "paseo", "path": "/absolute/review/worktree", "workspaceId": "ws-123", "agentWorkspaceId": "ws-agent-123", "agentCwd": "/tmp/pr-review-agent-123.x7K9Lm", "owned": true},
   "detected": {"languages": [], "frameworks": [], "architecture": {"name": "unknown", "evidence": []}},
-  "specialistReviews": [{"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
+  "specialistReviews": [{"role": "primary", "status": "completed", "reason": "", "artifact": "agents/primary.md"}, {"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
   "delegation": {"agents": "current-agent", "reason": "list_profiles が空を返した"},
   "verdict": "NEEDS_ATTENTION",
   "findingCount": 1,
