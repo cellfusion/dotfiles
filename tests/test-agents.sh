@@ -24,6 +24,57 @@ out="$(render_agent sdd-re-reviewer codex.toml)"
 assert_contains "$out" 'model = "gpt-5.6-luna"' "re-reviewer/codex: fast は luna"
 assert_contains "$out" 'model_reasoning_effort = "medium"' "re-reviewer/codex: effort は medium"
 
+# 承認とサンドボックスは親の config.toml に依存させず、定義側に書く。
+out="$(render_agent sdd-implementer codex.toml)"
+assert_contains "$out" 'approval_policy = "on-request"' \
+  "implementer/codex: 承認は on-request"
+assert_contains "$out" 'approvals_reviewer = "auto_review"' \
+  "implementer/codex: 承認判定は auto_review"
+assert_contains "$out" '[sandbox_workspace_write]' \
+  "implementer/codex: sandbox の表を出す"
+assert_contains "$out" 'network_access = true' \
+  "implementer/codex: sandbox 内ネットワークを許す"
+
+# TOML では表の見出しより後のキーがその表に属する。見出しが
+# developer_instructions より前に出ると、本文が表の中に入って壊れる。
+tail_out="$(printf '%s\n' "$out" | sed -n '/^\[sandbox_workspace_write\]$/,$p')"
+assert_not_contains "$tail_out" 'developer_instructions' \
+  "implementer/codex: sandbox の表は developer_instructions より後に出る"
+
+# read 役は read-only なので表が効かない。出さない。
+out="$(render_agent sdd-task-reviewer codex.toml)"
+assert_contains "$out" 'approval_policy = "on-request"' \
+  "task-reviewer/codex: 承認は on-request"
+assert_contains "$out" 'approvals_reviewer = "auto_review"' \
+  "task-reviewer/codex: 承認判定は auto_review"
+assert_not_contains "$out" '[sandbox_workspace_write]' \
+  "task-reviewer/codex: sandbox の表を出さない"
+
+# 描画結果が TOML としてパースできる。表の位置と三連引用符を同時に検証する。
+impl_toml="$(mktemp)"
+render_agent sdd-implementer codex.toml > "$impl_toml"
+impl_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$impl_toml','rb'))
+print(d['approval_policy'], d['approvals_reviewer'],
+      d['sandbox_workspace_write']['network_access'],
+      'あなたは' in d['developer_instructions'])
+" 2>&1)"
+rm -f "$impl_toml"
+assert_eq "$impl_parsed" "on-request auto_review True True" \
+  "implementer/codex: TOML としてパースでき、表と本文が正しい位置にある"
+
+read_toml="$(mktemp)"
+render_agent sdd-task-reviewer codex.toml > "$read_toml"
+read_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$read_toml','rb'))
+print(d['sandbox_mode'], 'sandbox_workspace_write' in d)
+" 2>&1)"
+rm -f "$read_toml"
+assert_eq "$read_parsed" "read-only False" \
+  "task-reviewer/codex: 読み取り専用で sandbox の表を持たない"
+
 # Claude 版。
 out="$(render_agent sdd-implementer claude.md)"
 assert_contains "$out" "model: sonnet" "implementer/claude: work は sonnet"
