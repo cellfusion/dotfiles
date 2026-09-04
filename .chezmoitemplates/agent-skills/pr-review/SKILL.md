@@ -230,7 +230,7 @@ test "$AGENT_STATUS_BEFORE" = "$AGENT_STATUS_AFTER"
 
 agent の出力は次の finding 契約に従わせる。実際の path と head 側の行を示せない推測、好み、全面的な書き換え提案は finding にしない。
 
-1. **一次レビュー** — PR の目的と変更範囲、base 側指示、変更ファイル、データフロー、エラー処理、互換性、security、テスト、境界条件、運用・rollback リスクを一通り確認する。差分リスクを `low` / `medium` / `high` で評価し、P0〜P3 の優先度、confidence、具体的な evidence、impact、recommendation を付ける。
+1. **一次レビュー** — PR の目的と変更範囲、base 側指示、変更ファイル、データフロー、エラー処理、互換性、security、テスト、境界条件、運用・rollback リスクを一通り確認する。依存の追加・更新がある差分では、lockfile、生成ファイル、CI ワークフローが追随しているかを確認する。新しい依存がビルド時やテスト時に追加の setup を要求する場合、CI にその手順があるかを見る。差分リスクを `low` / `medium` / `high` で評価し、P0〜P3 の優先度、confidence、具体的な evidence、impact、recommendation を付ける。
 2. **専門レビュー（specialist review）** — 一次レビューの結果と差分特徴を受け取った後、下の trigger に該当する lens だけを順番に起動する。全 lens を機械的に起動しない。起動しない lens も `not_run` と理由を記録する。
 3. **統合** — 重複 finding を統合し、同じ defect の優先度を一つに決める。P0 / P1 が一つでもあれば `NEEDS_ATTENTION`、取得・checkout・agent・検証が成立しない場合は `BLOCKED`、具体的な未解決 finding が無い場合だけ `PASS` とする。
 
