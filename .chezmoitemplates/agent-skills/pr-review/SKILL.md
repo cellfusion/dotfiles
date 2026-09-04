@@ -266,6 +266,8 @@ Clean Architecture、Hexagonal / Ports and Adapters、Layered、MVVM、Redux な
 
 依存インストール、lockfile 更新、fix / format の自動適用、deploy、release、外部サービスへの書き込みは自動実行しない。`npm install`、`flutter pub get`、`pod install`、依存取得を伴う Gradle / Cargo 操作などを含む。静的な `git diff --check` 以外の lint、typecheck、test、build は、通常の review worktree では実行せず、既定値を `not_run` とする。実行する場合は、base 側で既知の command であることを確認し、network disabled、credentials / secret なし、依存導入なし、PR の source snapshot 以外へ書き込まない disposable sandbox を別に用意する。その条件を満たせない場合、または command が PR 側 script / hook / setup に依存する場合は実行しない。選ばなかったものは `not_run` と理由を書く。失敗を隠したり、fix してから再実行したりしない。
 
+対象 PR の CI は既に走っている。その結果を読むことは、上の実行禁止とは別に扱う。`gh pr checks "$PR_NUMBER" --repo "$REPOSITORY"` で job を一覧し、失敗している job は `gh api "repos/$REPOSITORY/actions/jobs/<job_id>"` で step ごとの結果を、`gh run view --repo "$REPOSITORY" --job <job_id> --log-failed` で失敗ログを読む。読み取りだけを行い、再実行、キャンセル、承認、checks の書き換えはしない。失敗の原因を差分のどの変更に結び付けられるかを確認し、結び付いた場合は finding にして job 名とログの該当行を evidence に書く。結び付かない失敗は finding にせず `checks.json` にだけ残す。`queued` / `in_progress` のときは結果を待つかどうかを決める。待つ場合の polling は結果が変わる速さに合わせ、短い間隔で繰り返さない。待たない場合は `status` を `not_run` にして実行中である旨を `reason` に書く。どの場合も `checks.json` の 1 要素として、`name` に job 名、`command` に実行した `gh` コマンド、`status` に `pass` / `fail` / `not_run`、`evidence` に job 名とログの該当行を残す。
+
 成果物を保存する前に JSON を `jq -e` または `python3 -m json.tool` で構文検証し、`findings.json` を finding の canonical list とする。`metadata.json`、`findings.json`、`checks.json` は全て top-level の `prNumber`、`repository`、`baseRefOid`、`headRefOid`、`mergeBaseOid`、`verdict`、`findingCount`、`findingIds` を持ち、同じ値を一致させる。`findingCount` は canonical list の件数、`findingIds` は重複のない安定した ID の配列であり、Markdown も同じ verdict / finding 一覧を示す。成果物は次の全てを保存する。
 
 ```text
