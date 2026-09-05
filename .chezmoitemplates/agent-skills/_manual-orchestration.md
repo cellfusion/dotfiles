@@ -6,11 +6,13 @@ MAD は親エージェントが実行の進行を管理する。レシピを開�
    `_cellfusion/orchestration/<run-id>/` を作る。親は run 全体の状態と各子の成果物をこの
    ディレクトリに集める。
 2. 親は最初に Paseo MCP の接続可否を確認する。利用可能なら Paseo MCP で子を起動し、状態確認、
-   ログ取得、中断を行う。利用できない場合だけ、`[dispatch-subagent: role]` で組み込みの
+   ログ取得、中断を行う。`manual-orchestration-validate --select-backend` は backend selector の
+   成果物形式を確認できる。利用できない場合だけ、`[dispatch-subagent: role]` で組み込みの
    subagent を起動する。実行開始後の失敗を別 backend へ自動的に切り替えてはならない。
 3. run 全体の状態は `<run-dir>/state.json` だけに保存する。子の成果物は必ず
    `<run-dir>/nodes/<node-id>/attempts/<attempt-id>/` に分離し、その中に `prompt.md`、
-   `result.md` または `result.json`、`state.json`、`log.md` を残す。node 直下に成果物や
+   `result.md` または `result.json`、`state.json`、`handoff.json`、`log.md` を残す。`handoff.json`
+   には後段へ渡す `artifact_paths` を絶対パスだけで記録する。node 直下に成果物や
    `state.json` を置いてはならない。同じ node を再実行するときも新しい `<attempt-id>` を発行し、
    既存 attempt のファイルを上書きしてはならない。
 4. 親は子の完了後に `state.json` と成果物を確認する。親が確認して次の処理を許可するまで、
@@ -24,12 +26,16 @@ MAD は親エージェントが実行の進行を管理する。レシピを開�
 run の `state.json` と attempt の `state.json` は別の責務を持つ。双方とも JSON object とし、
 パスの名前だけに依存せず、識別子を state の第一級フィールドとして保存する。
 
-- run state: `run_id`、`recipe`、`state`、`current_round`、`started_at`、`finished_at`、`backend`、
-  `backend_reason`、`parent_decision`
-- attempt state: `run_id`、`node`、`attempt`、`round`、`state`、`started_at`、`finished_at`、
+- run state: `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、
+  `started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、
+  `completed_nodes`、`adopted_attempts`、`artifact_paths`。ユーザー判断が必要なときは
+  `decision_request` に request ファイルの絶対パスを記録する。
+- attempt state: `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、
+  `started_at`、`finished_at`、
   `backend`、`backend_reason`、`parent_decision`。`node`、`attempt`、`round` はディレクトリ名や
   ログの文言ではなく state の第一級フィールドである
-- `state`: `pending`、`running`、`ok`、`failed`、`stopped`、`unresolved` のいずれか
+- `state`: `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` の
+  いずれか。user gate では run の `state` と `phase_state` を `waiting_for_user` にする。
 - `started_at` と `finished_at`: 状態が変わった時刻。未開始・実行中なら未設定でもよい
 - `backend`: `paseo-mcp` または `subagent` と、選択理由
 - `error`: 失敗時のエラー概要。成功時は空でもよい
@@ -38,6 +44,10 @@ run の `state.json` と attempt の `state.json` は別の責務を持つ。双
 attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、attempt のディレクトリ名と
 一致させる。`round` は run state の `current_round` 以下の非負整数にする。この照合によって、並列子の
 書き込み先取り違えや再実行による成果物の上書きを検出する。
+
+`adopted_attempts` は node ID から親が採用した attempt ID への map である。run を `ok` にする前に、
+各完了 node の採用 attempt を明示する。採用 attempt が `ok` なら、履歴上の `failed` attempt は retry
+成功を妨げない。親は採用 attempt の `handoff.json` だけを後段へ渡し、本文を会話へ転記しない。
 
 ### 成果物契約の受け入れ検証
 

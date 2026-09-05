@@ -12,8 +12,63 @@ description: >-
 MAD は親エージェントが子エージェントを起動・監視し、フェーズごとに判断して進める。子同士の
 本文は会話へ集めず、共通契約で定めた run 成果物を介して後段へ渡す。
 
+親は backend 選択、状態遷移、子の制御、ユーザーとの質問・承認だけを担う。子は本文を親へ返さず、
+正規成果物への絶対パスを含む `handoff.json` を残す。親は `state.json`、`handoff.json`、ユーザーへ
+relay する decision / approval request だけを読む。
+
 **中核**: 作業が MAD のレシピの形にはまるなら、親が並列化・統合・介入を管理する。はまらない
 作業では従来どおり単独の subagent を使う。
+
+## 開発ライフサイクル recipe
+
+上位 recipe は下位 recipe を再利用して、本文作成をすべて子へ委譲する。各 phase の開始前後に親が
+state と handoff を確認し、必要なら `waiting_for_user` にして質問または approval request を relay する。
+backend は共通契約の selector で一度だけ選ぶ。開始済みの子が失敗した場合、親は同じ backend で再指示・
+再実行・停止を裁定し、別 backend へ自動 fallback してはならない。
+
+### `spec`
+
+- 入力: ユーザーの目的、既知の制約、既存成果物の絶対パス。
+- 子: 必要に応じて `researcher` を並列起動し、`spec-author` が設計案と spec を作成し、`spec-reviewer`
+  が self-review する。
+- gate: 子が判断を要するときは decision request を作成し、spec 完成後は親が spec approval request を
+  relay する。
+- 完了: 親が承認した正規 spec の絶対パスを run state の `artifact_paths` に記録する。spec 本文は親へ
+  転記しない。
+
+### `plan`
+
+- 入力: 承認済み spec の絶対パス。
+- 子: `planner` が実装 plan を作成し、`plan-reviewer` が実装可能性・検証計画・依存関係を review する。
+- gate: 親は plan review の採用 attempt を確認し、plan approval request を relay する。
+- 完了: 親が承認した正規 plan の絶対パスだけを handoff に記録する。承認前の run は
+  `waiting_for_user` とする。
+
+### `implement`
+
+- 入力: 承認済み plan、spec、既存の SDD ledger の絶対パス。
+- 子: `task-graph-analyzer` が wave を作り、`worktree` 隔離後に `implementer`、`task-reviewer`、
+  `re-reviewer`、`final-reviewer` が実装・review・fix loop を担う。独立 task は並列に起動する。
+- gate: 親は wave と retry 上限、失敗・競合・例外だけを裁定する。task の本文、実装、review は作らない。
+- 完了: 採用 attempt の実装成果物・検証記録・final review を handoff し、未解決で `max_rounds` に達した
+  run は `unresolved` として停止する。
+
+### `review`
+
+- 入力: requirements、review package、対象成果物の絶対パス。
+- 子: 観点別 `reviewer` を並列起動し、`review-synthesizer` または `final-reviewer` が採用可能な指摘を
+  統合する。
+- gate: 親は各 review attempt と統合前の handoff を確認し、要件変更または追加 review が必要なら
+  user gate を relay する。
+- 完了: 最終 review 成果物の絶対パスを handoff し、失敗 review を隠して完了にしてはならない。
+
+### `delivery`
+
+- 入力: ユーザーの目的と、存在するなら正規 spec / plan / ledger の絶対パス。
+- 子: `spec`、`plan`、`implement`、`review` を順に起動し、必要な下位 recipe の子が各成果物を作る。
+- gate: `spec → plan → implement ↔ review → final_review` の phase 境界で、親だけが user approval、継続、
+  retry、停止を状態遷移として記録する。
+- 完了: `final_review` の採用 handoff と正規成果物の絶対パスを確認したときだけ delivery run を `ok` にする。
 
 ## 9 レシピの親主導フロー
 

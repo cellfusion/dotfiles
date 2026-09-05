@@ -17,7 +17,7 @@ require_string() {
 
 require_state() {
   local file="$1"
-  jq -e '.state | IN("pending", "running", "ok", "failed", "stopped", "unresolved")' \
+  jq -e '.state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
     "$file" >/dev/null 2>&1 || fail "$file: state is invalid"
 }
 
@@ -33,21 +33,72 @@ require_json() {
   jq -e 'type == "object"' "$file" >/dev/null 2>&1 || fail "$file: valid JSON object is required"
 }
 
-node_is_ok() {
-  local node_dir="$1"
-  local attempt_state
-  local has_attempt_state=0
-
-  [ -d "$node_dir/attempts" ] || return 1
-  while IFS= read -r attempt_state; do
-    has_attempt_state=1
-    jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1 || return 1
-  done < <(find "$node_dir/attempts" -type f -name state.json -print)
-
-  [ "$has_attempt_state" -eq 1 ]
+require_string_array() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | type == \"array\" and all(.[]; type == \"string\" and length > 0) and length == (unique | length)" \
+    "$file" >/dev/null 2>&1 || fail "$file: $field must be an array of unique non-empty strings"
 }
 
-[ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR'
+require_absolute_paths() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | type == \"array\" and all(.[]; type == \"string\" and test(\"^/\"))" \
+    "$file" >/dev/null 2>&1 || fail "$file: $field must be an array of absolute paths"
+}
+
+require_phase() {
+  local file="$1"
+  require_string "$file" '.phase' 'phase'
+  jq -e '.phase_state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
+    "$file" >/dev/null 2>&1 || fail "$file: phase_state is invalid"
+  require_string "$file" '.next_action' 'next_action'
+}
+
+validate_handoff() {
+  local handoff="$1"
+  local run_id="$2"
+  local node_id="$3"
+  local attempt_id="$4"
+
+  [ -f "$handoff" ] || fail "$handoff: handoff.json is required"
+  require_json "$handoff"
+  require_string "$handoff" '.run_id' 'run_id'
+  require_string "$handoff" '.node' 'node'
+  require_string "$handoff" '.attempt' 'attempt'
+  require_absolute_paths "$handoff" '.artifact_paths' 'artifact_paths'
+  [ "$(jq -r '.run_id' "$handoff")" = "$run_id" ] ||
+    fail "$handoff: run_id does not match run state"
+  [ "$(jq -r '.node' "$handoff")" = "$node_id" ] ||
+    fail "$handoff: node does not match its directory"
+  [ "$(jq -r '.attempt' "$handoff")" = "$attempt_id" ] ||
+    fail "$handoff: attempt does not match its directory"
+}
+
+node_is_ok() {
+  local node_dir="$1"
+  local node_id="$2"
+  local adopted_attempt="$3"
+  local attempt_state="$node_dir/attempts/$adopted_attempt/state.json"
+
+  [ -n "$adopted_attempt" ] || return 1
+  [ -f "$attempt_state" ] || return 1
+  [ "$(jq -r '.node' "$attempt_state")" = "$node_id" ] || return 1
+  jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1
+}
+
+if [ "$#" -eq 1 ] && [ "$1" = "--select-backend" ]; then
+  if [ "${MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE:-0}" = "1" ]; then
+    printf '%s\n' '{"backend":"paseo-mcp","backend_reason":"Paseo MCP available"}'
+  else
+    printf '%s\n' '{"backend":"subagent","backend_reason":"Paseo MCP unavailable"}'
+  fi
+  exit 0
+fi
+
+[ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_state="$run_dir/state.json"
@@ -57,8 +108,24 @@ require_json "$run_state"
 require_string "$run_state" '.run_id' 'run_id'
 require_string "$run_state" '.recipe' 'recipe'
 require_state "$run_state"
+require_phase "$run_state"
 require_backend "$run_state"
 require_string "$run_state" '.parent_decision' 'parent_decision'
+require_string_array "$run_state" '.active_nodes' 'active_nodes'
+require_string_array "$run_state" '.completed_nodes' 'completed_nodes'
+require_absolute_paths "$run_state" '.artifact_paths' 'artifact_paths'
+jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and length > 0) and (.value | type == "string" and length > 0))' \
+  "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map node IDs to attempt IDs"
+if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
+  jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: decision_request must be an absolute path"
+fi
+jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
+  "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"
+if [ "$(jq -r '.state' "$run_state")" = "waiting_for_user" ]; then
+  jq -e '.phase_state == "waiting_for_user"' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: waiting_for_user requires phase_state waiting_for_user"
+fi
 jq -e '.current_round | type == "number" and . >= 0 and floor == .' "$run_state" >/dev/null 2>&1 ||
   fail "$run_state: current_round must be a non-negative integer"
 
@@ -66,7 +133,7 @@ run_id="$(jq -r '.run_id' "$run_state")"
 recipe="$(jq -r '.recipe' "$run_state")"
 run_status="$(jq -r '.state' "$run_state")"
 current_round="$(jq -r '.current_round' "$run_state")"
-has_non_ok_attempt=0
+has_non_ok_adopted_attempt=0
 has_research_downstream=0
 
 if [ -d "$run_dir/nodes" ]; then
@@ -95,6 +162,7 @@ if [ -d "$run_dir/nodes" ]; then
 
     require_json "$attempt_state"
     require_state "$attempt_state"
+    require_phase "$attempt_state"
     require_backend "$attempt_state"
     require_string "$attempt_state" '.run_id' 'run_id'
     require_string "$attempt_state" '.node' 'node'
@@ -113,21 +181,36 @@ if [ -d "$run_dir/nodes" ]; then
     [ "$attempt_round" -le "$current_round" ] ||
       fail "$attempt_state: round exceeds current_round"
 
-    if ! jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1; then
-      has_non_ok_attempt=1
-    fi
-
     [ -f "$attempt_dir/prompt.md" ] || fail "$attempt_dir: prompt.md is required"
     result_count=0
     [ -f "$attempt_dir/result.md" ] && result_count=$((result_count + 1))
     [ -f "$attempt_dir/result.json" ] && result_count=$((result_count + 1))
     [ "$result_count" -eq 1 ] || fail "$attempt_dir: exactly one result.md or result.json is required"
     [ -f "$attempt_dir/log.md" ] || fail "$attempt_dir: log.md is required"
+    validate_handoff "$attempt_dir/handoff.json" "$run_id" "$node_id" "$attempt_id"
   done < <(find "$run_dir/nodes" -type f -path '*/attempts/*/state.json' -print)
+
+  while IFS= read -r node_dir; do
+    node_id="$(basename "$node_dir")"
+    adopted_attempt="$(jq -r --arg node "$node_id" '.adopted_attempts[$node] // empty' "$run_state")"
+    if [ "$run_status" = "ok" ] && [ -z "$adopted_attempt" ]; then
+      fail "$run_state: $node_id requires an adopted attempt before run completion"
+    fi
+    if [ -n "$adopted_attempt" ] && ! node_is_ok "$node_dir" "$node_id" "$adopted_attempt"; then
+      has_non_ok_adopted_attempt=1
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
+
+  while IFS=$'\t' read -r adopted_node adopted_attempt; do
+    [ -d "$run_dir/nodes/$adopted_node" ] ||
+      fail "$run_state: adopted node does not exist: $adopted_node"
+    [ -f "$run_dir/nodes/$adopted_node/attempts/$adopted_attempt/state.json" ] ||
+      fail "$run_state: adopted attempt does not exist: $adopted_node/$adopted_attempt"
+  done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
 
-if [ "$run_status" = "ok" ] && [ "$has_non_ok_attempt" -eq 1 ]; then
-  fail "$run_state: root state ok conflicts with a non-ok child state"
+if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then
+  fail "$run_state: root state ok conflicts with a non-ok adopted child state"
 fi
 
 if [ "$recipe" = "research" ]; then
@@ -139,7 +222,8 @@ if [ "$recipe" = "research" ]; then
     for node_id in research-1 research-2 research-3; do
       node_dir="$run_dir/nodes/$node_id"
       [ -d "$node_dir" ] || fail "$run_state: $node_id is required for research"
-      node_is_ok "$node_dir" ||
+      adopted_attempt="$(jq -r --arg node "$node_id" '.adopted_attempts[$node] // empty' "$run_state")"
+      node_is_ok "$node_dir" "$node_id" "$adopted_attempt" ||
         fail "$run_state: research downstream cannot start before all research nodes are ok"
     done
   fi
