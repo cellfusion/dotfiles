@@ -1,92 +1,112 @@
 ---
 name: requesting-code-review
 description: >-
-  作業の区切り、実装後、merge 前のコードレビューを MAD の review recipe に委譲するときに使う。
+  作業の区切り、大きめの機能の実装後、merge 前にレビューを依頼するときに使う。
+  レビューする子には評価のために精密に組み立てた文脈だけを渡し、
+  自分の context を調整のために温存する。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# MAD review の入口
+# コードレビューを依頼する
 
-親は本文を作らない。requirements、review package、対象成果物の絶対パスを MAD の `review` recipe に渡す。
-子の観点別 `reviewer` が並列に評価し、`review-synthesizer` または `final-reviewer` が採用可能な指摘を
-統合する。親は backend 選択、状態遷移、子の制御、ユーザー gate だけを担う。
+レビュアー subagent を dispatch するか、SDD の外なら MAD の `review` recipe を使って、問題が
+波及する前に捕まえる。どちらの経路でも、レビュー側には**評価のために精密に組み立てた文脈**を
+渡す。あなたのセッション履歴は渡さない。
 
-`review` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
-backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
-MAD の `review` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+**中核**: 早く、こまめにレビューする。
 
-## 実行
+## いつ依頼するか
 
-1. `PLAN_FILE`、`REQUIREMENTS_FILE`、`BASE`、`HEAD` を親の制御情報から決める。`PLAN_FILE` は既存の
-   承認済み plan の絶対パス、`REQUIREMENTS_FILE` は plan が無い場合に使う既存 requirements の絶対パス、
-   `BASE` は今回の変更を始めたコミット、`HEAD` はレビュー対象の現在コミットとする。`BASE` と `HEAD` は
-   symbolic ref のまま渡さず、`git rev-parse --verify` で解決する。
-2. `review-package` の実体を解決する。通常は
-   `~/.agents/skills/subagent-driven-development/scripts/review-package` を使い、見つからない場合は
-   この dotfiles checkout の `private_dot_agents/skills/subagent-driven-development/scripts/executable_review-package`
-   を fallback にする。どちらも実行できない場合は package を作れないため MAD review を開始しない。
-3. `cellfusion-workdir` を一度実行して `_cellfusion/` を自己無視させ、`OUTFILE` を
-   `_cellfusion/reviews/review-<base7>..<head7>.diff` として親が作る。出力ディレクトリを先に作成し、
-   次の既存 script の入力契約（`PLAN_FILE BASE HEAD OUTFILE`）をそのまま使う。
+**必須**:
 
-   ```bash
-   set -eu
-   REPO_ROOT="$(git rev-parse --show-toplevel)"
-   PLAN_FILE="${PLAN_FILE:-}"
-   REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-}"
-   : "${BASE:?BASE を解決できないため MAD review を開始しない}"
-   : "${HEAD:?HEAD を解決できないため MAD review を開始しない}"
-   if [ ! -f "$PLAN_FILE" ]; then
-     PLAN_FILE="$REQUIREMENTS_FILE"
-   fi
-   case "$PLAN_FILE" in
-     /*) ;;
-     *)
-       echo "review package の入力 file を確認できないため MAD review を開始しない" >&2
-       exit 2
-       ;;
-   esac
-   if [ ! -f "$PLAN_FILE" ]; then
-     echo "review package の入力 file を確認できないため MAD review を開始しない" >&2
-     exit 2
-   fi
-   REVIEW_PACKAGE="$HOME/.agents/skills/subagent-driven-development/scripts/review-package"
-   if [ ! -f "$REVIEW_PACKAGE" ]; then
-     REVIEW_PACKAGE="$REPO_ROOT/private_dot_agents/skills/subagent-driven-development/scripts/executable_review-package"
-   fi
-   CELLFUSION_WORKDIR="$HOME/.agents/skills/_shared/scripts/cellfusion-workdir"
-   if [ ! -f "$CELLFUSION_WORKDIR" ]; then
-     CELLFUSION_WORKDIR="$REPO_ROOT/private_dot_agents/skills/_shared/scripts/executable_cellfusion-workdir"
-   fi
-   if [ ! -f "$REVIEW_PACKAGE" ] || [ ! -f "$CELLFUSION_WORKDIR" ]; then
-     echo "review package の script を解決できないため MAD review を開始しない" >&2
-     exit 2
-   fi
-   bash "$CELLFUSION_WORKDIR" >/dev/null
-   BASE="$(git rev-parse --verify "$BASE")"
-   HEAD="$(git rev-parse --verify "$HEAD")"
-   OUTFILE="$REPO_ROOT/_cellfusion/reviews/review-${BASE:0:7}..${HEAD:0:7}.diff"
-   mkdir -p "$(dirname "$OUTFILE")"
-   bash "$REVIEW_PACKAGE" "$PLAN_FILE" "$BASE" "$HEAD" "$OUTFILE"
-   if ! test -s "$OUTFILE" || ! grep -Fq "# Review package: ${BASE}..${HEAD}" "$OUTFILE"; then
-     echo "review package の生成結果を確認できないため MAD review を開始しない" >&2
-     exit 2
-   fi
-   ```
+- subagent-driven-development の各タスクの後（そちらのスキルが自動で行う）
+- 大きめの機能を完了した後
+- main へ merge する前
 
-   `PLAN_FILE` が無い場合は inline text を渡さず、`requirements` の絶対パスである
-   `REQUIREMENTS_FILE` を `PLAN_FILE` へ代入して同じ `review-package` 呼び出しに使う。どちらも
-   存在しない、絶対パスでない、`BASE` / `HEAD` を解決できない、または script が失敗した場合は
-   [ask-user] で必要なファイルまたは ref を求め、package を作れない場合は MAD review を開始しない。
-4. review package を正規 `_cellfusion/reviews/` または SDD ledger に作り、その絶対パスを入力にする。
-   親は diff や要件を会話へ転記してレビュー本文を作らない。
-5. MAD の `review` を開始する。各子は findings と統合 review の絶対パスを `handoff.json` に残す。
-6. 親は各 attempt の state と統合前 handoff を確認する。失敗 review、成果物欠落、重要な要件変更が
-   あれば統合を完了にせず、再指示・再実行・停止を裁定する。
-7. 要件変更または remediation の優先順位にユーザー判断が必要な場合だけ [ask-user] で relay し、
-   `waiting_for_user` に記録する。
-8. 採用 attempt の最終 review 成果物だけを後段の MAD `implement` または `delivery` phase へ絶対パスで
-   handoff する。
+**任意だが有用**:
 
-Critical または Important を自分で直さない。修正が必要なら該当成果物を MAD の `implement` recipe へ
-渡し、子の TDD と再 review を通す。
+- 詰まったとき（視点を変える）
+- リファクタリングの前（現状の基準を取る）
+- 込み入ったバグを直した後
+
+## 依頼のしかた
+
+**1. diff をファイルにまとめる**
+
+レビュアーの context に diff を 1 回の Read で載せる。SDD の中では従来経路を維持し、SDD の
+workspace のスクリプトを使う。
+
+`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE BASE HEAD OUTFILE`
+が使えるならそれを使う。使えない環境では下の手順で同じ形の package を作る。
+
+```bash
+BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
+HEAD_SHA=$(git rev-parse HEAD)
+```
+
+SDD の外で単発に依頼する場合は、リポジトリ内の `_cellfusion/reviews/` に作る。`/tmp` を使わない
+のは、read 役が現在の作業ディレクトリの外を読めない engine 設定でも同じ入力を読めるようにする
+ためである。`_cellfusion/` が無ければ
+`~/.agents/skills/_shared/scripts/cellfusion-workdir` が作る。
+
+```bash
+REVIEWS="$(~/.agents/skills/_shared/scripts/cellfusion-workdir)/reviews"
+mkdir -p "$REVIEWS"
+OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
+{
+  echo "# Review package: ${BASE_SHA}..${HEAD_SHA}"
+  echo; echo "## Commits"; git log --oneline "${BASE_SHA}..${HEAD_SHA}"
+  echo; echo "## Files changed"; git diff --stat "${BASE_SHA}..${HEAD_SHA}"
+  echo; echo "## Diff"; git diff -U10 "${BASE_SHA}..${HEAD_SHA}"
+} > "$OUT"
+echo "$OUT"
+```
+
+**2. レビューを依頼する**
+
+SDD の中では `sdd-final-reviewer` を [dispatch-subagent] する。SDD の外で単発に依頼する場合は
+MAD の `review` recipe を使う。呼び方は `multi-agent-development` スキルが持つ。
+
+どちらの経路でも、渡すのは次の 4 つだけである。セッション履歴を渡さない。
+
+- 何を実装したかの概要
+- プランまたは要件の絶対パス（無ければ要件を数行で）
+- review package の絶対パス
+- 先送りされた指摘や park された指摘のリスト（あれば）
+
+MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` が採用可能な指摘へ
+統合する。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
+
+要件ファイルがリポジトリの外にある場合は、review package と同じ `_cellfusion/reviews/` へ複製
+してからその絶対パスを渡す。子は呼び出し元の作業ディレクトリの外を読めない engine 設定でも動く
+必要がある。
+
+**3. フィードバックに対応する**
+
+- Critical は直ちに直す
+- Important は次へ進む前に直す
+- Minor は記録して後で扱う
+- レビュアーが誤っていれば技術的な根拠を添えて押し返す
+
+受け取り方の作法は receiving-code-review を使う。
+
+## よくある言い訳
+
+| 言い訳 | 実際 |
+|---|---|
+| 「レビュアーを立てず自分で diff を見る」 | あなたは調整役である。diff をインラインで読むと、作業を進めるための context を焼く。レビュアー subagent を立てれば、diff と評価はそちらの context に載り、返ってくるのは指摘だけになる |
+| 「レビュアーには自分のセッション履歴が要る」 | 精密に組み立てた文脈を渡す。履歴は渡さない。そうすればレビュアーは思考過程ではなく成果物を見る |
+| 「単純だからレビューは省く」 | 単純な変更が壊すものは単純ではない |
+
+## してはならないこと
+
+- Critical を無視する
+- Important を直さずに進む
+- 妥当な技術的指摘と言い争う
+- 特定の問題を指摘するなとレビュアーに指示する
+
+**レビュアーが誤っている場合**:
+
+- 技術的な根拠を添えて押し返す
+- 動作を証明するコードやテストを示す
+- 説明を求める
