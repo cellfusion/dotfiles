@@ -71,6 +71,19 @@ for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) 
   assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
 done
 
+# refine の改稿役は master から取り込んだ writer である。契約・3 runtime 定義・routing は
+# 上の汎用ループが `delivery_duties` を経由してすでに検査している。ここで名指しするのは、
+# その `delivery_duties` 自体が壊れるケースだけである。`writer` が配列から抜け落ちると
+# writer は汎用ループの対象から静かに外れ、ループは何も言わずに writer を見なくなる。
+# `refine` は改稿役を起動できなくなるのに、テストは緑のままになる。
+writer_duties="$(jq -r '.writer.delivery_duties | join(",")' "$FIXTURE/manifests.json")"
+assert_eq "$writer_duties" "writer" "delivery: writer の論理責務は writer だけ"
+
+# 同じ理由で access が read に変わっても汎用ループは検査しない。writer は書き込み役でなければ
+# 対象ファイルを書き換えられず、改稿という職務そのものが果たせなくなる。
+writer_access="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
+assert_eq "$writer_access" "write" "delivery: writer は書き込み役"
+
 # 正規成果物を作る役は、status ごとに成功成果物か parent relay 用 decision request のどちらを
 # handoff するかを schema で排他的に定める。テンプレートの文字列を探すだけでなく、共有 validator
 # に実例を渡して成功と不正な混在の拒否を確認する。
