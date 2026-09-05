@@ -418,6 +418,18 @@ for tool in claude codex opencode; do
   assert_contains "$out" "state.json" "mad/$tool: 状態契約を定義する"
 done
 
+# MAD の全レシピは、親が介入する手順として展開される。旧 mad-run の recipe は
+# この表の既定実行経路ではない。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review triage implement spike refine; do
+    assert_contains "$out" "\`$recipe\`" "mad/$tool: レシピ $recipe が表にある"
+  done
+  assert_contains "$out" "親が確認" "mad/$tool: 親の介入点を定義する"
+  assert_contains "$out" "max_rounds" "mad/$tool: loop 上限を定義する"
+  assert_not_contains "$out" "## mad-run の呼び方" "mad/$tool: 旧方式を既定にしない"
+done
+
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
 assert_contains "$mad_src" 'includeTemplate "agent-skills/_manual-orchestration.md"' \
   "mad: 手動方式を共有パーシャルから取り込む"
@@ -457,8 +469,6 @@ assert_contains "$manual_mad" "max_rounds" \
   "_manual-orchestration: loop 上限を定義する"
 assert_contains "$manual_mad" "親が確認" \
   "_manual-orchestration: 親の介入境界を定義する"
-assert_not_contains "$out" "## mad-run の呼び方" \
-  "mad/$tool: 旧方式を既定にしない"
 
 for d in private_dot_agents/skills \
          private_dot_config/claude/skills \
