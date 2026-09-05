@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["status", "artifactPath", "decisionRequestPath", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "status": { "type": "string", "enum": ["ok", "needs_decision", "failed"] },
+    "artifactPath": { "type": ["string", "null"] },
+    "decisionRequestPath": { "type": ["string", "null"] },
+    "summary": { "type": "string" }
+  }
+}

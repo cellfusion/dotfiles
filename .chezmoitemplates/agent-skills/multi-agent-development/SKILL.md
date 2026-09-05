@@ -26,6 +26,22 @@ state と handoff を確認し、必要なら `waiting_for_user` にして質問
 backend は共通契約の selector で一度だけ選ぶ。開始済みの子が失敗した場合、親は同じ backend で再指示・
 再実行・停止を裁定し、別 backend へ自動 fallback してはならない。
 
+### delivery role map
+
+論理上の責務名と実際に起動する role は以下のとおりである。manifest の `delivery_duties` が正本であり、
+Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を使う。`spec-author` と `planner` だけが
+正規 spec / plan を書く。review 系は既存の読み取り role を再利用し、backend が構造化出力を attempt の
+`result.json` と `handoff.json` へ保存する。
+
+| 論理責務 | 起動する role |
+|---|---|
+| `spec-author` | `spec-author` |
+| `spec-reviewer` / `plan-reviewer` | `reviewer` |
+| `planner` / `task-graph-analyzer` | `planner` |
+| `implementer` | `sdd-implementer` |
+| `task-reviewer` / `re-reviewer` / `final-reviewer` | `sdd-task-reviewer` / `sdd-re-reviewer` / `sdd-final-reviewer` |
+| `review-synthesizer` | `synthesizer` |
+
 ### `spec`
 
 - 入力: ユーザーの目的、既知の制約、既存成果物の絶対パス。

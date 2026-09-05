@@ -340,6 +340,20 @@ assert_contains "$manual_mad" "親が確認" \
   "_manual-orchestration: 親の介入境界を定義する"
 
 mad_skill="$(render_template "agent-skills/multi-agent-development/SKILL.md" "claude")"
+assert_contains "$mad_skill" "### delivery role map" \
+  "mad/delivery: logical duty と実 role の map を示す"
+assert_contains "$mad_skill" "manifest の \`delivery_duties\` が正本" \
+  "mad/delivery: role map の正本を manifest に固定する"
+assert_contains "$mad_skill" "Paseo MCP と native subagent はともに同じ role と \`mad-attempt-v1\` を使う" \
+  "mad/delivery: backend 間で成果物契約を変えない"
+assert_contains "$mad_skill" "\`spec-reviewer\` / \`plan-reviewer\` | \`reviewer\`" \
+  "mad/delivery: reviewer を spec/plan review に再利用する"
+assert_contains "$mad_skill" "\`planner\` / \`task-graph-analyzer\` | \`planner\`" \
+  "mad/delivery: planner を task graph に再利用する"
+assert_contains "$mad_skill" "\`implementer\` | \`sdd-implementer\`" \
+  "mad/delivery: task 実装は SDD implementer を使う"
+assert_contains "$mad_skill" "\`review-synthesizer\` | \`synthesizer\`" \
+  "mad/delivery: synthesizer を review 統合に再利用する"
 assert_contains "$mad_skill" "既定観点: 現状と確認済みの事実、制約とリスク、代替案" \
   "mad/research: 既定の 3 観点を定義する"
 assert_contains "$mad_skill" "\`perspectives\` で全 3 観点を差し替えられる" \

@@ -104,9 +104,16 @@ for f in routing.json tiers.json manifests.json; do
     "agent-defs: $f を ~/.agents へ配る"
 done
 
-for a in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP と
+# native subagent がどちらも同じ prompt/schema を参照できることを保証する。
+delivery_manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/manifests.json" . }}')"
+for a in $(printf '%s' "$delivery_manifest" | jq -r \
+  'to_entries[] | select(.value.delivery_duties | length > 0) | .key'); do
   assert_contains "$managed" ".agents/agent-defs/prompts/$a.md" \
-    "agent-defs: prompts/$a.md を ~/.agents へ配る"
+    "MAD delivery: prompts/$a.md を ~/.agents へ配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
+    "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
 
 # 配る routing.json はテンプレートと同じ内容になる。
@@ -127,11 +134,6 @@ assert_eq "$roles_r" "$roles_m" "routing: 役割の集合が manifests と一致
 
 assert_contains "$managed" ".agents/skills/_shared/scripts/agent-route" \
   "agent-route を共有パスへ配る"
-
-for a in sdd-implementer sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
-  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
-    "agent-defs: schemas/$a.json を ~/.agents へ配る"
-done
 
 assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/sdd-task" \
   "sdd-task を共有パスへ配る"

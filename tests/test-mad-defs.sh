@@ -44,10 +44,38 @@ for role in $(jq -r 'keys[]' "$FIXTURE/paseo-routing.json"); do
   done
 done
 
-# 5 つの汎用の役割がすべて routing にある。
-for role in researcher synthesizer judge reviewer implementer; do
+# MAD の汎用役と delivery が直接起動する author / planner は、Paseo routing にある。
+for role in researcher synthesizer judge reviewer implementer spec-author planner; do
   known="$(jq -r --arg r "$role" 'has($r)' "$FIXTURE/paseo-routing.json")"
   assert_eq "$known" "true" "routing: $role がある"
+done
+
+# delivery の論理責務は manifest で 1 つの実 role に割り当てる。parent はこの map を
+# 読んで、Paseo MCP と native subagent のどちらでも同じ role を起動する。
+for duty in spec-author spec-reviewer planner plan-reviewer task-graph-analyzer \
+            implementer task-reviewer re-reviewer final-reviewer review-synthesizer; do
+  owners="$(jq -r --arg duty "$duty" '[to_entries[] | select(.value.delivery_duties | index($duty)) | .key] | length' "$FIXTURE/manifests.json")"
+  assert_eq "$owners" "1" "delivery: $duty の実 role が 1 つだけある"
+done
+
+# delivery role は backend 非依存の attempt handoff 契約を持ち、prompt / schema / 両 routing
+# に実体がある。これにより role 名だけが存在して backend ごとに成果物形式が分かれる事故を防ぐ。
+for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
+  contract="$(jq -r --arg role "$role" '.[$role].artifact_contract // ""' "$FIXTURE/manifests.json")"
+  assert_eq "$contract" "mad-attempt-v1" "delivery: $role は mad-attempt-v1 を使う"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/$role.md" ] && echo yes || echo no)" \
+            "yes" "delivery: $role の prompt がある"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/$role.json" ] && echo yes || echo no)" \
+            "yes" "delivery: $role の schema がある"
+  native="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/paseo-routing.json")"
+  assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
+done
+
+# 正規成果物を作る役は、成功時の成果物と parent relay 用 decision request を schema に持つ。
+for role in spec-author planner; do
+  schema="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/$role.json")"
+  assert_contains "$schema" '"artifactPath"' "delivery: $role は正規成果物の絶対パスを返す"
+  assert_contains "$schema" '"decisionRequestPath"' "delivery: $role は decision request のパスを返す"
 done
 
 # 既定の provider は claude と codex の 2 つである。
@@ -91,6 +119,14 @@ done
 for f in paseo-providers paseo-routing paseo-project-routing; do
   assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/$f.json.tmpl" ] && echo yes || echo no)" \
             "yes" "$f: 配布用の .tmpl がある"
+done
+
+# native subagent 用 routing も Paseo MCP と同じ delivery role 集合を解決できる。
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/routing.json" . }}' > "$FIXTURE/routing.json"
+for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
+  known="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/routing.json")"
+  assert_eq "$known" "true" "delivery: $role は native subagent で route できる"
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
