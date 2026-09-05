@@ -361,6 +361,25 @@ assert_contains "$manual_mad" "manual-orchestration-validate" \
 assert_contains "$manual_mad" "executable_manual-orchestration-validate" \
   "_manual-orchestration: checkout の validator fallback を示す"
 
+# 旧 mad-route は provider と model を親の代わりに 1 行で解決していた。契約が可用性の
+# 確認先と優先順位・上書き・対応表の在り処を書かないと、親は推測で provider を選ぶ。
+assert_contains "$manual_mad" "list_providers" \
+  "mad/contract: provider の可用性を list_providers で確かめる"
+assert_contains "$manual_mad" "list_models" \
+  "mad/contract: model の存在を list_models で確かめる"
+assert_contains "$manual_mad" "paseo-routing.json" \
+  "mad/contract: 候補の優先順位は paseo-routing.json が持つ"
+assert_contains "$manual_mad" "paseo-project-routing.json" \
+  "mad/contract: リポジトリごとの上書きは paseo-project-routing.json が持つ"
+assert_contains "$manual_mad" "paseo-providers.json" \
+  "mad/contract: tier と access の対応は paseo-providers.json が持つ"
+assert_contains "$manual_mad" "thinkingOptionId" \
+  "mad/contract: thinking option を settings で渡す"
+assert_contains "$manual_mad" "modeId" \
+  "mad/contract: mode を settings で渡す"
+assert_contains "$manual_mad" "routing.json\` の engine" \
+  "mad/contract: native subagent は routing.json の engine 解決に従う"
+
 # 子をどう起動するかを 1 箇所に書く。ここが無いと prompt と schema は配布されるだけで
 # 実行時に誰も参照せず、result.json が schema 検査を受けない。
 assert_contains "$manual_mad" "### 子の起動" \

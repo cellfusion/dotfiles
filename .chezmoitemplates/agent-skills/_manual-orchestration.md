@@ -50,6 +50,26 @@ attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、
 各完了 node の採用 attempt を明示する。採用 attempt が `ok` なら、履歴上の `failed` attempt は retry
 成功を妨げない。親は採用 attempt の `handoff.json` だけを後段へ渡し、本文を会話へ転記しない。
 
+### provider と model の解決
+
+親は子を起動する前に `mcp__paseo__list_providers` と `mcp__paseo__list_models` で可用性を
+確かめる。そのうえで `mcp__paseo__create_agent` の `provider`、`settings.thinkingOptionId`、
+`settings.modeId` を決める。
+
+候補の優先順位は `~/.agents/agent-defs/paseo-routing.json` が role ごとに持つ。リポジトリごとの
+上書きは `~/.agents/agent-defs/paseo-project-routing.json` が持つ。rule は git remote かリポジトリの
+パスで照合する。ssh 形式 (`git@host:path`) と https 形式の remote は、どちらも `host/path` に
+正規化してから比べる。
+
+tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
+持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
+優先順位どおりに調べ、provider が利用可能で、かつその provider に対応する model が存在する最初の
+候補を採用する。
+
+どの候補も使えない場合は推測で代替せず止める。
+
+native subagent 側は `~/.agents/agent-defs/routing.json` の engine 解決に従う。
+
 ### 子の起動
 
 `mad-attempt-v1` は attempt の成果物契約の名前である。`~/.agents/agent-defs/manifests.json` の
@@ -63,9 +83,10 @@ role の指示は `~/.agents/agent-defs/prompts/<role>.md` の内容とし、入
 という指示とする。どちらのファイルも `chezmoi apply` 前は存在しないので、その場合はこの
 checkout の `.chezmoitemplates/agent-defs/` 側を読む。
 
-- Paseo MCP: `create_agent` の `provider` を `~/.agents/agent-defs/paseo-routing.json` の第 1 候補から
-  決め、`initialPrompt` に `prompt.md` の内容をそのまま渡す。`create_agent` は system prompt も
-  出力 schema も別の引数に取らないため、両方を `initialPrompt` に含める。
+- Paseo MCP: `create_agent` の `provider`、`settings.thinkingOptionId`、`settings.modeId` は
+  「provider と model の解決」の手順で決め、`initialPrompt` に `prompt.md` の内容をそのまま渡す。
+  `create_agent` は system prompt も出力 schema も別の引数に取らないため、両方を `initialPrompt`
+  に含める。
 - native subagent: `[dispatch-subagent: <role>]` で起動する。role の定義は
   `~/.agents/agent-defs/prompts/<role>.md` から生成済みなので、渡すのは入力と出力形式だけでよい。
 
