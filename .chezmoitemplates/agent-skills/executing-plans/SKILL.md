@@ -1,27 +1,84 @@
 ---
 name: executing-plans
 description: >-
-  承認済み実装 plan を実行するとき、MAD の implement recipe に委譲する入口。親が直列実装する代替経路は持たない。
+  実装が小さく、MAD を使わなくてよい実装プランを、このセッションで直列に実行するときに使う。
+  並列にできるタスクを持つプランや worktree の隔離が要るプランは
+  subagent-driven-development のほうが適する。
+  タスクの区切りでレビューを挟みながらタスクを順に消化する。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# MAD implement の入口
+# プランを直列に実行する
 
-親は本文を作らない。`executing-plans` は親が plan を直列に実装する経路ではなく、MAD の `implement`
-recipe を使う互換入口である。承認済み plan、spec、既存 ledger の絶対パスだけを子へ渡す。
+## 概要
 
-`implement` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
-backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
-MAD の `implement` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+プランを読み、批判的にレビューし、全タスクを実行し、完了を報告する。
 
-1. MAD の `implement` を開始する。Paseo MCP が利用できなければ native subagent を選ぶが、開始後に
-   backend を自動変更しない。
-2. worktree を作るのは親である。子は親が渡した worktree の中で task graph、実装、TDD、review、
-   fix loop を行い、成果物の絶対パスを `handoff.json` に残す。親は task 本文、実装、review 本文を
-   作らない。
-3. 親は state、採用 attempt、retry 上限、失敗・競合・例外だけを制御する。ユーザー判断が必要な場合だけ
-   [ask-user] で relay し、`waiting_for_user` にする。
-4. final review と検証記録が揃った採用 attempt だけを後段へ handoff する。未解決なら `unresolved` として
-   停止する。
+**開始時に宣言する**: 「executing-plans を使ってこのプランを実装する」
 
-backend がどちらも使えない場合は、親が実装を代行せず blocked として必要な環境を報告する。
+**先に確認する**: このプランは実装が小さく、MAD を使わなくてよいか。次のどれかに当たるなら
+subagent-driven-development のほうが適する。
+
+- 依存が無く並列にできるタスクが 2 つ以上ある
+- 同時に書くタスクがあり、worktree の隔離が要る
+- タスクごとに独立したレビュアーの gate を掛けたい
+
+どれにも当たらないなら、このスキルで直列に実行する。子は立てない。親が実装し、タスクの区切りで
+自分で diff を見返す。
+
+## 手順
+
+### Step 1: プランを読んでレビューする
+
+1. 隔離ワークスペースを用意する（using-git-worktrees）
+2. プランファイルを読む
+3. 批判的にレビューする。プランへの疑問や懸念を洗い出す
+4. 懸念があれば、着手前にユーザーへ提起する
+5. 無ければタスクごとに todo を作って進む
+
+### Step 2: タスクを実行する
+
+各タスクについて:
+
+1. todo を in_progress にする
+2. 各ステップをその通りに実行する（プランは一口大のステップに割られている）
+3. 指定された検証を実行する
+4. todo を完了にする
+
+タスクの区切りごとに、そのタスクの diff を自分で見返す。spec 準拠（欠落・余分・誤解）とテストの実効性を確認する。ここが subagent-driven-development のタスクレビューの代わりになる。
+
+### Step 3: 開発を完了する
+
+全タスクの完了と検証が済んだら:
+
+- 宣言する:「finishing-a-development-branch を使ってこの作業を完了する」
+- finishing-a-development-branch を起動し、テスト確認・選択肢の提示・選択の実行まで通す
+
+## 止まって聞くべきとき
+
+**次のときは直ちに実行を止める**:
+
+- ブロッカーに当たった（依存が無い、テストが落ちる、指示が不明瞭）
+- プランに着手を妨げる致命的な欠落がある
+- 指示の意味が分からない
+- 検証が繰り返し失敗する
+
+**推測せずに確認する。**
+
+## 前の段階に戻るとき
+
+**Step 1 のレビューに戻る条件**:
+
+- ユーザーのフィードバックを受けてプランが更新された
+- 根本的なアプローチを考え直す必要がある
+
+**ブロッカーを力任せに突破しない。** 止まって聞く。
+
+## 要点
+
+- プランをまず批判的にレビューする
+- プランのステップをその通りに実行する
+- 検証を飛ばさない
+- 詰まったら止まる。推測しない
+- ユーザーの明示的な同意なしに main / master で実装を始めない
+- 実装が想定より大きいと分かったら止まる。subagent-driven-development へ切り替えるかをユーザーに聞く
