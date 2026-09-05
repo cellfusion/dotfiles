@@ -54,7 +54,52 @@ require_phase() {
   require_string "$file" '.phase' 'phase'
   jq -e '.phase_state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
     "$file" >/dev/null 2>&1 || fail "$file: phase_state is invalid"
+  jq -e '.state == .phase_state' "$file" >/dev/null 2>&1 ||
+    fail "$file: phase_state must match state"
   require_string "$file" '.next_action' 'next_action'
+}
+
+require_basename_safe_id() {
+  local value="$1"
+  local label="$2"
+
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+    fail "$label must be basename-safe"
+}
+
+require_regular_file() {
+  local path="$1"
+  local label="$2"
+
+  [ -f "$path" ] && [ ! -L "$path" ] ||
+    fail "$label must be an existing regular file: $path"
+}
+
+validate_adopted_handoff_artifacts() {
+  local handoff="$1"
+
+  jq -e '.artifact_paths | length > 0' "$handoff" >/dev/null 2>&1 ||
+    fail "$handoff: adopted handoff must contain at least one artifact path"
+  while IFS= read -r artifact_path; do
+    require_regular_file "$artifact_path" "$handoff: adopted handoff artifact"
+  done < <(jq -r '.artifact_paths[]' "$handoff")
+}
+
+require_recipe_output() {
+  local recipe="$1"
+  local run_state="$2"
+  local required_node=""
+
+  case "$recipe" in
+    research|fanout) required_node="synthesis" ;;
+    decide|debate) required_node="verdict" ;;
+  esac
+
+  [ -z "$required_node" ] && return
+  jq -e --arg node "$required_node" '.completed_nodes | index($node) != null' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: $required_node is a required $recipe output in completed_nodes"
+  jq -e --arg node "$required_node" '.adopted_attempts | has($node)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: $required_node is a required $recipe output"
 }
 
 validate_handoff() {
@@ -101,6 +146,7 @@ fi
 [ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
+run_dir="$(cd "$run_dir" && pwd -P)"
 run_state="$run_dir/state.json"
 [ -f "$run_state" ] || fail "$run_state: missing run state"
 
@@ -114,8 +160,8 @@ require_string "$run_state" '.parent_decision' 'parent_decision'
 require_string_array "$run_state" '.active_nodes' 'active_nodes'
 require_string_array "$run_state" '.completed_nodes' 'completed_nodes'
 require_absolute_paths "$run_state" '.artifact_paths' 'artifact_paths'
-jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and length > 0) and (.value | type == "string" and length > 0))' \
-  "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map node IDs to attempt IDs"
+jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.value | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))' \
+  "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map basename-safe node IDs to attempt IDs"
 if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
   jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: decision_request must be an absolute path"
@@ -136,9 +182,21 @@ current_round="$(jq -r '.current_round' "$run_state")"
 has_non_ok_adopted_attempt=0
 has_research_downstream=0
 
+if [ "$run_status" = "ok" ]; then
+  jq -e '(.completed_nodes | sort) == (.adopted_attempts | keys | sort)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: completed_nodes and adopted_attempts must name the same nodes before run completion"
+  jq -e '.artifact_paths | length > 0' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: completed run must contain at least one artifact path"
+  while IFS= read -r artifact_path; do
+    require_regular_file "$artifact_path" "$run_state: completed run artifact"
+  done < <(jq -r '.artifact_paths[]' "$run_state")
+  require_recipe_output "$recipe" "$run_state"
+fi
+
 if [ -d "$run_dir/nodes" ]; then
   while IFS= read -r node_dir; do
     node_id="$(basename "$node_dir")"
+    require_basename_safe_id "$node_id" "$node_dir: node ID"
     [ -d "$node_dir/attempts" ] || fail "$node_dir: node artifacts must be under attempts/"
     direct_file="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
     [ -z "$direct_file" ] || fail "$direct_file: node artifacts must be under attempts/"
@@ -159,6 +217,8 @@ if [ -d "$run_dir/nodes" ]; then
     attempt_id="$(basename "$attempt_dir")"
     node_dir="$(dirname "$(dirname "$attempt_dir")")"
     node_id="$(basename "$node_dir")"
+    require_basename_safe_id "$node_id" "$attempt_state: node ID"
+    require_basename_safe_id "$attempt_id" "$attempt_state: attempt ID"
 
     require_json "$attempt_state"
     require_state "$attempt_state"
@@ -202,10 +262,23 @@ if [ -d "$run_dir/nodes" ]; then
   done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
 
   while IFS=$'\t' read -r adopted_node adopted_attempt; do
-    [ -d "$run_dir/nodes/$adopted_node" ] ||
+    require_basename_safe_id "$adopted_node" "$run_state: adopted node ID"
+    require_basename_safe_id "$adopted_attempt" "$run_state: adopted attempt ID"
+    adopted_node_dir="$run_dir/nodes/$adopted_node"
+    adopted_attempt_dir="$adopted_node_dir/attempts/$adopted_attempt"
+    [ -d "$adopted_node_dir" ] && [ ! -L "$adopted_node_dir" ] ||
       fail "$run_state: adopted node does not exist: $adopted_node"
-    [ -f "$run_dir/nodes/$adopted_node/attempts/$adopted_attempt/state.json" ] ||
+    [ -d "$adopted_attempt_dir" ] && [ ! -L "$adopted_attempt_dir" ] ||
       fail "$run_state: adopted attempt does not exist: $adopted_node/$adopted_attempt"
+    case "$(cd "$adopted_attempt_dir" && pwd -P)" in
+      "$run_dir"/nodes/*) ;;
+      *) fail "$run_state: adopted attempt must remain within the run directory" ;;
+    esac
+    [ -f "$adopted_attempt_dir/state.json" ] ||
+      fail "$run_state: adopted attempt does not exist: $adopted_node/$adopted_attempt"
+    if [ "$run_status" = "ok" ]; then
+      validate_adopted_handoff_artifacts "$adopted_attempt_dir/handoff.json"
+    fi
   done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
 
@@ -236,6 +309,9 @@ case "$recipe" in
     max_rounds="$(jq -r '.max_rounds' "$run_state")"
     [ "$current_round" -le "$max_rounds" ] ||
       fail "$run_state: current_round exceeds max_rounds"
+    if [ "$current_round" -eq "$max_rounds" ] && [ "$run_status" != "ok" ] && [ "$run_status" != "unresolved" ]; then
+      fail "$run_state: max_rounds reached without completion requires state unresolved"
+    fi
     ;;
 esac
 
