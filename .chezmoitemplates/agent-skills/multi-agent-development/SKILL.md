@@ -66,12 +66,31 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 ### `implement`
 
 - 入力: 承認済み plan、spec、既存の SDD ledger の絶対パス。
-- 子: `task-graph-analyzer` が wave を作り、`worktree` 隔離後に `implementer`、`task-reviewer`、
-  `re-reviewer`、`final-reviewer` が実装・review・fix loop を担う。独立 task は並列に起動する。
-  base の確定と worktree 隔離の手順は、共通契約の「base の確定」と「worktree 隔離」に従う。
+- 子: `task-graph-analyzer` が wave を作る。親が node ごとに worktree を作った後、`implementer`、
+  `task-reviewer`、`re-reviewer`、`final-reviewer` が実装・review・fix loop を担う。独立 task は
+  並列に起動する。base の確定、worktree 隔離、取り込みの手順は、共通契約の「base の確定」
+  「worktree 隔離」「取り込み」に従う。
 - gate: 親は wave と retry 上限、失敗・競合・例外だけを裁定する。task の本文、実装、review は作らない。
 - 完了: 採用 attempt の実装成果物・検証記録・final review を handoff し、未解決で `max_rounds` に達した
   run は `unresolved` として停止する。
+
+### implement の実行基盤
+
+`~/.agents/skills/subagent-driven-development/scripts/` は `implement` の子が使う。どのスクリプトが
+誰の工程のものかを次に示す。親はこれらを直接呼ばない。
+
+| スクリプト | 使う役 | 用途 |
+|---|---|---|
+| `sdd-workspace` | `task-graph-analyzer` | プランごとの作業ディレクトリ `_cellfusion/sdd/<plan-basename>/` を解決して絶対パスを出す。brief、report、review package、ledger の置き場になる |
+| `task-waves` | `task-graph-analyzer` | プランの `Depends on:` と `Files:` を読み、同時に走らせてよい task の波を出す。同じ波の task が同じファイルに触れていないかも検証する |
+| `task-brief` | `task-graph-analyzer` | プランから 1 task 分の本文を切り出して brief ファイルに書く。実装役は brief だけを読む |
+| `review-package` | `implementer` | 記録した base と head から、コミット一覧、変更ファイルの stat、文脈付き diff を 1 ファイルにまとめる。`task-reviewer` はこれを 1 回の Read で読む |
+| `run-registry` | `implementer` | 実行中プロセスの素性をファイルに残し、二重 dispatch を防ぐ |
+| `agent-backend` | `implementer` | 役割エージェントを headless CLI の子プロセスとして走らせ、engine 固有の出力を 1 つの契約に正規化する |
+
+`task-worktree` と `sdd-run` は MAD の `implement` では使わない。worktree を作るのは親であり、波の
+進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を
+headless で回すときの入口であり、`implement` の子は使わない。
 
 ### `review`
 
@@ -96,16 +115,19 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 後に親が確認する。`failed` または `stopped` の子があれば親が判断するまで統合・裁定を停止し、
 成功した成果物だけを勝手に後段へ渡してはならない。
 
+表の既定の観点・立場・評価基準は、ユーザーまたは親が指定しなかったときに使う値である。指定が
+あればそちらが優先する。既定を毎回決め直すと、同じレシピが実行ごとに違う観点で走る。
+
 | レシピ | 用途と並列に起動する子 | 親が確認する境界 | 後段への handoff と失敗時 |
 |---|---|---|---|
 | `research` | 観点別の調査役を並列に起動する。既定観点: 現状と確認済みの事実、制約とリスク、代替案。`perspectives` で全 3 観点を差し替えられる。調査役は `researcher`、統合役は `synthesizer`。 | 調査役全件の `state.json` と成果物を親が確認する。 | 親の許可後だけ統合役へ調査成果物の絶対パスを渡す。失敗なら統合を停止する。 |
-| `decide` | 候補案ごとの候補生成役を並列に起動する。 | 親が候補・評価基準・各子の状態を確認する。 | 親が確認した候補成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
-| `debate` | 立場ごとの賛成・反対・代替案の論者を並列に起動する。 | 親が立場の網羅性と各論者の状態を確認する。 | 親が確認した論者成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
+| `decide` | 候補案ごとの候補生成役を並列に起動する。既定の approaches: 最小で単純な、堅牢でリスクを抑えた、異なる発想の。既定の criteria: 適合性、実現性、単純さ、リスク。 | 親が候補・評価基準・各子の状態を確認する。 | 親が確認した候補成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
+| `debate` | 立場ごとの賛成・反対・代替案の論者を並列に起動する。既定の positions: 賛成、反対。 | 親が立場の網羅性と各論者の状態を確認する。 | 親が確認した論者成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
 | `fanout` | item ごとの作業役を並列に起動する。 | 親が item ごとの完了状態と成果物を確認する。 | 親が確認した item 成果物の絶対パスだけを統合役へ渡す。失敗 item があれば統合を停止する。 |
-| `review` | 観点別のレビュー役を並列に起動する。 | 親がレビュー観点、各指摘、各子の状態を確認する。 | 親が確認したレビュー成果物の絶対パスだけを最終レビュー役へ渡す。失敗なら最終統合を停止する。 |
-| `triage` | item ごとの分類・優先順位付け役を並列に起動する。 | 親が分類基準、各 item の状態、保留項目を確認する。 | 親が確認した分類成果物の絶対パスだけを統合役へ渡す。失敗ならトリアージ統合を停止する。 |
-| `implement` | 独立した作業単位ごとの実装役を、複数ある場合は並列に起動する。node ごとに worktree を作る。 | 親が実装成果物・テスト結果・各子の状態を確認する。 | 親が確認した実装成果物の絶対パスだけをレビュー役へ渡す。失敗ならレビューと次ラウンドを停止する。 |
-| `spike` | 方針ごとの試作・検証役を並列に起動する。node ごとに worktree を作る。 | 親が比較基準、試作結果、各子の状態を確認する。 | 親が確認した試作成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
+| `review` | 観点別のレビュー役を並列に起動する。既定の perspectives: 要件適合、正しさとテスト、保守性と安全性。 | 親がレビュー観点、各指摘、各子の状態を確認する。 | 親が確認したレビュー成果物の絶対パスだけを最終レビュー役へ渡す。失敗なら最終統合を停止する。 |
+| `triage` | item ごとの分類・優先順位付け役を並列に起動する。既定の angles: 再現条件と入力、直近の変更履歴、エラーが出る位置と呼び出し経路、同種の既知の不具合。 | 親が分類基準、各 item の状態、保留項目を確認する。 | 親が確認した分類成果物の絶対パスだけを統合役へ渡す。失敗ならトリアージ統合を停止する。 |
+| `implement` | 独立した作業単位ごとの実装役を、複数ある場合は並列に起動する。親が node ごとに worktree を作る。 | 親が実装成果物・テスト結果・各子の状態を確認する。 | 親が確認した実装成果物の絶対パスだけをレビュー役へ渡す。失敗ならレビューと次ラウンドを停止する。 |
+| `spike` | 方針ごとの試作・検証役を並列に起動する。親が node ごとに worktree を作る。既定の approaches: 最小で単純な、堅牢でリスクを抑えた、異なる発想の。既定の criteria: 適合性、実現性、単純さ、リスク。 | 親が比較基準、試作結果、各子の状態を確認する。 | 親が確認した試作成果物の絶対パスだけを judge へ渡す。失敗なら裁定を停止する。 |
 | `refine` | 改稿役を起動した後、批評観点ごとの批評役を並列に起動する。 | 親が改稿物、批評、各子の状態を確認する。 | 親が確認した改稿成果物の絶対パスだけを批評役へ渡す。失敗なら批評と次ラウンドを停止する。 |
 
 ### 非ループ型の実行手順

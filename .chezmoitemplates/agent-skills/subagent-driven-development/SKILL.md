@@ -19,8 +19,9 @@ MAD の `implement` を開始する前に `~/.agents/skills/multi-agent-developm
 
 - 実装子は `test-driven-development` を使い、RED を確認してから最小実装で GREEN にする。
 - 不具合・失敗を扱う子は `systematic-debugging` で根本原因を特定してから修正する。
-- 並列 task の隔離は `using-git-worktrees` の規約に従う。worktree の作成・統合・後始末は子の工程であり、
-  親は実装や merge を代行しない。
+- 並列 task の隔離は `using-git-worktrees` の規約に従う。worktree を作るのは親である。子は親が渡した
+  worktree の中で実装し、自分では worktree を作らない。取り込みと後片付けも親が行う。親は実装や review の
+  本文を代行しない。
 - 子は brief、report、review package、検証記録を正規 `_cellfusion/sdd/` に残し、run 側の
   `handoff.json` には絶対パスだけを記録する。
 

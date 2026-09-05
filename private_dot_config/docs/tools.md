@@ -247,8 +247,10 @@ native subagent で起動した子は Paseo の一覧に現れないので、親
 `~/.agents/skills/subagent-driven-development/scripts/` の `sdd-run`、`sdd-task`、`task-brief`、
 `task-waves`、`task-worktree`、`run-registry`、`agent-backend`、`sdd-workspace` は、MAD の
 `implement` recipe で起動された子が使う実行基盤として残してある。親はこれらを直接呼ばず、
-task graph、task brief、worktree 隔離、run の記録を担う子が呼ぶ。Workflow の定義も同じ理由で
-残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
+task graph、task brief、run の記録を担う子が呼ぶ。どのスクリプトが誰の工程のものかと、
+実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+worktree を作るのは親なので、`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。
+Workflow の定義も同じ理由で残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
 
 `implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
 直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では

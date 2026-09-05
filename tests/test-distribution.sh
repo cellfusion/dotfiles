@@ -244,6 +244,7 @@ for legacy in \
   ".agents/skills/multi-agent-development/scripts/mad-agent" \
   ".agents/skills/multi-agent-development/scripts/mad-run" \
   ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/scripts/mad-runs" \
   ".agents/skills/multi-agent-development/recipes" \
   ".agents/skills/braid/SKILL.md" \
   ".config/claude/skills/braid/SKILL.md" \
@@ -262,6 +263,7 @@ for p in \
   ".agents/skills/multi-agent-development/scripts/mad-agent" \
   ".agents/skills/multi-agent-development/scripts/mad-route" \
   ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/scripts/mad-runs" \
   ".agents/skills/multi-agent-development/recipes"; do
   assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" "$p" \
     ".chezmoiremove: 退役した配布済み資産を回収する: $p"

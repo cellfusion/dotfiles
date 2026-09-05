@@ -2,9 +2,11 @@
 
 MAD は親エージェントが実行の進行を管理する。レシピを開始するたびに、次の共通契約を使う。
 
-1. 親は一意な run ID を発行し、作業ディレクトリ配下に
-   `_cellfusion/orchestration/<run-id>/` を作る。親は run 全体の状態と各子の成果物をこの
-   ディレクトリに集める。
+1. 親は一意な run ID を発行し、`~/.agents/skills/_shared/scripts/cellfusion-workdir` を
+   実行してから、作業ディレクトリ配下に `_cellfusion/orchestration/<run-id>/` を作る。
+   `cellfusion-workdir` は `_cellfusion/.gitignore` を書くので、`~/.config/git/ignore` に
+   `_cellfusion` が無い環境でも run の成果物が呼び出し元のリポジトリに混ざらない。親は run
+   全体の状態と各子の成果物をこのディレクトリに集める。
 2. 親は最初に Paseo MCP の接続可否を確認する。利用可能なら Paseo MCP で子を起動し、状態確認、
    ログ取得、中断を行う。`manual-orchestration-validate --select-backend` は backend selector の
    成果物形式を確認できる。利用できない場合だけ、`[dispatch-subagent: role]` で組み込みの
@@ -64,8 +66,13 @@ attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、
 候補の優先順位は `~/.agents/agent-defs/paseo-routing.json` が role ごとに持つ。リポジトリごとの
 上書きは `~/.agents/agent-defs/paseo-project-routing.json` が持つ。rule は git remote かリポジトリの
 パスで照合する。ssh 形式 (`git@host:path`) と https 形式の remote は、どちらも `host/path` に
-正規化してから比べる。一致した rule の `providerMap` は、候補の provider id を別の provider id へ
-読み替える対応表である。親はこの読み替え後の provider id で利用可能性と model を確認する。
+正規化してから比べる。
+
+一致した rule は、候補に 2 段階の上書きを掛ける。第 1 に、rule の `roles` に対象の role の項が
+あるとき、その配列が `paseo-routing.json` の候補配列そのものを置き換える。`roles` に対象の role が
+無いときは `paseo-routing.json` の候補をそのまま使う。第 2 に、rule の `providerMap` は候補の
+provider id を別の provider id へ読み替える対応表である。置き換えた後の候補に `providerMap` を
+当てる。親はこの読み替え後の provider id で利用可能性と model を確認する。
 
 tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
 持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
@@ -75,6 +82,11 @@ tier と access から model・thinking・mode への対応は `~/.agents/agent-
 `thinkingOptions` を持たない場合は、その候補を採用しない。
 
 どの候補も使えない場合は推測で代替せず止める。
+
+`paseo-providers.json` の `modes` は role の `access` を provider の mode に対応させる表である。
+claude の `write` が対応する `bypassPermissions` は、許可の確認を出さないモードであり、書き込める
+パスの制限ではない。書き込む役が worktree の外に書かない保証は、role のプロンプトの指示だけである。
+仕事のリポジトリでこの mode を使うかどうかは利用者が判断する。
 
 native subagent 側は `~/.agents/agent-defs/routing.json` の engine 解決に従う。
 
@@ -106,16 +118,28 @@ checkout の `.chezmoitemplates/agent-defs/` 側を読む。
 `implement` と `spike` は子が同時にファイルを書くので、node ごとに worktree を作る。同じ
 作業ディレクトリで並列に起動すると、子の書き込みが互いを上書きする。
 
+worktree を作るのは親である。`mcp__paseo__create_agent` は作成時に `workspaceId` を要求するので、
+子を起動する前に workspace が存在している必要がある。親は台帳の `cwd` から diff を取るので、子が
+別の場所に worktree を作ると親が取る diff が空になる。子は親が渡した worktree の中で働き、自分では
+worktree を作らない。
+
 - Paseo MCP: `mcp__paseo__create_workspace` を呼ぶ。`isolation` は `worktree`、`mode` は
   `branch-off`、`path` は呼び出し元のパス、`branchName` は `mad/<run-id>/<node-id>`、
-  `baseBranch` は確定した base、`title` は node の用途を示す文字列にする。返る `workspaceId` を
-  `mcp__paseo__create_agent` の `workspaceId` に渡す。`workspaceId` を渡すときは、作業ディレクトリを
-  別に指定しない。
-- native subagent: `Agent` ツールの `isolation` に `worktree` を渡す。
+  `baseBranch` は確定した base、`title` は node の用途を示す文字列にする。
+  返り値は `workspaceId` と `cwd` を持つ。`cwd` は作られた worktree の絶対パスである。
+  `workspaceId` を `mcp__paseo__create_agent` の `workspaceId` に渡し、`cwd` を台帳へ記録する。
+  `workspaceId` を渡すときは、作業ディレクトリを別に指定しない。
+- native subagent: `Agent` ツールの `isolation` に `worktree` を渡す。`workspace_id` には `Agent`
+  ツールが返す子の識別子を、`cwd` には `git worktree list` で確認した worktree の絶対パスを記録する。
 
 作った workspace は run ディレクトリ直下の `workspaces.json` に記録する。形式は node ID をキーとし、
-値が `workspace_id`、`cwd`、`branch`、`archived` を持つ object である。`cwd` は絶対パスにする。
-`archived` は作った時点では `false` にする。
+値が `workspace_id`、`cwd`、`branch`、`integration`、`archived` を持つ object である。`cwd` は
+絶対パスにする。`integration` は作った時点では `pending` にし、`archived` は作った時点では `false`
+にする。
+
+1 node につき workspace は 1 つとする。node が失敗して作り直す場合は、同じ workspace を再利用するか、
+新しい node ID を発行する。台帳の既存の key を別の `workspace_id` で上書きしてはならない。上書きすると
+前の `workspace_id` が台帳から消え、後片付けの対象から外れる。
 
 `_cellfusion/` は git 管理外なので worktree の中には現れない。子へ渡す要件ファイルは絶対パスにする。
 
@@ -207,12 +231,35 @@ run の `state` が `pending` または `running` の間は、`phase_state` に�
 `state.json` に記録する。`max_rounds` は必須の安全上限であり、上限に達したら成功扱いにせず、
 最終状態を `unresolved` として保存して停止する。
 
+### 取り込み
+
+`mcp__paseo__archive_workspace` は workspace が持つものをまとめて片付け、worktree の
+ディレクトリを消す。`diff.patch` は上限行数で切られるので、archive の後には上限を超えた実装が
+残らない。親は run を `ok` にする前に取り込みの判断を済ませる。
+
+`implement` と `spike` の run を `ok` にする前に、親は各 workspace の実装成果を呼び出し元へ
+取り込むか、取り込まないかを決める。判断は `workspaces.json` の各エントリの `integration` に
+記録する。値は `pending`（未判断）、`merged`（取り込んだ）、`declined`（取り込まないと決めた）の
+3 つである。
+
+取り込む場合は、呼び出し元のチェックアウトでそのエントリの `branch` を merge し、`integration` を
+`merged` にする。merge が衝突したら run を止め、衝突した branch と node を run の `state.json` の
+`error` に記録する。親は衝突を自分で解消しない。
+
+取り込まないと決めた場合は `integration` を `declined` にし、その理由を同じエントリの
+`integration_reason` に書く。
+
+`mcp__paseo__archive_workspace` を呼べるのは、そのエントリの `integration` が `pending` で
+なくなった後だけである。`archived` が `true` の workspace の `cwd` は既に存在しない可能性が
+あるので、diff の取得と取り込みは archive より前に行う。
+
 ### 後片付け
 
-run を終えたら、`workspaces.json` の各 workspace を `mcp__paseo__archive_workspace` で片付け、その
-node の `archived` を `true` にする。
+取り込みの判断が済んだら、`workspaces.json` の各 workspace を `mcp__paseo__archive_workspace` で
+片付け、その node の `archived` を `true` にする。
 
 archive に失敗した workspace がある run は、run ディレクトリを消さない。台帳を失うと、どの run が
 どの workspace を作ったかの対応が追えなくなる。
 
-`archived` が `false` の workspace が 1 つでも残っている run を `ok` にしない。
+`integration` が `pending` の workspace、または `archived` が `false` の workspace が 1 つでも
+残っている run を `ok` にしない。

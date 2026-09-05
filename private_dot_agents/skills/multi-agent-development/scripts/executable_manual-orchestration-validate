@@ -109,17 +109,26 @@ require_recipe_output() {
 }
 
 # implement と spike は node ごとに worktree を作る。workspaces.json はその台帳で、
-# run 側だけでどの workspace を作ったかと片付けたかを追えるようにする。
-# workspaces.json が無い run は worktree を作らない recipe なので、この検査を飛ばす。
+# run 側だけでどの workspace を作ったか、取り込んだか、片付けたかを追えるようにする。
+# この 2 つの recipe では台帳を必須にする。台帳の無い run を素通りさせると、隔離を
+# 飛ばして同じ作業ディレクトリで並列に起動した run を検査が捕まえられない。
+# 他の recipe は worktree を作らないので、台帳が無ければこの検査を飛ばす。
 validate_workspaces() {
   local run_dir="$1"
   local run_state="$2"
   local run_status="$3"
+  local recipe="$4"
   local workspaces="$run_dir/workspaces.json"
   local node_id
   local field
+  local integration
 
-  [ -f "$workspaces" ] || return 0
+  case "$recipe" in
+    implement|spike)
+      [ -f "$workspaces" ] ||
+        fail "$workspaces: workspaces.json is required for a $recipe run" ;;
+    *) [ -f "$workspaces" ] || return 0 ;;
+  esac
   require_json "$workspaces"
   jq -e '.base | strings | select(length > 0)' "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: base is required for a run that creates workspaces"
@@ -138,7 +147,21 @@ validate_workspaces() {
       fail "$workspaces: $node_id cwd must be an absolute path"
     jq -e --arg node "$node_id" '.[$node].archived | type == "boolean"' "$workspaces" >/dev/null 2>&1 ||
       fail "$workspaces: $node_id archived must be a boolean"
+    # archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
+    # しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+    jq -e --arg node "$node_id" '.[$node].integration | IN("pending", "merged", "declined")' \
+      "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id integration must be one of pending, merged, declined"
+    integration="$(jq -r --arg node "$node_id" '.[$node].integration' "$workspaces")"
+    if [ "$integration" = "declined" ]; then
+      jq -e --arg node "$node_id" '.[$node].integration_reason | strings | select(length > 0)' \
+        "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id integration_reason is required when integration is declined"
+    fi
+    # archived の要求は、取り込みの判断が済んだ後にだけ掛ける。
     if [ "$run_status" = "ok" ]; then
+      [ "$integration" != "pending" ] ||
+        fail "$workspaces: $node_id integration is still pending"
       jq -e --arg node "$node_id" '.[$node].archived' "$workspaces" >/dev/null 2>&1 ||
         fail "$workspaces: $node_id workspace is not archived"
     fi
@@ -337,7 +360,7 @@ if [ -d "$run_dir/nodes" ]; then
   done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
 
-validate_workspaces "$run_dir" "$run_state" "$run_status"
+validate_workspaces "$run_dir" "$run_state" "$run_status" "$recipe"
 
 if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then
   fail "$run_state: root state ok conflicts with a non-ok adopted child state"

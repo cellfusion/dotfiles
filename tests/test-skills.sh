@@ -489,4 +489,105 @@ for d in private_dot_agents/skills \
             "yes" "mad: 配布先に .tmpl がある: $d"
 done
 
+
+# --- worktree の所有者が 4 文書で一致する（C1） ---
+# 契約・2 つの入口スキル・worktrees.md が別々に所有者を書いている。1 つだけ直すと
+# 親と子が両方 worktree を作り、実装のコミットが親の見ない側のブランチに載る。
+# 同じ語を各文書から取り出して照合し、食い違いを機械的に捕まえる。
+worktree_owner() {
+  printf '%s\n' "$1" | sed -n 's/.*worktree を作るのは\(.\)である.*/\1/p' | head -1
+}
+contract_owner="$(worktree_owner "$manual_mad")"
+assert_eq "$contract_owner" "親" "mad/contract: worktree を作るのは親であると書く"
+for owner_skill in subagent-driven-development executing-plans; do
+  owner_out="$(render_template "agent-skills/$owner_skill/SKILL.md" "claude")"
+  assert_eq "$(worktree_owner "$owner_out")" "$contract_owner" \
+    "worktree owner: $owner_skill が契約と同じ所有者を書く"
+  assert_not_contains "$owner_out" "worktree の作成・統合・後始末は子の工程" \
+    "worktree owner: $owner_skill が子を所有者とする旧記述を残さない"
+done
+worktrees_md="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/worktrees.md")"
+assert_eq "$(worktree_owner "$worktrees_md")" "$contract_owner" \
+  "worktree owner: worktrees.md が契約と同じ所有者を書く"
+assert_not_contains "$worktrees_md" "親は worktree を作らない" \
+  "worktree owner: worktrees.md が旧所有者の記述を残さない"
+
+# --- 取り込みを run の工程に入れる（C2） ---
+# archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
+# しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+assert_contains "$manual_mad" "### 取り込み" \
+  "mad/contract: 取り込みの節がある"
+assert_contains "$manual_mad" "\`integration\`" \
+  "mad/contract: 取り込みの判断を integration に記録する"
+for integration_state in pending merged declined; do
+  assert_contains "$manual_mad" "\`$integration_state\`" \
+    "mad/contract: integration の値 $integration_state を定義する"
+done
+assert_contains "$manual_mad" "\`integration_reason\`" \
+  "mad/contract: 取り込まない理由を integration_reason に書く"
+assert_contains "$manual_mad" "親は衝突を自分で解消しない" \
+  "mad/contract: merge 衝突は run を止めて親が解消しない"
+assert_contains "$manual_mad" "\`integration\` が \`pending\` で" \
+  "mad/contract: archive は判断が済んだ後だけ呼ぶ"
+
+# --- 台帳の cwd の入手先（I1）と node と workspace の対応（I3） ---
+# 実測: mcp__paseo__create_workspace は workspaceId / projectId / cwd / isolation /
+# kind / title を返す。入手先を書かないと、親は diff を取る cwd を推測することになる。
+assert_contains "$manual_mad" "返り値は \`workspaceId\` と \`cwd\` を持つ" \
+  "mad/contract: create_workspace の返り値のキーを書く"
+assert_contains "$manual_mad" "1 node につき workspace は 1 つ" \
+  "mad/contract: node と workspace を 1 対 1 にする"
+assert_contains "$manual_mad" "新しい node ID を発行する" \
+  "mad/contract: 作り直すときは node ID を変える"
+
+# --- rule ごとの候補上書き（I5） ---
+# providerMap だけでは、rule が roles で候補配列そのものを差し替える環境で
+# 親が既定の候補順を使ってしまう。
+assert_contains "$manual_mad" "\`roles\`" \
+  "mad/contract: rule の roles による候補差し替えを書く"
+assert_contains "$manual_mad" "候補配列そのものを置き換える" \
+  "mad/contract: roles は候補配列を置き換えると書く"
+assert_contains "$manual_mad" "置き換えた後の候補に \`providerMap\`" \
+  "mad/contract: roles の適用は providerMap より先だと書く"
+
+# --- write 役の mode はパスの制限ではない（I7） ---
+assert_contains "$manual_mad" "bypassPermissions" \
+  "mad/contract: write 役の mode がパスの制限ではないと書く"
+assert_contains "$manual_mad" "role のプロンプトの指示だけである" \
+  "mad/contract: worktree の外に書かない保証の出どころを書く"
+
+# --- run ディレクトリを作る前に cellfusion-workdir を通す（I8） ---
+assert_contains "$manual_mad" "cellfusion-workdir" \
+  "mad/contract: run ディレクトリの作成前に cellfusion-workdir を通す"
+
+# --- レシピの既定の観点が SKILL の表にある（I4） ---
+# 既定を消すと、同じレシピが実行ごとに違う観点で走る。
+assert_contains "$mad_skill" "既定の approaches: 最小で単純な、堅牢でリスクを抑えた、異なる発想の" \
+  "mad/decide: 既定の approaches を定義する"
+assert_contains "$mad_skill" "既定の criteria: 適合性、実現性、単純さ、リスク" \
+  "mad/decide: 既定の criteria を定義する"
+assert_contains "$mad_skill" "既定の positions: 賛成、反対" \
+  "mad/debate: 既定の positions を定義する"
+assert_contains "$mad_skill" "既定の perspectives: 要件適合、正しさとテスト、保守性と安全性" \
+  "mad/review: 既定の perspectives を定義する"
+assert_contains "$mad_skill" \
+  "既定の angles: 再現条件と入力、直近の変更履歴、エラーが出る位置と呼び出し経路、同種の既知の不具合" \
+  "mad/triage: 既定の angles を定義する"
+spike_row="$(printf '%s\n' "$mad_skill" | grep -F '| `spike` |' || true)"
+assert_contains "$spike_row" "既定の approaches: 最小で単純な、堅牢でリスクを抑えた、異なる発想の" \
+  "mad/spike: 既定の approaches を定義する"
+assert_contains "$spike_row" "既定の criteria: 適合性、実現性、単純さ、リスク" \
+  "mad/spike: 既定の criteria を定義する"
+
+# --- implement の子が使う実行基盤の呼び出し手順（I6） ---
+# スクリプトを残しているのに呼び方をどこにも書かないと、子は実行基盤を使えない。
+assert_contains "$mad_skill" "### implement の実行基盤" \
+  "mad/implement: 実行基盤の節がある"
+for impl_script in task-waves task-brief sdd-workspace review-package run-registry; do
+  assert_contains "$mad_skill" "\`$impl_script\`" \
+    "mad/implement: 実行基盤の $impl_script を書く"
+done
+assert_contains "$mad_skill" "\`task-worktree\` と \`sdd-run\` は MAD の \`implement\` では使わない" \
+  "mad/implement: 親が worktree を作るので task-worktree を子の手順から外す"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

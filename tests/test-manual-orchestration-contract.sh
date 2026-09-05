@@ -378,6 +378,21 @@ write_recipe_run() {
     parent_decision: "complete", active_nodes: [], completed_nodes: [$node],
     adopted_attempts: { ($node): "attempt-001" }, artifact_paths: [$artifact]
   }' > "$run_dir/state.json"
+  # implement と spike は node ごとに worktree を作るので、base と台帳も要る。
+  case "$recipe" in
+    implement | spike)
+      jq '.base = "master"' "$run_dir/state.json" > "$run_dir/tmp" \
+        && mv "$run_dir/tmp" "$run_dir/state.json"
+      jq -n --arg node "$node_id" '{
+        ($node): {
+          workspace_id: "ws-abc123",
+          cwd: "/Users/someone/.paseo/worktrees/ws-abc123/impl",
+          branch: "mad/20260905T120000-a1b2c3/\($node)",
+          integration: "merged",
+          archived: true
+        }
+      }' > "$run_dir/workspaces.json" ;;
+  esac
 }
 
 for recipe in spec plan implement review delivery; do
@@ -420,6 +435,7 @@ mk_run_with_workspaces() {
     "workspace_id": "ws-abc123",
     "cwd": "/Users/someone/.paseo/worktrees/ws-abc123/impl",
     "branch": "mad/20260905T120000-a1b2c3/implement-1",
+    "integration": "merged",
     "archived": true
   }
 }
@@ -431,13 +447,12 @@ mk_run_with_workspaces "$RUN/nested-ok"
 assert_contains "$(validate_run "$RUN/nested-ok")" "valid manual orchestration run" \
   "validator: workspaces.json を持つ run を受け入れる"
 
-# workspaces.json を持たない run は、この検査を飛ばして受け入れる。
-mk_run_with_workspaces "$RUN/no-workspaces"
-rm "$RUN/no-workspaces/workspaces.json"
-jq 'del(.base)' "$RUN/no-workspaces/state.json" > "$RUN/no-workspaces/tmp" \
-  && mv "$RUN/no-workspaces/tmp" "$RUN/no-workspaces/state.json"
-assert_contains "$(validate_run "$RUN/no-workspaces")" "valid manual orchestration run" \
-  "validator: workspace を作らない run に台帳と base を要求しない"
+# implement は node ごとに worktree を作る。台帳が無い run を素通りさせると、
+# 同じ作業ディレクトリで並列に走らせた run を唯一の機械的な検査が捕まえられない。
+mk_run_with_workspaces "$RUN/implement-no-workspaces"
+rm "$RUN/implement-no-workspaces/workspaces.json"
+assert_contains "$(validate_run "$RUN/implement-no-workspaces")" "workspaces.json is required" \
+  "validator: implement の run に台帳を要求する"
 
 # cwd が相対パス
 mk_run_with_workspaces "$RUN/rel-cwd"
@@ -524,6 +539,7 @@ mk_attempt_with_diff() {
       workspace_id: "ws-abc123",
       cwd: "/tmp/mad-worktrees/ws-abc123/impl",
       branch: "mad/20260905T120000-a1b2c3/\($node)",
+      integration: "merged",
       archived: true
     }
   }' > "$run_dir/workspaces.json"
@@ -589,5 +605,70 @@ mk_attempt_with_before "$RUN/before-subdir" "revise-1" "a1"
 mkdir -p "$RUN/before-subdir/nodes/revise-1/attempts/a1/before/nested"
 assert_contains "$(validate_run "$RUN/before-subdir")" "before/ must contain only regular files" \
   "validator: before/ の中のディレクトリを拒否する"
+
+# spike も node ごとに worktree を作るので、台帳を要求する。
+mk_recipe_run_with_node "$RUN/spike-no-workspaces" spike "spike-1" "a1"
+assert_contains "$(validate_run "$RUN/spike-no-workspaces")" "workspaces.json is required" \
+  "validator: spike の run に台帳を要求する"
+
+# worktree を作らない recipe は、今までどおり台帳も base も要求しない。
+mk_recipe_run_with_node "$RUN/review-no-workspaces" review "review-1" "a1"
+assert_contains "$(validate_run "$RUN/review-no-workspaces")" "valid manual orchestration run" \
+  "validator: worktree を作らない recipe に台帳と base を要求しない"
+
+# archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
+# しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+set_integration() {
+  local dir="$1"
+  shift
+  jq "$@" "$dir/workspaces.json" > "$dir/tmp" && mv "$dir/tmp" "$dir/workspaces.json"
+}
+
+# integration が無い台帳を拒否する。
+mk_run_with_workspaces "$RUN/no-integration"
+set_integration "$RUN/no-integration" 'del(.["implement-1"].integration)'
+assert_contains "$(validate_run "$RUN/no-integration")" "integration must be one of" \
+  "validator: integration を持たない台帳を拒否する"
+
+# 定義されていない値を拒否する。
+mk_run_with_workspaces "$RUN/bad-integration"
+set_integration "$RUN/bad-integration" '.["implement-1"].integration = "done"'
+assert_contains "$(validate_run "$RUN/bad-integration")" "integration must be one of" \
+  "validator: 定義外の integration を拒否する"
+
+# 未判断のまま run を ok にできない。
+mk_run_with_workspaces "$RUN/pending-integration"
+set_integration "$RUN/pending-integration" '.["implement-1"].integration = "pending"'
+assert_contains "$(validate_run "$RUN/pending-integration")" "integration is still pending" \
+  "validator: 取り込みが未判断の run を ok にしない"
+
+# archived の要求は、判断が済んだ後にだけ掛ける。未判断かつ未 archive の run では
+# 未判断のほうを先に報告する。
+mk_run_with_workspaces "$RUN/pending-and-unarchived"
+set_integration "$RUN/pending-and-unarchived" \
+  '.["implement-1"].integration = "pending" | .["implement-1"].archived = false'
+assert_contains "$(validate_run "$RUN/pending-and-unarchived")" "integration is still pending" \
+  "validator: 未判断を未 archive より先に報告する"
+
+# 実行中の run は未判断の workspace を持てる。
+mk_run_with_workspaces "$RUN/running-pending"
+jq '.state = "running" | .phase_state = "running"' "$RUN/running-pending/state.json" \
+  > "$RUN/running-pending/tmp" && mv "$RUN/running-pending/tmp" "$RUN/running-pending/state.json"
+set_integration "$RUN/running-pending" \
+  '.["implement-1"].integration = "pending" | .["implement-1"].archived = false'
+assert_contains "$(validate_run "$RUN/running-pending")" "valid manual orchestration run" \
+  "validator: 実行中の run は未判断の workspace を許す"
+
+# 取り込まないと決めたなら理由を残す。理由が無いと、後から判断を追えない。
+mk_run_with_workspaces "$RUN/declined-no-reason"
+set_integration "$RUN/declined-no-reason" '.["implement-1"].integration = "declined"'
+assert_contains "$(validate_run "$RUN/declined-no-reason")" "integration_reason is required" \
+  "validator: 理由の無い declined を拒否する"
+
+mk_run_with_workspaces "$RUN/declined-with-reason"
+set_integration "$RUN/declined-with-reason" \
+  '.["implement-1"].integration = "declined" | .["implement-1"].integration_reason = "試作なので捨てる"'
+assert_contains "$(validate_run "$RUN/declined-with-reason")" "valid manual orchestration run" \
+  "validator: 理由付きの declined を受け入れる"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
