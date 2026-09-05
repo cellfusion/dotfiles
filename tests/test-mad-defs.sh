@@ -71,6 +71,28 @@ for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) 
   assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
 done
 
+# refine の改稿役は master から取り込んだ writer である。delivery duty を持つ他の
+# role と同じく、成果物契約と 3 runtime の native subagent 定義を持つ。
+writer_contract="$(jq -r '.writer.artifact_contract' "$FIXTURE/manifests.json")"
+assert_eq "$writer_contract" "mad-attempt-v1" "delivery: writer は mad-attempt-v1 を返す"
+
+writer_duties="$(jq -r '.writer.delivery_duties | join(",")' "$FIXTURE/manifests.json")"
+assert_eq "$writer_duties" "writer" "delivery: writer の論理責務は writer だけ"
+
+writer_access="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
+assert_eq "$writer_access" "write" "delivery: writer は書き込み役"
+
+for f in \
+  "private_dot_config/claude/agents/writer.md.tmpl" \
+  "private_dot_config/opencode/agents/writer.md.tmpl" \
+  "private_dot_config/codex/agents/writer.toml.tmpl"; do
+  assert_eq "$(test -f "$CHEZMOI_SOURCE/$f" && echo yes || echo no)" "yes" \
+    "delivery: writer の native subagent 定義がある: $f"
+done
+
+writer_route="$(jq -r 'has("writer")' "$FIXTURE/paseo-routing.json")"
+assert_eq "$writer_route" "true" "routing: writer がある"
+
 # 正規成果物を作る役は、status ごとに成功成果物か parent relay 用 decision request のどちらを
 # handoff するかを schema で排他的に定める。テンプレートの文字列を探すだけでなく、共有 validator
 # に実例を渡して成功と不正な混在の拒否を確認する。

@@ -116,6 +116,13 @@ for a in $(printf '%s' "$delivery_manifest" | jq -r \
     "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
 
+# writer は refine が使う改稿役である。prompt と schema が配られないと refine が
+# 子を起動できない。
+assert_contains "$managed" ".agents/agent-defs/prompts/writer.md" \
+  "MAD delivery: writer prompt を ~/.agents へ配る"
+assert_contains "$managed" ".agents/agent-defs/schemas/writer.json" \
+  "MAD delivery: writer schema を ~/.agents へ配る"
+
 # `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
 # schema だけを配っても、agent 定義が配られていない role は native subagent で起動できない。
 for a in $(printf '%s' "$delivery_manifest" | jq -r 'keys[]'); do
