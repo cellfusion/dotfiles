@@ -33,6 +33,20 @@ require_json() {
   jq -e 'type == "object"' "$file" >/dev/null 2>&1 || fail "$file: valid JSON object is required"
 }
 
+node_is_ok() {
+  local node_dir="$1"
+  local attempt_state
+  local has_attempt_state=0
+
+  [ -d "$node_dir/attempts" ] || return 1
+  while IFS= read -r attempt_state; do
+    has_attempt_state=1
+    jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1 || return 1
+  done < <(find "$node_dir/attempts" -type f -name state.json -print)
+
+  [ "$has_attempt_state" -eq 1 ]
+}
+
 [ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
@@ -49,7 +63,11 @@ jq -e '.current_round | type == "number" and . >= 0 and floor == .' "$run_state"
   fail "$run_state: current_round must be a non-negative integer"
 
 run_id="$(jq -r '.run_id' "$run_state")"
+recipe="$(jq -r '.recipe' "$run_state")"
+run_status="$(jq -r '.state' "$run_state")"
 current_round="$(jq -r '.current_round' "$run_state")"
+has_non_ok_attempt=0
+has_research_downstream=0
 
 if [ -d "$run_dir/nodes" ]; then
   while IFS= read -r node_dir; do
@@ -57,6 +75,12 @@ if [ -d "$run_dir/nodes" ]; then
     [ -d "$node_dir/attempts" ] || fail "$node_dir: node artifacts must be under attempts/"
     direct_file="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
     [ -z "$direct_file" ] || fail "$direct_file: node artifacts must be under attempts/"
+    if [ "$recipe" = "research" ]; then
+      case "$node_id" in
+        research-1|research-2|research-3) ;;
+        *) has_research_downstream=1 ;;
+      esac
+    fi
   done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
 
   while IFS= read -r attempt_dir; do
@@ -89,6 +113,10 @@ if [ -d "$run_dir/nodes" ]; then
     [ "$attempt_round" -le "$current_round" ] ||
       fail "$attempt_state: round exceeds current_round"
 
+    if ! jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1; then
+      has_non_ok_attempt=1
+    fi
+
     [ -f "$attempt_dir/prompt.md" ] || fail "$attempt_dir: prompt.md is required"
     result_count=0
     [ -f "$attempt_dir/result.md" ] && result_count=$((result_count + 1))
@@ -97,5 +125,34 @@ if [ -d "$run_dir/nodes" ]; then
     [ -f "$attempt_dir/log.md" ] || fail "$attempt_dir: log.md is required"
   done < <(find "$run_dir/nodes" -type f -path '*/attempts/*/state.json' -print)
 fi
+
+if [ "$run_status" = "ok" ] && [ "$has_non_ok_attempt" -eq 1 ]; then
+  fail "$run_state: root state ok conflicts with a non-ok child state"
+fi
+
+if [ "$recipe" = "research" ]; then
+  require_research_nodes=0
+  [ "$run_status" = "ok" ] && require_research_nodes=1
+  [ "$has_research_downstream" -eq 1 ] && require_research_nodes=1
+
+  if [ "$require_research_nodes" -eq 1 ]; then
+    for node_id in research-1 research-2 research-3; do
+      node_dir="$run_dir/nodes/$node_id"
+      [ -d "$node_dir" ] || fail "$run_state: $node_id is required for research"
+      node_is_ok "$node_dir" ||
+        fail "$run_state: research downstream cannot start before all research nodes are ok"
+    done
+  fi
+fi
+
+case "$recipe" in
+  implement|refine)
+    jq -e '.max_rounds | type == "number" and . > 0 and floor == .' "$run_state" >/dev/null 2>&1 ||
+      fail "$run_state: max_rounds must be a positive integer"
+    max_rounds="$(jq -r '.max_rounds' "$run_state")"
+    [ "$current_round" -le "$max_rounds" ] ||
+      fail "$run_state: current_round exceeds max_rounds"
+    ;;
+esac
 
 printf 'valid manual orchestration run: %s\n' "$run_dir"
