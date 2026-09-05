@@ -380,6 +380,21 @@ assert_contains "$manual_mad" "modeId" \
 assert_contains "$manual_mad" "routing.json\` の engine" \
   "mad/contract: native subagent は routing.json の engine 解決に従う"
 
+# list_providers は全 provider を絞り込まずに返す。enabled と status の両方を親が
+# 判定しないと、無効化された provider を候補から外し損なう。
+assert_contains "$manual_mad" "enabled" \
+  "mad/contract: provider の enabled を判定する"
+assert_contains "$manual_mad" "status" \
+  "mad/contract: provider の status を判定する"
+# providerMap は rule の上書きが持つ provider id の置き換え表である。これに触れないと、
+# rule が候補の provider を読み替えることが契約から読み取れない。
+assert_contains "$manual_mad" "providerMap" \
+  "mad/contract: 上書きは providerMap で provider id を読み替える"
+# 旧 mad-route は model の存在に加えて thinking option の存在も確認していた。これを
+# 落とすと、tier が要求する thinking level を持たない model を採用する経路が残る。
+assert_contains "$manual_mad" "thinkingOptions" \
+  "mad/contract: model の thinking option の存在を確かめる"
+
 # 子をどう起動するかを 1 箇所に書く。ここが無いと prompt と schema は配布されるだけで
 # 実行時に誰も参照せず、result.json が schema 検査を受けない。
 assert_contains "$manual_mad" "### 子の起動" \

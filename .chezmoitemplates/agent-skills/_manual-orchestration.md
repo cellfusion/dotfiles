@@ -56,15 +56,23 @@ attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、
 確かめる。そのうえで `mcp__paseo__create_agent` の `provider`、`settings.thinkingOptionId`、
 `settings.modeId` を決める。
 
+`mcp__paseo__list_providers` は全 provider を絞り込まずに返す。各 provider は `enabled`（真偽値）と
+`status`（`available` または `unavailable`）を持つ。親は `enabled` が `true` かつ `status` が
+`available` の provider だけを利用可能として扱う。どちらか一方でも条件を満たさない provider は
+候補から外す。
+
 候補の優先順位は `~/.agents/agent-defs/paseo-routing.json` が role ごとに持つ。リポジトリごとの
 上書きは `~/.agents/agent-defs/paseo-project-routing.json` が持つ。rule は git remote かリポジトリの
 パスで照合する。ssh 形式 (`git@host:path`) と https 形式の remote は、どちらも `host/path` に
-正規化してから比べる。
+正規化してから比べる。一致した rule の `providerMap` は、候補の provider id を別の provider id へ
+読み替える対応表である。親はこの読み替え後の provider id で利用可能性と model を確認する。
 
 tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
 持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
-優先順位どおりに調べ、provider が利用可能で、かつその provider に対応する model が存在する最初の
-候補を採用する。
+優先順位どおりに調べ、次のすべてを満たす最初の候補を採用する。第 1 に、provider が利用可能である。
+第 2 に、`mcp__paseo__list_models` にその provider の対応 model が載っている。第 3 に、その model の
+`thinkingOptions` が、tier に対応する thinking option を含む。model が存在しても要求する
+`thinkingOptions` を持たない場合は、その候補を採用しない。
 
 どの候補も使えない場合は推測で代替せず止める。
 
