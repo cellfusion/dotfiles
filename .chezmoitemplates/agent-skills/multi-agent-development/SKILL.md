@@ -78,7 +78,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 ### `implement`
 
 - 入力: 承認済み plan、spec、既存の SDD ledger の絶対パス。
-- 子: `task-graph-analyzer` が wave を作る。親が node ごとに worktree を作った後、`implementer`、
+- 子: 親が `task-waves` で wave を出し、node ごとに worktree を作った後、`implementer`、
   `task-reviewer`、`re-reviewer`、`final-reviewer` が実装・review・fix loop を担う。独立 task は
   並列に起動する。base の確定、worktree 隔離、取り込みの手順は、共通契約の「base の確定」
   「worktree 隔離」「取り込み」に従う。
@@ -88,17 +88,17 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 
 ### implement の実行基盤
 
-`~/.agents/skills/subagent-driven-development/scripts/` は `implement` の子が使う。どのスクリプトが
-誰の工程のものかを次に示す。親はこれらを直接呼ばない。
+`~/.agents/skills/subagent-driven-development/scripts/` は、`implement` の親と子が分けて使う。
+どのスクリプトを親が呼び、どれを子が呼ぶかを次に示す。**この表が割り当ての正本である。**
 
-| スクリプト | 使う役 | 用途 |
+| スクリプト | 呼ぶ側 | 用途 |
 |---|---|---|
-| `sdd-workspace` | `task-graph-analyzer` | プランごとの作業ディレクトリ `_cellfusion/sdd/<plan-basename>/` を解決して絶対パスを出す。brief、report、review package、ledger の置き場になる |
-| `task-waves` | `task-graph-analyzer` | プランの `Depends on:` と `Files:` を読み、同時に走らせてよい task の波を出す。同じ波の task が同じファイルに触れていないかも検証する |
-| `task-brief` | `task-graph-analyzer` | プランから 1 task 分の本文を切り出して brief ファイルに書く。実装役は brief だけを読む |
-| `review-package` | `implementer` | 記録した base と head から、コミット一覧、変更ファイルの stat、文脈付き diff を 1 ファイルにまとめる。`task-reviewer` はこれを 1 回の Read で読む |
-| `run-registry` | `implementer` | 実行中プロセスの素性をファイルに残し、二重 dispatch を防ぐ |
-| `agent-backend` | `implementer` | 役割エージェントを headless CLI の子プロセスとして走らせ、engine 固有の出力を 1 つの契約に正規化する |
+| `sdd-workspace` | 親 | プランごとの作業ディレクトリ `_cellfusion/sdd/<plan-basename>/` を解決して絶対パスを出す。brief、report、review package、ledger の置き場になる |
+| `task-waves` | 親 | プランの `Depends on:` と `Files:` を読み、同時に走らせてよい task の波を出す。同じ波の task が同じファイルに触れていないかも検証する |
+| `task-brief` | 親 | プランから 1 task 分の本文を切り出して brief ファイルに書く。`implementer` は brief だけを読む |
+| `review-package` | 親 | 記録した base と head から、コミット一覧、変更ファイルの stat、文脈付き diff を 1 ファイルにまとめる。`task-reviewer` はこれを 1 回の Read で読む |
+| `run-registry` | 子（`implementer`） | 実行中プロセスの素性をファイルに残し、二重 dispatch を防ぐ |
+| `agent-backend` | 子（`implementer`） | 役割エージェントを headless CLI の子プロセスとして走らせ、engine 固有の出力を 1 つの契約に正規化する |
 
 `task-worktree` と `sdd-run` は MAD の `implement` では使わない。worktree を作るのは親であり、波の
 進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を

@@ -245,9 +245,9 @@ native subagent で起動した子は Paseo の一覧に現れないので、親
 `state.json` だけで状態を判断する。
 
 `~/.agents/skills/subagent-driven-development/scripts/` のうち、MAD の `implement` recipe で
-起動された子が使うのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package`、
-`run-registry`、`agent-backend` である。親はこれらを直接呼ばず、task graph、task brief、
-run の記録を担う子が呼ぶ。どのスクリプトが誰の工程のものかと、実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+親が呼ぶのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package` である。
+`run-registry` と `agent-backend` は、親が起動した子が呼ぶ。どのスクリプトを誰が呼ぶかと、
+実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
 
 `task-worktree` と `sdd-run` は `implement` の子の手順に入らない。worktree を作るのは親であり、
 波の進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を

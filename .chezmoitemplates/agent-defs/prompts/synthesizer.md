@@ -4,3 +4,4 @@
 - 入力どうしが食い違っている点は `conflicts` に入れる。どちらかに黙って寄せない
 - `points` は重複を潰したうえで、元の粒度を保つ
 - `summary` は入力すべてを読んだ人が最初に読む 1 段落として書く
+- 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で統合しない。判断を求めないときは `decisionRequestPath` を `null` にする
