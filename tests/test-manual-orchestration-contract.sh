@@ -418,7 +418,7 @@ mk_run_with_workspaces() {
 {
   "implement-1": {
     "workspace_id": "ws-abc123",
-    "cwd": "/Users/example/.paseo/worktrees/ws-abc123/impl",
+    "cwd": "/Users/someone/.paseo/worktrees/ws-abc123/impl",
     "branch": "mad/20260905T120000-a1b2c3/implement-1",
     "archived": true
   }
