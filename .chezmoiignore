@@ -28,3 +28,10 @@ tests/**
 .config/herdr/*.sock
 # シェル履歴は機械ごとのものなので配らない
 .config/zsh/.zsh_history
+
+# Paseo プラグインの npm 成果物 (npm install が作るものであり配布対象ではない。
+# chezmoi はソース側のドットで始まる項目を配らないので、配ると node_modules/.bin と
+# node_modules/.package-lock.json を欠いた依存ツリーになる)
+.local/share/paseo-plugins/pr-review/node_modules
+.local/share/paseo-plugins/pr-review/node_modules/**
+.local/share/paseo-plugins/pr-review/package-lock.json

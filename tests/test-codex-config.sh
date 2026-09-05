@@ -22,11 +22,13 @@ model_reasoning_effort = "medium"
 approval_policy = "never"
 approvals_reviewer = "user"
 sandbox_mode = "danger-full-access"
+model_context_window = 123
+model_auto_compact_token_limit = 456
 
 notify = ["/path/to/notifier", "turn-ended"]
 
 [sandbox_workspace_write]
-network_access = true
+network_access = false
 
 [tools]
 web_search = true
@@ -75,13 +77,15 @@ assert_not_contains "$out" 'gpt-5.2-codex' "古い model が残らない"
 
 # 2. model_reasoning_effort が設定される。
 assert_contains "$out" 'model_reasoning_effort = "medium"' "effort を medium にする"
+assert_contains "$out" 'model_context_window = 1000000' "コンテキストウィンドウを 1000000 にする"
+assert_contains "$out" 'model_auto_compact_token_limit = 900000' "自動圧縮閾値を 900000 にする"
 
 # 3. automode の推奨設定に置換される。
 assert_contains "$out" 'approval_policy = "on-request"' "承認ポリシーを on-request にする"
 assert_contains "$out" 'approvals_reviewer = "auto_review"' "承認判定を auto reviewer に委任する"
 assert_contains "$out" 'sandbox_mode = "workspace-write"' "sandbox を workspace-write にする"
 assert_contains "$out" '[sandbox_workspace_write]' "sandbox_workspace_write セクションを作る"
-assert_contains "$out" 'network_access = false' "sandbox 内ネットワークを無効にする"
+assert_contains "$out" 'network_access = true' "sandbox 内ネットワークを有効にする"
 assert_not_contains "$out" 'approval_policy = "never"' "危険な承認ポリシーを残さない"
 assert_not_contains "$out" 'sandbox_mode = "danger-full-access"' "危険な sandbox 設定を残さない"
 
@@ -156,24 +160,79 @@ web_search = true
 nokey_out="$(run_modify "$NOKEY")"
 assert_contains "$nokey_out" 'model = "gpt-5.6-terra"' "model 行が無ければ追加する"
 assert_contains "$nokey_out" 'model_reasoning_effort = "medium"' "effort 行が無ければ追加する"
+assert_contains "$nokey_out" 'model_context_window = 1000000' "model_context_window 行が無ければ追加する"
+assert_contains "$nokey_out" 'model_auto_compact_token_limit = 900000' "model_auto_compact_token_limit 行が無ければ追加する"
 assert_contains "$nokey_out" 'approval_policy = "on-request"' "approval_policy 行が無ければ追加する"
 assert_contains "$nokey_out" 'approvals_reviewer = "auto_review"' "approvals_reviewer 行が無ければ追加する"
 assert_contains "$nokey_out" 'sandbox_mode = "workspace-write"' "sandbox_mode 行が無ければ追加する"
-assert_contains "$nokey_out" 'network_access = false' "network_access 行が無ければ追加する"
+assert_contains "$nokey_out" 'network_access = true' "network_access 行が無ければ追加する"
 assert_contains "$nokey_out" 'web_search = true' "追加しても既存の内容は壊さない"
 
 # 7. 空の入力（ファイルが存在しない場合）でも最小の config を出す。
 empty_out="$(run_modify "")"
 assert_contains "$empty_out" 'model = "gpt-5.6-terra"' "空入力で model を出す"
 assert_contains "$empty_out" 'model_reasoning_effort = "medium"' "空入力で effort を出す"
+assert_contains "$empty_out" 'model_context_window = 1000000' "空入力で model_context_window を出す"
+assert_contains "$empty_out" 'model_auto_compact_token_limit = 900000' "空入力で model_auto_compact_token_limit を出す"
 assert_contains "$empty_out" 'approval_policy = "on-request"' "空入力で approval_policy を出す"
 assert_contains "$empty_out" 'approvals_reviewer = "auto_review"' "空入力で approvals_reviewer を出す"
 assert_contains "$empty_out" 'sandbox_mode = "workspace-write"' "空入力で sandbox_mode を出す"
-assert_contains "$empty_out" 'network_access = false' "空入力で network_access を出す"
+assert_contains "$empty_out" 'network_access = true' "空入力で network_access を出す"
+
+# 7b. [sandbox_workspace_write] はあるが network_access が無い入力。awk には
+# 後続セクションの直前で足す経路とファイル末尾で足す経路があるので、別々に覆う。
+SECTION_NO_KEY='model = "old"
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
+
+[tools]
+web_search = true
+'
+section_out="$(run_modify "$SECTION_NO_KEY")"
+assert_contains "$section_out" 'network_access = true' \
+  "表があって network_access が無ければ追加する"
+assert_contains "$section_out" 'writable_roots = ["/tmp"]' \
+  "表の既存キーを壊さない"
+assert_eq "$(printf '%s\n' "$section_out" | grep -c '^\[sandbox_workspace_write\]$')" "1" \
+  "表があるときに表を二重に作らない"
+section_tmp="$(mktemp)"
+printf '%s' "$section_out" > "$section_tmp"
+section_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$section_tmp','rb'))
+sw = d['sandbox_workspace_write']
+print(sw['network_access'], sw['writable_roots'], 'tools' in d)
+" 2>&1)"
+rm -f "$section_tmp"
+assert_eq "$section_parsed" "True ['/tmp'] True" \
+  "後続セクションがあっても network_access が表の中に入る"
+
+SECTION_NO_KEY_EOF='model = "old"
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
+'
+eof_out="$(run_modify "$SECTION_NO_KEY_EOF")"
+assert_eq "$(printf '%s\n' "$eof_out" | grep -c '^\[sandbox_workspace_write\]$')" "1" \
+  "表がファイル末尾にあるときに表を二重に作らない"
+eof_tmp="$(mktemp)"
+printf '%s' "$eof_out" > "$eof_tmp"
+eof_parsed="$(python3 -c "
+import tomllib
+d = tomllib.load(open('$eof_tmp','rb'))
+sw = d['sandbox_workspace_write']
+print(sw['network_access'], sw['writable_roots'])
+" 2>&1)"
+rm -f "$eof_tmp"
+assert_eq "$eof_parsed" "True ['/tmp']" \
+  "表がファイル末尾にあっても network_access を足す"
 
 # 8. 推奨設定は重複せず、出力が TOML として妥当である。
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approval_policy =')" "1" "approval_policy を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^approvals_reviewer =')" "1" "approvals_reviewer を重複させない"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^model_context_window =')" "1" "model_context_window を重複させない"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^model_auto_compact_token_limit =')" "1" "model_auto_compact_token_limit を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^sandbox_mode =')" "1" "sandbox_mode を重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^\[sandbox_workspace_write\]$')" "1" "sandbox セクションを重複させない"
 assert_eq "$(printf '%s\n' "$out" | grep -c '^network_access =')" "1" "network_access を重複させない"
@@ -183,10 +242,10 @@ printf '%s' "$out" > "$tmp_toml"
 parsed="$(python3 -c "
 import tomllib
 d = tomllib.load(open('$tmp_toml','rb'))
-print(d['model'], d['model_reasoning_effort'], d['approval_policy'], d['approvals_reviewer'], d['sandbox_mode'], d['sandbox_workspace_write']['network_access'], len(d['projects']), len(d['mcp_servers']))
+print(d['model'], d['model_reasoning_effort'], d['model_context_window'], d['model_auto_compact_token_limit'], d['approval_policy'], d['approvals_reviewer'], d['sandbox_mode'], d['sandbox_workspace_write']['network_access'], len(d['projects']), len(d['mcp_servers']))
 " 2>&1)"
 rm -f "$tmp_toml"
-assert_eq "$parsed" "gpt-5.6-terra medium on-request auto_review workspace-write False 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
+assert_eq "$parsed" "gpt-5.6-terra medium 1000000 900000 on-request auto_review workspace-write True 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
 
 # 9. CODEX_HOME は herdr セッションごとに切り替える。
 zshrc="$(cat "$CHEZMOI_SOURCE/private_dot_config/zsh/dot_zshrc")"

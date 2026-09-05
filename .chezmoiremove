@@ -55,6 +55,7 @@
 .agents/skills/multi-agent-development/scripts/mad-agent
 .agents/skills/multi-agent-development/scripts/mad-route
 .agents/skills/multi-agent-development/scripts/mad-lib.sh
+.agents/skills/multi-agent-development/scripts/mad-runs
 .agents/skills/multi-agent-development/recipes
 
 # herdr-sessions は agent-environments.zsh へ統合した。1 セッション 1 ファイルだと

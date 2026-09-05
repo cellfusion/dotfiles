@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Paseo プラグイン pr-review を daemon に登録する。
+#
+# プラグインは trusted・unsandboxed なコードである。daemon の pluginsEnabled が
+# true でないときは何もしない。有効化は人が Settings → Plugins から行う。
+#
+# manifest hash: {{ list
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/paseo-plugin.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/package.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/tsconfig.json")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/contracts.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/commands.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/instructions.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/index.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/main.client.tsx")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/provider-resolution.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/review-plan.ts")
+    | join "" | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+# paseo の実体は ~/.local/bin にあり、jq は Homebrew が入れる。chezmoi は
+# スクリプトごとに独立したプロセスを回すので、PATH をここで組み立てる。
+local_bin_env
+brew_env || die 'brew が見つからない。00-homebrew が失敗している'
+command -v jq >/dev/null 2>&1 || die 'jq が見つからない。10-brew が失敗している'
+
+plugin_dir="$HOME/.local/share/paseo-plugins/pr-review"
+
+if ! command -v paseo >/dev/null 2>&1; then
+  printf 'paseo が見つからないので飛ばす\n'
+  exit 0
+fi
+
+if ! paseo daemon status >/dev/null 2>&1; then
+  printf 'paseo の daemon が動いていないので飛ばす\n'
+  exit 0
+fi
+
+daemon_home="$(paseo daemon status --json | jq -r '.home // empty')"
+[ -n "$daemon_home" ] || die 'paseo daemon status が home を返さない'
+
+enabled="$(jq -r '.pluginsEnabled // false' "$daemon_home/config.json" 2>/dev/null || echo false)"
+if [ "$enabled" != "true" ]; then
+  printf 'paseo のプラグインが無効なので飛ばす。Settings → Plugins で有効にする\n'
+  exit 0
+fi
+
+[ -d "$plugin_dir" ] || die "プラグインのソースが見つからない: $plugin_dir"
+
+if paseo plugin ls --json 2>/dev/null | jq -e '.[] | select(.id == "pr-review")' >/dev/null 2>&1; then
+  printf 'pr-review プラグインを再読み込みする\n'
+  paseo plugin reload pr-review || die 'paseo plugin reload に失敗した'
+else
+  printf 'pr-review プラグインを登録する\n'
+  paseo plugin install "$plugin_dir" || die 'paseo plugin install に失敗した'
+fi

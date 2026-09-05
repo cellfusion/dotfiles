@@ -89,5 +89,10 @@
     "description": "計画作成役。承認済み spec から検証可能な実装 plan と task graph を作成する。",
     "artifact_contract": "mad-attempt-v1",
     "delivery_duties": ["planner", "task-graph-analyzer"]
+  },
+  "writer": {
+    "tier": "work",
+    "access": "write",
+    "description": "文章を書き直す役。対象ファイルを書き換え、必要ならファイルを新しく作る。コミットはしない"
   }
 }

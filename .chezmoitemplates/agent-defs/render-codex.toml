@@ -6,7 +6,14 @@ name = {{ .agent | quote }}
 description = {{ $m.description | quote }}
 model = {{ $t.model | quote }}
 model_reasoning_effort = {{ $t.effort | quote }}
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 sandbox_mode = {{ if eq $m.access "read" }}"read-only"{{ else }}"workspace-write"{{ end }}
 developer_instructions = """
 {{ includeTemplate (printf "agent-defs/prompts/%s.md" .agent) . }}
 """
+{{- if ne $m.access "read" }}
+
+[sandbox_workspace_write]
+network_access = true
+{{- end }}

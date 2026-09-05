@@ -16,6 +16,7 @@
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
 | ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
+| Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` | `run_onchange_after_90-agent-envs.sh` |
 
@@ -48,7 +49,7 @@ GUI のインストールダイアログが出て、入っていなければ `ch
     sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion
 
 これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
-apply の中で上の表の 10 本が番号順に実行される。
+apply の中で上の表の 11 本が番号順に実行される。
 
 この 1 本目の chezmoi は install script の既定の BINDIR、つまり実行したディレクトリの
 `./bin` に置かれる。PATH には載らない。恒久的な chezmoi は apply の中で 20-runtimes が
@@ -253,6 +254,36 @@ task graph、task brief、worktree 隔離、run の記録を担う子が呼ぶ�
 `research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
 実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
 `--dry-run` で手順だけを読める。
+
+### Paseo プラグイン pr-review
+
+サイドバーの「PR レビュー」からプロジェクトと PR を選ぶと、worktree の workspace を
+1 つ作って `/pr-review <番号>` の agent を起動する。PR が `CLAUDE.md`、`CLAUDE.local.md`、
+`AGENTS.md` のいずれかの名前のファイルか、`.claude` か `.agents` の配下を、リポジトリの
+どの階層であれ変更している場合は、base から分岐した worktree に切り替え、workspace の
+title の先頭に `[base]` を付ける。レビューする agent が PR 側の指示を受け取らない
+ようにするためである。
+
+プラグインは trusted・unsandboxed なコードである。daemon 側のコードは daemon マシンの
+ファイル・プロセス・認証情報・ネットワークに触れられる。有効化は手で行う。
+
+1. Paseo の Settings → Plugins → Enable plugins を開く
+2. `chezmoi apply` を実行する。`run_onchange_after_75-paseo-plugins.sh` が
+   `paseo plugin install` を実行する
+3. `paseo plugin ls` で `pr-review` が `running` になっていることを確認する
+
+Enable plugins より先に `chezmoi apply` を実行した場合、`run_onchange_after_75-paseo-plugins.sh`
+は「プラグインが無効なので飛ばす」で終わり、chezmoi はそれを実行済みとして記録する。
+以後スクリプトの内容が変わるまで再実行されないので、有効にした後で次を手で 1 回実行する。
+
+```bash
+paseo plugin install "$HOME/.local/share/paseo-plugins/pr-review"
+```
+
+レビューに使う provider は、Paseo daemon の `process.env.AGENT_ENV` に応じて選ぶ。
+`default` なら無印 provider、それ以外なら `claude-<AGENT_ENV>` を優先し、無ければ
+`claude` にフォールバックする。環境名付き provider は `~/.paseo/config.json` の
+`agents.providers` に存在するものだけを使う。
 
 ## 削除候補
 

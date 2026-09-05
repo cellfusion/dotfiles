@@ -7,6 +7,7 @@
   "implementer": [{ "provider": "codex" }, { "provider": "claude" }],
   "spec-author": [{ "provider": "claude" }, { "provider": "codex" }],
   "plan-author": [{ "provider": "claude" }, { "provider": "codex" }],
+  "writer": [{ "provider": "claude" }, { "provider": "codex" }],
   "sdd-implementer": [{ "provider": "codex" }, { "provider": "claude" }],
   "sdd-implementer-think": [{ "provider": "claude" }, { "provider": "codex" }],
   "sdd-task-reviewer": [{ "provider": "claude" }, { "provider": "codex" }],

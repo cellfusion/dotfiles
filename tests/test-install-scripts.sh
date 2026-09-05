@@ -16,11 +16,13 @@ ai_s="$(render_script run_onchange_after_40-ai-clis.sh.tmpl)"
 npm_s="$(render_script run_onchange_after_50-npm-globals.sh.tmpl)"
 cargo_s="$(render_script run_onchange_after_60-cargo.sh.tmpl)"
 macos_s="$(render_script run_onchange_after_70-macos-services.sh.tmpl)"
+paseo_plugin_s="$(render_script run_onchange_after_75-paseo-plugins.sh.tmpl)"
 agent_env_s="$(render_script run_onchange_after_90-agent-envs.sh.tmpl)"
 
 # --- 全スクリプト共通 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
             "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -33,9 +35,31 @@ for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$
     "$name: trust store の場所を XDG_CONFIG_HOME で固定している"
 done
 
+assert_contains "$paseo_plugin_s" "paseo plugin install" \
+  "paseo-plugin: install を実行する"
+assert_contains "$paseo_plugin_s" "paseo plugin reload" \
+  "paseo-plugin: reload を実行する"
+assert_contains "$paseo_plugin_s" "pluginsEnabled" \
+  "paseo-plugin: プラグインが無効なら何もしない"
+assert_contains "$paseo_plugin_s" ".local/share/paseo-plugins/pr-review" \
+  "paseo-plugin: 配布先の絶対 path を登録する"
+
+# --- manifest hash がプラグインの全ソースを含む ---
+# 漏れたファイルだけを変えて apply しても展開結果が変わらず、chezmoi がスクリプトを
+# 再実行しないので daemon 上のプラグインが古いコードのまま残る。
+paseo_plugin_tmpl_src="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_75-paseo-plugins.sh.tmpl")"
+plugin_src_dir="$CHEZMOI_SOURCE/private_dot_local/private_share/paseo-plugins/pr-review"
+for f in "$plugin_src_dir"/*.ts "$plugin_src_dir"/*.tsx; do
+  [ -f "$f" ] || continue
+  name="$(basename "$f")"
+  assert_contains "$paseo_plugin_tmpl_src" "pr-review/$name\")" \
+    "paseo-plugin: manifest hash に $name を含む"
+done
+
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
-for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s"; do
+for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
   hash_line="$(printf '%s\n' "$body" | grep -cE '^# manifest hash: [0-9a-f]{64}$' || true)"
@@ -47,6 +71,7 @@ done
 # のではなく落ちることで、取りこぼしが次の apply で必ず再実行される。
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" \
             "mise:$mise_s" "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -191,6 +216,7 @@ assert_eq "$(render_script run_onchange_after_10-brew.sh.tmpl)" "$brew_s" \
 # --- bash の構文として妥当 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
             "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "paseo-plugin:$paseo_plugin_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
