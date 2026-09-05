@@ -29,7 +29,8 @@ run の `state.json` と attempt の `state.json` は別の責務を持つ。双
 - run state: `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、
   `started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、
   `completed_nodes`、`adopted_attempts`、`artifact_paths`。ユーザー判断が必要なときは
-  `decision_request` に request ファイルの絶対パスを記録する。
+  `decision_request` に request ファイルの絶対パスを記録する。worktree を作る run では、確定した
+  base を `base` に記録する。
 - attempt state: `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、
   `started_at`、`finished_at`、
   `backend`、`backend_reason`、`parent_decision`。`node`、`attempt`、`round` はディレクトリ名や
@@ -71,6 +72,31 @@ checkout の `.chezmoitemplates/agent-defs/` 側を読む。
 親は子の構造化出力を attempt の `result.json` へ保存する。schema に合わない出力は親が整形せず、
 その attempt を `failed` として記録する。schema を持たない補助的な子だけが `result.md` を残す。
 
+### worktree 隔離
+
+`implement` と `spike` は子が同時にファイルを書くので、node ごとに worktree を作る。同じ
+作業ディレクトリで並列に起動すると、子の書き込みが互いを上書きする。
+
+- Paseo MCP: `mcp__paseo__create_workspace` を呼ぶ。`isolation` は `worktree`、`mode` は
+  `branch-off`、`path` は呼び出し元のパス、`branchName` は `mad/<run-id>/<node-id>`、
+  `baseBranch` は確定した base、`title` は node の用途を示す文字列にする。返る `workspaceId` を
+  `mcp__paseo__create_agent` の `workspaceId` に渡す。`workspaceId` を渡すときは、作業ディレクトリを
+  別に指定しない。
+- native subagent: `Agent` ツールの `isolation` に `worktree` を渡す。
+
+作った workspace は run ディレクトリ直下の `workspaces.json` に記録する。形式は node ID をキーとし、
+値が `workspace_id`、`cwd`、`branch`、`archived` を持つ object である。`cwd` は絶対パスにする。
+`archived` は作った時点では `false` にする。
+
+`_cellfusion/` は git 管理外なので worktree の中には現れない。子へ渡す要件ファイルは絶対パスにする。
+
+### base の確定
+
+`base` 引数が空なら、親は現在のブランチを base として使う。detached HEAD なら base を決められない
+ので、run を開始せずに止める。
+
+確定した base は run の `state.json` の `base` に記録する。run state が base の唯一の記録である。
+
 ### 成果物契約の受け入れ検証
 
 親は子を起動する backend と切り離して、run の完了前に次を実行する。これは Paseo MCP の実在ツールを
@@ -110,3 +136,13 @@ run の `state` が `pending` または `running` の間は、`phase_state` に�
 ループを持つレシピでは、各ラウンドの開始・完了、子の成果物、`parent_decision` を run の
 `state.json` に記録する。`max_rounds` は必須の安全上限であり、上限に達したら成功扱いにせず、
 最終状態を `unresolved` として保存して停止する。
+
+### 後片付け
+
+run を終えたら、`workspaces.json` の各 workspace を `mcp__paseo__archive_workspace` で片付け、その
+node の `archived` を `true` にする。
+
+archive に失敗した workspace がある run は、run ディレクトリを消さない。台帳を失うと、どの run が
+どの workspace を作ったかの対応が追えなくなる。
+
+`archived` が `false` の workspace が 1 つでも残っている run を `ok` にしない。

@@ -108,6 +108,43 @@ require_recipe_output() {
     fail "$run_state: $required_node is a required $recipe output"
 }
 
+# implement と spike は node ごとに worktree を作る。workspaces.json はその台帳で、
+# run 側だけでどの workspace を作ったかと片付けたかを追えるようにする。
+# workspaces.json が無い run は worktree を作らない recipe なので、この検査を飛ばす。
+validate_workspaces() {
+  local run_dir="$1"
+  local run_state="$2"
+  local run_status="$3"
+  local workspaces="$run_dir/workspaces.json"
+  local node_id
+  local field
+
+  [ -f "$workspaces" ] || return 0
+  require_json "$workspaces"
+  jq -e '.base | strings | select(length > 0)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: base is required for a run that creates workspaces"
+
+  while IFS= read -r node_id; do
+    require_basename_safe_id "$node_id" "$workspaces: workspace node ID"
+    [ -d "$run_dir/nodes/$node_id" ] || fail "$workspaces: unknown node: $node_id"
+    jq -e --arg node "$node_id" '.[$node] | type == "object"' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id must map to a workspace object"
+    for field in workspace_id cwd branch; do
+      jq -e --arg node "$node_id" --arg field "$field" \
+        '.[$node][$field] | strings | select(length > 0)' "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id $field must be a non-empty string"
+    done
+    jq -e --arg node "$node_id" '.[$node].cwd | test("^/")' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id cwd must be an absolute path"
+    jq -e --arg node "$node_id" '.[$node].archived | type == "boolean"' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id archived must be a boolean"
+    if [ "$run_status" = "ok" ]; then
+      jq -e --arg node "$node_id" '.[$node].archived' "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id workspace is not archived"
+    fi
+  done < <(jq -r 'keys[]' "$workspaces")
+}
+
 validate_handoff() {
   local handoff="$1"
   local run_id="$2"
@@ -287,6 +324,8 @@ if [ -d "$run_dir/nodes" ]; then
     fi
   done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
+
+validate_workspaces "$run_dir" "$run_state" "$run_status"
 
 if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then
   fail "$run_state: root state ok conflicts with a non-ok adopted child state"

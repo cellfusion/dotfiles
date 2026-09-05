@@ -8,6 +8,8 @@ FIXTURE="$(mktemp -d)"
 RUN="$FIXTURE/run-01"
 trap 'rm -rf "$FIXTURE"' EXIT
 
+validate_run() { bash "$VALIDATOR" "$1" 2>&1; }
+
 mkdir -p "$RUN"
 printf '%s\n' '{
   "run_id": "run-01",
@@ -33,23 +35,26 @@ printf '%s\n' '{
   "artifact_paths": ["REPLACE_WITH_SYNTHESIS_RESULT"]
 }' > "$RUN/state.json"
 
-write_attempt() {
-  local node_id="$1"
-  local attempt_id="$2"
-  local result="$3"
-  local attempt_dir="$RUN/nodes/$node_id/attempts/$attempt_id"
+write_attempt_in() {
+  local run_dir="$1"
+  local node_id="$2"
+  local attempt_id="$3"
+  local result="$4"
+  local run_id
+  run_id="$(basename "$run_dir")"
+  local attempt_dir="$run_dir/nodes/$node_id/attempts/$attempt_id"
   mkdir -p "$attempt_dir"
   printf '調査指示\n' > "$attempt_dir/prompt.md"
   printf '%s\n' "$result" > "$attempt_dir/result.md"
   printf 'backend log\n' > "$attempt_dir/log.md"
   printf '%s\n' "{
-  \"run_id\": \"run-01\",
+  \"run_id\": \"$run_id\",
   \"node\": \"$node_id\",
   \"attempt\": \"$attempt_id\",
   \"artifact_paths\": [\"$attempt_dir/result.md\"]
 }" > "$attempt_dir/handoff.json"
   printf '%s\n' "{
-  \"run_id\": \"run-01\",
+  \"run_id\": \"$run_id\",
   \"node\": \"$node_id\",
   \"attempt\": \"$attempt_id\",
   \"round\": 0,
@@ -64,6 +69,8 @@ write_attempt() {
   \"parent_decision\": \"accepted\"
 }" > "$attempt_dir/state.json"
 }
+
+write_attempt() { write_attempt_in "$RUN" "$@"; }
 
 # 同一 node の再実行は attempt ごとのファイルに分離され、先行結果を上書きしない。
 write_attempt research-1 attempt-001 'first result'
@@ -388,5 +395,88 @@ for recipe in spec plan implement review delivery; do
   assert_eq "$status" "1" "validator: $recipe は $node_id を欠く ok run を拒否する"
   assert_contains "$out" "$node_id" "validator: $recipe に欠けた必須 output を示す"
 done
+
+# implement と spike は子が同時にファイルを書くので、node ごとに worktree を作る。
+# 台帳が無いと、どの run がどの workspace を作ったかが追えなくなる。
+mk_run_with_workspaces() {
+  local dir="$1"
+  local run_id
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  run_id="$(basename "$dir")"
+  # 既存の run-01 の state.json を土台にし、recipe を implement、base を足す。
+  # implement の ok run は max_rounds と final-review node も要る。
+  jq --arg run "$run_id" --arg artifact "$dir/nodes/final-review/attempts/a1/result.md" \
+    '.run_id = $run | .recipe = "implement" | .base = "master" | .max_rounds = 2 |
+     .completed_nodes = ["implement-1", "final-review"] |
+     .adopted_attempts = {"implement-1": "a1", "final-review": "a1"} |
+     .artifact_paths = [$artifact]' "$RUN/state.json" > "$dir/state.json"
+  write_attempt_in "$dir" "implement-1" "a1" "実装結果"
+  write_attempt_in "$dir" "final-review" "a1" "レビュー結果"
+  # run は ok なので、台帳の workspace は archive 済みにしておく。
+  cat > "$dir/workspaces.json" <<'JSON'
+{
+  "implement-1": {
+    "workspace_id": "ws-abc123",
+    "cwd": "/Users/example/.paseo/worktrees/ws-abc123/impl",
+    "branch": "mad/20260905T120000-a1b2c3/implement-1",
+    "archived": true
+  }
+}
+JSON
+}
+
+# 正常系
+mk_run_with_workspaces "$RUN/nested-ok"
+assert_contains "$(validate_run "$RUN/nested-ok")" "valid manual orchestration run" \
+  "validator: workspaces.json を持つ run を受け入れる"
+
+# workspaces.json を持たない run は、この検査を飛ばして受け入れる。
+mk_run_with_workspaces "$RUN/no-workspaces"
+rm "$RUN/no-workspaces/workspaces.json"
+jq 'del(.base)' "$RUN/no-workspaces/state.json" > "$RUN/no-workspaces/tmp" \
+  && mv "$RUN/no-workspaces/tmp" "$RUN/no-workspaces/state.json"
+assert_contains "$(validate_run "$RUN/no-workspaces")" "valid manual orchestration run" \
+  "validator: workspace を作らない run に台帳と base を要求しない"
+
+# cwd が相対パス
+mk_run_with_workspaces "$RUN/rel-cwd"
+jq '.["implement-1"].cwd = "relative/path"' "$RUN/rel-cwd/workspaces.json" > "$RUN/rel-cwd/tmp" \
+  && mv "$RUN/rel-cwd/tmp" "$RUN/rel-cwd/workspaces.json"
+assert_contains "$(validate_run "$RUN/rel-cwd")" "cwd must be an absolute path" \
+  "validator: workspaces.json の相対パスを拒否する"
+
+# run の node に無い node ID
+mk_run_with_workspaces "$RUN/unknown-node"
+jq '. + {"no-such-node": .["implement-1"]}' "$RUN/unknown-node/workspaces.json" > "$RUN/unknown-node/tmp" \
+  && mv "$RUN/unknown-node/tmp" "$RUN/unknown-node/workspaces.json"
+assert_contains "$(validate_run "$RUN/unknown-node")" "unknown node" \
+  "validator: run に無い node の workspace を拒否する"
+
+# archive していない workspace を持つ run を ok にできない
+mk_run_with_workspaces "$RUN/not-archived"
+jq '.["implement-1"].archived = false' "$RUN/not-archived/workspaces.json" > "$RUN/not-archived/tmp" \
+  && mv "$RUN/not-archived/tmp" "$RUN/not-archived/workspaces.json"
+assert_contains "$(validate_run "$RUN/not-archived")" "workspace is not archived" \
+  "validator: 未 archive の workspace を持つ run を ok にしない"
+
+# archive は run の完了時に行う。実行中の run は archive 前の workspace を持てる。
+mk_run_with_workspaces "$RUN/running-not-archived"
+jq '.state = "running" | .phase_state = "running"' "$RUN/running-not-archived/state.json" \
+  > "$RUN/running-not-archived/tmp" \
+  && mv "$RUN/running-not-archived/tmp" "$RUN/running-not-archived/state.json"
+jq '.["implement-1"].archived = false' "$RUN/running-not-archived/workspaces.json" \
+  > "$RUN/running-not-archived/tmp" \
+  && mv "$RUN/running-not-archived/tmp" "$RUN/running-not-archived/workspaces.json"
+assert_contains "$(validate_run "$RUN/running-not-archived")" "valid manual orchestration run" \
+  "validator: 実行中の run は未 archive の workspace を許す"
+
+# worktree を作る run は base を run state に記録する。base が無いと diff の起点が
+# 決まらず、レビュー役へ渡す差分を作れない。
+mk_run_with_workspaces "$RUN/no-base"
+jq 'del(.base)' "$RUN/no-base/state.json" > "$RUN/no-base/tmp" \
+  && mv "$RUN/no-base/tmp" "$RUN/no-base/state.json"
+assert_contains "$(validate_run "$RUN/no-base")" "base is required" \
+  "validator: workspace を持つ run に base を要求する"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

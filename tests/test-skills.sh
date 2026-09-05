@@ -390,6 +390,19 @@ done
 assert_contains "$manual_mad" "親が確認" \
   "_manual-orchestration: 親の介入境界を定義する"
 
+# implement と spike の子は同じ作業ツリーへ同時に書く。契約に worktree 隔離と
+# 後片付けが無いと、子の書き込みが互いに上書きされ、workspace も残り続ける。
+assert_contains "$manual_mad" "isolation" \
+  "mad/contract: worktree 隔離の isolation を書く"
+assert_contains "$manual_mad" "branch-off" \
+  "mad/contract: worktree の mode に branch-off を使う"
+assert_contains "$manual_mad" "workspaces.json" \
+  "mad/contract: workspace の台帳を run ディレクトリに置く"
+assert_contains "$manual_mad" "detached HEAD" \
+  "mad/contract: detached HEAD を拒否する"
+assert_contains "$manual_mad" "archive_workspace" \
+  "mad/contract: 後片付けに archive_workspace を使う"
+
 mad_skill="$(render_template "agent-skills/multi-agent-development/SKILL.md" "claude")"
 assert_contains "$mad_skill" "### delivery role map" \
   "mad/delivery: logical duty と実 role の map を示す"
