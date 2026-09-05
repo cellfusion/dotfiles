@@ -352,8 +352,8 @@ assert_contains "$mad_skill" "\`planner\` / \`task-graph-analyzer\` | \`planner\
   "mad/delivery: planner を task graph に再利用する"
 assert_contains "$mad_skill" "\`implementer\` | \`sdd-implementer\`" \
   "mad/delivery: task 実装は SDD implementer を使う"
-assert_contains "$mad_skill" "\`review-synthesizer\` | \`synthesizer\`" \
-  "mad/delivery: synthesizer を review 統合に再利用する"
+assert_contains "$mad_skill" "\`review-synthesizer\` | \`review-synthesizer\`" \
+  "mad/delivery: review 統合は専用 role を使う"
 assert_contains "$mad_skill" "既定観点: 現状と確認済みの事実、制約とリスク、代替案" \
   "mad/research: 既定の 3 観点を定義する"
 assert_contains "$mad_skill" "\`perspectives\` で全 3 観点を差し替えられる" \

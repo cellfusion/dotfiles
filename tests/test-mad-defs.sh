@@ -44,8 +44,8 @@ for role in $(jq -r 'keys[]' "$FIXTURE/paseo-routing.json"); do
   done
 done
 
-# MAD の汎用役と delivery が直接起動する author / planner は、Paseo routing にある。
-for role in researcher synthesizer judge reviewer implementer spec-author planner; do
+# MAD の汎用役と delivery が直接起動する author / planner / review 統合役は、Paseo routing にある。
+for role in researcher synthesizer judge reviewer implementer spec-author planner review-synthesizer; do
   known="$(jq -r --arg r "$role" 'has($r)' "$FIXTURE/paseo-routing.json")"
   assert_eq "$known" "true" "routing: $role がある"
 done
@@ -71,12 +71,58 @@ for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) 
   assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
 done
 
-# 正規成果物を作る役は、成功時の成果物と parent relay 用 decision request を schema に持つ。
+# 正規成果物を作る役は、status ごとに成功成果物か parent relay 用 decision request のどちらを
+# handoff するかを schema で排他的に定める。テンプレートの文字列を探すだけでなく、共有 validator
+# に実例を渡して成功と不正な混在の拒否を確認する。
+validate_example() {
+  local schema="$1"
+  local example="$2"
+  printf '%s' "$example" | SCHEMA="$schema" \
+    VALIDATOR="$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_json-schema" node -e '
+    const fs = require("fs");
+    const { validateSchema } = require(process.env.VALIDATOR);
+    let input = "";
+    process.stdin.on("data", chunk => { input += chunk; });
+    process.stdin.on("end", () => {
+      const errors = validateSchema(JSON.parse(fs.readFileSync(process.env.SCHEMA, "utf8")), JSON.parse(input));
+      process.stdout.write(errors.length === 0 ? "valid" : "invalid");
+    });
+  '
+}
+
 for role in spec-author planner; do
-  schema="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/$role.json")"
-  assert_contains "$schema" '"artifactPath"' "delivery: $role は正規成果物の絶対パスを返す"
-  assert_contains "$schema" '"decisionRequestPath"' "delivery: $role は decision request のパスを返す"
+  schema="$FIXTURE/$role-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
+  assert_eq "$(validate_example "$schema" '{"status":"ok","artifactPath":"/tmp/canonical.md","decisionRequestPath":null,"summary":"done"}')" \
+            "valid" "delivery: $role は成功時に artifactPath だけを受け取る"
+  assert_eq "$(validate_example "$schema" '{"status":"needs_decision","artifactPath":null,"decisionRequestPath":"/tmp/decision.md","summary":"need input"}')" \
+            "valid" "delivery: $role は判断待ちで decisionRequestPath だけを受け取る"
+  assert_eq "$(validate_example "$schema" '{"status":"ok","artifactPath":"/tmp/canonical.md","decisionRequestPath":"/tmp/decision.md","summary":"mixed"}')" \
+            "invalid" "delivery: $role は成功時に decision request を混在させない"
+  assert_eq "$(validate_example "$schema" '{"status":"needs_decision","artifactPath":"/tmp/canonical.md","decisionRequestPath":null,"summary":"mixed"}')" \
+            "invalid" "delivery: $role は判断待ちに成果物を混在させない"
 done
+
+# review 統合は調査統合と異なり、採用 verdict と修正可能な finding を返す専用 role を使う。
+review_schema="$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/review-synthesizer.json"
+assert_eq "$(test -f "$review_schema" && echo yes || echo no)" "yes" \
+          "delivery: review-synthesizer の schema がある"
+if [ -f "$review_schema" ]; then
+  rendered_review_schema="$FIXTURE/review-synthesizer-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    '{{ includeTemplate "agent-defs/schemas/review-synthesizer.json" . }}' > "$rendered_review_schema"
+  assert_contains "$(cat "$rendered_review_schema")" '"verdict"' \
+    "delivery: review-synthesizer は verdict を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"severity"' \
+    "delivery: review-synthesizer は finding severity を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"location"' \
+    "delivery: review-synthesizer は finding location を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"fix"' \
+    "delivery: review-synthesizer は finding fix を返す"
+  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null}')" \
+            "valid" "delivery: review-synthesizer は verdict と修正可能な finding を返す"
+fi
 
 # 既定の provider は claude と codex の 2 つである。
 for p in claude codex; do

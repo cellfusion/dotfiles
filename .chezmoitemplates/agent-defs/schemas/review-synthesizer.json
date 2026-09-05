@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["verdict", "findings", "summary", "strengths"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approved", "needs_fixes"] },
+    "findings": {
+      "type": "array",
+      "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
+    },
+    "summary": { "type": "string" },
+    "strengths": { "type": ["string", "null"] }
+  }
+}

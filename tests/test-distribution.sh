@@ -116,6 +116,13 @@ for a in $(printf '%s' "$delivery_manifest" | jq -r \
     "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
 
+# review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
+# 契約が runtime ごとに欠けると、review recipe が統合結果を判定できなくなる。
+assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \
+  "MAD delivery: review-synthesizer prompt を ~/.agents へ配る"
+assert_contains "$managed" ".agents/agent-defs/schemas/review-synthesizer.json" \
+  "MAD delivery: review-synthesizer schema を ~/.agents へ配る"
+
 # 配る routing.json はテンプレートと同じ内容になる。
 rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/routing.json" . }}')"

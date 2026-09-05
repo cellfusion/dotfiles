@@ -3,6 +3,7 @@
   "synthesizer": [{ "provider": "claude" }, { "provider": "codex" }],
   "judge": [{ "provider": "claude" }, { "provider": "codex" }],
   "reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
+  "review-synthesizer": [{ "provider": "claude" }, { "provider": "codex" }],
   "implementer": [{ "provider": "codex" }, { "provider": "claude" }],
   "spec-author": [{ "provider": "claude" }, { "provider": "codex" }],
   "planner": [{ "provider": "claude" }, { "provider": "codex" }],

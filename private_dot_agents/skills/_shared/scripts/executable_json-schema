@@ -26,6 +26,16 @@ function validateSchema(schema, data, at) {
   const where = at || '(root)'
   const errs = []
 
+  // oneOf は status に応じた nullable field の排他契約に使う。すべての branch を
+  // 検証し、ちょうど 1 つだけ成功することを要求する。
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter((branch) => validateSchema(branch, data, where).length === 0)
+    if (matches.length !== 1) {
+      errs.push(`${where}: oneOf の条件に一致する branch が ${matches.length} 件`)
+      return errs
+    }
+  }
+
   // type は文字列でも配列でもよい。structured output（codex exec --output-schema）は
   // optional property を許さないので、任意の項目は ["string", "null"] のように
   // nullable にして required に入れる。配列を解釈できないと、その項目の型検査が
@@ -40,7 +50,10 @@ function validateSchema(schema, data, at) {
   // null が許されていて実際に null なら、これ以上見るものはない。
   if (data === null) return errs
 
-  if (types.includes('object') && typeof data === 'object' && !Array.isArray(data)) {
+  // JSON Schema の properties は type: object を省略した branch（oneOf 内など）でも
+  // object に対して有効である。type の有無ではなく object 向けキーワードの存在で辿る。
+  if ((types.includes('object') || schema.properties || schema.required || schema.additionalProperties !== undefined) &&
+      typeof data === 'object' && !Array.isArray(data)) {
     for (const k of schema.required || []) {
       if (!(k in data)) errs.push(`${where}.${k}: 必須項目が無い`)
     }

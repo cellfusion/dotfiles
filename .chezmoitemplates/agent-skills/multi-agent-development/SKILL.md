@@ -40,7 +40,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 | `planner` / `task-graph-analyzer` | `planner` |
 | `implementer` | `sdd-implementer` |
 | `task-reviewer` / `re-reviewer` / `final-reviewer` | `sdd-task-reviewer` / `sdd-re-reviewer` / `sdd-final-reviewer` |
-| `review-synthesizer` | `synthesizer` |
+| `review-synthesizer` | `review-synthesizer` |
 
 ### `spec`
 
@@ -72,8 +72,8 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 ### `review`
 
 - 入力: requirements、review package、対象成果物の絶対パス。
-- 子: 観点別 `reviewer` を並列起動し、`review-synthesizer` または `final-reviewer` が採用可能な指摘を
-  統合する。
+- 子: 観点別 `reviewer` を並列起動し、`review-synthesizer` が採用可能な指摘を統合する。ブランチ全体を
+  merge 前に判定する場合だけ `final-reviewer` を使う。
 - gate: 親は各 review attempt と統合前の handoff を確認し、要件変更または追加 review が必要なら
   user gate を relay する。
 - 完了: 最終 review 成果物の絶対パスを handoff し、失敗 review を隠して完了にしてはならない。

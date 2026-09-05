@@ -46,7 +46,7 @@
     "access": "read",
     "description": "統合役。複数の調査結果を 1 つにまとめ、食い違いを明示する。読み取り専用。",
     "artifact_contract": "mad-attempt-v1",
-    "delivery_duties": ["review-synthesizer"]
+    "delivery_duties": []
   },
   "judge": {
     "tier": "think",
@@ -61,6 +61,13 @@
     "description": "レビュー役。spec 準拠と品質を見て PASS か FAIL と指摘を返す。読み取り専用。",
     "artifact_contract": "mad-attempt-v1",
     "delivery_duties": ["spec-reviewer", "plan-reviewer", "reviewer"]
+  },
+  "review-synthesizer": {
+    "tier": "think",
+    "access": "read",
+    "description": "レビュー統合役。複数のレビュー結果を採用可能な verdict と修正可能な指摘へ統合する。読み取り専用。",
+    "artifact_contract": "mad-attempt-v1",
+    "delivery_duties": ["review-synthesizer"]
   },
   "implementer": {
     "tier": "work",
