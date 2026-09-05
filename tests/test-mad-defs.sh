@@ -117,6 +117,18 @@ for role in spec-author plan-author; do
             "invalid" "delivery: $role は判断待ちに成果物を混在させない"
 done
 
+# 全 role の schema が decision request の経路を持つ。無いと子は判断を求められない。
+for role in spec-author plan-author reviewer researcher judge synthesizer \
+            review-synthesizer implementer writer; do
+  schema="$FIXTURE/$role-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
+  has="$(jq -r 'if (.properties.decisionRequestPath != null)
+                   and ((.required | index("decisionRequestPath")) != null)
+                then "yes" else "no" end' "$schema" 2>&1)"
+  assert_eq "$has" "yes" "$role: schema が decisionRequestPath を required で持つ"
+done
+
 # review 統合は調査統合と異なり、採用 verdict と修正可能な finding を返す専用 role を使う。
 review_schema="$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/review-synthesizer.json"
 assert_eq "$(test -f "$review_schema" && echo yes || echo no)" "yes" \
@@ -133,7 +145,7 @@ if [ -f "$review_schema" ]; then
     "delivery: review-synthesizer は finding location を返す"
   assert_contains "$(cat "$rendered_review_schema")" '"fix"' \
     "delivery: review-synthesizer は finding fix を返す"
-  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null}')" \
+  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null,"decisionRequestPath":null}')" \
             "valid" "delivery: review-synthesizer は verdict と修正可能な finding を返す"
 fi
 

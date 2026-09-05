@@ -1,10 +1,11 @@
 {
   "type": "object",
-  "required": ["baseHead", "changedFiles", "summary"],
+  "required": ["baseHead", "changedFiles", "summary", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "baseHead": { "type": "string" },
     "changedFiles": { "type": "array", "items": { "type": "string" } },
-    "summary": { "type": "string" }
+    "summary": { "type": "string" },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }

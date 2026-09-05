@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["verdict", "findings", "summary", "strengths"],
+  "required": ["verdict", "findings", "summary", "strengths", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "verdict": { "type": "string", "enum": ["approved", "needs_fixes"] },
@@ -9,6 +9,7 @@
       "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
     },
     "summary": { "type": "string" },
-    "strengths": { "type": ["string", "null"] }
+    "strengths": { "type": ["string", "null"] },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }
