@@ -45,7 +45,7 @@ for role in $(jq -r 'keys[]' "$FIXTURE/paseo-routing.json"); do
 done
 
 # MAD の汎用役と delivery が直接起動する author / planner / review 統合役は、Paseo routing にある。
-for role in researcher synthesizer judge reviewer implementer spec-author planner review-synthesizer; do
+for role in researcher synthesizer judge reviewer implementer spec-author plan-author review-synthesizer; do
   known="$(jq -r --arg r "$role" 'has($r)' "$FIXTURE/paseo-routing.json")"
   assert_eq "$known" "true" "routing: $role がある"
 done
@@ -90,7 +90,7 @@ validate_example() {
   '
 }
 
-for role in spec-author planner; do
+for role in spec-author plan-author; do
   schema="$FIXTURE/$role-schema.json"
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
@@ -173,6 +173,28 @@ chezmoi execute-template --source "$CHEZMOI_SOURCE" \
 for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
   known="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/routing.json")"
   assert_eq "$known" "true" "delivery: $role は native subagent で route できる"
+done
+
+# routing に名前があるだけでは `[dispatch-subagent: role]` は解決しない。runtime ごとの
+# agents ディレクトリに定義が無いと、Paseo MCP が使えない環境で子を起動できない。
+for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
+  for def in "private_dot_config/claude/agents/$role.md.tmpl" \
+             "private_dot_config/opencode/agents/$role.md.tmpl" \
+             "private_dot_config/codex/agents/$role.toml.tmpl"; do
+    assert_eq "$([ -f "$CHEZMOI_SOURCE/$def" ] && echo yes || echo no)" "yes" \
+      "subagent: $role の定義がある: $def"
+  done
+done
+
+# MAD の role 名は、手書きの非 MAD エージェントと衝突しない。衝突すると
+# `[dispatch-subagent: role]` が別のエージェントを黙って起動する。
+for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
+  for handwritten in "private_dot_config/claude/agents/$role.md" \
+                     "private_dot_config/opencode/agents/$role.md" \
+                     "private_dot_config/codex/agents/$role.toml"; do
+    assert_eq "$([ -f "$CHEZMOI_SOURCE/$handwritten" ] && echo yes || echo no)" "no" \
+      "subagent: $role が手書き定義と衝突しない: $handwritten"
+  done
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

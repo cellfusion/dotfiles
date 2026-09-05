@@ -29,7 +29,7 @@ backend は共通契約の selector で一度だけ選ぶ。開始済みの子�
 ### delivery role map
 
 論理上の責務名と実際に起動する role は以下のとおりである。manifest の `delivery_duties` が正本であり、
-Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を使う。`spec-author` と `planner` だけが
+Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を使う。`spec-author` と `plan-author` だけが
 正規 spec / plan を書く。review 系は既存の読み取り role を再利用し、backend が構造化出力を attempt の
 `result.json` と `handoff.json` へ保存する。
 
@@ -37,7 +37,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 |---|---|
 | `spec-author` | `spec-author` |
 | `spec-reviewer` / `plan-reviewer` | `reviewer` |
-| `planner` / `task-graph-analyzer` | `planner` |
+| `planner` / `task-graph-analyzer` | `plan-author` |
 | `implementer` | `sdd-implementer` |
 | `task-reviewer` / `re-reviewer` / `final-reviewer` | `sdd-task-reviewer` / `sdd-re-reviewer` / `sdd-final-reviewer` |
 | `review-synthesizer` | `review-synthesizer` |
@@ -55,7 +55,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 ### `plan`
 
 - 入力: 承認済み spec の絶対パス。
-- 子: `planner` が実装 plan を作成し、`plan-reviewer` が実装可能性・検証計画・依存関係を review する。
+- 子: `plan-author` が実装 plan を作成し、`plan-reviewer` が実装可能性・検証計画・依存関係を review する。
 - gate: 親は plan review の採用 attempt を確認し、plan approval request を relay する。
 - 完了: 親が承認した正規 plan の絶対パスだけを handoff に記録する。承認前の run は
   `waiting_for_user` とする。

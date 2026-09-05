@@ -348,8 +348,8 @@ assert_contains "$mad_skill" "Paseo MCP と native subagent はともに同じ r
   "mad/delivery: backend 間で成果物契約を変えない"
 assert_contains "$mad_skill" "\`spec-reviewer\` / \`plan-reviewer\` | \`reviewer\`" \
   "mad/delivery: reviewer を spec/plan review に再利用する"
-assert_contains "$mad_skill" "\`planner\` / \`task-graph-analyzer\` | \`planner\`" \
-  "mad/delivery: planner を task graph に再利用する"
+assert_contains "$mad_skill" "\`planner\` / \`task-graph-analyzer\` | \`plan-author\`" \
+  "mad/delivery: plan-author を task graph に再利用する"
 assert_contains "$mad_skill" "\`implementer\` | \`sdd-implementer\`" \
   "mad/delivery: task 実装は SDD implementer を使う"
 assert_contains "$mad_skill" "\`review-synthesizer\` | \`review-synthesizer\`" \

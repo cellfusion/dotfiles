@@ -11,5 +11,5 @@
   "review-synthesizer":    { "engine": "claude" },
   "implementer":           { "engine": "codex"  },
   "spec-author":           { "engine": "claude" },
-  "planner":               { "engine": "claude" }
+  "plan-author":           { "engine": "claude" }
 }

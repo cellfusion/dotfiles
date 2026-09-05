@@ -1,13 +1,13 @@
 ---
 name: writing-plans
 description: >-
-  承認済み spec から実装計画を作るとき、MAD の plan recipe へ planner と reviewer の作業を委譲する。
+  承認済み spec から実装計画を作るとき、MAD の plan recipe へ plan 作成と review を委譲する。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
 # MAD plan の入口
 
-親は本文を作らない。承認済み spec の絶対パスを MAD の `plan` recipe に渡す。子の `planner` が
+親は本文を作らない。承認済み spec の絶対パスを MAD の `plan` recipe に渡す。子の `plan-author` が
 `_cellfusion/plans/` の正規 plan を作り、`plan-reviewer` が実装可能性、検証、依存関係を review する。
 親は backend 選択、状態遷移、子の制御、ユーザーの approval gate だけを担う。
 

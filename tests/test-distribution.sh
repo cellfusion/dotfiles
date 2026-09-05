@@ -116,6 +116,17 @@ for a in $(printf '%s' "$delivery_manifest" | jq -r \
     "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
 
+# `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
+# schema だけを配っても、agent 定義が配られていない role は native subagent で起動できない。
+for a in $(printf '%s' "$delivery_manifest" | jq -r 'keys[]'); do
+  assert_contains "$managed" ".config/claude/agents/$a.md" \
+    "MAD subagent: claude の $a 定義を配る"
+  assert_contains "$managed" ".config/opencode/agents/$a.md" \
+    "MAD subagent: opencode の $a 定義を配る"
+  assert_contains "$managed" ".config/codex/agents/$a.toml" \
+    "MAD subagent: codex の $a 定義を配る"
+done
+
 # review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
 # 契約が runtime ごとに欠けると、review recipe が統合結果を判定できなくなる。
 assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \

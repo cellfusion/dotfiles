@@ -83,7 +83,7 @@
     "artifact_contract": "mad-attempt-v1",
     "delivery_duties": ["spec-author"]
   },
-  "planner": {
+  "plan-author": {
     "tier": "think",
     "access": "write",
     "description": "計画作成役。承認済み spec から検証可能な実装 plan と task graph を作成する。",
