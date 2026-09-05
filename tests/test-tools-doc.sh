@@ -187,6 +187,25 @@ for f in yazi helix gitui; do
   assert_not_contains "$brewfile" "brew \"$f\"" "整合: $f は Brewfile に無い"
 done
 
+# --- worktrees.md が現在の経路を書いている ---
+# SDD の task worktree は sdd-run が作るのではなく、MAD の implement recipe の子が
+# using-git-worktrees に従って作る。削除した経路を書いたままにしない。
+worktrees_doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/worktrees.md" 2>&1)"
+assert_not_contains "$worktrees_doc" "sdd-run" \
+  "worktrees: 削除した sdd-run 経由の worktree 作成を書かない"
+assert_contains "$worktrees_doc" "using-git-worktrees" \
+  "worktrees: worktree の手順が using-git-worktrees にあると書く"
+assert_contains "$worktrees_doc" "multi-agent-development" \
+  "worktrees: 実装工程の入口が MAD であると書く"
+
+# --- MAD の下で残す SDD 基盤の役割が記録されている ---
+# sdd-run / sdd-task と補助スクリプトは MAD の implement recipe の子が使う。
+# 何のために残っているかを書いていないと、退役済みと誤解して消される。
+for s in sdd-run sdd-task task-brief task-waves task-worktree run-registry \
+         agent-backend sdd-workspace; do
+  assert_contains "$doc" "$s" "docs: MAD の下で残す $s が記録されている"
+done
+
 # --- README と棚卸しの整合 ---
 readme="$(cat "$CHEZMOI_SOURCE/README.md" 2>&1)"
 

@@ -65,11 +65,12 @@ dev server のような常駐プロセスだけ `post-start` に置く。
     wt merge
     wt remove feat/foo
 
-エージェント: SDD の task worktree は `wt switch --create <branch> --base <base> --no-cd
---format json -y --config ~/.config/worktrunk/agent.toml` で作る。作成は `sdd-run` が
-`task-worktree` 経由で行い、herdr には登録しない。worktree は
-`~/.local/state/sdd/worktrees/` に置かれる。.env のコピーと依存インストールは
-agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-start` を別途叩かない。
+エージェント: task worktree は `wt switch --create <branch> --base <base> --no-cd
+--format json -y --config ~/.config/worktrunk/agent.toml` で作る。作成するのは
+`multi-agent-development` の `implement` recipe で起動された子であり、herdr には登録しない。
+親は worktree を作らない。worktree は `~/.local/state/sdd/worktrees/` に置かれる。.env のコピーと
+依存インストールは agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-start` を
+別途叩かない。
 
 - claude の workspace trust は cwd の祖先から継承される。`~/.local/state/sdd/worktrees`
   を 1 度 trust すれば、以後すべての task worktree でダイアログは出ない。trust の記録は
@@ -77,8 +78,8 @@ agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-star
 
 片付けは `wt remove --no-delete-branch` → `git branch -d` の順で行う。
 
-`wt hook <type>` は worktree を誰が作ったかを問わず動く。手順は
-`using-git-worktrees` と `subagent-driven-development` のスキルに書いてある。
+`wt hook <type>` は worktree を誰が作ったかを問わず動く。worktree の作成・統合・後始末の手順は
+`using-git-worktrees` スキルにある。`implement` recipe の子はこの規約に従う。
 
 ## 注意点
 
