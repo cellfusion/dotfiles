@@ -403,6 +403,23 @@ assert_contains "$manual_mad" "detached HEAD" \
 assert_contains "$manual_mad" "archive_workspace" \
   "mad/contract: 後片付けに archive_workspace を使う"
 
+# レビュー役と judge は worktree の中を見られない。親が取った diff と改稿前のファイルを
+# attempt へ置く規約が無いと、後段は差分を確認できず、改稿前の本文も戻せない。
+assert_contains "$manual_mad" "diff.patch" \
+  "mad/contract: diff を attempt の diff.patch に書く"
+assert_contains "$manual_mad" "\`implement\` が 2000 行" \
+  "mad/contract: implement の diff 上限は 2000 行"
+assert_contains "$manual_mad" "\`spike\` が 800 行" \
+  "mad/contract: spike の diff 上限は 800 行"
+assert_contains "$manual_mad" "before/" \
+  "mad/contract: refine は改稿前のファイルを before/ へ退避する"
+assert_contains "$manual_mad" "子の待ち時間の既定 | 1200 秒" \
+  "mad/contract: 子の待ち時間の既定は 1200 秒"
+assert_contains "$manual_mad" "\`implement\` と \`spike\` の子の待ち時間 | 3600 秒" \
+  "mad/contract: implement と spike の待ち時間は 3600 秒"
+assert_contains "$manual_mad" "同時に走らせる子の上限" \
+  "mad/contract: 並列上限を定める"
+
 mad_skill="$(render_template "agent-skills/multi-agent-development/SKILL.md" "claude")"
 assert_contains "$mad_skill" "### delivery role map" \
   "mad/delivery: logical duty と実 role の map を示す"
@@ -426,6 +443,10 @@ assert_contains "$mad_skill" "調査役は \`researcher\`、統合役は \`synth
   "mad/research: 子の role を明記する"
 assert_contains "$mad_skill" "改稿役を起動して成果物を確認し、批評役へ絶対パスを渡し、親が批評を確認して判断する" \
   "mad/refine: 改稿から批評、親判断の順に進める"
+assert_contains "$mad_skill" "max_rounds\` を 3" \
+  "mad/implement: max_rounds の既定は 3"
+assert_contains "$mad_skill" "max_rounds\` を 2" \
+  "mad/refine: max_rounds の既定は 2"
 
 for d in private_dot_agents/skills \
          private_dot_config/claude/skills \

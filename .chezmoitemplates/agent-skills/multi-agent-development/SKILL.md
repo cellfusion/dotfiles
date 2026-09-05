@@ -122,6 +122,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 
 `implement` と `refine` は親が `max_rounds` を指定して管理する。各ラウンドは run の
 `state.json` にラウンド番号、子の成果物の絶対パス、親の判断、状態を記録する。
+親が指定しない場合、`implement` は `max_rounds` を 3、`refine` は `max_rounds` を 2 として開始する。
 
 `refine` は改稿役を起動して成果物を確認し、批評役へ絶対パスを渡し、親が批評を確認して判断する。
 

@@ -251,9 +251,11 @@ if [ -d "$run_dir/nodes" ]; then
     fi
   done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
 
+  # attempt は attempts/ の直下だけである。attempt が中に持つ before/ のような
+  # ディレクトリを attempt とみなすと、退避した改稿前のファイルが契約違反になる。
   while IFS= read -r attempt_dir; do
     [ -f "$attempt_dir/state.json" ] || fail "$attempt_dir: state.json is required"
-  done < <(find "$run_dir/nodes" -type d -path '*/attempts/*' -print)
+  done < <(find "$run_dir/nodes" -mindepth 3 -maxdepth 3 -type d -path '*/attempts/*' -print)
 
   while IFS= read -r attempt_state; do
     attempt_dir="$(dirname "$attempt_state")"
@@ -291,7 +293,7 @@ if [ -d "$run_dir/nodes" ]; then
     [ "$result_count" -eq 1 ] || fail "$attempt_dir: exactly one result.md or result.json is required"
     [ -f "$attempt_dir/log.md" ] || fail "$attempt_dir: log.md is required"
     validate_handoff "$attempt_dir/handoff.json" "$run_id" "$node_id" "$attempt_id"
-  done < <(find "$run_dir/nodes" -type f -path '*/attempts/*/state.json' -print)
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print)
 
   while IFS= read -r node_dir; do
     node_id="$(basename "$node_dir")"

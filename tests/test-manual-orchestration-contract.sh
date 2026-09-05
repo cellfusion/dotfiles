@@ -479,4 +479,91 @@ jq 'del(.base)' "$RUN/no-base/state.json" > "$RUN/no-base/tmp" \
 assert_contains "$(validate_run "$RUN/no-base")" "base is required" \
   "validator: workspace を持つ run に base を要求する"
 
+# node 1 つと、recipe が必須とする output node だけを持つ ok run を作る。
+# 土台は run-01 の state.json で、recipe と採用 attempt だけを差し替える。
+mk_recipe_run_with_node() {
+  local run_dir="$1"
+  local recipe="$2"
+  local node_id="$3"
+  local attempt_id="$4"
+  local run_id
+  local output_node
+
+  rm -rf "$run_dir"
+  mkdir -p "$run_dir"
+  run_id="$(basename "$run_dir")"
+  output_node="$(required_output_for "$recipe")"
+  write_attempt_in "$run_dir" "$node_id" "$attempt_id" "作業結果"
+  jq --arg run "$run_id" --arg recipe "$recipe" --arg node "$node_id" \
+    --arg attempt "$attempt_id" \
+    --arg artifact "$run_dir/nodes/$node_id/attempts/$attempt_id/result.md" \
+    '.run_id = $run | .recipe = $recipe | .max_rounds = 2 |
+     .completed_nodes = [$node] | .adopted_attempts = { ($node): $attempt } |
+     .artifact_paths = [$artifact]' "$RUN/state.json" > "$run_dir/state.json"
+  if [ -n "$output_node" ]; then
+    write_attempt_in "$run_dir" "$output_node" "$attempt_id" "レビュー結果"
+    jq --arg node "$output_node" --arg attempt "$attempt_id" \
+      '.completed_nodes += [$node] | .adopted_attempts += { ($node): $attempt }' \
+      "$run_dir/state.json" > "$run_dir/tmp"
+    mv "$run_dir/tmp" "$run_dir/state.json"
+  fi
+}
+
+# 実装役の attempt に diff.patch を置く。親は workspaces.json の cwd から diff を取るので、
+# 台帳と base も付ける。
+mk_attempt_with_diff() {
+  local run_dir="$1"
+  local node_id="$2"
+  local attempt_id="$3"
+
+  mk_recipe_run_with_node "$run_dir" implement "$node_id" "$attempt_id"
+  jq '.base = "master"' "$run_dir/state.json" > "$run_dir/tmp"
+  mv "$run_dir/tmp" "$run_dir/state.json"
+  jq -n --arg node "$node_id" '{
+    ($node): {
+      workspace_id: "ws-abc123",
+      cwd: "/tmp/mad-worktrees/ws-abc123/impl",
+      branch: "mad/20260905T120000-a1b2c3/\($node)",
+      archived: true
+    }
+  }' > "$run_dir/workspaces.json"
+  printf '%s\n' \
+    'diff --git a/src/app.ts b/src/app.ts' \
+    '--- a/src/app.ts' \
+    '+++ b/src/app.ts' \
+    '@@ -1 +1 @@' \
+    '-old' \
+    '+new' > "$run_dir/nodes/$node_id/attempts/$attempt_id/diff.patch"
+}
+
+# 改稿役の attempt に before/ を置く。改稿前の対象ファイルはここへ複製する。
+mk_attempt_with_before() {
+  local run_dir="$1"
+  local node_id="$2"
+  local attempt_id="$3"
+  local before_dir="$run_dir/nodes/$node_id/attempts/$attempt_id/before"
+
+  mk_recipe_run_with_node "$run_dir" refine "$node_id" "$attempt_id"
+  mkdir -p "$before_dir"
+  printf '改稿前の本文\n' > "$before_dir/spec.md"
+}
+
+# レビュー役と judge は worktree の中を見られない。親が取った diff を attempt に
+# 置き、後段には絶対パスだけを渡す。
+mk_attempt_with_diff "$RUN/with-diff" "implement-1" "a1"
+assert_contains "$(validate_run "$RUN/with-diff")" "valid manual orchestration run" \
+  "validator: attempt の diff.patch を受け入れる"
+
+# diff.patch は attempt の中に置く。node 直下は既存の規約どおり拒否する。
+mk_attempt_with_diff "$RUN/diff-at-node" "implement-1" "a1"
+mv "$RUN/diff-at-node/nodes/implement-1/attempts/a1/diff.patch" \
+   "$RUN/diff-at-node/nodes/implement-1/diff.patch"
+assert_contains "$(validate_run "$RUN/diff-at-node" 2>&1)" "node artifacts must be under attempts/" \
+  "validator: node 直下の diff.patch を拒否する"
+
+# refine は改稿前のファイルを attempt の before/ へ退避する。
+mk_attempt_with_before "$RUN/with-before" "revise-1" "a1"
+assert_contains "$(validate_run "$RUN/with-before")" "valid manual orchestration run" \
+  "validator: attempt の before/ を受け入れる"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
