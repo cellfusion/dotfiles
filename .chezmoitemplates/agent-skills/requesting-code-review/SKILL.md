@@ -89,8 +89,8 @@ MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synt
 - Minor は記録して後で扱う
 - レビュアーが誤っていれば技術的な根拠を添えて押し返す
 
-**親は Critical と Important を自分で直さない。** 親が書いた修正はレビューを素通りし、親の
-context を汚す。
+**親は Critical と Important を自分で直さない。** 親が書いた修正は独立したレビュアーの判定を
+受けない。修正の diff とテスト出力も親の会話に残り、以降のターンで毎回読み直される。
 
 受け取り方の作法は receiving-code-review を使う。
 
