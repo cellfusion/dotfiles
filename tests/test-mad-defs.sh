@@ -71,27 +71,18 @@ for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) 
   assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
 done
 
-# refine の改稿役は master から取り込んだ writer である。delivery duty を持つ他の
-# role と同じく、成果物契約と 3 runtime の native subagent 定義を持つ。
-writer_contract="$(jq -r '.writer.artifact_contract' "$FIXTURE/manifests.json")"
-assert_eq "$writer_contract" "mad-attempt-v1" "delivery: writer は mad-attempt-v1 を返す"
-
+# refine の改稿役は master から取り込んだ writer である。契約・3 runtime 定義・routing は
+# 上の汎用ループが `delivery_duties` を経由してすでに検査している。ここで名指しするのは、
+# その `delivery_duties` 自体が壊れるケースだけである。`writer` が配列から抜け落ちると
+# writer は汎用ループの対象から静かに外れ、ループは何も言わずに writer を見なくなる。
+# `refine` は改稿役を起動できなくなるのに、テストは緑のままになる。
 writer_duties="$(jq -r '.writer.delivery_duties | join(",")' "$FIXTURE/manifests.json")"
 assert_eq "$writer_duties" "writer" "delivery: writer の論理責務は writer だけ"
 
+# 同じ理由で access が read に変わっても汎用ループは検査しない。writer は書き込み役でなければ
+# 対象ファイルを書き換えられず、改稿という職務そのものが果たせなくなる。
 writer_access="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
 assert_eq "$writer_access" "write" "delivery: writer は書き込み役"
-
-for f in \
-  "private_dot_config/claude/agents/writer.md.tmpl" \
-  "private_dot_config/opencode/agents/writer.md.tmpl" \
-  "private_dot_config/codex/agents/writer.toml.tmpl"; do
-  assert_eq "$(test -f "$CHEZMOI_SOURCE/$f" && echo yes || echo no)" "yes" \
-    "delivery: writer の native subagent 定義がある: $f"
-done
-
-writer_route="$(jq -r 'has("writer")' "$FIXTURE/paseo-routing.json")"
-assert_eq "$writer_route" "true" "routing: writer がある"
 
 # 正規成果物を作る役は、status ごとに成功成果物か parent relay 用 decision request のどちらを
 # handoff するかを schema で排他的に定める。テンプレートの文字列を探すだけでなく、共有 validator
