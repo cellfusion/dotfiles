@@ -58,6 +58,17 @@ assert_contains "$doc" "paseo.sh/download" "docs: paseo の入手先が書かれ
 assert_contains "$doc" "/Applications/Paseo.app/Contents/Resources/bin/paseo" \
   "docs: paseo の CLI の在り処が書かれている"
 
+# --- 削除したシェル資産を案内しない。配布済み実体は .chezmoiremove が回収する ---
+for legacy in "mad-run" "mad-agent" "mad-route" "mad-runs" "mad-lib"; do
+  assert_not_contains "$doc" "$legacy" "docs: 退役した $legacy を案内しない"
+done
+
+# --- worktree を作るレシピは後片付けが要る。片付け方が docs に無いと workspace が残る ---
+assert_contains "$doc" "archive_workspace" \
+  "docs: MAD の worktree を片付ける手段を書く"
+assert_contains "$doc" "workspaces.json" \
+  "docs: MAD の workspace 台帳の場所を書く"
+
 # --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
 # plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
 assert_contains "$doc" "sketchybar-usage-claude" \

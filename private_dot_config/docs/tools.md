@@ -250,6 +250,11 @@ native subagent で起動した子は Paseo の一覧に現れないので、親
 task graph、task brief、worktree 隔離、run の記録を担う子が呼ぶ。Workflow の定義も同じ理由で
 残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
 
+`implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
+直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
+`paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
+ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
+
 実 backend で 1 度通す手順は `tests/manual/mad-orchestration-smoke.sh` にある。
 `research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
 実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
