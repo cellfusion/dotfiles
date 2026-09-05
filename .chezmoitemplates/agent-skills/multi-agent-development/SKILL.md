@@ -85,9 +85,9 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 
 - 入力: ユーザーの目的と、存在するなら正規 spec / plan / ledger の絶対パス。
 - 子: `spec`、`plan`、`implement`、`review` を順に起動し、必要な下位 recipe の子が各成果物を作る。
-- gate: `spec → plan → implement ↔ review → final_review` の phase 境界で、親だけが user approval、継続、
+- gate: `spec → plan → implement ↔ review → final-review` の phase 境界で、親だけが user approval、継続、
   retry、停止を状態遷移として記録する。
-- 完了: `final_review` の採用 handoff と正規成果物の絶対パスを確認したときだけ delivery run を `ok` にする。
+- 完了: `final-review` node の採用 handoff と正規成果物の絶対パスを確認したときだけ delivery run を `ok` にする。
 
 ## 9 レシピの親主導フロー
 

@@ -286,7 +286,7 @@ assert_contains "$out" "unresolved" "validator: 上限到達時の unresolved �
 jq '.state = "unresolved" | .phase_state = "unresolved"' "$LOOP_RUN/state.json" > "$LOOP_RUN/state.json.tmp"
 mv "$LOOP_RUN/state.json.tmp" "$LOOP_RUN/state.json"
 
-# run state と phase_state は同じ状態遷移を表す。
+# 決着した run の phase_state は run の state と一致する。
 jq '.phase_state = "running"' "$RUN/state.json" > "$RUN/state.json.tmp"
 mv "$RUN/state.json.tmp" "$RUN/state.json"
 out="$(bash "$VALIDATOR" "$RUN" 2>&1)"
@@ -296,67 +296,97 @@ assert_contains "$out" "phase_state" "validator: run/phase_state の矛盾を示
 jq '.phase_state = "ok"' "$RUN/state.json" > "$RUN/state.json.tmp"
 mv "$RUN/state.json.tmp" "$RUN/state.json"
 
-# attempt が state の第一級フィールドでなければ、ディレクトリだけから補完して受理しない。
-attempt_state="$RUN/nodes/research-1/attempts/attempt-002/state.json"
-jq 'del(.attempt)' "$attempt_state" > "$attempt_state.tmp"
-mv "$attempt_state.tmp" "$attempt_state"
-out="$(bash "$VALIDATOR" "$RUN" 2>&1)"
-status=$?
-assert_eq "$status" "1" "validator: attempt の欠落を拒否する"
-assert_contains "$out" "attempt" "validator: 欠落した第一級フィールドを示す"
-
-# state を欠く attempt は、後段が完了状態を確認できないため拒否する。
-jq '.attempt = "attempt-002"' "$attempt_state" > "$attempt_state.tmp"
-mv "$attempt_state.tmp" "$attempt_state"
-incomplete_attempt="$RUN/nodes/research-1/attempts/attempt-003"
-mkdir -p "$incomplete_attempt"
-printf '調査指示\n' > "$incomplete_attempt/prompt.md"
-printf 'incomplete result\n' > "$incomplete_attempt/result.md"
-printf 'backend log\n' > "$incomplete_attempt/log.md"
-out="$(bash "$VALIDATOR" "$RUN" 2>&1)"
-status=$?
-assert_eq "$status" "1" "validator: state を欠く attempt を拒否する"
-assert_contains "$out" "state.json" "validator: state の欠落を示す"
-rm -rf "$incomplete_attempt"
-
-# node 固有の成果物を attempts の外へ置く旧レイアウトは、並列上書きの余地があるため拒否する。
-printf 'legacy result\n' > "$RUN/nodes/research-1/result.md"
-out="$(bash "$VALIDATOR" "$RUN" 2>&1)"
-status=$?
-assert_eq "$status" "1" "validator: attempts 外の node 成果物を拒否する"
-assert_contains "$out" "attempts" "validator: 分離されていない成果物を示す"
-rm "$RUN/nodes/research-1/result.md"
-
-# user gate は waiting_for_user と phase/next_action を state に残す。成果物は handoff.json
-# で絶対パスだけを後段へ渡す。
-GATE_RUN="$FIXTURE/run-gate"
-mkdir -p "$GATE_RUN"
+# 実行中の run は、完了した phase を phase_state に残せる。両者を常に同じ値にすると
+# phase_state が情報を持たなくなり、複数 phase を持つ delivery を表現できない。
+PHASE_RUN="$FIXTURE/run-phase"
+mkdir -p "$PHASE_RUN"
 printf '%s\n' '{
-  "run_id": "run-gate",
-  "recipe": "plan",
-  "state": "waiting_for_user",
-  "phase": "plan_approval",
-  "phase_state": "waiting_for_user",
-  "next_action": "request plan approval",
+  "run_id": "run-phase",
+  "recipe": "delivery",
+  "state": "running",
+  "phase": "spec",
+  "phase_state": "ok",
+  "next_action": "start plan phase",
   "current_round": 0,
   "backend": "subagent",
   "backend_reason": "Paseo MCP unavailable",
-  "parent_decision": "await user approval",
+  "parent_decision": "continue to plan",
   "active_nodes": [],
-  "completed_nodes": ["planner", "plan-reviewer"],
+  "completed_nodes": [],
   "adopted_attempts": {},
-  "artifact_paths": ["/tmp/canonical-plan.md"],
-  "decision_request": "/tmp/approval-request.md"
-}' > "$GATE_RUN/state.json"
-out="$(bash "$VALIDATOR" "$GATE_RUN" 2>&1)"
+  "artifact_paths": []
+}' > "$PHASE_RUN/state.json"
+out="$(bash "$VALIDATOR" "$PHASE_RUN" 2>&1)"
 status=$?
-assert_eq "$status" "0" "validator: waiting_for_user の plan gate を受け入れる"
+assert_eq "$status" "0" "validator: 実行中の run が完了 phase を記録できる"
 
-jq 'del(.phase)' "$GATE_RUN/state.json" > "$GATE_RUN/state.json.tmp"
-mv "$GATE_RUN/state.json.tmp" "$GATE_RUN/state.json"
-out="$(bash "$VALIDATOR" "$GATE_RUN" 2>&1)"
+jq '.state = "waiting_for_user"' "$PHASE_RUN/state.json" > "$PHASE_RUN/state.json.tmp"
+mv "$PHASE_RUN/state.json.tmp" "$PHASE_RUN/state.json"
+out="$(bash "$VALIDATOR" "$PHASE_RUN" 2>&1)"
 status=$?
-assert_eq "$status" "1" "validator: phase を欠く run を拒否する"
-assert_contains "$out" "phase" "validator: phase の欠落を示す"
+assert_eq "$status" "1" "validator: waiting_for_user は phase_state の一致を要求する"
+assert_contains "$out" "waiting_for_user" "validator: user gate の phase_state 要件を示す"
+
+# recipe ごとの必須 output node が completed_nodes と adopted_attempts に無い run は
+# `ok` にできない。validator は完了前の唯一の機械的 gate なので、ここが無いと
+# final review を持たない delivery run をそのまま完了にできる。
+required_output_for() {
+  case "$1" in
+    spec) printf 'spec-author\n' ;;
+    plan) printf 'planner\n' ;;
+    implement | delivery) printf 'final-review\n' ;;
+    review) printf 'review-synthesis\n' ;;
+  esac
+}
+
+# recipe の ok run を node 1 つだけで作る。node ID を変えると必須 output を欠いた run になる。
+write_recipe_run() {
+  local run_dir="$1"
+  local recipe="$2"
+  local node_id="$3"
+  local run_id
+  run_id="$(basename "$run_dir")"
+  local attempt_dir="$run_dir/nodes/$node_id/attempts/attempt-001"
+
+  rm -rf "$run_dir"
+  mkdir -p "$attempt_dir"
+  printf '指示\n' > "$attempt_dir/prompt.md"
+  printf '{"status":"ok"}\n' > "$attempt_dir/result.json"
+  printf 'backend log\n' > "$attempt_dir/log.md"
+  jq -n --arg run "$run_id" --arg node "$node_id" --arg artifact "$attempt_dir/result.json" '{
+    run_id: $run, node: $node, attempt: "attempt-001", artifact_paths: [$artifact]
+  }' > "$attempt_dir/handoff.json"
+  jq -n --arg run "$run_id" --arg node "$node_id" '{
+    run_id: $run, node: $node, attempt: "attempt-001", round: 0,
+    state: "ok", phase: "child_work", phase_state: "ok",
+    next_action: "await parent decision",
+    backend: "subagent", backend_reason: "Paseo MCP unavailable",
+    parent_decision: "accepted"
+  }' > "$attempt_dir/state.json"
+  jq -n --arg run "$run_id" --arg recipe "$recipe" --arg node "$node_id" \
+    --arg artifact "$attempt_dir/result.json" '{
+    run_id: $run, recipe: $recipe, state: "ok", phase: $recipe, phase_state: "ok",
+    next_action: "complete run", current_round: 1, max_rounds: 2,
+    backend: "subagent", backend_reason: "Paseo MCP unavailable",
+    parent_decision: "complete", active_nodes: [], completed_nodes: [$node],
+    adopted_attempts: { ($node): "attempt-001" }, artifact_paths: [$artifact]
+  }' > "$run_dir/state.json"
+}
+
+for recipe in spec plan implement review delivery; do
+  node_id="$(required_output_for "$recipe")"
+  RECIPE_RUN="$FIXTURE/run-$recipe"
+
+  write_recipe_run "$RECIPE_RUN" "$recipe" "$node_id"
+  out="$(bash "$VALIDATOR" "$RECIPE_RUN" 2>&1)"
+  status=$?
+  assert_eq "$status" "0" "validator: $recipe は $node_id を持つ ok run を受け入れる"
+
+  write_recipe_run "$RECIPE_RUN" "$recipe" "unrelated-node"
+  out="$(bash "$VALIDATOR" "$RECIPE_RUN" 2>&1)"
+  status=$?
+  assert_eq "$status" "1" "validator: $recipe は $node_id を欠く ok run を拒否する"
+  assert_contains "$out" "$node_id" "validator: $recipe に欠けた必須 output を示す"
+done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

@@ -49,13 +49,15 @@ require_absolute_paths() {
     "$file" >/dev/null 2>&1 || fail "$file: $field must be an array of absolute paths"
 }
 
+# 決着した state は phase_state と一致させる。実行中の run は、完了した phase を
+# phase_state に残せる（delivery の spec 完了後に plan を始める間など）。
 require_phase() {
   local file="$1"
   require_string "$file" '.phase' 'phase'
   jq -e '.phase_state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
     "$file" >/dev/null 2>&1 || fail "$file: phase_state is invalid"
-  jq -e '.state == .phase_state' "$file" >/dev/null 2>&1 ||
-    fail "$file: phase_state must match state"
+  jq -e '(.state | IN("pending", "running")) or .state == .phase_state' "$file" >/dev/null 2>&1 ||
+    fail "$file: phase_state $(jq -r '.phase_state' "$file") must match state $(jq -r '.state' "$file")"
   require_string "$file" '.next_action' 'next_action'
 }
 
@@ -93,6 +95,10 @@ require_recipe_output() {
   case "$recipe" in
     research|fanout) required_node="synthesis" ;;
     decide|debate) required_node="verdict" ;;
+    spec) required_node="spec-author" ;;
+    plan) required_node="planner" ;;
+    implement|delivery) required_node="final-review" ;;
+    review) required_node="review-synthesis" ;;
   esac
 
   [ -z "$required_node" ] && return

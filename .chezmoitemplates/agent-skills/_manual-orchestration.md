@@ -87,6 +87,21 @@ bash "$MAD_VALIDATE" "$RUN_DIR"
 
 validator が失敗した run は `ok` にせず、親が `failed` または `stopped` と記録して確認する。
 
+レシピごとに、run を `ok` にする前に `completed_nodes` と `adopted_attempts` へ入っていなければ
+ならない node がある。親はこの node ID をそのまま使う。
+
+| レシピ | 必須 output node |
+|---|---|
+| `research` / `fanout` | `synthesis` |
+| `decide` / `debate` | `verdict` |
+| `spec` | `spec-author` |
+| `plan` | `planner` |
+| `implement` / `delivery` | `final-review` |
+| `review` | `review-synthesis` |
+
+run の `state` が `pending` または `running` の間は、`phase_state` に完了した phase の状態を
+残してよい。それ以外の `state` では `phase_state` を `state` と同じ値にする。
+
 ### 親の介入境界とループ
 
 並列子の完了後、統合や裁定の起動前に、親が確認する境界を置く。親は成果物を確認して追加指示を

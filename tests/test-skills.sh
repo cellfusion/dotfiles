@@ -370,6 +370,14 @@ assert_contains "$manual_mad" "\`mad-attempt-v1\` は" \
   "_manual-orchestration: mad-attempt-v1 を定義する"
 assert_contains "$manual_mad" "max_rounds" \
   "_manual-orchestration: loop 上限を定義する"
+# validator の必須 output node は親が付ける node ID である。契約側に一覧が無いと、
+# 親は validator を通す node 名を推測することになる。
+assert_contains "$manual_mad" "必須 output node" \
+  "_manual-orchestration: recipe ごとの必須 output node を挙げる"
+for node in synthesis verdict spec-author planner final-review review-synthesis; do
+  assert_contains "$manual_mad" "\`$node\`" \
+    "_manual-orchestration: 必須 output node $node を挙げる"
+done
 assert_contains "$manual_mad" "親が確認" \
   "_manual-orchestration: 親の介入境界を定義する"
 
