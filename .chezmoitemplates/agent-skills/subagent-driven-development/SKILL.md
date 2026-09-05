@@ -248,8 +248,6 @@ implementer が質問してきたら（着手前でも作業中でも）、明�
 
 ブランチ全体のレビューにも package を渡す。`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD` を実行する（MERGE_BASE はブランチの分岐元、例 `git merge-base master HEAD`）。出力されたパスを渡し、最終レビュアーがブランチ diff を git コマンドで再導出せず 1 ファイルを読めるようにする。
 
-**手動経路**では `sdd-final-reviewer` を dispatch する。ledger の先送り Minor 行と park 行を指し示し、merge 前に直すべきものを選別させる。
-
 最終レビューが指摘を返したら、**指摘リスト全体を持たせた fix subagent を 1 つだけ** dispatch する。指摘ごとに fixer を立てない。指摘ごとの fixer はそれぞれ context を作り直しスイートを回し直す。実セッションで、最終レビューの fix 波が全タスクの合計より高くついた例がある。
 
 その後、fix 範囲について**スコープ限定の再レビューをちょうど 1 回**行う（`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE FIX_BASE HEAD` と `sdd-re-reviewer`）。残った指摘はタスクループのブレーカーと同じく裁定する。ruling 付きで park するか、土台になっているものなら止める。**2 回目の fix 波は無い**。残った土台級の指摘は、finishing-a-development-branch が選択肢を提示する場で、ユーザーの前に出る。
