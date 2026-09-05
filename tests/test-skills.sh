@@ -430,6 +430,26 @@ for tool in claude codex opencode; do
   assert_not_contains "$out" "## mad-run の呼び方" "mad/$tool: 旧方式を既定にしない"
 done
 
+# 全レシピの表には、親が確認した絶対パス handoff と失敗時停止を残す。非ループ型は
+# 後段自身も確認してから run を完了し、loop 型はレビューまたは批評を確認してから親が
+# 次ラウンドを判断する。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
+  for recipe in research decide debate fanout review triage implement spike refine; do
+    recipe_row="$(printf '%s\n' "$out" | grep -F "| \`$recipe\` |" || true)"
+    assert_contains "$recipe_row" "絶対パス" \
+      "mad/$tool: $recipe は絶対パスで後段へ handoff する"
+    assert_contains "$recipe_row" "失敗" \
+      "mad/$tool: $recipe は失敗時に後段を停止する"
+  done
+  assert_contains "$out" "後段の \`state.json\` と成果物を親が確認し、\`ok\` のときだけ run を完了する" \
+    "mad/$tool: 非ループ型は後段を確認してから run を完了する"
+  assert_contains "$out" "成果物を欠く場合は run を \`failed\` または \`stopped\` として記録して停止する" \
+    "mad/$tool: 非ループ型は後段の成果物欠落で run を停止する"
+  assert_contains "$out" "親がレビューまたは批評の成果物と \`state.json\` を確認し" \
+    "mad/$tool: loop 型は後段を確認してから親が判断する"
+done
+
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
 assert_contains "$mad_src" 'includeTemplate "agent-skills/_manual-orchestration.md"' \
   "mad: 手動方式を共有パーシャルから取り込む"
