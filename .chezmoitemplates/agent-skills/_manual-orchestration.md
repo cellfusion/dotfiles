@@ -228,6 +228,9 @@ run の `state` が `pending` または `running` の間は、`phase_state` に�
 ディレクトリの `decision-request.md` に要求を書き、構造化出力の `decisionRequestPath` に
 その絶対パスを入れて返す。判断を求めないときは `decisionRequestPath` を `null` にする。
 
+親は子を起動する前に、その attempt の `decision-request.md` の絶対パスを決め、`prompt.md` の
+入力に `DECISION_REQUEST_PATH` という名前で含める。role の指示はこの名前で書き先を参照する。
+
 `decision-request.md` に書くものは次の 4 つである。
 
 - 質問 — 何を決めてほしいかを 1 文で書く
@@ -244,6 +247,10 @@ run の `state` が `pending` または `running` の間は、`phase_state` に�
 ディレクトリに `decision.md` を書く。`decision.md` には、ユーザーが選んだ案と、ユーザーが添えた
 指示をそのまま書く。親は `decision.md` の絶対パスを入力に加えて同じ role を起動する。既存 attempt
 のファイルを上書きしてはならない。
+
+子を起動するときに、親は run state の `decision_request` を `null` に戻し、`state` と `phase_state` を
+`running` に戻す。古い attempt の request ファイルを指したままにすると、`decision_request` が
+run の現在の状態を表さなくなる。
 
 ユーザーが何も選ばずに閉じた場合は、run を `stopped` として記録して止める。推測で先へ進めない。
 

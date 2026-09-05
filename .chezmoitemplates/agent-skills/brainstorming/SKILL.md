@@ -37,7 +37,7 @@ description: >-
 **2 つの経路で迷ったら重いほうを取る。** 分類は一方通行である。作業の途中で隠れていた複雑さが
 見つかったら、そこで止めてその旨を伝え、経路を上げる。下げることはしない。
 
-**どの経路でも承認 gate は通る。** 作業量は経路で変わるが、承認は変わらない。
+**どの経路でも承認は取る。** 作業量は経路で変わるが、承認は変わらない。
 
 ## 「単純すぎて設計は要らない」は成立しない
 
@@ -205,6 +205,9 @@ frontend-design やその他の実装スキルをここから起動してはな�
 黙って捨てることは禁止する。
 
 {{ includeTemplate "agent-skills/_preview-tab.md" . }}
+
+次の承認 gate は architectural 経路のものである。spike と bounded は spec ファイルを作らないので、
+チェックリストの「承認を取る」の通り、chat で提示した問いか設計に対して承認を取る。
 
 {{ includeTemplate "agent-skills/_approval-gate.md" (merge (dict "artifact" "spec" "nextLabel" "実装プラン" "issue" true) .) }}
 

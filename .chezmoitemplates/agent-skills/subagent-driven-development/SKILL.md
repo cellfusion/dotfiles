@@ -25,17 +25,17 @@ description: >-
 digraph when_to_use {
     "実装プランがある?" [shape=diamond];
     "タスクはおおむね独立?" [shape=diamond];
-    "subagent が使える?" [shape=diamond];
+    "並列にできるタスクがある? または worktree の隔離が要る?" [shape=diamond];
     "subagent-driven-development" [shape=box];
     "executing-plans" [shape=box];
     "brainstorming か手動実行" [shape=box];
 
     "実装プランがある?" -> "タスクはおおむね独立?" [label="yes"];
     "実装プランがある?" -> "brainstorming か手動実行" [label="no"];
-    "タスクはおおむね独立?" -> "subagent が使える?" [label="yes"];
+    "タスクはおおむね独立?" -> "並列にできるタスクがある? または worktree の隔離が要る?" [label="yes"];
     "タスクはおおむね独立?" -> "brainstorming か手動実行" [label="no（密結合）"];
-    "subagent が使える?" -> "subagent-driven-development" [label="yes"];
-    "subagent が使える?" -> "executing-plans" [label="no"];
+    "並列にできるタスクがある? または worktree の隔離が要る?" -> "subagent-driven-development" [label="yes"];
+    "並列にできるタスクがある? または worktree の隔離が要る?" -> "executing-plans" [label="no"];
 }
 ```
 
@@ -84,13 +84,13 @@ digraph when_to_use {
 MAD の `implement` recipe で実行する。run ディレクトリの作り方、backend の選び方、子の起動、
 state と handoff の契約は `multi-agent-development` スキルが持つ。
 
-親が MAD へ渡すのは、承認済み plan、spec、既存 SDD ledger の絶対パスである。子は
-`task-graph-analyzer` が波を作り、`implementer` が実装し、`task-reviewer` と `re-reviewer` が
-判定し、`final-reviewer` が最後にブランチ全体を見る。
+親が MAD へ渡すのは、承認済み plan、spec、既存 SDD ledger の絶対パスである。波は親が
+`task-waves` で出す。子は `implementer` が実装し、`task-reviewer` と `re-reviewer` が判定し、
+`final-reviewer` が最後にブランチ全体を見る。
 
-`~/.agents/skills/subagent-driven-development/scripts/` のスクリプトは子が使う。親は直接
-呼ばない。どのスクリプトが誰の工程のものかは `multi-agent-development` スキルの
-「implement の実行基盤」の表にある。
+`~/.agents/skills/subagent-driven-development/scripts/` のうち、`sdd-workspace`、`task-waves`、
+`task-brief`、`review-package` は親が呼ぶ。`run-registry` と `agent-backend` は子が呼ぶ。
+割り当ての正本は `multi-agent-development` スキルの「implement の実行基盤」の表である。
 
 親が担うのは、worktree の作成、波の管理、ledger への記帳、fix ラウンドを数えること、上限で
 止めること、上限での裁定、マージ衝突で止めること、最終レビューの起動である。**規則は下の

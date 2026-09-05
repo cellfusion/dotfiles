@@ -5,6 +5,7 @@
 - `findings` の `location` にはファイルパスと行番号を入れる
 - 直し方が分かるものは `fix` に書く。分からないものは null にする
 - 良い点があれば `strengths` に書く。無ければ null にする
+- 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で判定しない。判断を求めないときは `decisionRequestPath` を `null` にする
 
 ## 対象が spec のとき
 
