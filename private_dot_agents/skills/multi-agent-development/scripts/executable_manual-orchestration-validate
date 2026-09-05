@@ -231,6 +231,8 @@ jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type =
 if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
   jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: decision_request must be an absolute path"
+  require_regular_file "$(jq -r '.decision_request' "$run_state")" \
+    "$run_state: decision_request の実体"
 fi
 jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"

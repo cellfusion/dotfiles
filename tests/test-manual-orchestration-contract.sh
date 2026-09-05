@@ -671,4 +671,38 @@ set_integration "$RUN/declined-with-reason" \
 assert_contains "$(validate_run "$RUN/declined-with-reason")" "valid manual orchestration run" \
   "validator: 理由付きの declined を受け入れる"
 
+# --- 判断要求: decision_request の実体が無い run を拒否する ---
+# 実体が無いと、親はユーザーへ何を聞けばよいか分からないまま waiting_for_user になる。
+DR="$FIXTURE/run-dr"
+mkdir -p "$DR"
+write_attempt_in "$DR" spec-author a1 '設計案'
+DR_FILE="$DR/nodes/spec-author/attempts/a1/decision-request.md"
+printf '%s\n' "{
+  \"run_id\": \"run-dr\",
+  \"recipe\": \"spec\",
+  \"state\": \"waiting_for_user\",
+  \"phase\": \"spec-author\",
+  \"phase_state\": \"waiting_for_user\",
+  \"next_action\": \"relay decision request\",
+  \"current_round\": 0,
+  \"started_at\": \"2026-09-06T00:00:00Z\",
+  \"backend\": \"subagent\",
+  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"parent_decision\": \"ask user\",
+  \"active_nodes\": [\"spec-author\"],
+  \"completed_nodes\": [],
+  \"adopted_attempts\": {},
+  \"artifact_paths\": [],
+  \"decision_request\": \"$DR_FILE\"
+}" > "$DR/state.json"
+
+out="$(validate_run "$DR")"
+assert_contains "$out" "decision_request の実体" \
+  "decision_request の実体が無い run を validator が拒否する"
+
+printf '質問と選択肢\n' > "$DR_FILE"
+out="$(validate_run "$DR")"
+assert_not_contains "$out" "decision_request の実体" \
+  "decision_request の実体がある run では、その指摘を出さない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
