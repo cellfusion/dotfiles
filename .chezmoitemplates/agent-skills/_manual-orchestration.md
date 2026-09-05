@@ -222,6 +222,31 @@ validator が失敗した run は `ok` にせず、親が `failed` または `st
 run の `state` が `pending` または `running` の間は、`phase_state` に完了した phase の状態を
 残してよい。それ以外の `state` では `phase_state` を `state` と同じ値にする。
 
+### 子からの判断要求
+
+子は、判断に必要な情報が欠けるときに推測で成果物を完成させてはならない。子は attempt
+ディレクトリの `decision-request.md` に要求を書き、構造化出力の `decisionRequestPath` に
+その絶対パスを入れて返す。判断を求めないときは `decisionRequestPath` を `null` にする。
+
+`decision-request.md` に書くものは次の 4 つである。
+
+- 質問 — 何を決めてほしいかを 1 文で書く
+- 選択肢 — 選べる案を 2 つ以上挙げ、それぞれ選ぶと何をするのかを書く
+- 推す案とその理由 — どれかを推すなら、推す案と理由を書く。推さないなら、推せない理由を書く
+- 確認済みのこと — 判断できないと分かった時点で、何を調べて何が分かったかを書く
+
+親は子の完了後に `result.json` の `decisionRequestPath` を読む。値が `null` でなければ、run の
+`state` と `phase_state` を `waiting_for_user` にし、run state の `decision_request` にその絶対
+パスを記録する。親は `decision-request.md` を読んで [ask-user] でユーザーへ渡す。親が子に代わって
+判断してはならない。
+
+ユーザーの回答を受け取ったら、親は同じ node に新しい `<attempt-id>` を発行し、その attempt
+ディレクトリに `decision.md` を書く。`decision.md` には、ユーザーが選んだ案と、ユーザーが添えた
+指示をそのまま書く。親は `decision.md` の絶対パスを入力に加えて同じ role を起動する。既存 attempt
+のファイルを上書きしてはならない。
+
+ユーザーが何も選ばずに閉じた場合は、run を `stopped` として記録して止める。推測で先へ進めない。
+
 ### 親の介入境界とループ
 
 並列子の完了後、統合や裁定の起動前に、親が確認する境界を置く。親は成果物を確認して追加指示を
