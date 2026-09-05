@@ -15,7 +15,7 @@ ROUTER=$(cat <<'ROUTER_EOF'
 依頼の種類 → 最初に起動するスキル
 - 新機能・変更・「作りたい」「追加したい」 → brainstorming
 - バグ・不具合・「動かない」「直らない」 → systematic-debugging
-- 実装プランが既にある → subagent-driven-development（subagent が使えないときだけ executing-plans）
+- 実装プランが既にある → subagent-driven-development（実装が小さく MAD が要らないときだけ executing-plans）
 - 実装が終わった・マージしたい → finishing-a-development-branch
 - 完了・修正済み・テスト通過を主張する直前 → verification-before-completion
 - コードレビューの指摘を受け取った → receiving-code-review
