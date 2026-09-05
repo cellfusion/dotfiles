@@ -232,6 +232,20 @@ for legacy in \
 done
 assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" ".local/bin/braid" \
   ".chezmoiremove: braid バイナリを回収する"
+# ソースから消した braid / 旧 MAD の配布済み実体も回収する。ディレクトリは
+# chezmoi が RemoveAll するため、ランタイム状態を含む MAD の新しい保存先は対象にしない。
+for p in \
+  ".agents/skills/braid" \
+  ".config/claude/skills/braid" \
+  ".config/opencode/skills/braid" \
+  ".agents/skills/multi-agent-development/scripts/mad-run" \
+  ".agents/skills/multi-agent-development/scripts/mad-agent" \
+  ".agents/skills/multi-agent-development/scripts/mad-route" \
+  ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/recipes"; do
+  assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" "$p" \
+    ".chezmoiremove: 退役した配布済み資産を回収する: $p"
+done
 assert_contains "$managed" ".config/claude/skills/multi-agent-development/SKILL.md" \
   "MAD: claude へ配られる"
 assert_contains "$managed" ".config/opencode/skills/multi-agent-development/SKILL.md" \
