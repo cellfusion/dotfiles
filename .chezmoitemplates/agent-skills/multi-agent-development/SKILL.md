@@ -1,20 +1,19 @@
 ---
 name: multi-agent-development
 description: >-
-  複数のエージェントを組み合わせた作業を Paseo のレシピで実行するときに使う。
+  親エージェントが複数の子エージェントを組み合わせて手動でオーケストレーションするときに使う。
   観点を分けた調査、候補案の生成と採点、立場を分けた賛否、項目ごとの並行処理、
   多観点レビューが対象。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# Paseo のレシピを実行する
+# 親主導の MAD オーケストレーション
 
-MAD は役割ごとに Paseo の provider を選び、複数のエージェントを並行・直列に組み合わせて
-走らせる。走っているエージェントは Paseo の daemon が持つので、後から `paseo ls` と
-Paseo アプリで追える。
+MAD は親エージェントが子エージェントを起動・監視し、フェーズごとに判断して進める。子同士の
+本文は会話へ集めず、共通契約で定めた run 成果物を介して後段へ渡す。
 
-**中核**: 作業が同梱レシピの形にはまるなら MAD を使う。はまらないなら従来どおり subagent を
-使う。
+**中核**: 作業が MAD のレシピの形にはまるなら、親が並列化・統合・介入を管理する。はまらない
+作業では従来どおり単独の subagent を使う。
 
 ## どのレシピにはまるか
 
@@ -28,28 +27,16 @@ Paseo アプリで追える。
 
 どのレシピも読み取りだけを行う。ファイルを書き換えるレシピはまだ無い。
 
-表と実際の引数が食い違ったら、`mad-run <recipe> --dry-run` の出力が正である。
+レシピごとの親主導手順と介入点はこのスキルで定義する。役割や backend の選択は、共通契約に
+従って親が実行開始時に行う。
 
-## 役割と provider
+## MAD に適さないとき
 
-役割から provider を決めるのは `mad-route` である。`~/.agents/agent-defs/paseo-routing.json`
-が役割ごとの候補の優先順を持ち、使えない provider があれば次の候補を使う。仕事先のリポジトリで
-別アカウントの provider を使う指定は `paseo-project-routing.json` が持ち、git の remote か
-リポジトリのパスで引く。
+どのレシピの形にもはまらないなら MAD を使わず、従来どおり subagent を立てる。
 
-どの provider が選ばれたかは `mad-run <recipe> --dry-run` で確かめられる。
+## 旧方式
 
-## はまらないとき
+既存の `mad-run` と shell recipe は互換性のために残す。手動方式から旧方式へ自動的に切り替えず、
+旧方式を明示的に使う場合だけ `_mad-invocation.md` の手順を参照する。
 
-どのレシピの形にもはまらないなら MAD を使わない。従来どおり subagent を立てる。
-
-## 例
-
-```bash
-MAD=~/.agents/skills/multi-agent-development/scripts/mad-run
-"$MAD" research --arg 'topic=どの方式で生死を判定するか'
-"$MAD" decide --arg 'problem=run store の置き場所をどこにするか'
-"$MAD" fanout --arg 'items=["a.ts","b.ts","c.ts"]' --arg 'task=型定義を洗い出す'
-```
-
-{{ includeTemplate "agent-skills/_mad-invocation.md" . }}
+{{ includeTemplate "agent-skills/_manual-orchestration.md" . }}

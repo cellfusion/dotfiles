@@ -392,7 +392,7 @@ done
 
 # MAD のスクリプトは PATH に無い。bash ブロックは裸の mad-run ではなくフルパスで書く。
 # コピーして実行する読者が command not found にならないよう、テストで縛る。
-for name in "agent-skills/multi-agent-development/SKILL.md" "agent-skills/_mad-invocation.md"; do
+for name in "agent-skills/_mad-invocation.md"; do
   out="$(render_template "$name" "claude")"
   blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
   bare="$(printf '%s\n' "$blocks" | grep -c '^[[:space:]]*mad-run' || true)"
@@ -409,22 +409,56 @@ assert_contains "$mad_inv" "mad-run" "_mad-invocation: mad-run を呼ぶ"
 assert_contains "$mad_inv" "--dry-run" "_mad-invocation: 本実行の前に dry-run を通す"
 assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を再試行しない"
 
-# MAD スキルはレシピ 5 本を表に持ち、呼び方は共有パーシャルから取り込む。
+# MAD スキルは共通の手動オーケストレーション契約を取り込む。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
-  for recipe in research decide debate fanout review; do
-    assert_contains "$out" "\`$recipe\`" "mad/$tool: レシピ $recipe が表にある"
-  done
-  for arg in topic problem proposal items task requirements review_file; do
-    assert_contains "$out" "\`$arg\`" "mad/$tool: 必須引数 $arg が表にある"
-  done
-  assert_contains "$out" "## mad-run の呼び方" "mad/$tool: 呼び方の節が展開される"
+  assert_contains "$out" "## 手動オーケストレーション" "mad/$tool: 手動方式の節が展開される"
+  assert_contains "$out" "Paseo MCP" "mad/$tool: Paseo を優先する"
+  assert_contains "$out" "_cellfusion/orchestration/" "mad/$tool: run 成果物の保存先を定義する"
+  assert_contains "$out" "state.json" "mad/$tool: 状態契約を定義する"
 done
 
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
-assert_contains "$mad_src" 'includeTemplate "agent-skills/_mad-invocation.md"' \
-  "mad: 呼び方を共有パーシャルから取り込む"
-assert_not_contains "$mad_src" "command -v paseo" "mad: 呼び方の本文を自前で持たない"
+assert_contains "$mad_src" 'includeTemplate "agent-skills/_manual-orchestration.md"' \
+  "mad: 手動方式を共有パーシャルから取り込む"
+assert_not_contains "$mad_src" 'includeTemplate "agent-skills/_mad-invocation.md"' \
+  "mad: 旧方式の呼び方を既定経路に取り込まない"
+
+manual_mad="$(render_template "agent-skills/_manual-orchestration.md" "claude")"
+assert_contains "$manual_mad" "## 手動オーケストレーション" \
+  "_manual-orchestration: 節の見出しがある"
+assert_contains "$manual_mad" "Paseo MCP" \
+  "_manual-orchestration: Paseo MCP を優先する"
+assert_contains "$manual_mad" "[dispatch-subagent: role]" \
+  "_manual-orchestration: fallback の論理名を使う"
+assert_contains "$manual_mad" "_cellfusion/orchestration/<run-id>/" \
+  "_manual-orchestration: run 成果物の保存先を定義する"
+assert_contains "$manual_mad" "prompt.md" \
+  "_manual-orchestration: prompt の成果物を定義する"
+assert_contains "$manual_mad" "result.md" \
+  "_manual-orchestration: result の成果物を定義する"
+assert_contains "$manual_mad" "state.json" \
+  "_manual-orchestration: state の成果物を定義する"
+assert_contains "$manual_mad" "pending" \
+  "_manual-orchestration: pending 状態を定義する"
+assert_contains "$manual_mad" "running" \
+  "_manual-orchestration: running 状態を定義する"
+assert_contains "$manual_mad" "ok" \
+  "_manual-orchestration: ok 状態を定義する"
+assert_contains "$manual_mad" "failed" \
+  "_manual-orchestration: failed 状態を定義する"
+assert_contains "$manual_mad" "stopped" \
+  "_manual-orchestration: stopped 状態を定義する"
+assert_contains "$manual_mad" "unresolved" \
+  "_manual-orchestration: unresolved 状態を定義する"
+assert_contains "$manual_mad" "backend" \
+  "_manual-orchestration: backend を state に記録する"
+assert_contains "$manual_mad" "max_rounds" \
+  "_manual-orchestration: loop 上限を定義する"
+assert_contains "$manual_mad" "親が確認" \
+  "_manual-orchestration: 親の介入境界を定義する"
+assert_not_contains "$out" "## mad-run の呼び方" \
+  "mad/$tool: 旧方式を既定にしない"
 
 for d in private_dot_agents/skills \
          private_dot_config/claude/skills \
