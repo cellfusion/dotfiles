@@ -13,9 +13,10 @@ description: >-
 
 ## 実行
 
-1. `PLAN_FILE`、`BASE`、`HEAD` を親の制御情報から決める。`PLAN_FILE` は既存の承認済み plan の
-   絶対パス、`BASE` は今回の変更を始めたコミット、`HEAD` はレビュー対象の現在コミットとする。
-   `BASE` と `HEAD` は symbolic ref のまま渡さず、`git rev-parse --verify` で解決する。
+1. `PLAN_FILE`、`REQUIREMENTS_FILE`、`BASE`、`HEAD` を親の制御情報から決める。`PLAN_FILE` は既存の
+   承認済み plan の絶対パス、`REQUIREMENTS_FILE` は plan が無い場合に使う既存 requirements の絶対パス、
+   `BASE` は今回の変更を始めたコミット、`HEAD` はレビュー対象の現在コミットとする。`BASE` と `HEAD` は
+   symbolic ref のまま渡さず、`git rev-parse --verify` で解決する。
 2. `review-package` の実体を解決する。通常は
    `~/.agents/skills/subagent-driven-development/scripts/review-package` を使い、見つからない場合は
    この dotfiles checkout の `private_dot_agents/skills/subagent-driven-development/scripts/executable_review-package`
@@ -26,6 +27,22 @@ description: >-
 
    ```bash
    REPO_ROOT="$(git rev-parse --show-toplevel)"
+   PLAN_FILE="${PLAN_FILE:-}"
+   REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-}"
+   if [ ! -f "$PLAN_FILE" ]; then
+     PLAN_FILE="$REQUIREMENTS_FILE"
+   fi
+   case "$PLAN_FILE" in
+     /*) ;;
+     *)
+       echo "review package の入力 file を確認できないため MAD review を開始しない" >&2
+       exit 2
+       ;;
+   esac
+   if [ ! -f "$PLAN_FILE" ]; then
+     echo "review package の入力 file を確認できないため MAD review を開始しない" >&2
+     exit 2
+   fi
    REVIEW_PACKAGE="$HOME/.agents/skills/subagent-driven-development/scripts/review-package"
    if [ ! -f "$REVIEW_PACKAGE" ]; then
      REVIEW_PACKAGE="$REPO_ROOT/private_dot_agents/skills/subagent-driven-development/scripts/executable_review-package"
@@ -50,9 +67,10 @@ description: >-
    fi
    ```
 
-   `PLAN_FILE` が無い場合は inline text を渡さず、`requirements` の絶対パスを fallback として使う。
-   それも存在しない、`BASE` / `HEAD` を解決できない、または script が失敗した場合は [ask-user] で
-   必要なファイルまたは ref を求め、package を作れない場合は MAD review を開始しない。
+   `PLAN_FILE` が無い場合は inline text を渡さず、`requirements` の絶対パスである
+   `REQUIREMENTS_FILE` を `PLAN_FILE` へ代入して同じ `review-package` 呼び出しに使う。どちらも
+   存在しない、絶対パスでない、`BASE` / `HEAD` を解決できない、または script が失敗した場合は
+   [ask-user] で必要なファイルまたは ref を求め、package を作れない場合は MAD review を開始しない。
 4. review package を正規 `_cellfusion/reviews/` または SDD ledger に作り、その絶対パスを入力にする。
    親は diff や要件を会話へ転記してレビュー本文を作らない。
 5. MAD の `review` を開始する。各子は findings と統合 review の絶対パスを `handoff.json` に残す。

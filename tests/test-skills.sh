@@ -82,6 +82,14 @@ for tool in claude codex opencode; do
     "requesting-code-review/$tool: plan 不在時の fallback を定義する"
   assert_contains "$request_review" '`requirements` の絶対パス' \
     "requesting-code-review/$tool: requirements を fallback の plan にできる"
+  assert_contains "$request_review" 'REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-}"' \
+    "requesting-code-review/$tool: requirements path を安全に受け取る"
+  assert_contains "$request_review" 'PLAN_FILE="$REQUIREMENTS_FILE"' \
+    "requesting-code-review/$tool: plan 不在時に requirements path を plan として採用する"
+  assert_contains "$request_review" 'case "$PLAN_FILE" in' \
+    "requesting-code-review/$tool: 採用した plan path が絶対パスか確認する"
+  assert_contains "$request_review" 'review package の入力 file を確認できないため MAD review を開始しない' \
+    "requesting-code-review/$tool: fallback 後の plan file の存在を確認する"
   assert_contains "$request_review" '`review-package` の実体を解決する' \
     "requesting-code-review/$tool: script 不在時の fallback を定義する"
   assert_contains "$request_review" "executable_review-package" \
