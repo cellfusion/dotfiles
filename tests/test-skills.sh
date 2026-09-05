@@ -30,6 +30,40 @@ for skill in $SKILLS; do
   assert_contains "$codex_out" "[ask-user]" "$skill: 本文が論理名を使う"
 done
 
+# 開発工程 skill は親が本文を作らず、MAD recipe へ成果物パスで委譲する薄い入口である。
+# user gate だけを親が relay し、braid / 旧 mad-run の実行経路を持たない。
+for spec in \
+  "brainstorming:spec" \
+  "writing-plans:plan" \
+  "subagent-driven-development:implement" \
+  "executing-plans:implement" \
+  "requesting-code-review:review" \
+  "receiving-code-review:review" \
+  "verification-before-completion:review"; do
+  skill="${spec%%:*}"
+  recipe="${spec##*:}"
+  for tool in claude codex opencode; do
+    out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
+    assert_contains "$out" "MAD の \`$recipe\`" "$skill/$tool: MAD recipe へ委譲する"
+    assert_contains "$out" "handoff.json" "$skill/$tool: 成果物を handoff で渡す"
+    assert_contains "$out" "waiting_for_user" "$skill/$tool: 親の user gate を記録する"
+    assert_contains "$out" "本文を作らない" "$skill/$tool: 親が本文を作らない"
+    assert_not_contains "$out" "braid" "$skill/$tool: braid を参照しない"
+    assert_not_contains "$out" "mad-run" "$skill/$tool: 旧 mad-run を参照しない"
+  done
+done
+
+# 実装工程の子は TDD / debugging / worktree の既存規約を使い、finish は親の finalizer に残す。
+for tool in claude codex opencode; do
+  sdd_out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
+  assert_contains "$sdd_out" "test-driven-development" "sdd/$tool: 子の TDD 規約を維持する"
+  assert_contains "$sdd_out" "systematic-debugging" "sdd/$tool: 子の debug 規約を維持する"
+  assert_contains "$sdd_out" "using-git-worktrees" "sdd/$tool: 子の worktree 規約を維持する"
+  finish_out="$(render_template "agent-skills/finishing-a-development-branch/SKILL.md" "$tool")"
+  assert_contains "$finish_out" "親専用 finalizer" "finish/$tool: 親の finalizer である"
+  assert_contains "$finish_out" "MAD の \`delivery\`" "finish/$tool: delivery 完了後に使う"
+done
+
 # プレビュー手順は共有パーシャルに 1 本だけ置く。
 preview="$(render_template "agent-skills/_preview-tab.md" "claude")"
 assert_contains "$preview" "## プレビュー" "_preview-tab: 節の見出しがある"
@@ -85,67 +119,6 @@ assert_contains "$preview" "同じプレビューコマンドを 1 回だけ再�
 assert_contains "$preview" "permission denied 以外" \
   "_preview-tab: 他の失敗を権限問題として扱わない"
 
-# 承認 gate も共有パーシャルに 1 本だけ置き、各スキルは自前の本文を持たない。
-for skill in brainstorming writing-plans; do
-  src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/$skill/SKILL.md")"
-  assert_contains "$src" 'includeTemplate "agent-skills/_approval-gate.md"' \
-    "$skill: 承認 gate を共有パーシャルから取り込む"
-  assert_not_contains "$src" "## 承認 gate" "$skill: gate 本文を自前で持たない"
-done
-
-# brainstorming の承認 gate は 4 択で、issue 化まで出す。コミットする分岐は無い。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/brainstorming/SKILL.md" "$tool")"
-  assert_contains "$out" "## プレビュー" "brainstorming/$tool: プレビュー節が展開される"
-  assert_contains "$out" "**承認&継続**" "brainstorming/$tool: 継続する選択肢がある"
-  assert_contains "$out" "**承認のみ**" "brainstorming/$tool: ここで終わる選択肢がある"
-  assert_contains "$out" "**承認&継続（issue化）**" "brainstorming/$tool: issue 化して継続する選択肢がある"
-  assert_contains "$out" "**承認（issue化）**" "brainstorming/$tool: issue 化して終わる選択肢がある"
-  assert_contains "$out" "gh repo view" "brainstorming/$tool: issue 選択肢を出し分ける"
-  assert_contains "$out" "gh issue create" "brainstorming/$tool: issue 化の手順がある"
-  assert_not_contains "$out" "承認・保存" "brainstorming/$tool: コミットする選択肢が無い"
-done
-
-# writing-plans の承認 gate は worktree 委譲を含む 3 択で、plan は issue にしない。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/writing-plans/SKILL.md" "$tool")"
-  assert_contains "$out" "## プレビュー" "writing-plans/$tool: プレビュー節が展開される"
-  assert_contains "$out" "**承認&worktree で委譲**" "writing-plans/$tool: worktree 委譲の選択肢がある"
-  assert_contains "$out" "**承認&継続**" "writing-plans/$tool: 継続する選択肢がある"
-  assert_contains "$out" "**承認のみ**" "writing-plans/$tool: ここで終わる選択肢がある"
-  assert_contains "$out" "## worktree へ委譲する" "writing-plans/$tool: 委譲手順の節が展開される"
-  assert_not_contains "$out" "issue化" "writing-plans/$tool: issue 化の選択肢が無い"
-  assert_not_contains "$out" "gh issue create" "writing-plans/$tool: plan は issue にしない"
-  assert_not_contains "$out" "gh repo view" "writing-plans/$tool: gh の判定を持たない"
-  assert_not_contains "$out" "承認・保存" "writing-plans/$tool: コミットする選択肢が無い"
-done
-
-# brainstorming の gate には worktree の分岐が出ない。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/brainstorming/SKILL.md" "$tool")"
-  assert_not_contains "$out" "worktree" "brainstorming/$tool: worktree の分岐が出ない"
-done
-
-# 委譲手順は共有パーシャルに 1 本だけ置く。
-handoff="$(render_template "agent-skills/_worktree-handoff.md" "claude")"
-assert_contains "$handoff" "## worktree へ委譲する" "_worktree-handoff: 節の見出しがある"
-assert_contains "$handoff" "HERDR_ENV" "_worktree-handoff: herdr 環境かを判定する"
-assert_contains "$handoff" "herdr worktree create" "_worktree-handoff: worktree を workspace として作る"
-assert_contains "$handoff" '--workspace "$HERDR_WORKSPACE_ID"' "_worktree-handoff: 自分の workspace を渡す"
-assert_contains "$handoff" "--no-focus" "_worktree-handoff: ユーザーの視線を奪わない"
-assert_contains "$handoff" "herdr agent start" "_worktree-handoff: 委譲先の Claude を起動する"
-assert_contains "$handoff" "herdr agent prompt" "_worktree-handoff: 初回の指示を送る"
-assert_contains "$handoff" "subagent-driven-development" "_worktree-handoff: 実行方式を指定する"
-assert_contains "$handoff" "絶対パス" "_worktree-handoff: plan を絶対パスで渡す"
-assert_contains "$handoff" "閉じない" "_worktree-handoff: 委譲元の pane を閉じない"
-assert_not_contains "$handoff" "dangerously-skip-permissions" "_worktree-handoff: 無人起動しない"
-
-# writing-plans は委譲手順を共有パーシャルから取り込み、自前の本文を持たない。
-src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/writing-plans/SKILL.md")"
-assert_contains "$src" 'includeTemplate "agent-skills/_worktree-handoff.md"' \
-  "writing-plans: 委譲手順を共有パーシャルから取り込む"
-assert_not_contains "$src" "herdr worktree create" "writing-plans: 委譲手順の本文を自前で持たない"
-
 # 補助ファイルの実体は ~/.agents/skills 側にあり、Claude / opencode 側は symlink である。
 for f in systematic-debugging/condition-based-waiting.md \
          systematic-debugging/defense-in-depth.md \
@@ -185,40 +158,6 @@ for skill in brainstorming writing-plans; do
   done
 done
 
-# SDD のエスカレーションは model 上書きではなく agent の切り替えで表す。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
-  assert_contains "$out" "sdd-implementer-think" "sdd/$tool: 昇格用 agent を指す"
-  assert_not_contains "$out" 'model: opus' "sdd/$tool: model 上書きを指示しない"
-  assert_contains "$out" "[deterministic-loop]" "sdd/$tool: 論理名で経路を書く"
-done
-
-# Claude 版だけが workflow 経路を既定にする。
-claude_out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "claude")"
-assert_contains "$claude_out" "Workflow" "sdd/claude: Workflow を指す"
-
-codex_out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "codex")"
-assert_contains "$codex_out" "利用不可" "sdd/codex: 手動経路へ落ちる"
-
-# [deterministic-loop] を持たないツールには手動経路が既定として出て、
-# Workflow 固有の記述（存在しないスクリプトや引数名）が 1 つも残らない。
-for tool in codex opencode; do
-  out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
-  assert_contains "$out" "手動経路（既定）" "sdd/$tool: 手動経路が既定として出る"
-  assert_not_contains "$out" "手動経路（フォールバック）" "sdd/$tool: 手動経路をフォールバック扱いしない"
-  assert_not_contains "$out" "sdd-task.js" "sdd/$tool: workflow スクリプト名が残っていない"
-  assert_not_contains "$out" "sdd-final-review.js" "sdd/$tool: 最終レビュー workflow 名が残っていない"
-  assert_not_contains "$out" "scriptPath" "sdd/$tool: workflow の引数名が残っていない"
-  assert_not_contains "$out" "workflow" "sdd/$tool: 小文字の workflow 表記が残っていない"
-  assert_not_contains "$out" "Workflow" "sdd/$tool: Workflow ツールを指さない"
-done
-
-# scripts のパスは全ツールで ~/.agents/skills 側を指す。
-assert_contains "$codex_out" ".agents/skills/subagent-driven-development/scripts" \
-  "sdd/codex: scripts は共有パスを叩く"
-assert_not_contains "$codex_out" ".config/claude/skills/subagent-driven-development/scripts" \
-  "sdd/codex: 旧 scripts パスが残っていない"
-
 # herdr 管理下では worktree を workspace として作り、既にある worktree も workspace として開く。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/using-git-worktrees/SKILL.md" "$tool")"
@@ -236,13 +175,6 @@ assert_contains "$finish" "herdr worktree list" "finishing-a-development-branch:
 assert_contains "$finish" 'herdr worktree remove --workspace "$ws" --force' \
   "finishing-a-development-branch: workspace ごと畳む"
 
-# _worktree-handoff は step 3/4 を 1 ブロックに統合し、失敗時の片付けを step 2-4 に限定する。
-assert_contains "$handoff" '$out' "_worktree-handoff: create の応答を bash 変数で受ける"
-assert_not_contains "$handoff" '### 4. 応答から' "_worktree-handoff: step 4 が独立した節として残っていない"
-assert_contains "$handoff" "タイムアウトは失敗ではない" "_worktree-handoff: timeout を失敗扱いしない"
-assert_contains "$handoff" "step 2〜4" "_worktree-handoff: 片付けの対象を限定する"
-assert_contains "$handoff" "初回指示の到達は未確認である" "_worktree-handoff: step 5 以降は worktree を消さず報告する"
-
 # using-git-worktrees の 1a は ws が空のときだけ remove する。
 using="$(render_template "agent-skills/using-git-worktrees/SKILL.md" "claude")"
 assert_contains "$using" '`ws` が非空なら' "using-git-worktrees: ws が空のときは remove しない"
@@ -258,57 +190,10 @@ assert_contains "$using" "下の herdr の確認と報告を済ませてから S
 assert_eq "$(printf '%s' "$using" | grep -c '`\.worktrees/` の ignore を確認する（SDD 用）」を済ませてから Step 2 へ進む')" \
   "2" "using-git-worktrees: 1a と 1b の両方が ignore 確認節を前方参照する"
 
-# SDD の sdd-run 経路。3 ツールすべてに出る（controller がどのツールでも bash から叩けるため）。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
-  assert_contains "$out" "sdd-run 経路" "$tool: sdd-run 経路の節がある"
-  assert_contains "$out" "command -v codex" "$tool: 起動条件を書いている"
-  # CLI のバイナリは AI 環境に関係なく PATH にある。claude しか持たない AI 環境で
-  # codex を起動すると ~/.codex の既定アカウントで走るので、agents も条件に要る。
-  assert_contains "$out" "AGENT_ENV_AGENTS" "$tool: 起動条件が AI 環境の agents を見る"
-  assert_not_contains "$out" 'が `1` なら、役割ごとにエンジンを選べる' \
-    "$tool: 旧 HERDR_ENV 条件が残っていない"
-  assert_contains "$out" "sdd-run" "$tool: orchestrator を指している"
-  assert_contains "$out" "routing.json" "$tool: エンジンの決め方を指している"
-done
-
-# 経路の優先順位。HERDR_ENV=1 の claude では sdd-run 経路と [deterministic-loop] の
-# 両方の条件が成立するので、どちらが優先するかが書かれていないと実行のたびに変わる。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
-  assert_contains "$out" "この節が他のすべての経路に優先する" "$tool: sdd-run 経路の優先を明示する"
-done
-assert_contains "$claude_out" "sdd-run の前提が揃わないときの既定" \
-  "sdd/claude: [deterministic-loop] は sdd-run の前提が揃わないときの既定"
-assert_not_contains "$claude_out" "[deterministic-loop] が使えるならそちらが既定" \
-  "sdd/claude: 既定を名乗る経路が 2 つにならない"
-
-# sdd-run 経路では worktree の作成・セットアップ・片付けを自動化する。
-sdd_claude="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "claude")"
-assert_not_contains "$sdd_claude" "1 タスクだけの波でも worktree を作る" \
-  "SDD: 単独波でも worktree を作るという旧規則が残っていない"
-assert_contains "$sdd_claude" "worktrunk" "SDD: worktree は worktrunk が作る"
-assert_contains "$sdd_claude" "wt remove --no-delete-branch" "SDD: worktree の片付けは wt が行う"
-
 # implementer は波の中で全体スイートを回さない。並行するとタスク数だけ重複する。
 impl_prompt="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/sdd-implementer.md")"
 assert_contains "$impl_prompt" "全体のスイートは回しません" \
   "implementer: タスク中は focused test だけにする"
-
-# sdd-run 経路と HERDR_ENV 未設定経路の手順を保持する。
-sdd="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "claude")"
-assert_contains "$sdd" "scripts/sdd-run --plan" "SDD: sdd-run を呼ぶ"
-assert_contains "$sdd" "git worktree add" "SDD: 未設定経路の worktree 作成手順がある"
-assert_contains "$sdd" "git merge --no-ff" "SDD: 未設定経路のマージ手順がある"
-assert_contains "$sdd" "git worktree remove" "SDD: 未設定経路の worktree 片付け手順がある"
-assert_contains "$sdd" "git branch -d" "SDD: 未設定経路のブランチ片付け手順がある"
-assert_not_contains "$sdd" "herdr 経路" "SDD: 旧 herdr 経路表記が残っていない"
-assert_contains "$sdd" "NEEDS_ATTENTION" "SDD: 返り値の裁定を書く"
-assert_contains "$sdd" "CONFLICT" "SDD: マージ衝突の扱いを書く"
-assert_not_contains "$sdd" "herdr worktree create" "SDD: worktree の作成手順を controller に書かせない"
-assert_not_contains "$sdd" "herdr pane split" "SDD: pane の手順を controller に書かせない"
-assert_not_contains "$sdd" "anchor-pane" "SDD: 廃止した引数が残っていない"
-assert_contains "$sdd" "worktrunk" "SDD: worktree は worktrunk が作ると書く"
 
 # braid の呼び方は共有パーシャルに 1 本だけ置く。
 braid_inv="$(render_template "agent-skills/_braid-invocation.md" "claude")"
@@ -351,24 +236,6 @@ braid_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/braid/SKILL.md"
 assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
   "braid: 呼び方を共有パーシャルから取り込む"
 assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
-
-# SDD 外の単発レビューは review package をリポジトリ内に作り、braid の review レシピを呼ぶ。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
-  assert_contains "$out" "_cellfusion/reviews/" "rcr/$tool: package をリポジトリ内に作る"
-  assert_contains "$out" "braid run review" "rcr/$tool: review レシピを呼ぶ"
-  assert_contains "$out" "--arg requirements=" "rcr/$tool: requirements 引数を渡す"
-  assert_contains "$out" "--arg review_file=" "rcr/$tool: review_file 引数を渡す"
-  assert_contains "$out" "## braid の呼び方" "rcr/$tool: 呼び方の節が展開される"
-  assert_not_contains "$out" "mktemp -t review" "rcr/$tool: /tmp に package を作らない"
-  assert_not_contains "$out" 'requirements=<' "rcr/$tool: bash ブロックの中で < をリダイレクトにしない"
-  assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
-  assert_contains "$out" "cellfusion-workdir" "rcr/$tool: reviews を cellfusion-workdir 経由で作る"
-done
-
-rcr_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")"
-assert_contains "$rcr_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
-  "rcr: 呼び方を共有パーシャルから取り込む"
 
 # 3 つの配布先すべてに .tmpl がある。
 for d in private_dot_agents/skills \

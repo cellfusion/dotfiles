@@ -11,6 +11,10 @@ description: >-
 
 ## 概要
 
+これは親専用 finalizer である。MAD の `delivery` が採用 attempt の final review と検証記録を `ok` とした後、
+親だけが取り込み方法を [ask-user] で確認し、選択された merge / push / 保持を実行する。親は実装、レビュー、
+検証本文を作らない。それらは delivery の子が `handoff.json` に残した絶対パスを正本とする。
+
 **中核**: 検証を通す → 環境を判定する → 選択肢を提示する → 選ばれた処理を実行する → 後始末する。
 
 **開始時に宣言する**: 「finishing-a-development-branch を使ってこの作業を仕上げる」
