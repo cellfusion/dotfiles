@@ -110,6 +110,13 @@ for tool in claude codex opencode; do
     "requesting-code-review/$tool: checkout の script fallback を示す"
   assert_contains "$request_review" "package を作れない場合は MAD review を開始しない" \
     "requesting-code-review/$tool: package 失敗時に review を開始しない"
+  # BASE / HEAD を親が渡し忘れると、空の ref 2 つで review-package を呼ぶことになる。
+  assert_contains "$request_review" "set -eu" \
+    "requesting-code-review/$tool: 未設定と失敗でブロックを止める"
+  assert_contains "$request_review" ': "${BASE:?' \
+    "requesting-code-review/$tool: BASE の未設定を検出する"
+  assert_contains "$request_review" ': "${HEAD:?' \
+    "requesting-code-review/$tool: HEAD の未設定を検出する"
 done
 
 # 実装工程の子は TDD / debugging / worktree の既存規約を使い、finish は親の finalizer に残す。

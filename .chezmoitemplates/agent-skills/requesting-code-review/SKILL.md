@@ -30,9 +30,12 @@ MAD の `review` を開始する前に `~/.agents/skills/multi-agent-development
    次の既存 script の入力契約（`PLAN_FILE BASE HEAD OUTFILE`）をそのまま使う。
 
    ```bash
+   set -eu
    REPO_ROOT="$(git rev-parse --show-toplevel)"
    PLAN_FILE="${PLAN_FILE:-}"
    REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-}"
+   : "${BASE:?BASE を解決できないため MAD review を開始しない}"
+   : "${HEAD:?HEAD を解決できないため MAD review を開始しない}"
    if [ ! -f "$PLAN_FILE" ]; then
      PLAN_FILE="$REQUIREMENTS_FILE"
    fi
