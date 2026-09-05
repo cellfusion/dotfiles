@@ -244,13 +244,15 @@ Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と
 native subagent で起動した子は Paseo の一覧に現れないので、親は run ディレクトリの
 `state.json` だけで状態を判断する。
 
-`~/.agents/skills/subagent-driven-development/scripts/` の `sdd-run`、`sdd-task`、`task-brief`、
-`task-waves`、`task-worktree`、`run-registry`、`agent-backend`、`sdd-workspace` は、MAD の
-`implement` recipe で起動された子が使う実行基盤として残してある。親はこれらを直接呼ばず、
-task graph、task brief、run の記録を担う子が呼ぶ。どのスクリプトが誰の工程のものかと、
-実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
-worktree を作るのは親なので、`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。
-Workflow の定義も同じ理由で残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
+`~/.agents/skills/subagent-driven-development/scripts/` のうち、MAD の `implement` recipe で
+起動された子が使うのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package`、
+`run-registry`、`agent-backend` である。親はこれらを直接呼ばず、task graph、task brief、
+run の記録を担う子が呼ぶ。どのスクリプトが誰の工程のものかと、実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+
+`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。worktree を作るのは親であり、
+波の進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を
+headless で回すときの入口であり、`implement` の子は使わない。この 3 つと Workflow の定義は、
+MAD を通さない経路のために残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
 
 `implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
 直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
