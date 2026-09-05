@@ -10,6 +10,10 @@ description: >-
 親は本文を作らない。`executing-plans` は親が plan を直列に実装する経路ではなく、MAD の `implement`
 recipe を使う互換入口である。承認済み plan、spec、既存 ledger の絶対パスだけを子へ渡す。
 
+`implement` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `implement` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 1. MAD の `implement` を開始する。Paseo MCP が利用できなければ native subagent を選ぶが、開始後に
    backend を自動変更しない。
 2. 子は task graph、worktree、実装、TDD、review、fix loop を行い、成果物の絶対パスを `handoff.json`

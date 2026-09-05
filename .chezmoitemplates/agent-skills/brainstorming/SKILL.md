@@ -11,6 +11,10 @@ description: >-
 子が必要な調査、設計案、spec、self-review を行う。親は backend 選択、状態遷移、子の制御、および
 ユーザーとの decision / approval gate だけを担う。
 
+`spec` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `spec` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 実行
 
 1. `~/.agents/skills/_shared/scripts/cellfusion-workdir` を実行してから

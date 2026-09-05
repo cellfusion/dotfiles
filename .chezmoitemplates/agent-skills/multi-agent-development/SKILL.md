@@ -2,8 +2,11 @@
 name: multi-agent-development
 description: >-
   親エージェントが複数の子エージェントを組み合わせて手動でオーケストレーションするときに使う。
+  spec の作成、plan の作成、plan の implement、review、その 4 つを通す delivery が対象である。
   観点を分けた調査、候補案の生成と採点、立場を分けた賛否、項目ごとの並行処理、
-  多観点レビューが対象。
+  多観点レビューも対象である。
+  brainstorming、writing-plans、subagent-driven-development、executing-plans、
+  requesting-code-review、receiving-code-review、verification-before-completion の委譲先である。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 

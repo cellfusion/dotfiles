@@ -11,6 +11,10 @@ description: >-
 渡す。子が新しい検証を実行し、終了コードと出力を読み、要件カバレッジを確認して検証記録を作る。
 親は backend 選択、状態遷移、子の制御、ユーザー gate だけを担う。
 
+`review` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `review` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 完了条件
 
 1. MAD の `review` を開始する。子は検証コマンド、出力、要件ごとの根拠、失敗の有無を正規成果物へ残し、

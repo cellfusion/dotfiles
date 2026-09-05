@@ -50,7 +50,21 @@ for spec in \
     assert_contains "$out" "本文を作らない" "$skill/$tool: 親が本文を作らない"
     assert_not_contains "$out" "braid" "$skill/$tool: braid を参照しない"
     assert_not_contains "$out" "mad-run" "$skill/$tool: 旧 mad-run を参照しない"
+    # recipe の名前だけでは実行できない。手順を持つ skill と、その読み込み先を示す。
+    assert_contains "$out" "multi-agent-development" \
+      "$skill/$tool: 委譲先の skill を名指しする"
+    assert_contains "$out" ".agents/skills/multi-agent-development/SKILL.md" \
+      "$skill/$tool: 委譲先の手順の在り処を示す"
   done
+done
+
+# description で skill を選ぶ runtime のために、frontmatter が開発ライフサイクルの
+# recipe を挙げる。挙げないと「spec を作る」「plan を実装する」で MAD が読み込まれない。
+mad_description="$(printf '%s\n' "$(render_template "agent-skills/multi-agent-development/SKILL.md" "claude")" \
+  | sed -n '/^description:/,/^---$/p')"
+for recipe in spec plan implement review delivery; do
+  assert_contains "$mad_description" "$recipe" \
+    "mad: description が $recipe recipe を挙げる"
 done
 
 # requesting-code-review は単発利用でも MAD review の入力 package を先に作る。

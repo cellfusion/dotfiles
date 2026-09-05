@@ -11,6 +11,10 @@ description: >-
 `_cellfusion/plans/` の正規 plan を作り、`plan-reviewer` が実装可能性、検証、依存関係を review する。
 親は backend 選択、状態遷移、子の制御、ユーザーの approval gate だけを担う。
 
+`plan` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `plan` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 実行
 
 1. `~/.agents/skills/_shared/scripts/cellfusion-workdir` を実行してから MAD の `plan` を開始し、入力には

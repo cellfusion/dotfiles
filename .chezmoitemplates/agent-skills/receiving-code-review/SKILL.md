@@ -11,6 +11,10 @@ description: >-
 recipe に渡す。子が指摘をコードベース・テスト・既存決定と突き合わせ、採用、却下、追加調査の根拠を
 成果物に残す。親は backend 選択、状態遷移、子の制御、ユーザー gate だけを担う。
 
+`review` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `review` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 実行
 
 1. MAD の `review` を開始する。子は分析結果と採用した指摘の絶対パスを `handoff.json` に残す。

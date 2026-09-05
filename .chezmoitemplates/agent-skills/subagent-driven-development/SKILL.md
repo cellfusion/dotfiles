@@ -11,6 +11,10 @@ description: >-
 子の `task-graph-analyzer`、`implementer`、`task-reviewer`、`re-reviewer`、`final-reviewer` が task graph、
 実装、review、fix loop、最終 review を担う。独立 task は子として並列起動する。
 
+`implement` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `implement` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 子の工程規約
 
 - 実装子は `test-driven-development` を使い、RED を確認してから最小実装で GREEN にする。

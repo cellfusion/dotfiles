@@ -11,6 +11,10 @@ description: >-
 子の観点別 `reviewer` が並列に評価し、`review-synthesizer` または `final-reviewer` が採用可能な指摘を
 統合する。親は backend 選択、状態遷移、子の制御、ユーザー gate だけを担う。
 
+`review` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
+backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
+MAD の `review` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+
 ## 実行
 
 1. `PLAN_FILE`、`REQUIREMENTS_FILE`、`BASE`、`HEAD` を親の制御情報から決める。`PLAN_FILE` は既存の
