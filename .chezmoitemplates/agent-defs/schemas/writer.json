@@ -1,10 +1,11 @@
 {
   "type": "object",
-  "required": ["files", "changes", "skipped"],
+  "required": ["files", "changes", "skipped", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "files": { "type": "array", "items": { "type": "string" } },
     "changes": { "type": "array", "items": { "type": "string" } },
-    "skipped": { "type": ["array", "null"], "items": { "type": "string" } }
+    "skipped": { "type": ["array", "null"], "items": { "type": "string" } },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }

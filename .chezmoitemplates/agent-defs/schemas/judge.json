@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["winner", "scores", "reason"],
+  "required": ["winner", "scores", "reason", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "winner": { "type": "string" },
@@ -17,6 +17,7 @@
         }
       }
     },
-    "reason": { "type": "string" }
+    "reason": { "type": "string" },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }

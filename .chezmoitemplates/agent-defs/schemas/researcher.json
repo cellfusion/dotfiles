@@ -1,11 +1,12 @@
 {
   "type": "object",
-  "required": ["summary", "findings", "sources", "cannotVerify"],
+  "required": ["summary", "findings", "sources", "cannotVerify", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "summary": { "type": "string" },
     "findings": { "type": "array", "items": { "type": "string" } },
     "sources": { "type": "array", "items": { "type": "string" } },
-    "cannotVerify": { "type": ["array", "null"], "items": { "type": "string" } }
+    "cannotVerify": { "type": ["array", "null"], "items": { "type": "string" } },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }
