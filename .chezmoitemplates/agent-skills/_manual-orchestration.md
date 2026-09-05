@@ -49,13 +49,40 @@ attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、
 各完了 node の採用 attempt を明示する。採用 attempt が `ok` なら、履歴上の `failed` attempt は retry
 成功を妨げない。親は採用 attempt の `handoff.json` だけを後段へ渡し、本文を会話へ転記しない。
 
+### 子の起動
+
+`mad-attempt-v1` は attempt の成果物契約の名前である。`~/.agents/agent-defs/manifests.json` の
+`artifact_contract` がこの値を持つ role は、次の 3 つを満たす。第 1 に、子は role の schema に従う
+JSON だけを返し、本文を親へ返さない。第 2 に、親はその JSON を attempt の `result.json` に保存する。
+第 3 に、親は JSON に含まれる絶対パスを attempt の `handoff.json` の `artifact_paths` へ写す。
+
+親は子を起動する前に、attempt ディレクトリの `prompt.md` を書く。`prompt.md` は 3 つを含む。
+role の指示は `~/.agents/agent-defs/prompts/<role>.md` の内容とし、入力は成果物の絶対パスだけとし、
+出力形式は `~/.agents/agent-defs/schemas/<role>.json` の内容と「この schema に従う JSON だけを返す」
+という指示とする。どちらのファイルも `chezmoi apply` 前は存在しないので、その場合はこの
+checkout の `.chezmoitemplates/agent-defs/` 側を読む。
+
+- Paseo MCP: `create_agent` の `provider` を `~/.agents/agent-defs/paseo-routing.json` の第 1 候補から
+  決め、`initialPrompt` に `prompt.md` の内容をそのまま渡す。`create_agent` は system prompt も
+  出力 schema も別の引数に取らないため、両方を `initialPrompt` に含める。
+- native subagent: `[dispatch-subagent: <role>]` で起動する。role の定義は
+  `~/.agents/agent-defs/prompts/<role>.md` から生成済みなので、渡すのは入力と出力形式だけでよい。
+
+親は子の構造化出力を attempt の `result.json` へ保存する。schema に合わない出力は親が整形せず、
+その attempt を `failed` として記録する。schema を持たない補助的な子だけが `result.md` を残す。
+
 ### 成果物契約の受け入れ検証
 
 親は子を起動する backend と切り離して、run の完了前に次を実行する。これは Paseo MCP の実在ツールを
-呼ばず、作成済みの state と成果物だけを検証する。
+呼ばず、作成済みの state と成果物だけを検証する。`chezmoi apply` 前は配布先に validator が無いので、
+その場合はこの checkout のソース側を使う。
 
 ```bash
-~/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate "$RUN_DIR"
+MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
+if [ ! -x "$MAD_VALIDATE" ]; then
+  MAD_VALIDATE="$(git rev-parse --show-toplevel)/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
+fi
+bash "$MAD_VALIDATE" "$RUN_DIR"
 ```
 
 validator が失敗した run は `ok` にせず、親が `failed` または `stopped` と記録して確認する。

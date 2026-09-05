@@ -334,6 +334,26 @@ for field in run_id node attempt round; do
 done
 assert_contains "$manual_mad" "manual-orchestration-validate" \
   "_manual-orchestration: 実行可能な成果物検証を案内する"
+# chezmoi apply 前は ~/.agents に validator が無い。契約側にも checkout の fallback を置く。
+assert_contains "$manual_mad" "executable_manual-orchestration-validate" \
+  "_manual-orchestration: checkout の validator fallback を示す"
+
+# 子をどう起動するかを 1 箇所に書く。ここが無いと prompt と schema は配布されるだけで
+# 実行時に誰も参照せず、result.json が schema 検査を受けない。
+assert_contains "$manual_mad" "### 子の起動" \
+  "_manual-orchestration: 子の起動手順の節がある"
+assert_contains "$manual_mad" ".agents/agent-defs/prompts/" \
+  "_manual-orchestration: role の system prompt の在り処を示す"
+assert_contains "$manual_mad" ".agents/agent-defs/schemas/" \
+  "_manual-orchestration: role の出力 schema の在り処を示す"
+assert_contains "$manual_mad" "result.json" \
+  "_manual-orchestration: 構造化出力の保存先を示す"
+assert_contains "$manual_mad" "initialPrompt" \
+  "_manual-orchestration: Paseo MCP へ prompt と schema を渡す方法を示す"
+assert_contains "$manual_mad" "[dispatch-subagent: <role>]" \
+  "_manual-orchestration: native subagent での起動方法を示す"
+assert_contains "$manual_mad" "\`mad-attempt-v1\` は" \
+  "_manual-orchestration: mad-attempt-v1 を定義する"
 assert_contains "$manual_mad" "max_rounds" \
   "_manual-orchestration: loop 上限を定義する"
 assert_contains "$manual_mad" "親が確認" \
