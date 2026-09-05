@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# 手動 MAD の run 成果物が、親と子の間で共有するファイル契約を満たすか検証する。
+set -u
+
+fail() {
+  printf 'manual-orchestration-validate: %s\n' "$*" >&2
+  exit 1
+}
+
+require_string() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | strings | select(length > 0)" "$file" >/dev/null 2>&1 ||
+    fail "$file: $field must be a non-empty string"
+}
+
+require_state() {
+  local file="$1"
+  jq -e '.state | IN("pending", "running", "ok", "failed", "stopped", "unresolved")' \
+    "$file" >/dev/null 2>&1 || fail "$file: state is invalid"
+}
+
+require_backend() {
+  local file="$1"
+  jq -e '.backend | IN("paseo-mcp", "subagent")' "$file" >/dev/null 2>&1 ||
+    fail "$file: backend must be paseo-mcp or subagent"
+  require_string "$file" '.backend_reason' 'backend_reason'
+}
+
+require_json() {
+  local file="$1"
+  jq -e 'type == "object"' "$file" >/dev/null 2>&1 || fail "$file: valid JSON object is required"
+}
+
+[ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR'
+run_dir="$1"
+[ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
+run_state="$run_dir/state.json"
+[ -f "$run_state" ] || fail "$run_state: missing run state"
+
+require_json "$run_state"
+require_string "$run_state" '.run_id' 'run_id'
+require_string "$run_state" '.recipe' 'recipe'
+require_state "$run_state"
+require_backend "$run_state"
+require_string "$run_state" '.parent_decision' 'parent_decision'
+jq -e '.current_round | type == "number" and . >= 0 and floor == .' "$run_state" >/dev/null 2>&1 ||
+  fail "$run_state: current_round must be a non-negative integer"
+
+run_id="$(jq -r '.run_id' "$run_state")"
+current_round="$(jq -r '.current_round' "$run_state")"
+
+if [ -d "$run_dir/nodes" ]; then
+  while IFS= read -r node_dir; do
+    node_id="$(basename "$node_dir")"
+    [ -d "$node_dir/attempts" ] || fail "$node_dir: node artifacts must be under attempts/"
+    direct_file="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
+    [ -z "$direct_file" ] || fail "$direct_file: node artifacts must be under attempts/"
+  done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
+
+  while IFS= read -r attempt_dir; do
+    [ -f "$attempt_dir/state.json" ] || fail "$attempt_dir: state.json is required"
+  done < <(find "$run_dir/nodes" -type d -path '*/attempts/*' -print)
+
+  while IFS= read -r attempt_state; do
+    attempt_dir="$(dirname "$attempt_state")"
+    attempt_id="$(basename "$attempt_dir")"
+    node_dir="$(dirname "$(dirname "$attempt_dir")")"
+    node_id="$(basename "$node_dir")"
+
+    require_json "$attempt_state"
+    require_state "$attempt_state"
+    require_backend "$attempt_state"
+    require_string "$attempt_state" '.run_id' 'run_id'
+    require_string "$attempt_state" '.node' 'node'
+    require_string "$attempt_state" '.attempt' 'attempt'
+    require_string "$attempt_state" '.parent_decision' 'parent_decision'
+    jq -e '.round | type == "number" and . >= 0 and floor == .' "$attempt_state" >/dev/null 2>&1 ||
+      fail "$attempt_state: round must be a non-negative integer"
+
+    [ "$(jq -r '.run_id' "$attempt_state")" = "$run_id" ] ||
+      fail "$attempt_state: run_id does not match run state"
+    [ "$(jq -r '.node' "$attempt_state")" = "$node_id" ] ||
+      fail "$attempt_state: node does not match its directory"
+    [ "$(jq -r '.attempt' "$attempt_state")" = "$attempt_id" ] ||
+      fail "$attempt_state: attempt does not match its directory"
+    attempt_round="$(jq -r '.round' "$attempt_state")"
+    [ "$attempt_round" -le "$current_round" ] ||
+      fail "$attempt_state: round exceeds current_round"
+
+    [ -f "$attempt_dir/prompt.md" ] || fail "$attempt_dir: prompt.md is required"
+    result_count=0
+    [ -f "$attempt_dir/result.md" ] && result_count=$((result_count + 1))
+    [ -f "$attempt_dir/result.json" ] && result_count=$((result_count + 1))
+    [ "$result_count" -eq 1 ] || fail "$attempt_dir: exactly one result.md or result.json is required"
+    [ -f "$attempt_dir/log.md" ] || fail "$attempt_dir: log.md is required"
+  done < <(find "$run_dir/nodes" -type f -path '*/attempts/*/state.json' -print)
+fi
+
+printf 'valid manual orchestration run: %s\n' "$run_dir"

@@ -465,6 +465,8 @@ assert_contains "$manual_mad" "[dispatch-subagent: role]" \
   "_manual-orchestration: fallback の論理名を使う"
 assert_contains "$manual_mad" "_cellfusion/orchestration/<run-id>/" \
   "_manual-orchestration: run 成果物の保存先を定義する"
+assert_contains "$manual_mad" "nodes/<node-id>/attempts/<attempt-id>/" \
+  "_manual-orchestration: node と attempt の成果物を分離する"
 assert_contains "$manual_mad" "prompt.md" \
   "_manual-orchestration: prompt の成果物を定義する"
 assert_contains "$manual_mad" "result.md" \
@@ -485,10 +487,26 @@ assert_contains "$manual_mad" "unresolved" \
   "_manual-orchestration: unresolved 状態を定義する"
 assert_contains "$manual_mad" "backend" \
   "_manual-orchestration: backend を state に記録する"
+for field in run_id node attempt round; do
+  assert_contains "$manual_mad" "\`$field\`" \
+    "_manual-orchestration: $field は state の第一級フィールドである"
+done
+assert_contains "$manual_mad" "manual-orchestration-validate" \
+  "_manual-orchestration: 実行可能な成果物検証を案内する"
 assert_contains "$manual_mad" "max_rounds" \
   "_manual-orchestration: loop 上限を定義する"
 assert_contains "$manual_mad" "親が確認" \
   "_manual-orchestration: 親の介入境界を定義する"
+
+mad_skill="$(render_template "agent-skills/multi-agent-development/SKILL.md" "claude")"
+assert_contains "$mad_skill" "既定観点: 現状と確認済みの事実、制約とリスク、代替案" \
+  "mad/research: 既定の 3 観点を定義する"
+assert_contains "$mad_skill" "\`perspectives\` で全 3 観点を差し替えられる" \
+  "mad/research: ユーザー指定の観点で上書きできる"
+assert_contains "$mad_skill" "調査役は \`researcher\`、統合役は \`synthesizer\`" \
+  "mad/research: 子の role を明記する"
+assert_contains "$mad_skill" "改稿役を起動して成果物を確認し、批評役へ絶対パスを渡し、親が批評を確認して判断する" \
+  "mad/refine: 改稿から批評、親判断の順に進める"
 
 for d in private_dot_agents/skills \
          private_dot_config/claude/skills \

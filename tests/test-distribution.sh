@@ -216,7 +216,7 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
   ".chezmoiignore: .DS_Store を配らない"
 
 # MAD のスクリプトとレシピは ~/.agents/skills 側にだけ配られる。
-for s in mad-route mad-agent mad-run mad-lib.sh; do
+for s in mad-route mad-agent mad-run mad-lib.sh manual-orchestration-validate; do
   assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
     "MAD: スクリプトを共有パスへ配る: $s"
 done
