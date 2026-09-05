@@ -32,7 +32,7 @@ for s in review-package sdd-workspace task-brief task-waves \
 done
 
 # SKILL.md は 3 ツールすべてに配られる。
-for skill in brainstorming writing-plans using-git-worktrees braid; do
+for skill in brainstorming writing-plans using-git-worktrees multi-agent-development; do
   assert_contains "$managed" ".config/claude/skills/$skill/SKILL.md" \
     "$skill: claude へ配られる"
   assert_contains "$managed" ".config/opencode/skills/$skill/SKILL.md" \
@@ -215,15 +215,23 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.gitignore")" ".DS_Store" \
 assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
   ".chezmoiignore: .DS_Store を配らない"
 
-# MAD のスクリプトとレシピは ~/.agents/skills 側にだけ配られる。
-for s in mad-route mad-agent mad-run mad-lib.sh manual-orchestration-validate; do
-  assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
-    "MAD: スクリプトを共有パスへ配る: $s"
+# MAD はスキルと手動オーケストレーション validator だけを配る。旧 shell runner / recipe は
+# 配布しない。braid も 3 runtime のいずれにも配布しない。
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/manual-orchestration-validate" \
+  "MAD: validator を共有パスへ配る"
+for legacy in \
+  ".agents/skills/multi-agent-development/scripts/mad-route" \
+  ".agents/skills/multi-agent-development/scripts/mad-agent" \
+  ".agents/skills/multi-agent-development/scripts/mad-run" \
+  ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/recipes" \
+  ".agents/skills/braid/SKILL.md" \
+  ".config/claude/skills/braid/SKILL.md" \
+  ".config/opencode/skills/braid/SKILL.md"; do
+  assert_not_contains "$managed_files" "$legacy" "退役資産を配布しない: $legacy"
 done
-for r in research fanout decide debate review; do
-  assert_contains "$managed" ".agents/skills/multi-agent-development/recipes/$r.sh" \
-    "MAD: レシピを共有パスへ配る: $r"
-done
+assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" ".local/bin/braid" \
+  ".chezmoiremove: braid バイナリを回収する"
 assert_contains "$managed" ".config/claude/skills/multi-agent-development/SKILL.md" \
   "MAD: claude へ配られる"
 assert_contains "$managed" ".config/opencode/skills/multi-agent-development/SKILL.md" \

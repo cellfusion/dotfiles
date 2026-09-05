@@ -42,6 +42,9 @@
 .local/bin/zk-today
 .local/bin/ralph-relay
 
+# braid は MAD へ置き換えた。旧実行バイナリを回収する。
+.local/bin/braid
+
 # herdr-sessions は agent-environments.zsh へ統合した。1 セッション 1 ファイルだと
 # ファイル名に環境名が現れ、public なリポジトリには置けない。環境定義は
 # ~/.config/chezmoi/private-data.toml の [[data.environments]] が持つ。

@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 # 移設済みのスキル。
-SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees braid multi-agent-development"
+SKILLS="brainstorming writing-plans subagent-driven-development executing-plans systematic-debugging test-driven-development verification-before-completion requesting-code-review receiving-code-review finishing-a-development-branch using-git-worktrees multi-agent-development"
 
 for skill in $SKILLS; do
   for tool in claude codex opencode; do
@@ -240,60 +240,10 @@ impl_prompt="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/sdd-imp
 assert_contains "$impl_prompt" "全体のスイートは回しません" \
   "implementer: タスク中は focused test だけにする"
 
-# braid の呼び方は共有パーシャルに 1 本だけ置く。
-braid_inv="$(render_template "agent-skills/_braid-invocation.md" "claude")"
-assert_contains "$braid_inv" "## braid の呼び方" "_braid-invocation: 節の見出しがある"
-assert_contains "$braid_inv" "command -v braid" "_braid-invocation: braid が PATH にあるか確かめる"
-assert_contains "$braid_inv" "git rev-parse --is-inside-work-tree" \
-  "_braid-invocation: cwd が git リポジトリか確かめる"
-assert_contains "$braid_inv" "--dry-run --json" "_braid-invocation: 本実行の前に dry-run を通す"
-assert_contains "$braid_inv" "braid cancel" "_braid-invocation: 停止の手段を書く"
-assert_contains "$braid_inv" "braid status" "_braid-invocation: run の追い方を書く"
-assert_contains "$braid_inv" "リトライしない" "_braid-invocation: 失敗を再試行しない"
-assert_not_contains "$braid_inv" "target/release/braid" "_braid-invocation: 開発中のパスを書かない"
-
-# レシピごとの必須引数。表の drift を検出するため、レシピ名だけでなく引数名も assert する。
-required_args_for() {
-  case "$1" in
-    research) echo "topic" ;;
-    decide) echo "problem" ;;
-    debate) echo "proposal" ;;
-    fanout) echo "items task" ;;
-    review) echo "requirements review_file" ;;
-    implement) echo "requirements" ;;
-    waves) echo "waves spec_dir" ;;
-  esac
-}
-
-# braid スキルはレシピ 7 本を表に持ち、呼び方は共有パーシャルから取り込む。
-for tool in claude codex opencode; do
-  out="$(render_template "agent-skills/braid/SKILL.md" "$tool")"
-  for recipe in research decide debate fanout review implement waves; do
-    assert_contains "$out" "\`$recipe\`" "braid/$tool: レシピ $recipe が表にある"
-    for arg in $(required_args_for "$recipe"); do
-      assert_contains "$out" "\`$arg\`" "braid/$tool: $recipe の必須引数 $arg が表にある"
-    done
-  done
-  assert_contains "$out" "## braid の呼び方" "braid/$tool: 呼び方の節が展開される"
-done
-
-braid_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/braid/SKILL.md")"
-assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \
-  "braid: 呼び方を共有パーシャルから取り込む"
-assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
-
-# 3 つの配布先すべてに .tmpl がある。
-for d in private_dot_agents/skills \
-         private_dot_config/claude/skills \
-         private_dot_config/opencode/skills; do
-  assert_eq "$([ -f "$CHEZMOI_SOURCE/$d/braid/SKILL.md.tmpl" ] && echo yes || echo no)" \
-            "yes" "braid: 配布先に .tmpl がある: $d"
-done
-
 # スキル本文の bash ブロックは、そのままコピーして実行できる構文であること。
 # プレースホルダーを `<name>` の形で裸で書くと `<` と `>` がリダイレクトになり、読者が
 # 実行すると落ちる。この欠陥はレビューを 2 度素通りしたので、テストで縛る。
-for skill in braid requesting-code-review multi-agent-development; do
+for skill in requesting-code-review multi-agent-development; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
     blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
@@ -301,25 +251,6 @@ for skill in braid requesting-code-review multi-agent-development; do
     assert_eq "$ok" "yes" "$skill/$tool: bash ブロックが構文として妥当"
   done
 done
-
-# MAD のスクリプトは PATH に無い。bash ブロックは裸の mad-run ではなくフルパスで書く。
-# コピーして実行する読者が command not found にならないよう、テストで縛る。
-for name in "agent-skills/_mad-invocation.md"; do
-  out="$(render_template "$name" "claude")"
-  blocks="$(printf '%s\n' "$out" | sed -n '/^```bash$/,/^```$/p' | grep -v '^```')"
-  bare="$(printf '%s\n' "$blocks" | grep -c '^[[:space:]]*mad-run' || true)"
-  assert_eq "$bare" "0" "$name: bash ブロックに裸の mad-run を書かない"
-  assert_contains "$blocks" "~/.agents/skills/multi-agent-development/scripts/mad-run" \
-    "$name: mad-run をフルパスで書く"
-done
-
-# MAD の呼び方は共有パーシャルに 1 本だけ置く。
-mad_inv="$(render_template "agent-skills/_mad-invocation.md" "claude")"
-assert_contains "$mad_inv" "## mad-run の呼び方" "_mad-invocation: 節の見出しがある"
-assert_contains "$mad_inv" "command -v paseo" "_mad-invocation: paseo が PATH にあるか確かめる"
-assert_contains "$mad_inv" "mad-run" "_mad-invocation: mad-run を呼ぶ"
-assert_contains "$mad_inv" "--dry-run" "_mad-invocation: 本実行の前に dry-run を通す"
-assert_contains "$mad_inv" "リトライしない" "_mad-invocation: 失敗を再試行しない"
 
 # MAD スキルは共通の手動オーケストレーション契約を取り込む。
 for tool in claude codex opencode; do
@@ -330,8 +261,7 @@ for tool in claude codex opencode; do
   assert_contains "$out" "state.json" "mad/$tool: 状態契約を定義する"
 done
 
-# MAD の全レシピは、親が介入する手順として展開される。旧 mad-run の recipe は
-# この表の既定実行経路ではない。
+# MAD の全レシピは、親が介入する手順として展開される。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
   for recipe in research decide debate fanout review triage implement spike refine; do
@@ -339,7 +269,7 @@ for tool in claude codex opencode; do
   done
   assert_contains "$out" "親が確認" "mad/$tool: 親の介入点を定義する"
   assert_contains "$out" "max_rounds" "mad/$tool: loop 上限を定義する"
-  assert_not_contains "$out" "## mad-run の呼び方" "mad/$tool: 旧方式を既定にしない"
+  assert_not_contains "$out" "mad-run" "mad/$tool: 旧方式を参照しない"
 done
 
 # 全レシピの表には、親が確認した絶対パス handoff と失敗時停止を残す。非ループ型は
@@ -365,8 +295,7 @@ done
 mad_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
 assert_contains "$mad_src" 'includeTemplate "agent-skills/_manual-orchestration.md"' \
   "mad: 手動方式を共有パーシャルから取り込む"
-assert_not_contains "$mad_src" 'includeTemplate "agent-skills/_mad-invocation.md"' \
-  "mad: 旧方式の呼び方を既定経路に取り込まない"
+assert_not_contains "$mad_src" "## 旧方式" "mad: 旧方式の節を残さない"
 
 manual_mad="$(render_template "agent-skills/_manual-orchestration.md" "claude")"
 assert_contains "$manual_mad" "## 手動オーケストレーション" \

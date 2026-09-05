@@ -52,8 +52,8 @@ assert_contains "$doc" "自己更新" "docs: brew に寄せない理由が書か
 assert_contains "$doc" "aquaskk" "docs: AquaSKK の扱いが記録されている"
 
 # --- 手で入れるコマンドの入手方法が記録されている ---
-# braid と paseo はマニフェストに載らない。ここに書いていないと新マシンで入れられない。
-assert_contains "$doc" "cargo build --release" "docs: braid のビルド方法が書かれている"
+# paseo はマニフェストに載らない。ここに書いていないと新マシンで入れられない。
+assert_not_contains "$doc" "braid" "docs: 退役した braid を案内しない"
 assert_contains "$doc" "paseo.sh/download" "docs: paseo の入手先が書かれている"
 assert_contains "$doc" "/Applications/Paseo.app/Contents/Resources/bin/paseo" \
   "docs: paseo の CLI の在り処が書かれている"

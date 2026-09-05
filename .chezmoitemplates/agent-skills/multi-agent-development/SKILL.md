@@ -120,9 +120,4 @@ backend は共通契約の selector で一度だけ選ぶ。開始済みの子�
 
 どのレシピの形にもはまらないなら MAD を使わず、従来どおり subagent を立てる。
 
-## 旧方式
-
-既存の `mad-run` と shell recipe は互換性のために残す。手動方式から旧方式へ自動的に切り替えず、
-旧方式を明示的に使う場合だけ `_mad-invocation.md` の手順を参照する。
-
 {{ includeTemplate "agent-skills/_manual-orchestration.md" . }}
