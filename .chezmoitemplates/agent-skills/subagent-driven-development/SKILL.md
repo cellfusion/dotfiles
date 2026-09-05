@@ -1,37 +1,313 @@
 ---
 name: subagent-driven-development
 description: >-
-  承認済み実装 plan を MAD の implement recipe で子エージェントに実装・レビューさせるときに使う。
+  実装プランを、タスクごとに新しい subagent を立てて実行するときに使う。
+  タスク単位のレビューと fix ループ、最後にブランチ全体のレビューを挟む。
+  プランがあり、タスクがおおむね独立していて、このセッションで進めるときの既定の実行方式。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# MAD implement の入口
+# Subagent-Driven Development
 
-親は本文を作らない。承認済み plan、spec、既存 SDD ledger の絶対パスを MAD の `implement` recipe に渡す。
-子の `task-graph-analyzer`、`implementer`、`task-reviewer`、`re-reviewer`、`final-reviewer` が task graph、
-実装、review、fix loop、最終 review を担う。独立 task は子として並列起動する。
+タスクごとに新しい implementer subagent を dispatch し、そのたびにタスクレビュー（spec 準拠 + コード品質）を通し、最後にブランチ全体のレビューを 1 回行う。
 
-`implement` recipe の手順は `multi-agent-development` スキルが持つ。run ディレクトリの作り方、
-backend の選び方、子の起動、state と handoff の契約はそこに書いてある。
-MAD の `implement` を開始する前に `~/.agents/skills/multi-agent-development/SKILL.md` を読み込む。
+**なぜ subagent か**: タスクを、隔離された context を持つ専門エージェントに委譲する。指示と文脈を正確に組み立てることで、彼らは焦点を保ち、そのタスクに成功する。**彼らはあなたのセッションの context や履歴を継承しない**。必要なものだけをあなたが構築する。これはあなた自身の context を調整作業のために温存することでもある。
 
-## 子の工程規約
+**中核**: タスクごとに新しい subagent ＋ タスクレビュー（spec + 品質）＋ 最後の広いレビュー ＝ 高い品質と速い反復。
 
-- 実装子は `test-driven-development` を使い、RED を確認してから最小実装で GREEN にする。
-- 不具合・失敗を扱う子は `systematic-debugging` で根本原因を特定してから修正する。
-- 並列 task の隔離は `using-git-worktrees` の規約に従う。worktree を作るのは親である。子は親が渡した
-  worktree の中で実装し、自分では worktree を作らない。取り込みと後片付けも親が行う。親は実装や review の
-  本文を代行しない。
-- 子は brief、report、review package、検証記録を正規 `_cellfusion/sdd/` に残し、run 側の
-  `handoff.json` には絶対パスだけを記録する。
+**進行の実況**: ツール呼び出しの間に書くのは短い 1 行までにする。記録は ledger とツール結果が持つ。
 
-## 親の制御
+**止まらずに実行する**: タスクの合間にユーザーへ確認を挟まない。プランの全タスクを止まらずに実行する。止まってよいのは、解決できない BLOCKED、進行を本当に妨げる曖昧さ、全タスク完了のいずれか。「続けてよいか」の確認や途中経過の要約はユーザーの時間を奪う。プランの実行を頼まれたのだから、実行する。
 
-1. MAD の `implement` を開始し、backend は共通 selector で一度だけ選ぶ。
-2. 親は state、採用 attempt、`handoff.json`、wave、retry 上限、失敗・競合・例外だけを確認・裁定する。
-   task 本文、実装、review 本文を作らない。
-3. plan によりユーザー判断が必要な場合だけ [ask-user] で relay し、run を `waiting_for_user` に記録する。
-4. `max_rounds` 到達時は `unresolved` として停止する。採用 attempt の検証記録と final review が揃わない
-   run を `ok` にしない。
+## いつ使うか
 
-完了後は final review の handoff を MAD の `review` または `delivery` phase へ絶対パスで渡す。
+```dot
+digraph when_to_use {
+    "実装プランがある?" [shape=diamond];
+    "タスクはおおむね独立?" [shape=diamond];
+    "subagent が使える?" [shape=diamond];
+    "subagent-driven-development" [shape=box];
+    "executing-plans" [shape=box];
+    "brainstorming か手動実行" [shape=box];
+
+    "実装プランがある?" -> "タスクはおおむね独立?" [label="yes"];
+    "実装プランがある?" -> "brainstorming か手動実行" [label="no"];
+    "タスクはおおむね独立?" -> "subagent が使える?" [label="yes"];
+    "タスクはおおむね独立?" -> "brainstorming か手動実行" [label="no（密結合）"];
+    "subagent が使える?" -> "subagent-driven-development" [label="yes"];
+    "subagent が使える?" -> "executing-plans" [label="no"];
+}
+```
+
+## Setup
+
+**隔離ワークスペースを用意する**。using-git-worktrees を起動して worktree を作るか、既にある worktree を確認する。ユーザーの明示的な同意なしに main / master 上で実装を始めない。
+
+**ledger を用意する**。会話の記憶は compaction を越えない。実セッションで、自分の位置を見失った controller が完了済みのタスク列をまるごと再 dispatch した事故が観測されている。進捗は todo だけでなく ledger ファイルで追う。
+
+- プランごとに 1 つの workspace を持つ。スキル開始時に `~/.agents/skills/subagent-driven-development/scripts/sdd-workspace PLAN_FILE` を実行する。git 管理外のディレクトリ（`<repo-root>/_cellfusion/sdd/<plan-basename>/`）のパスが出力される。**このプランの**成果物（ledger、brief、report、review package）はすべてそこに置く。別プランのディレクトリは読むことも書くこともしない
+- `<workspace>/progress.md` を確認する。1 行目が自分のプランファイルを指しているなら、`Task <N>: complete` の行があるタスクは**完了済み**。再 dispatch せず、その行が無い最初のタスクから再開する。最後の行が fix ラウンドで終わっているタスクはループの途中なので、次のラウンドから再開する。1 行目が別のプランを指す ledger は他人の進捗なので、そのまま置いて自分のものを新規に作る
+- ledger は 1 行目に素性を書いて作る: `# SDD ledger — plan: <plan file path>`
+- ledger は復旧地図である。そこに書かれたコミットは、あなたの context がそれを作った記憶を失っても git に存在する。compaction 後は自分の記憶より ledger と `git log` を信じる
+- `git clean -fdx` は `_cellfusion/` を消す（git 管理外の作業領域なので）。workspace は `git log` から復旧できるが、plan と spec は git のどこにも無いので復旧できない
+- **plan は worktree の外にあることがある**。plan は untracked なのでブランチに乗らず、main チェックアウトの `_cellfusion/plans/X.md` は worktree の中には現れない。scripts にもレビュアーにも plan は絶対パスで渡す
+
+**プランを 1 回読む**。文脈と Global Constraints を頭に入れ、タスクごとに todo を作る。
+
+**波を計算する**。`~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` を実行し、同時に走らせてよいタスクの組を得る（下の「波ごとの並行実行」）。エラーで終了したらプランの依存宣言が壊れているので、実行を始めずにユーザーへ報告する。
+
+**Task 1 を dispatch する前に、プランを 1 度だけ矛盾検査する**。
+
+- 互いに矛盾するタスク、または Global Constraints と矛盾するタスク
+- プランが明示的に指示しているが、レビュー基準では欠陥とされるもの（何も assert しないテスト、ロジックブロックの逐語的重複）
+
+見つけたものは**まとめて 1 回**ユーザーに提示する。各指摘と、それを指示しているプランの記述を並べ、どちらが優先するかを聞く。これは実行開始前に行う。発見のたびに割り込むのではない。検査が空なら何も言わずに進む。実装してみて初めて表面化する矛盾は、レビューループが拾う。
+
+## エージェントの選択
+
+役割ごとにエージェントを用意してある。dispatch のたびにモデルを選ぶのではなく、**エージェントを選ぶ**。
+
+| エージェント | tier | 役割 |
+|---|---|---|
+| `sdd-implementer` | work | 実装タスク全般 |
+| `sdd-implementer-think` | think | 設計判断が要るタスク、fix ラウンド 4-5 |
+| `sdd-task-reviewer` | work | タスク単位レビュー（spec 準拠 + 品質） |
+| `sdd-re-reviewer` | fast | fix ラウンドのスコープ限定再レビュー |
+| `sdd-final-reviewer` | deep | ブランチ全体の最終レビュー |
+
+**エスカレーション**: 設計判断が要るタスク、および fix ラウンド 4-5 では、`sdd-implementer` の代わりに `sdd-implementer-think` を dispatch する。両者の指示は同一で、モデルだけが上位になる。dispatch 時にモデルを渡して昇格させない。渡せるツールと渡せないツールがあるためである。
+
+**ターン数は単価に勝つ**。実時間と context のコストは subagent が何ターン掛けたかで決まる。安いモデルは多段の作業でターンを 2-3 倍使い、結局高くつく。ここで実装と通常レビューの床を work tier にしているのはそのため。
+
+## 実行経路
+
+MAD の `implement` recipe で実行する。run ディレクトリの作り方、backend の選び方、子の起動、
+state と handoff の契約は `multi-agent-development` スキルが持つ。
+
+親が MAD へ渡すのは、承認済み plan、spec、既存 SDD ledger の絶対パスである。子は
+`task-graph-analyzer` が波を作り、`implementer` が実装し、`task-reviewer` と `re-reviewer` が
+判定し、`final-reviewer` が最後にブランチ全体を見る。
+
+`~/.agents/skills/subagent-driven-development/scripts/` のスクリプトは子が使う。親は直接
+呼ばない。どのスクリプトが誰の工程のものかは `multi-agent-development` スキルの
+「implement の実行基盤」の表にある。
+
+親が担うのは、worktree の作成、波の管理、ledger への記帳、fix ラウンドを数えること、上限で
+止めること、上限での裁定、マージ衝突で止めること、最終レビューの起動である。**規則は下の
+「タスクループ」が正である。**
+
+## 波ごとの並行実行
+
+`~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` がプランの
+`Depends on:` を読み、同時に走らせてよいタスクの組を出す。
+
+```
+wave 1: 1
+wave 2: 2 3
+wave 3: 4
+```
+
+**worktree を切る条件は「同時に書く子の数」である。** タスク数ではない。
+
+```
+波のタスクが 2 つ以上
+  または feature worktree が clean でない
+→ タスクごとに worktree を作る
+```
+
+1 タスクだけの波は、上のどちらにも当たらなければ現在の作業ツリーで実行する。ブランチも merge も
+要らない。**その間、あなたも人間もその作業ツリーを触らない。**
+
+**worktree を作るのは親である。** 子は親が渡した worktree の中で働き、自分では worktree を
+作らない。作り方と台帳（`workspaces.json`）の書き方は `multi-agent-development` スキルの
+「worktree 隔離」が持つ。
+
+取り込みと後片付けも親が行う。手順は同スキルの「取り込み」と「後片付け」が持つ。
+
+**マージが衝突したら止める。** 「独立」の判断が外れた証拠である。プランの `Depends on:` か
+`Files:` が実態と合っていない。衝突の内容と該当タスク番号をユーザーに報告し、自分で解消して
+先へ進まない。
+
+**波の中で一部が失敗したら、失敗したタスクの worktree は片付けない。** 人が中を確認して
+解決してから波を閉じる。
+
+### ledger
+
+波の境界を記録する。タスク単位の行はこれまでどおり。
+
+```
+Wave 2: tasks 3,4 parallel (worktrees .worktrees/task-3, .worktrees/task-4, base 1c7b7a6)
+Task 3: complete (commits 1c7b7a6..a50c3f7, review clean)
+Task 4: complete (commits 1c7b7a6..7733827, review clean)
+Wave 2: merged 3,4 -> 9b2e1c4
+```
+
+マージ行の無い波は閉じていない。compaction 後に再開したときは、残っている worktree がその印になる。
+
+## タスクループ
+
+この節の 1 から 4 を親が回す。ラウンド数を数え、上限で止め、裁定するのは親である。
+
+dispatch プロンプトに貼ったものと、subagent が返したものは、以降このセッションが続く限りあなたの context に residue として残り、毎ターン読み直される。**成果物はファイルで受け渡す。**
+
+### 1. implementer を dispatch する
+
+dispatch の前に BASE（`git rev-parse HEAD`）を記録する。review package と fix ラウンドの diff がこれを必要とする。
+
+- **task brief**: `~/.agents/skills/subagent-driven-development/scripts/task-brief PLAN_FILE N` を実行する。タスク本文が固有名のファイルに書き出され、そのパスが出力される。brief が要件の唯一の情報源になるように dispatch を組む
+- **dispatch プロンプトに入れるもの**（これだけ）:
+  1. このタスクがプロジェクトのどこに位置するかの 1 行
+  2. brief のパス。「まずこれを読むこと。これがあなたの要件で、使う値はここに書いてある通りにする」と添える
+  3. 先行タスクで決まったインターフェースと決定事項（brief には書けないもの）
+  4. brief に見つけた曖昧さについてのあなたの解決
+  5. 報告ファイルのパス
+  6. このタスクを縛る Global Constraints
+- **正確な値**（数値、マジックストリング、シグネチャ、テストケース）は brief にだけ書く。dispatch プロンプトに写さない。**プランファイル全体を subagent に読ませない**
+- **報告ファイル**は brief に合わせて名付ける（brief `…/task-N-brief.md` → report `…/task-N-report.md`）
+- dispatch プロンプトは 1 つのタスクを説明するものであって、セッションの履歴ではない。**過去タスクの要約を積み上げて貼らない**。実セッションで dispatch プロンプトが 42k 文字に達し、その 99% が貼り付けた履歴だった例がある
+- 前のタスクがこのタスクの触る領域に指摘を park しているなら、その ledger エントリへのポインタを添える
+- dispatch 結果に出る **子の識別子を記録する**。fix ラウンド 1-3 はこの子を [resume-subagent] で再開する。再開できない環境では新しい子を立て、報告ファイルで記憶を引き継ぐ
+- **実装 subagent を並行させてよいのは同じ波の中だけ**。波は `Depends on:` から計算され、同じ波のタスクは互いに依存せずファイルも重ならない。波をまたいで並行させない。worktree を用意せずに並行させない（作業ツリーと git index が衝突する）
+
+### 2. 報告を処理する
+
+implementer は 4 つの status のいずれかを返す。
+
+**DONE**: review package を作り（`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE BASE HEAD`。BASE は dispatch 前に記録したコミット。`HEAD~1` を使わない。複数コミットのタスクで最後の 1 つ以外を黙って落とす）、出力されたパスを渡して `sdd-task-reviewer` を dispatch する。
+
+**DONE_WITH_CONCERNS**: 作業は終わったが疑いがあるという意味。進む前に concern を読む。正しさやスコープに関わる concern なら、レビュー前に解消する。観察（「このファイルが大きくなってきた」など）なら記録して先へ進む。
+
+**NEEDS_CONTEXT**: 渡していない情報が必要。不足を補って再 dispatch する。
+
+**BLOCKED**: 完了できない。原因を見極める。
+
+1. context の問題なら、文脈を足して同じエージェントで再 dispatch する
+2. より強い推論が要るなら `sdd-implementer-think` で再 dispatch する
+3. タスクが大きすぎるなら分割する
+4. プラン自体が誤っているならユーザーにエスカレーションする
+
+**エスカレーションを無視したり、何も変えずに同じ条件で再試行させたりしない。** 詰まったと言われたなら、何かを変える必要がある。
+
+implementer が質問してきたら（着手前でも作業中でも）、明確かつ完全に答える。必要なら文脈を足す。急いで実装へ押し込まない。
+
+### 3. タスクをレビューする
+
+タスク単位のレビューはタスク単位の gate である。広いレビューは最後に 1 回だけ行う。**タスクレビューを飛ばさない。spec 準拠とタスク品質の両方の verdict が揃っていない報告を受理しない。** implementer の self-review はタスクレビューの代わりにならない。両方が要る。
+
+- **diff はファイルで渡す**。`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE BASE HEAD` を実行し、出力されたパスをレビュアーに渡す。出力はあなたの context を通らず、レビュアーはコミット一覧・stat 要約・文脈付き diff を 1 回の Read で見られる。**diff ファイル無しでタスクレビュアーを dispatch しない**
+- **レビュアーに渡すもの**: brief のパス、報告ファイルのパス、review package のパス、そしてこのタスクを縛る Global Constraints
+- Global Constraints のブロックはレビュアーの注意を向けるレンズである。プランの Global Constraints 節か spec から**そのままの値で**写す。正確な値、正確な形式、コンポーネント間の関係（「X と同じレイアウト」「Y に合わせる」）を含める。プロセス上の規則（YAGNI、テストの衛生、レビュー手法）はエージェント定義に既に入っているので書かない
+- 具体的な理由なしに「全部の使用箇所を確認して」「必要ならレースのテストも」のような開放的な指示を足さない
+- implementer が同じコードに対して実行済みのテストを、レビュアーに再実行させない
+- **レビュアーのために指摘を先回りして潰さない**。特定の問題を無視しろ・指摘するなと指示しない。誤検知だと思うなら、レビュアーに出させてレビューループで裁定する。書こうとしているプロンプトに「指摘しないで」「これは欠陥として扱わないで」「多くても Minor」「プランがそう決めた」が含まれていたら、そこで止まる。たいていは自分がレビューループを 1 回省きたいだけである
+
+タスクレビュアーは「⚠️ diff からは検証できない」項目を報告することがある。変更されていないコードにある要件や、タスクを跨ぐ要件である。これは残りのレビューをブロックしないが、**タスクを完了とする前にあなた自身が 1 件ずつ解消する**。プランと横断的な文脈を持っているのはあなたである。本当に穴だと確認できたら、それは spec 準拠の失敗として扱い、他の指摘と一緒に fix ループへ入れる。
+
+### 4. fix ループ
+
+ループが始まるのは、レビューが spec ❌ を返したとき、Critical か Important の指摘があったとき、または ⚠️ 項目をあなたが本当の穴と確認したとき。
+
+ループに入る前に、2 つの経路がすぐ外へ出る。
+
+- **Minor** は進むそばから ledger に記録する（`Task <N>: minor (deferred): <1 行>`）。最終レビューにそのリストを渡し、merge 前に直すべきものを選別させる。誰も読まない roll-up は黙って捨てたのと同じ。**Minor はループに入れない**
+- **plan-mandated とラベルされた指摘**、またはプランの記述と衝突する指摘は、他のプラン矛盾と同じくユーザーの判断事項である。指摘とプランの記述を並べて、どちらが優先するかを聞く。プランが指示しているからという理由で指摘を退けない。聞かずにプランと矛盾する fix を dispatch しない
+
+それ以外はループに入る。1 ラウンド ＝ 1 回の fix dispatch ＋ 1 回のスコープ限定再レビュー。**1 タスクにつき最大 5 ラウンド**。
+
+**ラウンド 1-3 — 元の implementer を再開する。** 記録した agent 識別子に [resume-subagent] で未解決の指摘をそのまま送る。その context は無傷で、タスクもコードも自分の判断も覚えている。再開できない場合は、brief のパス・報告ファイルのパス・指摘を持たせて新しい implementer を dispatch する。どちらにせよ報告ファイルが永続的な記憶になる。
+
+**ラウンド 4-5 — `sdd-implementer-think` で新しい implementer を dispatch する。** brief のパス、報告ファイルのパス、未解決の指摘、そしてこの枠組みを渡す:「このタスクは過去 [N] 回別の implementer が試みた。今はあなたが担当する。何を試したかは報告ファイルにある」。3 回の再開を生き延びたループは、たいてい implementer が自分の問題を見られないという意味である。新しい目と能力の引き上げを 1 手で行う。
+
+**どのラウンドでも共通**: implementer は修正し、変更したコードを覆うテストを再実行し、同じ報告ファイルに fix レポートを追記し、短い contract を返す。再レビューを dispatch する前に、fix レポートに covering test・実行コマンド・出力の 3 つが揃っていることを確認する。揃ってから再レビューを出す。fix メッセージでは覆うテストファイルを名指しする。1 行の修正に全体スイートは要らない。
+
+**再レビューはスコープを限定する。** `~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE FIX_BASE HEAD`（FIX_BASE は前回のレビューが見た HEAD）を実行し、`sdd-re-reviewer` に指摘リスト・brief のパス・報告ファイルのパス・出力された diff のパスを渡す。再レビュアーは各指摘を ADDRESSED / NOT ADDRESSED で判定し、fix diff の中の新しい破壊だけを見る。fix diff における新しい Critical / Important の破壊は未解決の指摘リストに合流する。スコープ外の観察は先送り Minor として ledger に入れる。ループを延ばさない。
+
+**各ラウンドの後**、ledger に追記する:
+`Task <N>: fix round <R>/5 (<X> addressed, <Y> open — <指摘の 1 行要約>; commits <a7>..<b7>)`
+
+**controller のセッションで自分で修正しない。** あなたの context は調整のためにきれいに保つ。controller が直した修正はレビューを素通りする。
+
+**ブレーカー**。ラウンド 5 の再レビューでも指摘が残ったら、dispatch をやめる。未解決の指摘を 1 件ずつあなたが裁定する。プランと横断的な文脈を持っているのはあなたである。
+
+- **レビュアーが誤っている、または議論の余地がある**: park する — `Task <N>: parked — <指摘> — ruling: <なぜコードのままでよいか>`。最終レビューが両方の言い分を見る
+- **本物だが、下流が何も乗っていない**: 同じ形で park する。本物だが先送りしたという ruling を書く
+- **本物で、かつ土台になっている** — 後のタスクがその上に乗る、またはプランの欠陥を示している場合: **止める**。`Task <N>: BLOCKED — <理由>` を追記し、指摘・衝突しているプランの記述・修正の履歴を添えてユーザーに報告する。構造的な失敗を park すると、依存する全タスクがその上に積み上がり、最終レビューにも直せない問題を渡すことになる
+
+**裁定は上限に達したときだけ行う**。ループを早く終わらせるための裁定は、名前を変えただけの先回りである。すべての裁定は ledger のエントリになる。**黙って捨てることは禁止する。**
+
+### 5. タスクを完了する
+
+レビューがきれいに返ってきたら、または上限で未解決の指摘がすべて ruling 付きで park されたら、他の記帳と同じメッセージで ledger に完了行を追記する。
+
+- `Task <N>: complete (commits <base7>..<head7>, review clean)`
+- ブレーカーが落ちた場合は `Task <N>: complete (commits <base7>..<head7>, <K> parked)`
+
+そのうえで todo を完了にし、次へ進む。**Critical / Important の指摘が、修正も上限での park もされていない状態で次のタスクへ進まない。**
+
+## 最終レビュー
+
+ブランチ全体のレビューにも package を渡す。`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD` を実行する（MERGE_BASE はブランチの分岐元、例 `git merge-base master HEAD`）。出力されたパスを渡し、最終レビュアーがブランチ diff を git コマンドで再導出せず 1 ファイルを読めるようにする。
+
+最終レビューが指摘を返したら、**指摘リスト全体を持たせた fix subagent を 1 つだけ** dispatch する。指摘ごとに fixer を立てない。指摘ごとの fixer はそれぞれ context を作り直しスイートを回し直す。実セッションで、最終レビューの fix 波が全タスクの合計より高くついた例がある。
+
+その後、fix 範囲について**スコープ限定の再レビューをちょうど 1 回**行う（`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE FIX_BASE HEAD` と `sdd-re-reviewer`）。残った指摘はタスクループのブレーカーと同じく裁定する。ruling 付きで park するか、土台になっているものなら止める。**2 回目の fix 波は無い**。残った土台級の指摘は、finishing-a-development-branch が選択肢を提示する場で、ユーザーの前に出る。
+
+## 仕上げ
+
+ブランチ全体のレビューがきれいになり、その fix が取り込まれたら、**このプランの workspace を削除する**（`rm -rf <workspace>`）。記録は git 履歴が持つ。隣のディレクトリは別プランのものなので触らない。
+
+finishing-a-development-branch を起動する。
+
+## よくある言い訳
+
+| 言い訳 | 実際 |
+|---|---|
+| 「spec 準拠はだいたい満たしている」 | レビュアーが穴を見つけた＝完了していない。直すか、上限に達して裁定するか、出口はその 2 つだけ |
+| 「自分で直したほうが早い。dispatch は手間だ」 | controller の修正は context を汚し、レビューを素通りする。implementer を再開する |
+| 「あと 1 ラウンドで収束する」 | 上限を超えたラウンドは収束しない。失敗は構造的である。裁定して振り分ける |
+| 「どうせレビュアーは別の何かを見つける」 | スコープ限定の再レビューは fix を検証するだけで、彷徨えない。触っていないコードの新指摘は ledger 行きでループには入らない |
+| 「この指摘は明らかに誤りなので落とす」 | 裁定は上限でだけ行い、すべての ruling は ledger エントリになる。黙って捨てることは禁止 |
+| 「修正が小さいので再レビューは省く」 | レビューされない修正がリグレッションの入口になる。全ラウンドはスコープ限定の再レビューで終わる |
+| 「レビューはループを遅くする」 | レビュー無しのループはただの未検証の空転である。レビューはループのブレーキでありハンドルである |
+| 「ledger の記帳は手間だ」 | ledger は compaction を越えて残る唯一のもの。ledger を持たない controller は完了済みタスク列を再 dispatch している |
+| 「タスクの合間に進捗を報告したほうが親切だ」 | 実行を頼まれている。確認と要約は時間を奪う。止まるのは BLOCKED と完了時だけ |
+| 「ラウンド数はだいたい覚えているので数えない」 | 上限を数えないループは止まらない。ラウンドごとに ledger へ書き、5 で止める |
+| 「タスクは独立に見えるので worktree 無しで並行させる」 | ファイルが重ならなくても、同時に `git add` / `git commit` すれば index が衝突する。並行するなら worktree を切る |
+| 「マージ衝突は自分で解消すればよい」 | 衝突は「独立」の判断が外れた証拠である。プランの依存宣言が誤っており、同じ誤りが後の波にも残っている。止めて報告する |
+| 「先に進める波があるので失敗したタスクは後回しにする」 | 波を閉じずに進めると ledger と worktree の対応が追えなくなる。波は 1 つずつ閉じる |
+
+## 進行例
+
+```
+[using-git-worktrees で worktree を確認]
+[プランを 1 回読む: _cellfusion/plans/2026-09-06-feature.md]
+[プランを 1 度だけ矛盾検査 — 検出なし]
+[全タスクの todo を作成]
+[task-waves で波を計算: wave 1: 1 / wave 2: 2 3]
+
+[MAD の implement を開始。plan / spec / ledger の絶対パスを渡す]
+
+[wave 1] task 1
+  [task-brief → brief パス]
+  [BASE を記録: git rev-parse HEAD]
+  [implementer を起動 → DONE]
+  [review-package PLAN BASE HEAD → package パス]
+  [task-reviewer を起動 → spec ✅ / 品質 ❌ Important 1 件]
+  [fix round 1/5 → re-reviewer → ADDRESSED]
+  [ledger: Task 1: complete (commits a1b2c3d..e4f5a6b, review clean)]
+
+[wave 2] task 2 と task 3 を並列。親が node ごとに worktree を作る
+  [両方 complete → git merge --no-ff で順に取り込む]
+  [ledger: Wave 2: merged 2,3 -> 9b2e1c4]
+  [workspaces.json の integration を merged にし、archive する]
+
+[全タスク完了後]
+[review-package PLAN $(git merge-base master HEAD) HEAD → package パス]
+[final-reviewer を起動。package / 概要 / 先送り Minor / park 済みの指摘を渡す]
+
+→ CLEAN / readyToMerge yes
+
+[このプランの workspace を削除]
+
+finishing-a-development-branch を起動する。
+```
