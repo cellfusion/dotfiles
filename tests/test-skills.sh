@@ -53,6 +53,43 @@ for spec in \
   done
 done
 
+# requesting-code-review は単発利用でも MAD review の入力 package を先に作る。
+# review-package の PLAN_FILE / BASE / HEAD / OUTFILE 契約と、未解決時の停止を
+# render 後の手順に残し、親が review 本文を代筆しないことを確認する。
+for tool in claude codex opencode; do
+  request_review="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
+  assert_contains "$request_review" "PLAN_FILE" \
+    "requesting-code-review/$tool: review-package の PLAN_FILE を指定する"
+  assert_contains "$request_review" "BASE" \
+    "requesting-code-review/$tool: review-package の BASE を指定する"
+  assert_contains "$request_review" "HEAD" \
+    "requesting-code-review/$tool: review-package の HEAD を指定する"
+  assert_contains "$request_review" "OUTFILE" \
+    "requesting-code-review/$tool: review-package の OUTFILE を指定する"
+  assert_contains "$request_review" 'REPO_ROOT="$(git rev-parse --show-toplevel)"' \
+    "requesting-code-review/$tool: review 対象の repo root を解決する"
+  assert_contains "$request_review" 'bash "$REVIEW_PACKAGE" "$PLAN_FILE" "$BASE" "$HEAD" "$OUTFILE"' \
+    "requesting-code-review/$tool: review-package を正しい引数で実行する"
+  assert_contains "$request_review" 'bash "$CELLFUSION_WORKDIR" >/dev/null' \
+    "requesting-code-review/$tool: cellfusion-workdir を先に実行する"
+  assert_contains "$request_review" "git rev-parse --verify" \
+    "requesting-code-review/$tool: ref を実行前に解決する"
+  assert_contains "$request_review" "test -s \"\$OUTFILE\"" \
+    "requesting-code-review/$tool: package の生成結果を確認する"
+  assert_contains "$request_review" "exit 2" \
+    "requesting-code-review/$tool: package 検証失敗で停止する"
+  assert_contains "$request_review" '`PLAN_FILE` が無い' \
+    "requesting-code-review/$tool: plan 不在時の fallback を定義する"
+  assert_contains "$request_review" '`requirements` の絶対パス' \
+    "requesting-code-review/$tool: requirements を fallback の plan にできる"
+  assert_contains "$request_review" '`review-package` の実体を解決する' \
+    "requesting-code-review/$tool: script 不在時の fallback を定義する"
+  assert_contains "$request_review" "executable_review-package" \
+    "requesting-code-review/$tool: checkout の script fallback を示す"
+  assert_contains "$request_review" "package を作れない場合は MAD review を開始しない" \
+    "requesting-code-review/$tool: package 失敗時に review を開始しない"
+done
+
 # 実装工程の子は TDD / debugging / worktree の既存規約を使い、finish は親の finalizer に残す。
 for tool in claude codex opencode; do
   sdd_out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
