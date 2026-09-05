@@ -231,6 +231,23 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
 
+`multi-agent-development` スキルの backend は Paseo MCP と native subagent の 2 つである。
+親エージェントは run の開始時に Paseo MCP へ届くかを確かめ、届くときは Paseo MCP で子を
+起動する。届かないときだけ native subagent へ fallback する。開始済みの子が失敗しても
+別 backend へ自動で切り替えない。
+
+Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
+`paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
+出し、`paseo wait <agent-id>` が idle になるまで待つ。止めるときは `paseo stop <agent-id>`
+が実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
+native subagent で起動した子は Paseo の一覧に現れないので、親は run ディレクトリの
+`state.json` だけで状態を判断する。
+
+実 backend で 1 度通す手順は `tests/manual/mad-orchestration-smoke.sh` にある。
+`research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
+実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
+`--dry-run` で手順だけを読める。
+
 ## 削除候補
 
 過去の作業で入ったまま使っていないもの。**削除は自動化しない。**
