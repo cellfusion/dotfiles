@@ -48,18 +48,30 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 ### `spec`
 
 - 入力: ユーザーの目的、既知の制約、既存成果物の絶対パス。
-- 子: 必要に応じて `researcher` を並列起動し、`spec-author` が設計案と spec を作成し、`spec-reviewer`
-  が self-review する。
-- gate: 子が判断を要するときは decision request を作成し、spec 完成後は親が spec approval request を
-  relay する。
+- 子: 必要に応じて `researcher` を並列起動し、`spec-author` が設計案と spec を作成し、
+  `reviewer` が spec を判定する。`reviewer` が `FAIL` を返したら、指摘の絶対パスを添えて
+  `spec-author` を再度起動する。1 回の再起動と 1 回の再判定で 1 ラウンドとする。
+- ラウンド: 親が `max_rounds` を管理する。親が指定しない場合は 2 とする。上限に達しても
+  `reviewer` が `PASS` を返さない場合、親は残った指摘を 1 件ずつ裁定する。裁定の結果は
+  run state の `parent_decision` に記録する。裁定しても解決しない指摘があれば、run を
+  `unresolved` として停止する。
+- gate: 子が `decisionRequestPath` を返したときは「子からの判断要求」の手順に従う。spec 完成後は
+  親が spec approval request を relay する。
 - 完了: 親が承認した正規 spec の絶対パスを run state の `artifact_paths` に記録する。spec 本文は親へ
   転記しない。
 
 ### `plan`
 
 - 入力: 承認済み spec の絶対パス。
-- 子: `plan-author` が実装 plan を作成し、`plan-reviewer` が実装可能性・検証計画・依存関係を review する。
-- gate: 親は plan review の採用 attempt を確認し、plan approval request を relay する。
+- 子: `plan-author` が実装 plan を作成し、`reviewer` が plan を判定する。`reviewer` が `FAIL` を
+  返したら、指摘の絶対パスを添えて `plan-author` を再度起動する。1 回の再起動と 1 回の再判定で
+  1 ラウンドとする。
+- ラウンド: 親が `max_rounds` を管理する。親が指定しない場合は 2 とする。上限に達しても
+  `reviewer` が `PASS` を返さない場合、親は残った指摘を 1 件ずつ裁定する。裁定の結果は
+  run state の `parent_decision` に記録する。裁定しても解決しない指摘があれば、run を
+  `unresolved` として停止する。
+- gate: 子が `decisionRequestPath` を返したときは「子からの判断要求」の手順に従う。親は plan
+  review の採用 attempt を確認し、plan approval request を relay する。
 - 完了: 親が承認した正規 plan の絶対パスだけを handoff に記録する。承認前の run は
   `waiting_for_user` とする。
 
@@ -140,11 +152,12 @@ headless で回すときの入口であり、`implement` の子は使わない�
 `stopped`、または成果物を欠く場合は run を `failed` または `stopped` として記録して停止する。
 その先へ進めない。
 
-### `implement` と `refine` のラウンド
+### ラウンドを持つレシピ
 
-`implement` と `refine` は親が `max_rounds` を指定して管理する。各ラウンドは run の
+`spec`、`plan`、`implement`、`refine` は親が `max_rounds` を指定して管理する。各ラウンドは run の
 `state.json` にラウンド番号、子の成果物の絶対パス、親の判断、状態を記録する。
-親が指定しない場合、`implement` は `max_rounds` を 3、`refine` は `max_rounds` を 2 として開始する。
+親が指定しない場合、`implement` は `max_rounds` を 3、`refine` は `max_rounds` を 2、`spec` と
+`plan` は `max_rounds` を 2 として開始する。
 
 `refine` は改稿役を起動して成果物を確認し、批評役へ絶対パスを渡し、親が批評を確認して判断する。
 
