@@ -243,6 +243,8 @@ if [ -d "$run_dir/nodes" ]; then
     [ -d "$node_dir/attempts" ] || fail "$node_dir: node artifacts must be under attempts/"
     direct_file="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
     [ -z "$direct_file" ] || fail "$direct_file: node artifacts must be under attempts/"
+    direct_dir="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type d ! -name attempts -print -quit)"
+    [ -z "$direct_dir" ] || fail "$direct_dir: node artifacts must be under attempts/"
     if [ "$recipe" = "research" ]; then
       case "$node_id" in
         research-1|research-2|research-3) ;;
@@ -253,8 +255,16 @@ if [ -d "$run_dir/nodes" ]; then
 
   # attempt は attempts/ の直下だけである。attempt が中に持つ before/ のような
   # ディレクトリを attempt とみなすと、退避した改稿前のファイルが契約違反になる。
+  # 深さで attempt を決めるので、attempt の中に置けるディレクトリを before/ だけに限る。
+  # 許すと、入れ子になった attempts の state.json がどの検索にも当たらなくなる。
   while IFS= read -r attempt_dir; do
     [ -f "$attempt_dir/state.json" ] || fail "$attempt_dir: state.json is required"
+    nested_dir="$(find "$attempt_dir" -mindepth 1 -maxdepth 1 -type d ! -name before -print -quit)"
+    [ -z "$nested_dir" ] || fail "$nested_dir: attempt directories may only contain before/"
+    if [ -d "$attempt_dir/before" ]; then
+      before_entry="$(find "$attempt_dir/before" -mindepth 1 ! -type f -print -quit)"
+      [ -z "$before_entry" ] || fail "$before_entry: before/ must contain only regular files"
+    fi
   done < <(find "$run_dir/nodes" -mindepth 3 -maxdepth 3 -type d -path '*/attempts/*' -print)
 
   while IFS= read -r attempt_state; do

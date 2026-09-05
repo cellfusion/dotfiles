@@ -566,4 +566,28 @@ mk_attempt_with_before "$RUN/with-before" "revise-1" "a1"
 assert_contains "$(validate_run "$RUN/with-before")" "valid manual orchestration run" \
   "validator: attempt の before/ を受け入れる"
 
+# attempt の検索は attempts/ の直下だけを見る。入れ子の attempts をそのまま許すと、
+# 検索から外れた state.json が一度も検証されない。attempt の中に置けるディレクトリを
+# before/ だけに限って拒否する。
+mk_attempt_with_diff "$RUN/nested-attempts" "implement-1" "a1"
+nested="$RUN/nested-attempts/nodes/implement-1/attempts/a1/attempts/a2"
+mkdir -p "$nested"
+cp "$RUN/nested-attempts/nodes/implement-1/attempts/a1/state.json" "$nested/state.json"
+assert_contains "$(validate_run "$RUN/nested-attempts")" "attempt directories may only contain before/" \
+  "validator: attempt の中の入れ子 attempts を拒否する"
+
+# node 直下も同じで、attempts 以外のディレクトリを許すと、その下の attempt が
+# 検索から外れる。
+mk_attempt_with_diff "$RUN/node-subdir" "implement-1" "a1"
+mkdir -p "$RUN/node-subdir/nodes/implement-1/scratch/attempts/a2"
+assert_contains "$(validate_run "$RUN/node-subdir")" "node artifacts must be under attempts/" \
+  "validator: node 直下の attempts 以外のディレクトリを拒否する"
+
+# before/ は対象ファイルの複製だけを持つ。ディレクトリを許すと、そこにも検索から
+# 外れた構造を作れる。
+mk_attempt_with_before "$RUN/before-subdir" "revise-1" "a1"
+mkdir -p "$RUN/before-subdir/nodes/revise-1/attempts/a1/before/nested"
+assert_contains "$(validate_run "$RUN/before-subdir")" "before/ must contain only regular files" \
+  "validator: before/ の中のディレクトリを拒否する"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
