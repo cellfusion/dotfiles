@@ -74,6 +74,9 @@ function validateSchema(schema, data, at) {
     if (typeof schema.minItems === 'number' && data.length < schema.minItems) {
       errs.push(`${where}: 要素が ${schema.minItems} 件以上必要（実際 ${data.length} 件）`)
     }
+    // enum は配列そのものには効かない。下の enum 検査は includes で比べるので、
+    // 配列を候補に並べても参照が違って必ず外れる。配列を enum で縛りたくなったら、
+    // まず深い比較をここに実装する。
     if (schema.items) {
       data.forEach((v, i) => errs.push(...validateSchema(schema.items, v, `${where}[${i}]`)))
     }
