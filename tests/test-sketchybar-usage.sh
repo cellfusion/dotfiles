@@ -74,22 +74,22 @@ put_log "$fixture_home" ".config/codex_work/sessions/2026/08/01/secondary.jsonl"
 
 primary_out=$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)
 secondary_out=$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex_work/sessions" work-codex)
-assert_eq "$primary_out" "$(printf '31\t%s\tok' "$primary_reset")" "primary Codex を独立取得する"
-assert_eq "$secondary_out" "$(printf '67\t%s\tok' "$secondary_reset")" "secondary Codex を独立取得する"
+assert_eq "$primary_out" "$(printf '31\t%s\tok\t31\t1700000000' "$primary_reset")" "primary Codex を独立取得する"
+assert_eq "$secondary_out" "$(printf '67\t%s\tok\t-\t-' "$secondary_reset")" "secondary Codex を独立取得する"
 
 updated_primary_log='{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":35.0,"window_minutes":10080,"resets_at":4102444800},"secondary":null}}}'
 put_log "$fixture_home" ".config/codex/sessions/2026/08/02/primary-new.jsonl" "$updated_primary_log" 202608020000
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex_work/sessions" work-codex)" \
-  "$(printf '67\t%s\tok' "$secondary_reset")" "primary 側ログ更新で secondary Codex を変えない"
+  "$(printf '67\t%s\tok\t-\t-' "$secondary_reset")" "primary 側ログ更新で secondary Codex を変えない"
 
 printf '{"used_pct":"67","resets_at":"%s"}' "$secondary_reset" > "$fixture_home/.cache/sketchybar-usage/work-codex.json"
 rm -rf "$fixture_home/.config/codex_work/sessions" \
   "$fixture_home/.config/codex/sessions"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex_work/sessions" work-codex)" \
-  "$(printf '67\t%s\tstale' "$secondary_reset")" "ログなしで同名Codexキャッシュがあればstaleにする"
+  "$(printf '67\t%s\tstale\t-\t-' "$secondary_reset")" "ログなしで同名Codexキャッシュがあればstaleにする"
 rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
-  "$(printf -- '-\t-\terror')" "ログも同名キャッシュもないCodexはerrorにする"
+  "$(printf -- '-\t-\terror\t-\t-')" "ログも同名キャッシュもないCodexはerrorにする"
 
 # 週次window(>=10080分)が無く5時間window(300分)しか無いログは、週次の
 # used_percent/resets_atを誤って返さずerrorにする(secondaryはnull)。
@@ -99,16 +99,17 @@ mkdir -p "$fixture_home/.config/codex/sessions"
 put_log "$fixture_home" ".config/codex/sessions/2026/08/03/five-hour-only.jsonl" "$five_hour_only_log" 202608030000
 rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
-  "$(printf -- '-\t-\terror')" "5時間windowしか無いログは週次を騙らずerrorにする"
+  "$(printf -- '-\t-\terror\t-\t-')" "5時間windowしか無いログは週次を騙らずerrorにする"
 
 # 週次(10080分)と5時間(300分)の両方を持つログでは、window_minutesが小さい
-# 5時間側ではなく週次側のused_percent/resets_atが選ばれる。
+# 5時間側ではなく週次側のused_percent/resets_atが3項目目までに選ばれ、
+# 5時間側の値が4〜5項目目に出る。
 rm -rf "$fixture_home/.config/codex/sessions"
 mkdir -p "$fixture_home/.config/codex/sessions"
 put_log "$fixture_home" ".config/codex/sessions/2026/08/04/both-windows.jsonl" "$primary_log" 202608040000
 rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
-  "$(printf '31\t%s\tok' "$primary_reset")" "週次と5時間の両方があれば週次側が選ばれる"
+  "$(printf '31\t%s\tok\t31\t1700000000' "$primary_reset")" "週次と5時間の両方があれば週次側が選ばれる"
 
 # 集約テストの前提(primary Codex はログもキャッシュも無く error)へ戻す。
 rm -rf "$fixture_home/.config/codex/sessions"
@@ -120,9 +121,17 @@ printf '{"used_pct":"23","resets_at":"%s","ts":%s}\n' "$primary_reset" "$now" > 
 printf '{"used_pct":"71","resets_at":"%s","ts":%s}\n' "$secondary_reset" "$now" > \
   "$fixture_home/.cache/sketchybar-usage/work-claude.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
-  "$(printf '23\t%s\tok' "$primary_reset")" "default Claude のキャッシュを読む"
+  "$(printf '23\t%s\tok\t-\t-' "$primary_reset")" "default Claude のキャッシュを読む"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_work" work-claude)" \
-  "$(printf '71\t%s\tok' "$secondary_reset")" "work Claude のキャッシュを読む"
+  "$(printf '71\t%s\tok\t-\t-' "$secondary_reset")" "work Claude のキャッシュを読む"
+
+# 5 時間の値を持つキャッシュからは 4〜5 項目目に 5 時間の値が出る。集約の
+# 期待値を変えないよう、fixture の環境が使わないキャッシュキーで見る。
+printf '{"used_pct":"23","resets_at":"%s","session_pct":"58","session_resets_at":"1700000000","ts":%s}\n' \
+  "$primary_reset" "$now" > "$fixture_home/.cache/sketchybar-usage/session-claude.json"
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" session-claude)" \
+  "$(printf '23\t%s\tok\t58\t1700000000' "$primary_reset")" \
+  "session_pct を持つ Claude のキャッシュから 5 時間の値を出す"
 
 statusline=$(cat "$STATUSLINE_SH")
 assert_not_contains "$statusline" 'sketchybar-usage' \
@@ -133,10 +142,10 @@ assert_not_contains "$statusline" 'AGENT_ENV_SESSION' \
 aggregate=$(HOME="$fixture_home" "$USAGE_SH")
 assert_eq "$(printf '%s\n' "$aggregate" | awk 'END { print NR }')" "5" "無引数実行は定義された環境別レコードを出す"
 assert_contains "$aggregate" "$(printf 'P1\tclaude\t23')" "集約に default Claude を含める"
-assert_contains "$aggregate" "$(printf 'P1\tcodex\t-\t-\terror\tnone')" "集約の default Codex error をレコード内に閉じ込める"
+assert_contains "$aggregate" "$(printf 'P1\tcodex\t-\t-\terror\tnone\t-\t-\tnone')" "集約の default Codex error をレコード内に閉じ込める"
 assert_contains "$aggregate" "$(printf 'P2\tclaude\t71')" "集約に work Claude を含める"
 assert_contains "$aggregate" "$(printf 'P2\tcodex\t67')" "集約に work Codex を含める"
-assert_contains "$aggregate" "$(printf 'P3\tclaude\t-\t-\terror\tnone')" "集約に solo Claude を含める"
+assert_contains "$aggregate" "$(printf 'P3\tclaude\t-\t-\terror\tnone\t-\t-\tnone')" "集約に solo Claude を含める"
 
 pace_now=$(date +%s)
 pace_reset=$((pace_now + 302400))
@@ -151,6 +160,14 @@ assert_eq "$("$USAGE_SH" pace 90 "$((pace_now - 1))" ok "$pace_now")" "none" "�
 assert_eq "$("$USAGE_SH" pace nope "$pace_reset" ok "$pace_now")" "none" "使用率が非数値なら灰"
 assert_eq "$("$USAGE_SH" pace 50 nope ok "$pace_now")" "none" "リセット日時が非数値なら灰"
 assert_eq "$("$USAGE_SH" pace 50 "$pace_reset" ok nope)" "none" "現在時刻が非数値なら灰"
+
+assert_eq "$("$USAGE_SH" level 0 ok)" "ok" "5時間は0%でも緑（週次の5%未満の規則を持ち込まない）"
+assert_eq "$("$USAGE_SH" level 49 ok)" "ok" "5時間は49%まで緑"
+assert_eq "$("$USAGE_SH" level 50 ok)" "warn" "5時間は50%から黄"
+assert_eq "$("$USAGE_SH" level 79 ok)" "warn" "5時間は79%まで黄"
+assert_eq "$("$USAGE_SH" level 80 ok)" "crit" "5時間は80%から赤"
+assert_eq "$("$USAGE_SH" level 90 stale)" "none" "5時間もstaleは灰"
+assert_eq "$("$USAGE_SH" level - ok)" "none" "5時間の使用率が取れなければ灰"
 
 # --- 環境定義から項目が組まれる。持たない agent の項目は作らない ---
 assert_contains "$usage_lua" 'widgets.usage.solo.claude' "3 つ目の Claude 項目がある"
@@ -254,7 +271,7 @@ assert_eq "$no_reset_out" "" "採取: リセット時刻が無ければ何も出
 
 printf '%s\n' "$usage_text" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
-  "$(printf '42\t%s\tok' "$usage_expect")" "採取: 書いたキャッシュを usage.sh が ok として読む"
+  "$(printf '42\t%s\tok\t-\t-' "$usage_expect")" "採取: 書いたキャッシュを usage.sh が ok として読む"
 
 kept_cache=$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")
 printf '%s\n' "$no_week" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
@@ -292,11 +309,11 @@ HOME="$fixture_home" USAGE_CLAUDE_BIN="$fake_claude" \
   FAKE_DAY="$usage_day" FAKE_TIME="$usage_time" "$COLLECT_SH" >/dev/null 2>"$collect_stderr"
 collect_rc=$?
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
-  "$(printf '11\t%s\tok' "$usage_expect")" "採取: 先頭環境の値を default-claude に書く"
+  "$(printf '11\t%s\tok\t-\t-' "$usage_expect")" "採取: 先頭環境の値を default-claude に書く"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_work" work-claude)" \
-  "$(printf '22\t%s\tok' "$usage_expect")" "採取: 2 つ目の環境の値を work-claude に書く"
+  "$(printf '22\t%s\tok\t-\t-' "$usage_expect")" "採取: 2 つ目の環境の値を work-claude に書く"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_solo" solo-claude)" \
-  "$(printf -- '-\t-\terror')" "採取: 設定ディレクトリが無い環境は飛ばす"
+  "$(printf -- '-\t-\terror\t-\t-')" "採取: 設定ディレクトリが無い環境は飛ばす"
 assert_eq "$collect_rc" "1" "採取: 失敗した環境があれば終了ステータスで知らせる"
 
 # 採取に影響しないフックの失敗で launchd の err.log を埋めない。ただし他の
