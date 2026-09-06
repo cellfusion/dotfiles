@@ -151,6 +151,21 @@ for role in reviewer researcher judge synthesizer review-synthesizer; do
   assert_eq "$access" "read" "$role: 読み取り専用なので access は read である"
 done
 
+# 選択肢が 1 つの decision request は、ユーザーに選ばせるものが無い。件数を検証側が
+# 見ていないと、schema の minItems が黙って無視される。
+dr_schema="$FIXTURE/researcher-schema.json"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/schemas/researcher.json" . }}' > "$dr_schema"
+dr_two='{"summary":"s","findings":["f"],"sources":["src"],"cannotVerify":["c"],"decisionRequest":{"question":"q","options":["a","b"],"recommendation":"r","confirmed":"c"}}'
+dr_one='{"summary":"s","findings":["f"],"sources":["src"],"cannotVerify":["c"],"decisionRequest":{"question":"q","options":["a"],"recommendation":null,"confirmed":"c"}}'
+dr_old='{"summary":"s","findings":["f"],"sources":["src"],"cannotVerify":["c"],"decisionRequestPath":null}'
+assert_eq "$(validate_example "$dr_schema" "$dr_two")" \
+  "valid" "decisionRequest: 選択肢が 2 つなら受け入れる"
+assert_eq "$(validate_example "$dr_schema" "$dr_one")" \
+  "invalid" "decisionRequest: 選択肢が 1 つなら拒否する"
+assert_eq "$(validate_example "$dr_schema" "$dr_old")" \
+  "invalid" "read 系 role は旧 decisionRequestPath を返せない"
+
 # review 統合は調査統合と異なり、採用 verdict と修正可能な finding を返す専用 role を使う。
 review_schema="$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/review-synthesizer.json"
 assert_eq "$(test -f "$review_schema" && echo yes || echo no)" "yes" \

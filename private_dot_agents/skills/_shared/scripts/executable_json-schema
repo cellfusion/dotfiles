@@ -3,9 +3,9 @@
 // 最小の JSON Schema 検証。エージェントの構造化出力を検査するために使う。
 //
 // 外部依存を足さないために手書きしている。見ているキーワードは
-// type / required / properties / additionalProperties / enum / items だけである。
-// 新しいキーワードをスキーマに足すときはここも足す。見ていないキーワードは
-// 黙って無視されるので、契約が緩む。
+// type / required / properties / additionalProperties / enum / items / minItems
+// だけである。新しいキーワードをスキーマに足すときはここも足す。見ていない
+// キーワードは黙って無視されるので、契約が緩む。
 
 /** 1 つの型名に対する検査。合えば null、合わなければ理由を返す。 */
 function checkType(type, data, where) {
@@ -69,8 +69,14 @@ function validateSchema(schema, data, at) {
     return errs
   }
 
-  if (types.includes('array') && Array.isArray(data) && schema.items) {
-    data.forEach((v, i) => errs.push(...validateSchema(schema.items, v, `${where}[${i}]`)))
+  if (types.includes('array') && Array.isArray(data)) {
+    // minItems は「選択肢は 2 つ以上」のような、件数そのものが契約になる項目に使う。
+    if (typeof schema.minItems === 'number' && data.length < schema.minItems) {
+      errs.push(`${where}: 要素が ${schema.minItems} 件以上必要（実際 ${data.length} 件）`)
+    }
+    if (schema.items) {
+      data.forEach((v, i) => errs.push(...validateSchema(schema.items, v, `${where}[${i}]`)))
+    }
     return errs
   }
 
