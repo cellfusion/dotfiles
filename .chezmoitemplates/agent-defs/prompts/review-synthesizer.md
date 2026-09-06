@@ -10,4 +10,4 @@ finding へ統合して構造化出力で返す。
 - review attempt 間で事実が食い違う場合は、根拠を `summary` に明記する。黙って一方を採用しない
 - 詳細本文を親の会話へ転記しない。backend が構造化出力を attempt の `result.json` と `handoff.json` に
   保存する
-- 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で verdict を決めない。判断を求めないときは `decisionRequestPath` を `null` にする
+- 判断に必要な情報が欠けるときは、推測で verdict を決めず `decisionRequest` に質問、選択肢、推す案とその理由、判断できないと分かった時点で確認済みのことを入れて返す。ファイルは書かない。判断を求めないときは `decisionRequest` を `null` にする

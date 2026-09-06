@@ -1,11 +1,11 @@
 {
   "type": "object",
-  "required": ["summary", "points", "conflicts", "decisionRequestPath"],
+  "required": ["summary", "points", "conflicts", "decisionRequest"],
   "additionalProperties": false,
   "properties": {
     "summary": { "type": "string" },
     "points": { "type": "array", "items": { "type": "string" } },
     "conflicts": { "type": ["array", "null"], "items": { "type": "string" } },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
   }
 }

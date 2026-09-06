@@ -4,4 +4,4 @@
 - `score` は 0 から 10 の整数にする
 - `reason` には、なぜその点数かを案の中身に即して書く。一般論を書かない
 - `winner` は `scores` の `candidate` のいずれかと一致させる
-- 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で採点しない。判断を求めないときは `decisionRequestPath` を `null` にする
+- 判断に必要な情報が欠けるときは、推測で採点せず `decisionRequest` に質問、選択肢、推す案とその理由、判断できないと分かった時点で確認済みのことを入れて返す。ファイルは書かない。判断を求めないときは `decisionRequest` を `null` にする

@@ -1,0 +1,11 @@
+{
+  "type": ["object", "null"],
+  "required": ["question", "options", "recommendation", "confirmed"],
+  "additionalProperties": false,
+  "properties": {
+    "question": { "type": "string" },
+    "options": { "type": "array", "minItems": 2, "items": { "type": "string" } },
+    "recommendation": { "type": ["string", "null"] },
+    "confirmed": { "type": "string" }
+  }
+}

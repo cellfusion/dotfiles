@@ -1,12 +1,12 @@
 {
   "type": "object",
-  "required": ["summary", "findings", "sources", "cannotVerify", "decisionRequestPath"],
+  "required": ["summary", "findings", "sources", "cannotVerify", "decisionRequest"],
   "additionalProperties": false,
   "properties": {
     "summary": { "type": "string" },
     "findings": { "type": "array", "items": { "type": "string" } },
     "sources": { "type": "array", "items": { "type": "string" } },
     "cannotVerify": { "type": ["array", "null"], "items": { "type": "string" } },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
   }
 }

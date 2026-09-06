@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["verdict", "findings", "summary", "strengths", "decisionRequestPath"],
+  "required": ["verdict", "findings", "summary", "strengths", "decisionRequest"],
   "additionalProperties": false,
   "properties": {
     "verdict": { "type": "string", "enum": ["approved", "needs_fixes"] },
@@ -10,6 +10,6 @@
     },
     "summary": { "type": "string" },
     "strengths": { "type": ["string", "null"] },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
   }
 }

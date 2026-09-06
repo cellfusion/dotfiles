@@ -224,24 +224,38 @@ run の `state` が `pending` または `running` の間は、`phase_state` に�
 
 ### 子からの判断要求
 
-子は、判断に必要な情報が欠けるときに推測で成果物を完成させてはならない。子は attempt
-ディレクトリの `decision-request.md` に要求を書き、構造化出力の `decisionRequestPath` に
-その絶対パスを入れて返す。判断を求めないときは `decisionRequestPath` を `null` にする。
+子は、判断に必要な情報が欠けるときに推測で成果物を完成させてはならない。要求の伝え方は role の
+`access` で 2 通りに分かれる。`access` は `~/.agents/agent-defs/manifests.json` が role ごとに持つ。
 
-親は子を起動する前に、その attempt の `decision-request.md` の絶対パスを決め、`prompt.md` の
-入力に `DECISION_REQUEST_PATH` という名前で含める。role の指示はこの名前で書き先を参照する。
-
-`decision-request.md` に書くものは次の 4 つである。
+要求に書くものは、どちらの経路でも次の 4 つである。
 
 - 質問 — 何を決めてほしいかを 1 文で書く
 - 選択肢 — 選べる案を 2 つ以上挙げ、それぞれ選ぶと何をするのかを書く
 - 推す案とその理由 — どれかを推すなら、推す案と理由を書く。推さないなら、推せない理由を書く
 - 確認済みのこと — 判断できないと分かった時点で、何を調べて何が分かったかを書く
 
-親は子の完了後に `result.json` の `decisionRequestPath` を読む。値が `null` でなければ、run の
-`state` と `phase_state` を `waiting_for_user` にし、run state の `decision_request` にその絶対
-パスを記録する。親は `decision-request.md` を読んで [ask-user] でユーザーへ渡す。親が子に代わって
-判断してはならない。
+**`access` が `write` の role**（`spec-author`、`plan-author`、`implementer`、`writer`）は、attempt
+ディレクトリの `decision-request.md` に要求を書き、構造化出力の `decisionRequestPath` にその絶対
+パスを入れて返す。判断を求めないときは `decisionRequestPath` を `null` にする。親は子を起動する前に、
+その attempt の `decision-request.md` の絶対パスを決め、`prompt.md` の入力に
+`DECISION_REQUEST_PATH` という名前で含める。role の指示はこの名前で書き先を参照する。
+
+**`access` が `read` の role**（`reviewer`、`researcher`、`judge`、`synthesizer`、
+`review-synthesizer`）は、ファイルを書く手段を持たない。この role には書き込み系のツールを渡さない
+ためである。要求は構造化出力の `decisionRequest` に入れて返す。`decisionRequest` は上の 4 つを
+`question`、`options`、`recommendation`、`confirmed` として持つ object である。判断を求めないときは
+`decisionRequest` を `null` にする。親はこの role に `DECISION_REQUEST_PATH` を渡さない。
+
+親は子の完了後に `result.json` を読む。`decisionRequestPath` が `null` でない場合、または
+`decisionRequest` が `null` でない場合、判断が要る。
+
+`decisionRequest` を受け取った場合、親がその内容を attempt ディレクトリの `decision-request.md` へ
+書く。書き方は上の 4 つを見出しにした Markdown とし、`options` は箇条書きにする。子の代わりに
+書くのは親であるが、中身を作り直してはならない。
+
+どちらの経路でも、親は run の `state` と `phase_state` を `waiting_for_user` にし、run state の
+`decision_request` に `decision-request.md` の絶対パスを記録する。親は `decision-request.md` を
+読んで [ask-user] でユーザーへ渡す。親が子に代わって判断してはならない。
 
 ユーザーの回答を受け取ったら、親は同じ node に新しい `<attempt-id>` を発行し、その attempt
 ディレクトリに `decision.md` を書く。`decision.md` には、ユーザーが選んだ案と、ユーザーが添えた

@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["winner", "scores", "reason", "decisionRequestPath"],
+  "required": ["winner", "scores", "reason", "decisionRequest"],
   "additionalProperties": false,
   "properties": {
     "winner": { "type": "string" },
@@ -18,6 +18,6 @@
       }
     },
     "reason": { "type": "string" },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
   }
 }

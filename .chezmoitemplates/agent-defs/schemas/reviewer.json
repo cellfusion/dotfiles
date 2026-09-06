@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["status", "findings", "strengths", "decisionRequestPath"],
+  "required": ["status", "findings", "strengths", "decisionRequest"],
   "additionalProperties": false,
   "properties": {
     "status": { "type": "string", "enum": ["PASS", "FAIL"] },
@@ -19,6 +19,6 @@
       }
     },
     "strengths": { "type": ["string", "null"] },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
   }
 }

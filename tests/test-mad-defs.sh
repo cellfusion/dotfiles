@@ -117,9 +117,8 @@ for role in spec-author plan-author; do
             "invalid" "delivery: $role は判断待ちに成果物を混在させない"
 done
 
-# 全 role の schema が decision request の経路を持つ。無いと子は判断を求められない。
-for role in spec-author plan-author reviewer researcher judge synthesizer \
-            review-synthesizer implementer writer; do
+# 書ける role は decision request を自分でファイルへ書き、そのパスを返す。
+for role in spec-author plan-author implementer writer; do
   schema="$FIXTURE/$role-schema.json"
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
@@ -127,6 +126,29 @@ for role in spec-author plan-author reviewer researcher judge synthesizer \
                    and ((.required | index("decisionRequestPath")) != null)
                 then "yes" else "no" end' "$schema" 2>&1)"
   assert_eq "$has" "yes" "$role: schema が decisionRequestPath を required で持つ"
+  access="$(jq -r --arg r "$role" '.[$r].access' \
+    "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/manifests.json" 2>&1)"
+  assert_eq "$access" "write" "$role: ファイルへ書くので access は write である"
+done
+
+# 読み取り専用の role はファイルを書けないので、要求を構造化出力で返す。
+# パスを返させると、親が実体の無いパスを run state に記録し、validator が run を落とす。
+for role in reviewer researcher judge synthesizer review-synthesizer; do
+  schema="$FIXTURE/$role-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
+  has="$(jq -r 'if (.properties.decisionRequest != null)
+                   and ((.required | index("decisionRequest")) != null)
+                then "yes" else "no" end' "$schema" 2>&1)"
+  assert_eq "$has" "yes" "$role: schema が decisionRequest を required で持つ"
+  assert_eq "$(jq -r 'if .properties.decisionRequestPath == null then "absent" else "present" end' "$schema" 2>&1)" \
+            "absent" "$role: 書けないので decisionRequestPath は持たない"
+  fields="$(jq -r '.properties.decisionRequest.required | sort | join(",")' "$schema" 2>&1)"
+  assert_eq "$fields" "confirmed,options,question,recommendation" \
+            "$role: decisionRequest が契約の 4 項目を持つ"
+  access="$(jq -r --arg r "$role" '.[$r].access' \
+    "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/manifests.json" 2>&1)"
+  assert_eq "$access" "read" "$role: 読み取り専用なので access は read である"
 done
 
 # review 統合は調査統合と異なり、採用 verdict と修正可能な finding を返す専用 role を使う。
@@ -145,7 +167,7 @@ if [ -f "$review_schema" ]; then
     "delivery: review-synthesizer は finding location を返す"
   assert_contains "$(cat "$rendered_review_schema")" '"fix"' \
     "delivery: review-synthesizer は finding fix を返す"
-  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null,"decisionRequestPath":null}')" \
+  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null,"decisionRequest":null}')" \
             "valid" "delivery: review-synthesizer は verdict と修正可能な finding を返す"
 fi
 
