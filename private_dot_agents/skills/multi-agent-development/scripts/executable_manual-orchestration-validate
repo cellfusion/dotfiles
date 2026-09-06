@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+# 手動 MAD の run 成果物が、親と子の間で共有するファイル契約を満たすか検証する。
+set -u
+
+fail() {
+  printf 'manual-orchestration-validate: %s\n' "$*" >&2
+  exit 1
+}
+
+require_string() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | strings | select(length > 0)" "$file" >/dev/null 2>&1 ||
+    fail "$file: $field must be a non-empty string"
+}
+
+require_state() {
+  local file="$1"
+  jq -e '.state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
+    "$file" >/dev/null 2>&1 || fail "$file: state is invalid"
+}
+
+require_backend() {
+  local file="$1"
+  jq -e '.backend | IN("paseo-mcp", "subagent")' "$file" >/dev/null 2>&1 ||
+    fail "$file: backend must be paseo-mcp or subagent"
+  require_string "$file" '.backend_reason' 'backend_reason'
+}
+
+require_json() {
+  local file="$1"
+  jq -e 'type == "object"' "$file" >/dev/null 2>&1 || fail "$file: valid JSON object is required"
+}
+
+require_string_array() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | type == \"array\" and all(.[]; type == \"string\" and length > 0) and length == (unique | length)" \
+    "$file" >/dev/null 2>&1 || fail "$file: $field must be an array of unique non-empty strings"
+}
+
+require_absolute_paths() {
+  local file="$1"
+  local filter="$2"
+  local field="$3"
+  jq -e "$filter | type == \"array\" and all(.[]; type == \"string\" and test(\"^/\"))" \
+    "$file" >/dev/null 2>&1 || fail "$file: $field must be an array of absolute paths"
+}
+
+# 決着した state は phase_state と一致させる。実行中の run は、完了した phase を
+# phase_state に残せる（delivery の spec 完了後に plan を始める間など）。
+require_phase() {
+  local file="$1"
+  require_string "$file" '.phase' 'phase'
+  jq -e '.phase_state | IN("pending", "running", "waiting_for_user", "ok", "failed", "stopped", "unresolved")' \
+    "$file" >/dev/null 2>&1 || fail "$file: phase_state is invalid"
+  jq -e '(.state | IN("pending", "running")) or .state == .phase_state' "$file" >/dev/null 2>&1 ||
+    fail "$file: phase_state $(jq -r '.phase_state' "$file") must match state $(jq -r '.state' "$file")"
+  require_string "$file" '.next_action' 'next_action'
+}
+
+require_basename_safe_id() {
+  local value="$1"
+  local label="$2"
+
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+    fail "$label must be basename-safe"
+}
+
+require_regular_file() {
+  local path="$1"
+  local label="$2"
+
+  [ -f "$path" ] && [ ! -L "$path" ] ||
+    fail "$label must be an existing regular file: $path"
+}
+
+validate_adopted_handoff_artifacts() {
+  local handoff="$1"
+
+  jq -e '.artifact_paths | length > 0' "$handoff" >/dev/null 2>&1 ||
+    fail "$handoff: adopted handoff must contain at least one artifact path"
+  while IFS= read -r artifact_path; do
+    require_regular_file "$artifact_path" "$handoff: adopted handoff artifact"
+  done < <(jq -r '.artifact_paths[]' "$handoff")
+}
+
+require_recipe_output() {
+  local recipe="$1"
+  local run_state="$2"
+  local required_node=""
+
+  case "$recipe" in
+    research|fanout) required_node="synthesis" ;;
+    decide|debate) required_node="verdict" ;;
+    spec) required_node="spec-author" ;;
+    plan) required_node="planner" ;;
+    implement|delivery) required_node="final-review" ;;
+    review) required_node="review-synthesis" ;;
+  esac
+
+  [ -z "$required_node" ] && return
+  jq -e --arg node "$required_node" '.completed_nodes | index($node) != null' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: $required_node is a required $recipe output in completed_nodes"
+  jq -e --arg node "$required_node" '.adopted_attempts | has($node)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: $required_node is a required $recipe output"
+}
+
+# implement と spike は node ごとに worktree を作る。workspaces.json はその台帳で、
+# run 側だけでどの workspace を作ったか、取り込んだか、片付けたかを追えるようにする。
+# この 2 つの recipe では台帳を必須にする。台帳の無い run を素通りさせると、隔離を
+# 飛ばして同じ作業ディレクトリで並列に起動した run を検査が捕まえられない。
+# 他の recipe は worktree を作らないので、台帳が無ければこの検査を飛ばす。
+validate_workspaces() {
+  local run_dir="$1"
+  local run_state="$2"
+  local run_status="$3"
+  local recipe="$4"
+  local workspaces="$run_dir/workspaces.json"
+  local node_id
+  local field
+  local integration
+
+  case "$recipe" in
+    implement|spike)
+      [ -f "$workspaces" ] ||
+        fail "$workspaces: workspaces.json is required for a $recipe run" ;;
+    *) [ -f "$workspaces" ] || return 0 ;;
+  esac
+  require_json "$workspaces"
+  jq -e '.base | strings | select(length > 0)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: base is required for a run that creates workspaces"
+
+  while IFS= read -r node_id; do
+    require_basename_safe_id "$node_id" "$workspaces: workspace node ID"
+    [ -d "$run_dir/nodes/$node_id" ] || fail "$workspaces: unknown node: $node_id"
+    jq -e --arg node "$node_id" '.[$node] | type == "object"' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id must map to a workspace object"
+    for field in workspace_id cwd branch; do
+      jq -e --arg node "$node_id" --arg field "$field" \
+        '.[$node][$field] | strings | select(length > 0)' "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id $field must be a non-empty string"
+    done
+    jq -e --arg node "$node_id" '.[$node].cwd | test("^/")' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id cwd must be an absolute path"
+    jq -e --arg node "$node_id" '.[$node].archived | type == "boolean"' "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id archived must be a boolean"
+    # archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
+    # しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+    jq -e --arg node "$node_id" '.[$node].integration | IN("pending", "merged", "declined")' \
+      "$workspaces" >/dev/null 2>&1 ||
+      fail "$workspaces: $node_id integration must be one of pending, merged, declined"
+    integration="$(jq -r --arg node "$node_id" '.[$node].integration' "$workspaces")"
+    if [ "$integration" = "declined" ]; then
+      jq -e --arg node "$node_id" '.[$node].integration_reason | strings | select(length > 0)' \
+        "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id integration_reason is required when integration is declined"
+    fi
+    # archived の要求は、取り込みの判断が済んだ後にだけ掛ける。
+    if [ "$run_status" = "ok" ]; then
+      [ "$integration" != "pending" ] ||
+        fail "$workspaces: $node_id integration is still pending"
+      jq -e --arg node "$node_id" '.[$node].archived' "$workspaces" >/dev/null 2>&1 ||
+        fail "$workspaces: $node_id workspace is not archived"
+    fi
+  done < <(jq -r 'keys[]' "$workspaces")
+}
+
+validate_handoff() {
+  local handoff="$1"
+  local run_id="$2"
+  local node_id="$3"
+  local attempt_id="$4"
+
+  [ -f "$handoff" ] || fail "$handoff: handoff.json is required"
+  require_json "$handoff"
+  require_string "$handoff" '.run_id' 'run_id'
+  require_string "$handoff" '.node' 'node'
+  require_string "$handoff" '.attempt' 'attempt'
+  require_absolute_paths "$handoff" '.artifact_paths' 'artifact_paths'
+  [ "$(jq -r '.run_id' "$handoff")" = "$run_id" ] ||
+    fail "$handoff: run_id does not match run state"
+  [ "$(jq -r '.node' "$handoff")" = "$node_id" ] ||
+    fail "$handoff: node does not match its directory"
+  [ "$(jq -r '.attempt' "$handoff")" = "$attempt_id" ] ||
+    fail "$handoff: attempt does not match its directory"
+}
+
+node_is_ok() {
+  local node_dir="$1"
+  local node_id="$2"
+  local adopted_attempt="$3"
+  local attempt_state="$node_dir/attempts/$adopted_attempt/state.json"
+
+  [ -n "$adopted_attempt" ] || return 1
+  [ -f "$attempt_state" ] || return 1
+  [ "$(jq -r '.node' "$attempt_state")" = "$node_id" ] || return 1
+  jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1
+}
+
+if [ "$#" -eq 1 ] && [ "$1" = "--select-backend" ]; then
+  if [ "${MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE:-0}" = "1" ]; then
+    printf '%s\n' '{"backend":"paseo-mcp","backend_reason":"Paseo MCP available"}'
+  else
+    printf '%s\n' '{"backend":"subagent","backend_reason":"Paseo MCP unavailable"}'
+  fi
+  exit 0
+fi
+
+[ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend'
+run_dir="$1"
+[ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
+run_dir="$(cd "$run_dir" && pwd -P)"
+run_state="$run_dir/state.json"
+[ -f "$run_state" ] || fail "$run_state: missing run state"
+
+require_json "$run_state"
+require_string "$run_state" '.run_id' 'run_id'
+require_string "$run_state" '.recipe' 'recipe'
+require_state "$run_state"
+require_phase "$run_state"
+require_backend "$run_state"
+require_string "$run_state" '.parent_decision' 'parent_decision'
+require_string_array "$run_state" '.active_nodes' 'active_nodes'
+require_string_array "$run_state" '.completed_nodes' 'completed_nodes'
+require_absolute_paths "$run_state" '.artifact_paths' 'artifact_paths'
+jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.value | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))' \
+  "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map basename-safe node IDs to attempt IDs"
+if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
+  jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: decision_request must be an absolute path"
+  require_regular_file "$(jq -r '.decision_request' "$run_state")" \
+    "$run_state: decision_request の実体"
+fi
+jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
+  "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"
+if [ "$(jq -r '.state' "$run_state")" = "waiting_for_user" ]; then
+  jq -e '.phase_state == "waiting_for_user"' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: waiting_for_user requires phase_state waiting_for_user"
+fi
+jq -e '.current_round | type == "number" and . >= 0 and floor == .' "$run_state" >/dev/null 2>&1 ||
+  fail "$run_state: current_round must be a non-negative integer"
+
+run_id="$(jq -r '.run_id' "$run_state")"
+recipe="$(jq -r '.recipe' "$run_state")"
+run_status="$(jq -r '.state' "$run_state")"
+current_round="$(jq -r '.current_round' "$run_state")"
+has_non_ok_adopted_attempt=0
+has_research_downstream=0
+
+if [ "$run_status" = "ok" ]; then
+  jq -e '(.completed_nodes | sort) == (.adopted_attempts | keys | sort)' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: completed_nodes and adopted_attempts must name the same nodes before run completion"
+  jq -e '.artifact_paths | length > 0' "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: completed run must contain at least one artifact path"
+  while IFS= read -r artifact_path; do
+    require_regular_file "$artifact_path" "$run_state: completed run artifact"
+  done < <(jq -r '.artifact_paths[]' "$run_state")
+  require_recipe_output "$recipe" "$run_state"
+fi
+
+if [ -d "$run_dir/nodes" ]; then
+  while IFS= read -r node_dir; do
+    node_id="$(basename "$node_dir")"
+    require_basename_safe_id "$node_id" "$node_dir: node ID"
+    [ -d "$node_dir/attempts" ] || fail "$node_dir: node artifacts must be under attempts/"
+    direct_file="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type f -print -quit)"
+    [ -z "$direct_file" ] || fail "$direct_file: node artifacts must be under attempts/"
+    direct_dir="$(find "$node_dir" -mindepth 1 -maxdepth 1 -type d ! -name attempts -print -quit)"
+    [ -z "$direct_dir" ] || fail "$direct_dir: node artifacts must be under attempts/"
+    if [ "$recipe" = "research" ]; then
+      case "$node_id" in
+        research-1|research-2|research-3) ;;
+        *) has_research_downstream=1 ;;
+      esac
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
+
+  # attempt は attempts/ の直下だけである。attempt が中に持つ before/ のような
+  # ディレクトリを attempt とみなすと、退避した改稿前のファイルが契約違反になる。
+  # 深さで attempt を決めるので、attempt の中に置けるディレクトリを before/ だけに限る。
+  # 許すと、入れ子になった attempts の state.json がどの検索にも当たらなくなる。
+  while IFS= read -r attempt_dir; do
+    [ -f "$attempt_dir/state.json" ] || fail "$attempt_dir: state.json is required"
+    nested_dir="$(find "$attempt_dir" -mindepth 1 -maxdepth 1 -type d ! -name before -print -quit)"
+    [ -z "$nested_dir" ] || fail "$nested_dir: attempt directories may only contain before/"
+    if [ -d "$attempt_dir/before" ]; then
+      before_entry="$(find "$attempt_dir/before" -mindepth 1 ! -type f -print -quit)"
+      [ -z "$before_entry" ] || fail "$before_entry: before/ must contain only regular files"
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 3 -maxdepth 3 -type d -path '*/attempts/*' -print)
+
+  while IFS= read -r attempt_state; do
+    attempt_dir="$(dirname "$attempt_state")"
+    attempt_id="$(basename "$attempt_dir")"
+    node_dir="$(dirname "$(dirname "$attempt_dir")")"
+    node_id="$(basename "$node_dir")"
+    require_basename_safe_id "$node_id" "$attempt_state: node ID"
+    require_basename_safe_id "$attempt_id" "$attempt_state: attempt ID"
+
+    require_json "$attempt_state"
+    require_state "$attempt_state"
+    require_phase "$attempt_state"
+    require_backend "$attempt_state"
+    require_string "$attempt_state" '.run_id' 'run_id'
+    require_string "$attempt_state" '.node' 'node'
+    require_string "$attempt_state" '.attempt' 'attempt'
+    require_string "$attempt_state" '.parent_decision' 'parent_decision'
+    jq -e '.round | type == "number" and . >= 0 and floor == .' "$attempt_state" >/dev/null 2>&1 ||
+      fail "$attempt_state: round must be a non-negative integer"
+
+    [ "$(jq -r '.run_id' "$attempt_state")" = "$run_id" ] ||
+      fail "$attempt_state: run_id does not match run state"
+    [ "$(jq -r '.node' "$attempt_state")" = "$node_id" ] ||
+      fail "$attempt_state: node does not match its directory"
+    [ "$(jq -r '.attempt' "$attempt_state")" = "$attempt_id" ] ||
+      fail "$attempt_state: attempt does not match its directory"
+    attempt_round="$(jq -r '.round' "$attempt_state")"
+    [ "$attempt_round" -le "$current_round" ] ||
+      fail "$attempt_state: round exceeds current_round"
+
+    [ -f "$attempt_dir/prompt.md" ] || fail "$attempt_dir: prompt.md is required"
+    result_count=0
+    [ -f "$attempt_dir/result.md" ] && result_count=$((result_count + 1))
+    [ -f "$attempt_dir/result.json" ] && result_count=$((result_count + 1))
+    [ "$result_count" -eq 1 ] || fail "$attempt_dir: exactly one result.md or result.json is required"
+    [ -f "$attempt_dir/log.md" ] || fail "$attempt_dir: log.md is required"
+    validate_handoff "$attempt_dir/handoff.json" "$run_id" "$node_id" "$attempt_id"
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print)
+
+  while IFS= read -r node_dir; do
+    node_id="$(basename "$node_dir")"
+    adopted_attempt="$(jq -r --arg node "$node_id" '.adopted_attempts[$node] // empty' "$run_state")"
+    if [ "$run_status" = "ok" ] && [ -z "$adopted_attempt" ]; then
+      fail "$run_state: $node_id requires an adopted attempt before run completion"
+    fi
+    if [ -n "$adopted_attempt" ] && ! node_is_ok "$node_dir" "$node_id" "$adopted_attempt"; then
+      has_non_ok_adopted_attempt=1
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 1 -maxdepth 1 -type d -print)
+
+  while IFS=$'\t' read -r adopted_node adopted_attempt; do
+    require_basename_safe_id "$adopted_node" "$run_state: adopted node ID"
+    require_basename_safe_id "$adopted_attempt" "$run_state: adopted attempt ID"
+    adopted_node_dir="$run_dir/nodes/$adopted_node"
+    adopted_attempt_dir="$adopted_node_dir/attempts/$adopted_attempt"
+    [ -d "$adopted_node_dir" ] && [ ! -L "$adopted_node_dir" ] ||
+      fail "$run_state: adopted node does not exist: $adopted_node"
+    [ -d "$adopted_attempt_dir" ] && [ ! -L "$adopted_attempt_dir" ] ||
+      fail "$run_state: adopted attempt does not exist: $adopted_node/$adopted_attempt"
+    case "$(cd "$adopted_attempt_dir" && pwd -P)" in
+      "$run_dir"/nodes/*) ;;
+      *) fail "$run_state: adopted attempt must remain within the run directory" ;;
+    esac
+    [ -f "$adopted_attempt_dir/state.json" ] ||
+      fail "$run_state: adopted attempt does not exist: $adopted_node/$adopted_attempt"
+    if [ "$run_status" = "ok" ]; then
+      validate_adopted_handoff_artifacts "$adopted_attempt_dir/handoff.json"
+    fi
+  done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
+fi
+
+validate_workspaces "$run_dir" "$run_state" "$run_status" "$recipe"
+
+if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then
+  fail "$run_state: root state ok conflicts with a non-ok adopted child state"
+fi
+
+if [ "$recipe" = "research" ]; then
+  require_research_nodes=0
+  [ "$run_status" = "ok" ] && require_research_nodes=1
+  [ "$has_research_downstream" -eq 1 ] && require_research_nodes=1
+
+  if [ "$require_research_nodes" -eq 1 ]; then
+    for node_id in research-1 research-2 research-3; do
+      node_dir="$run_dir/nodes/$node_id"
+      [ -d "$node_dir" ] || fail "$run_state: $node_id is required for research"
+      adopted_attempt="$(jq -r --arg node "$node_id" '.adopted_attempts[$node] // empty' "$run_state")"
+      node_is_ok "$node_dir" "$node_id" "$adopted_attempt" ||
+        fail "$run_state: research downstream cannot start before all research nodes are ok"
+    done
+  fi
+fi
+
+case "$recipe" in
+  implement|refine)
+    jq -e '.max_rounds | type == "number" and . > 0 and floor == .' "$run_state" >/dev/null 2>&1 ||
+      fail "$run_state: max_rounds must be a positive integer"
+    max_rounds="$(jq -r '.max_rounds' "$run_state")"
+    [ "$current_round" -le "$max_rounds" ] ||
+      fail "$run_state: current_round exceeds max_rounds"
+    if [ "$current_round" -eq "$max_rounds" ] && [ "$run_status" != "ok" ] && [ "$run_status" != "unresolved" ]; then
+      fail "$run_state: max_rounds reached without completion requires state unresolved"
+    fi
+    ;;
+esac
+
+printf 'valid manual orchestration run: %s\n' "$run_dir"

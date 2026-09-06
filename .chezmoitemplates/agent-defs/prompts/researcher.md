@@ -4,3 +4,4 @@
 - 推測と確認済みの事実を混ぜない。確かめられなかったことは `cannotVerify` に入れる
 - `sources` にはファイルパスと行番号、または URL を入れる。「調べた」だけでは根拠にならない
 - `summary` は 1 段落にする。`findings` に個々の発見を 1 件 1 行で入れる
+- 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で結論を出さない。判断を求めないときは `decisionRequestPath` を `null` にする

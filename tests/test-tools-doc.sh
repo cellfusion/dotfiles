@@ -52,11 +52,22 @@ assert_contains "$doc" "自己更新" "docs: brew に寄せない理由が書か
 assert_contains "$doc" "aquaskk" "docs: AquaSKK の扱いが記録されている"
 
 # --- 手で入れるコマンドの入手方法が記録されている ---
-# braid と paseo はマニフェストに載らない。ここに書いていないと新マシンで入れられない。
-assert_contains "$doc" "cargo build --release" "docs: braid のビルド方法が書かれている"
+# paseo はマニフェストに載らない。ここに書いていないと新マシンで入れられない。
+assert_not_contains "$doc" "braid" "docs: 退役した braid を案内しない"
 assert_contains "$doc" "paseo.sh/download" "docs: paseo の入手先が書かれている"
 assert_contains "$doc" "/Applications/Paseo.app/Contents/Resources/bin/paseo" \
   "docs: paseo の CLI の在り処が書かれている"
+
+# --- 削除したシェル資産を案内しない。配布済み実体は .chezmoiremove が回収する ---
+for legacy in "mad-run" "mad-agent" "mad-route" "mad-runs" "mad-lib"; do
+  assert_not_contains "$doc" "$legacy" "docs: 退役した $legacy を案内しない"
+done
+
+# --- worktree を作るレシピは後片付けが要る。片付け方が docs に無いと workspace が残る ---
+assert_contains "$doc" "archive_workspace" \
+  "docs: MAD の worktree を片付ける手段を書く"
+assert_contains "$doc" "workspaces.json" \
+  "docs: MAD の workspace 台帳の場所を書く"
 
 # --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
 # plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
@@ -186,6 +197,34 @@ done
 for f in yazi helix gitui; do
   assert_not_contains "$brewfile" "brew \"$f\"" "整合: $f は Brewfile に無い"
 done
+
+# --- worktrees.md が現在の経路を書いている ---
+# MAD の implement / spike では worktree を作るのは親である。子が作ると、実装の
+# コミットが親の見ないブランチに載り、親が取る diff が空になる。
+worktrees_doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/worktrees.md" 2>&1)"
+assert_not_contains "$worktrees_doc" "sdd-run" \
+  "worktrees: 削除した sdd-run 経由の worktree 作成を書かない"
+assert_contains "$worktrees_doc" "using-git-worktrees" \
+  "worktrees: worktree の手順が using-git-worktrees にあると書く"
+assert_contains "$worktrees_doc" "multi-agent-development" \
+  "worktrees: 実装工程の入口が MAD であると書く"
+assert_contains "$worktrees_doc" "worktree を作るのは親である" \
+  "worktrees: MAD の worktree を作るのは親であると書く"
+assert_not_contains "$worktrees_doc" "親は worktree を作らない" \
+  "worktrees: 子を所有者とする旧記述を残さない"
+assert_contains "$worktrees_doc" "mcp__paseo__create_workspace" \
+  "worktrees: Paseo MCP backend の worktree 作成手段を書く"
+
+# --- MAD の下で残す SDD 基盤の役割が記録されている ---
+# sdd-run / sdd-task と補助スクリプトは MAD の implement recipe の子が使う。
+# 何のために残っているかを書いていないと、退役済みと誤解して消される。
+for s in sdd-run sdd-task task-brief task-waves task-worktree run-registry \
+         agent-backend sdd-workspace; do
+  assert_contains "$doc" "$s" "docs: MAD の下で残す $s が記録されている"
+done
+# 呼び出し手順の所在を書いていないと、子は実行基盤を持っていても呼べない。
+assert_contains "$doc" "実行基盤の呼び出し手順は \`multi-agent-development\` スキル" \
+  "docs: 実行基盤の呼び出し手順の所在を書く"
 
 # --- README と棚卸しの整合 ---
 readme="$(cat "$CHEZMOI_SOURCE/README.md" 2>&1)"

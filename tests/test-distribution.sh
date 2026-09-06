@@ -32,7 +32,7 @@ for s in review-package sdd-workspace task-brief task-waves \
 done
 
 # SKILL.md は 3 ツールすべてに配られる。
-for skill in brainstorming writing-plans using-git-worktrees braid pr-review; do
+for skill in brainstorming writing-plans using-git-worktrees multi-agent-development; do
   assert_contains "$managed" ".config/claude/skills/$skill/SKILL.md" \
     "$skill: claude へ配られる"
   assert_contains "$managed" ".config/opencode/skills/$skill/SKILL.md" \
@@ -40,9 +40,6 @@ for skill in brainstorming writing-plans using-git-worktrees braid pr-review; do
   assert_contains "$managed" ".agents/skills/$skill/SKILL.md" \
     "$skill: ~/.agents へ配られる"
 done
-
-assert_contains "$managed" ".config/claude/commands/pr-review.md" \
-  "pr-review: Claude command を配る"
 
 # codex の設定は実運用の CODEX_HOME（~/.config/codex）へ配る。
 assert_contains "$managed" ".config/codex/AGENTS.md" \
@@ -107,10 +104,35 @@ for f in routing.json tiers.json manifests.json; do
     "agent-defs: $f を ~/.agents へ配る"
 done
 
-for a in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP と
+# native subagent がどちらも同じ prompt/schema を参照できることを保証する。
+delivery_manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/manifests.json" . }}')"
+for a in $(printf '%s' "$delivery_manifest" | jq -r \
+  'to_entries[] | select(.value.delivery_duties | length > 0) | .key'); do
   assert_contains "$managed" ".agents/agent-defs/prompts/$a.md" \
-    "agent-defs: prompts/$a.md を ~/.agents へ配る"
+    "MAD delivery: prompts/$a.md を ~/.agents へ配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
+    "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
+
+# `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
+# schema だけを配っても、agent 定義が配られていない role は native subagent で起動できない。
+for a in $(printf '%s' "$delivery_manifest" | jq -r 'keys[]'); do
+  assert_contains "$managed" ".config/claude/agents/$a.md" \
+    "MAD subagent: claude の $a 定義を配る"
+  assert_contains "$managed" ".config/opencode/agents/$a.md" \
+    "MAD subagent: opencode の $a 定義を配る"
+  assert_contains "$managed" ".config/codex/agents/$a.toml" \
+    "MAD subagent: codex の $a 定義を配る"
+done
+
+# review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
+# 契約が runtime ごとに欠けると、review recipe が統合結果を判定できなくなる。
+assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \
+  "MAD delivery: review-synthesizer prompt を ~/.agents へ配る"
+assert_contains "$managed" ".agents/agent-defs/schemas/review-synthesizer.json" \
+  "MAD delivery: review-synthesizer schema を ~/.agents へ配る"
 
 # 配る routing.json はテンプレートと同じ内容になる。
 rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
@@ -130,11 +152,6 @@ assert_eq "$roles_r" "$roles_m" "routing: 役割の集合が manifests と一致
 
 assert_contains "$managed" ".agents/skills/_shared/scripts/agent-route" \
   "agent-route を共有パスへ配る"
-
-for a in sdd-implementer sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
-  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
-    "agent-defs: schemas/$a.json を ~/.agents へ配る"
-done
 
 assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/sdd-task" \
   "sdd-task を共有パスへ配る"
@@ -218,14 +235,38 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.gitignore")" ".DS_Store" \
 assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
   ".chezmoiignore: .DS_Store を配らない"
 
-# MAD のスクリプトとレシピは ~/.agents/skills 側にだけ配られる。
-for s in mad-route mad-agent mad-run mad-runs mad-lib.sh; do
-  assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
-    "MAD: スクリプトを共有パスへ配る: $s"
+# MAD はスキルと手動オーケストレーション validator だけを配る。旧 shell runner / recipe は
+# 配布しない。braid も 3 runtime のいずれにも配布しない。
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/manual-orchestration-validate" \
+  "MAD: validator を共有パスへ配る"
+for legacy in \
+  ".agents/skills/multi-agent-development/scripts/mad-route" \
+  ".agents/skills/multi-agent-development/scripts/mad-agent" \
+  ".agents/skills/multi-agent-development/scripts/mad-run" \
+  ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/scripts/mad-runs" \
+  ".agents/skills/multi-agent-development/recipes" \
+  ".agents/skills/braid/SKILL.md" \
+  ".config/claude/skills/braid/SKILL.md" \
+  ".config/opencode/skills/braid/SKILL.md"; do
+  assert_not_contains "$managed_files" "$legacy" "退役資産を配布しない: $legacy"
 done
-for r in research fanout decide debate review triage implement spike refine; do
-  assert_contains "$managed" ".agents/skills/multi-agent-development/recipes/$r.sh" \
-    "MAD: レシピを共有パスへ配る: $r"
+assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" ".local/bin/braid" \
+  ".chezmoiremove: braid バイナリを回収する"
+# ソースから消した braid / 旧 MAD の配布済み実体も回収する。ディレクトリは
+# chezmoi が RemoveAll するため、ランタイム状態を含む MAD の新しい保存先は対象にしない。
+for p in \
+  ".agents/skills/braid" \
+  ".config/claude/skills/braid" \
+  ".config/opencode/skills/braid" \
+  ".agents/skills/multi-agent-development/scripts/mad-run" \
+  ".agents/skills/multi-agent-development/scripts/mad-agent" \
+  ".agents/skills/multi-agent-development/scripts/mad-route" \
+  ".agents/skills/multi-agent-development/scripts/mad-lib.sh" \
+  ".agents/skills/multi-agent-development/scripts/mad-runs" \
+  ".agents/skills/multi-agent-development/recipes"; do
+  assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiremove")" "$p" \
+    ".chezmoiremove: 退役した配布済み資産を回収する: $p"
 done
 assert_contains "$managed" ".config/claude/skills/multi-agent-development/SKILL.md" \
   "MAD: claude へ配られる"
@@ -237,17 +278,5 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
   assert_contains "$managed" ".agents/agent-defs/$f.json" \
     "MAD: 設定アセットを配る: $f"
 done
-# writer 役の prompt と schema も配る。
-assert_contains "$managed" ".agents/agent-defs/prompts/writer.md" \
-  "MAD: writer の prompt を配る"
-assert_contains "$managed" ".agents/agent-defs/schemas/writer.json" \
-  "MAD: writer の schema を配る"
-
-# Paseo プラグインの npm 成果物は配らない。chezmoi はソース側のドットで始まる項目を
-# 配らないため、node_modules を配ると .bin と .package-lock.json を欠いた依存ツリーになる。
-assert_contains "$managed" ".local/share/paseo-plugins/pr-review/index.ts" \
-  "paseo-plugin: プラグインのソースを配る"
-assert_not_contains "$managed" "paseo-plugins/pr-review/node_modules" \
-  "paseo-plugin: node_modules を配らない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

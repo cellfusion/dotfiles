@@ -225,17 +225,44 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` にあり、chezmoi の
 管理外である。
 
-braid。複数の AI エージェントを組み合わせたフローを実行する Rust 製 CLI で、`braid` /
-`requesting-code-review` スキルが PATH にあることを前提にする。リポジトリは
-`~/Workspaces/github.com/cellfusion/braid` にあり、`cargo build --release` でビルドし、
-`target/release/braid` を `~/.local/bin` へ置く。
-
 paseo。複数のコーディングエージェントを走らせる macOS アプリで、`multi-agent-development`
 スキルが CLI の `paseo` を PATH に置くことを前提にする。アプリは https://paseo.sh/download
 から入れ、`/Applications/Paseo.app` に置く。CLI はアプリに同梱された
 `/Applications/Paseo.app/Contents/Resources/bin/paseo` で、`~/.local/bin/paseo` を
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
+
+`multi-agent-development` スキルの backend は Paseo MCP と native subagent の 2 つである。
+親エージェントは run の開始時に Paseo MCP へ届くかを確かめ、届くときは Paseo MCP で子を
+起動する。届かないときだけ native subagent へ fallback する。開始済みの子が失敗しても
+別 backend へ自動で切り替えない。
+
+Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
+`paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
+出し、`paseo wait <agent-id>` が idle になるまで待つ。止めるときは `paseo stop <agent-id>`
+が実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
+native subagent で起動した子は Paseo の一覧に現れないので、親は run ディレクトリの
+`state.json` だけで状態を判断する。
+
+`~/.agents/skills/subagent-driven-development/scripts/` のうち、MAD の `implement` recipe で
+親が呼ぶのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package` である。
+`run-registry` と `agent-backend` は、親が起動した子が呼ぶ。どのスクリプトを誰が呼ぶかと、
+実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+
+`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。worktree を作るのは親であり、
+波の進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を
+headless で回すときの入口であり、`implement` の子は使わない。この 3 つと Workflow の定義は、
+MAD を通さない経路のために残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
+
+`implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
+直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
+`paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
+ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
+
+実 backend で 1 度通す手順は `tests/manual/mad-orchestration-smoke.sh` にある。
+`research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
+実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
+`--dry-run` で手順だけを読める。
 
 ### Paseo プラグイン pr-review
 

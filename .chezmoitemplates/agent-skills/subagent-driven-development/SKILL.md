@@ -25,17 +25,17 @@ description: >-
 digraph when_to_use {
     "実装プランがある?" [shape=diamond];
     "タスクはおおむね独立?" [shape=diamond];
-    "subagent が使える?" [shape=diamond];
+    "並列にできるタスクがある? または worktree の隔離が要る?" [shape=diamond];
     "subagent-driven-development" [shape=box];
     "executing-plans" [shape=box];
     "brainstorming か手動実行" [shape=box];
 
     "実装プランがある?" -> "タスクはおおむね独立?" [label="yes"];
     "実装プランがある?" -> "brainstorming か手動実行" [label="no"];
-    "タスクはおおむね独立?" -> "subagent が使える?" [label="yes"];
+    "タスクはおおむね独立?" -> "並列にできるタスクがある? または worktree の隔離が要る?" [label="yes"];
     "タスクはおおむね独立?" -> "brainstorming か手動実行" [label="no（密結合）"];
-    "subagent が使える?" -> "subagent-driven-development" [label="yes"];
-    "subagent が使える?" -> "executing-plans" [label="no"];
+    "並列にできるタスクがある? または worktree の隔離が要る?" -> "subagent-driven-development" [label="yes"];
+    "並列にできるタスクがある? または worktree の隔離が要る?" -> "executing-plans" [label="no"];
 }
 ```
 
@@ -81,201 +81,22 @@ digraph when_to_use {
 
 ## 実行経路
 
-### MAD経路（既定）
+MAD の `implement` recipe で実行する。run ディレクトリの作り方、backend の選び方、子の起動、
+state と handoff の契約は `multi-agent-development` スキルが持つ。
 
-MADで表現できる作業は、`sdd-run`ではなくMADをオーケストレーターとして実行する。実装タスクを項目ごとに並行処理するときは`fanout`、複数観点レビューは`review`、不具合や設計判断の調査は`research`を使う。
+親が MAD へ渡すのは、承認済み plan、spec、既存 SDD ledger の絶対パスである。波は親が
+`task-waves` で出す。子は `implementer` が実装し、`task-reviewer` と `re-reviewer` が判定し、
+`final-reviewer` が最後にブランチ全体を見る。
 
-実行前に必ずPaseoの状態を確認し、MADのdry-runで引数・役割・provider解決を検証する。
+`~/.agents/skills/subagent-driven-development/scripts/` のうち、`sdd-workspace`、`task-waves`、
+`task-brief`、`review-package` は親が呼ぶ。`run-registry` と `agent-backend` は子が呼ぶ。
+割り当ての正本は `multi-agent-development` スキルの「implement の実行基盤」の表である。
 
-```bash
-command -v paseo
-paseo status
-~/.agents/skills/multi-agent-development/scripts/mad-run RECIPE --arg k=v --dry-run
-~/.agents/skills/multi-agent-development/scripts/mad-run RECIPE --arg k=v
-```
-
-dry-runが失敗した場合は本実行せず、失敗ノードとrunディレクトリを報告する。同じ条件でリトライしない。MADレシピで表現できない作業だけ、下の単独エージェント経路へフォールバックする。
-
-**この節が他のすべての経路に優先する。下の`sdd-run`節は、MADを利用できない場合の調査用レガシー経路である。**
-
-### sdd-run 経路（MADが利用できない場合のレガシー）
-
-MADが利用できない場合に限り、次の 3 つが揃っていれば役割ごとにエンジンを選べる `sdd-run` 経路を使う。
-実装を codex、レビューを claude というように分けられる。対応は
-`~/.agents/agent-defs/routing.json` が持つ。
-
-```bash
-sdd_agents="${AGENT_ENV_AGENTS-claude codex}"
-test -r ~/.agents/agent-defs/routing.json &&
-  command -v claude && command -v codex &&
-  printf '%s\n' "$sdd_agents" | grep -qw claude &&
-  printf '%s\n' "$sdd_agents" | grep -qw codex
-```
-
-CLI のバイナリは AI 環境に関係なく PATH にあるので、`command -v` だけでは足りない。
-いまの AI 環境が使ってよいエージェントは `AGENT_ENV_AGENTS` が持つ。
-claude だけの AI 環境では `CODEX_HOME` が unset なので、codex を起動すると
-既定の `~/.codex` を読み、意図しないアカウントで実装タスクが走る。
-`AGENT_ENV_AGENTS` を持たないマシンでは CLI の有無だけで判定する。
-
-**MADが利用できない場合に限り、この節を読む。**
-
-プラン 1 本の実行全体を `sdd-run` が回す。**あなたが呼ぶのはこの 1 コマンドだけである。**
-
-```bash
-~/.agents/skills/subagent-driven-development/scripts/sdd-run --plan <プランの絶対パス>
-```
-
-`sdd-run` が持つもの: run ID と registry、波の計算、worktree の作成と依存セットアップ
-（worktrunk）、波の中のタスクの並行起動、ledger への記帳、`git merge --no-ff`、
-worktree とブランチの片付け、中断からの再開。
-
-**worktree はあなたが作らない。** worktrunk が作り、herdr には登録しない
-（子エージェントが herdr の状態管理と通知に載らないようにするため）。
-
-返り値の `status` ごとにあなたがやること:
-
-| status | 対応 |
-|---|---|
-| `COMPLETE` | 全タスクが完了した。最終レビューへ進む |
-| `NEEDS_ATTENTION` | `attention` の各要素を 1 件ずつ裁定する（下表）。裁定してから `--run-id <runId>` で再開する |
-| `CONFLICT` | マージが衝突した。「独立」の判断が外れた証拠である。**自分で解消しない。** 衝突したブランチと該当タスクをユーザーに報告する |
-| `BAD_PLAN` | プランの依存宣言が壊れている。実行を始めずにユーザーへ報告する |
-| `BAD_ARGS` / `AGENT_FAILED` | `detail` を読んで原因を潰してから再実行する |
-
-`attention` の各要素の `status`:
-
-| status | 対応 |
-|---|---|
-| `NEEDS_CONTEXT` | 足りない情報を brief か報告ファイルに足して、`--run-id` で再開する |
-| `NEEDS_HUMAN` | plan-mandated な指摘。指摘とプランの記述を並べてユーザーに判断を仰ぐ |
-| `CAP_REACHED` | `open` を 1 件ずつ裁定する（park / BLOCKED）。「ブレーカー」の節に従う |
-| `BLOCKED` | 「報告を処理する」の 4 分類でブロッカーを評価する |
-| `AGENT_FAILED` | `stage` を見る。`precommit` なら commit 前検査に落ちている。`backend` なら CLI 側の問題。worktree は残っているので中を見る |
-
-`minor` と `cannotVerify` は ledger に書かれている。`cannotVerify` は
-**ledger に記録され、run が返った後にまとめて解消する**。sdd-run は全波を 1 回の呼び出しで回し切る。
-
-**失敗したタスクの worktree は残る。** `attention[].workdir` の絶対パスを報告する。
-
-herdr 管理下（`$HERDR_ENV` が `1`）なら、workspace として開いて人が中に入れる。
-
-```bash
-herdr worktree open --cwd <feature worktree> --path <task worktree> --no-focus
-```
-
-`<task worktree>` には `attention[].workdir` を渡す。それ以外の環境では、
-パスを報告するだけにする。
-
-routing が codex を指しているのに codex の CLI が PATH に無い場合、勝手に claude へ
-落とさない。[ask-user] で「claude だけで続行するか、止めるか」を聞く。
-
-{{ if ne .tool "claude" }}
-### 手動経路（既定）
-
-この環境に [deterministic-loop] は無い。下の「タスクループ」を controller が自分で回す。ラウンド数を数えるのも、ラウンド 4-5 で `sdd-implementer-think` へ切り替えるのも、Minor をループに入れないのも、上限で止めるのも、すべてあなたの仕事である。**規則は下の「タスクループ」が正**であり、そこから外れない。
-
-冒頭の対応表が [resume-subagent] を「継続する機構は無い」としている環境では、fix ラウンド 1-3 も新しい implementer を立て、報告ファイルで記憶を引き継ぐ。
-{{ else }}
-`sdd-run` の前提が揃わなければ、タスクループは [deterministic-loop] 経路で回す。前提が揃っているときは上の `sdd-run` 経路が優先するので、この先は読まない。
-
-### [deterministic-loop] 経路（sdd-run の前提が揃わないときの既定）
-
-`workflows/sdd-task.js` が 1 タスク分の「実装 → タスクレビュー → fix ループ（最大 5 ラウンド）」を決定的に回す。1 タスクにつき 1 回呼ぶ。
-
-**このスキルが [deterministic-loop] の利用を指示しているので opt-in の条件は満たしている。** ユーザーに改めて確認しない。
-
-なぜ workflow か:
-
-- **fix ループが決定的になる**。ラウンド数、4-5 でのモデル昇格、Minor をループに入れないこと、上限で止めること — すべて制御フローになり、controller の記憶に依存しなくなる
-- **`effort` を dispatch 時に指定できる**。エージェント定義の tier に縛られず、プランに完成したコードが載っている転記だけのタスクは低い effort で回せる
-- **verdict が構造化される**。レビュー結果は JSON スキーマで検証されるので、散文を読み違えて判断を誤ることがない
-- **controller の context が汚れない**。dispatch プロンプトも報告も workflow 側に留まり、返るのは判断に要る要約だけ
-
-workflow 内でできないこと:
-
-- **implementer を resume できない**。`agent()` は毎回新しいエージェントなので、fix ラウンド 1-3 も「新しい implementer ＋ 報告ファイル」になる。持続的な記憶は報告ファイルが担う
-- **人に質問できない**。implementer は質問の代わりに NEEDS_CONTEXT を返し、workflow はそこで止まって controller に返す
-
-呼び出し方: Workflow ツールの `scriptPath` に
-`~/.config/claude/skills/subagent-driven-development/workflows/sdd-task.js`
-を渡し、`args` に次を入れる。
-
-| キー | 中身 |
-|---|---|
-| `plan` | プランファイルのパス |
-| `taskNumber` / `taskName` | タスク番号と名前 |
-| `briefPath` | `~/.agents/skills/subagent-driven-development/scripts/task-brief` が出力したパス |
-| `reportPath` | brief に合わせた報告ファイルのパス（`task-N-report.md`） |
-| `base` | dispatch 前に記録した `git rev-parse HEAD` |
-| `globalConstraints` | プランの Global Constraints をそのままの値で |
-| `context` | このタスクがプロジェクトのどこに位置するかの 1 行 |
-| `interfaces` | 先行タスクで決まったインターフェースと決定事項 |
-| `resolutions` | brief の曖昧点についてのあなたの解決 |
-| `parkedPointers` | この領域に park されている指摘へのポインタ（あれば） |
-| `effort` | 既定は `high`。転記だけのタスクのみ `low` |
-| `workdir` | 波で並行するときだけ。このタスク専用 worktree の絶対パス。渡す場合は `plan` / `briefPath` / `reportPath` も絶対パスにする |
-
-返り値の `status` ごとに controller がやること:
-
-| status | 対応 |
-|---|---|
-| `COMPLETE` | `cannotVerify` を 1 件ずつ自分で解消してから ledger に完了行を書く |
-| `CAP_REACHED` | `open` を 1 件ずつ裁定する（park / BLOCKED）。「ブレーカー」の節に従う |
-| `NEEDS_HUMAN` | plan-mandated な指摘。指摘とプランの記述を並べてユーザーに判断を仰ぐ |
-| `NEEDS_CONTEXT` | 足りない情報を `resolutions` に足して再実行する |
-| `BLOCKED` | 「報告を処理する」の 4 分類でブロッカーを評価する |
-| `AGENT_FAILED` | `stage` を見て、同じ引数で再実行するか、原因を潰してから再実行する |
-| `BAD_ARGS` | 引数の不備。`detail` を読んで直してから再実行する |
-
-`minor` と `outOfScope` は ledger に先送りとして積み、最終レビューへ渡す。
-
-⚠️ 確認できなかった要件（`cannotVerify`）を解消した結果、本当の穴だと分かった場合は、
-同じスクリプトを `mode: 'fix'`、`head: <現在の HEAD>`、`findings: [{severity, summary, location}]`
-で呼び直す。実装を飛ばして fix ループだけが回る。
-
-### args の渡し方
-
-`args` は**オブジェクトのまま渡す**。自分で JSON 文字列に変換しない。
-
-ただし Claude Code 2.1.220 の実測では、オブジェクトを渡しても script 側には **JSON 文字列で届く**（ドキュメントは verbatim と書いているが、そうならない）。両スクリプトは冒頭でこれを正規化しているので、呼び出し側は気にしなくてよい。
-
-**スクリプトを編集するとき、素の `args.x` を直接参照する形に戻してはならない。** 全プロパティが `undefined` になり、実装エージェントが要件不明のまま走ってトークンだけ消える。実際にこの事故が起きている。正規化済みの `input.x` を使う。
-
-必須 args が欠けている場合はエージェントを起動する前に `BAD_ARGS` で返る。
-
-### workflow のデバッグ
-
-**スクリプトの挙動だけを確かめる**（エージェントを起動しない、無料）:
-
-```bash
-node ~/.config/claude/skills/subagent-driven-development/workflows/test-workflows.mjs
-```
-
-`agent` / `phase` / `log` を差し替えた fake ランタイムでスクリプト本体を実行し、生成される dispatch プロンプトと戻り値を検証する。スクリプトを編集したら必ず走らせる。
-
-**実際の run を調べる**: 実行記録は `~/.config/claude/projects/<project>/<session>/workflows/wf_*.json` に残る。
-
-| 見るもの | コマンド |
-|---|---|
-| args の到着型と中身 | `jq -r '.args \| type' wf_*.json` / `jq -r '.args' wf_*.json` |
-| 実行されたスクリプト全文 | `jq -r '.script' wf_*.json`（手元のファイルと diff する） |
-| 戻り値・状態 | `jq -r '{status, result, logs}' wf_*.json` |
-| エージェントごとの結果 | `subagents/workflows/<runId>/journal.jsonl` |
-
-実行中の run は `/workflows` で見る。
-
-### 手動経路（フォールバック）
-
-[deterministic-loop] が無い環境では、下の「タスクループ」を controller が自分で回す。この経路では fix ラウンド 1-3 で [resume-subagent] を使い、元の implementer を再開できる。
-{{ end }}
+親が担うのは、worktree の作成、波の管理、ledger への記帳、fix ラウンドを数えること、上限で
+止めること、上限での裁定、マージ衝突で止めること、最終レビューの起動である。**規則は下の
+「タスクループ」が正である。**
 
 ## 波ごとの並行実行
-
-### sdd-run 経路の場合
-
-`sdd-run` 経路では、波の計算・worktree・並行起動・マージ・片付けをすべて `sdd-run` が行う。
-**あなたはこの節の手順を実行しない。** 何が起きるかを知っておくために読む。
 
 `~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` がプランの
 `Depends on:` を読み、同時に走らせてよいタスクの組を出す。
@@ -286,85 +107,29 @@ wave 2: 2 3
 wave 3: 4
 ```
 
-**worktree を切る条件は「同時に書くエージェントの数」である。** タスク数ではない。
+**worktree を切る条件は「同時に書く子の数」である。** タスク数ではない。
 
 ```
 波のタスクが 2 つ以上
-  または implementer が claude（書き込み範囲を縛る CLI 機能が無い）
-    昇格先の sdd-implementer-think も implementer として数える
   または feature worktree が clean でない
 → タスクごとに worktree を作る
 ```
 
-1 タスクだけの波は、上のどれにも当たらなければ現在の作業ツリーで実行する。
-ブランチも merge も要らない。**その間、あなたも人間もその作業ツリーを触らない。**
+1 タスクだけの波は、上のどちらにも当たらなければ現在の作業ツリーで実行する。ブランチも merge も
+要らない。**その間、あなたも人間もその作業ツリーを触らない。**
 
-worktree は worktrunk が作る。`.env` のコピーと依存インストールは
-リポジトリ側の `.config/wt.toml` の `pre-start` フックが同期で行う。
-herdr には登録しないので、workspace もタブも増えない。
+**worktree を作るのは親である。** 子は親が渡した worktree の中で働き、自分では worktree を
+作らない。作り方と台帳（`workspaces.json`）の書き方は `multi-agent-development` スキルの
+「worktree 隔離」が持つ。
 
-片付けは `git merge --no-ff` → `wt remove --no-delete-branch` → `git branch -d` の順で行う。
-`wt remove` にブランチ削除を任せない（判定の基準が default branch であり、
-feature branch にマージしただけでは消えない）。
+取り込みと後片付けも親が行う。手順は同スキルの「取り込み」と「後片付け」が持つ。
 
-**マージが衝突したら `sdd-run` は止まる。** 「独立」の判断が外れた証拠である。
-プランの `Depends on:` か `Files:` が実態と合っていない。衝突の内容と該当タスク番号を
-ユーザーに報告し、どう直すかを聞く。自分で解消して先へ進まない。
+**マージが衝突したら止める。** 「独立」の判断が外れた証拠である。プランの `Depends on:` か
+`Files:` が実態と合っていない。衝突の内容と該当タスク番号をユーザーに報告し、自分で解消して
+先へ進まない。
 
-**波の中で一部が失敗したら `sdd-run` は波を閉じずに返す。** 失敗したタスクの worktree は残る。
-裁定してから `--run-id` で再開する。完了済みのタスクは再 dispatch されない。
-
-### sdd-run 経路でない場合: deterministic-loop / 手動経路
-
-`sdd-run` の前提が揃わないなら、claude は [deterministic-loop] 経路、codex と opencode は手動経路でこの手順を使う。
-ツール名ではなく `sdd-run` の前提が揃うかどうかで分かれる。
-
-worktree を作るのは、同時に書くエージェントが 2 つ以上ある波だけである。
-**作った worktree では必ず `wt hook pre-start` を同期実行する。** これを飛ばすと実装エージェントが
-`node_modules` も `.env` も無い作業ツリーに着地する。
-
-`~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` がプランの
-`Depends on:` を読み、同時に走らせてよいタスクの組を出力する。
-
-```
-wave 1: 1
-wave 2: 2 3
-wave 3: 4
-```
-
-### 未設定経路の波の回し方
-
-**1 タスクだけの波**: worktree を作らず、現在の作業ツリーで実行する。ブランチも merge も要らない。
-ただし dispatch 前に作業ツリーと index が clean であることを確認し、実行中はあなたも人間もそこを触らない。
-
-**2 タスク以上の波**:
-
-1. 波の base を記録する（`git rev-parse HEAD`）。波の全タスクがここから分岐する
-2. タスクごとに worktree を作る
-   ```bash
-   git worktree add "<repo-root>/.worktrees/task-<N>" -b "sdd/task-<N>" <wave-base>
-   ```
-   リポジトリに `.config/wt.toml` があるなら、worktree ごとにセットアップを走らせる。
-   ```bash
-   (cd "<repo-root>/.worktrees/task-<N>" && wt hook pre-start)
-   ```
-   **`pre-` を使う。** `post-` は背後で走って即座に戻るので、実装エージェントが依存の入っていない作業ツリーでテストを回すことになる。
-3. タスクごとに brief を作り、worktree の絶対パスを `workdir` として実装エージェントへ渡す
-4. 全タスクの完了通知が返るまで待つ
-5. 完了したタスクを順にマージする
-   ```bash
-   git merge --no-ff "sdd/task-<N>"
-   ```
-6. worktree とブランチを片付ける
-   ```bash
-   git worktree remove "<repo-root>/.worktrees/task-<N>"
-   git branch -d "sdd/task-<N>"
-   ```
-
-**マージが衝突したら止める。** 「独立」の判断が外れた証拠である。プランの `Depends on:` か `Files:` が実態と合っていない。
-衝突の内容と該当タスク番号をユーザーに報告し、自分で解消して先へ進まない。
-
-**波の中で一部が失敗したら、失敗したタスクの worktree は片付けない。** 人が中を確認して解決してから波を閉じる。
+**波の中で一部が失敗したら、失敗したタスクの worktree は片付けない。** 人が中を確認して
+解決してから波を閉じる。
 
 ### ledger
 
@@ -381,11 +146,7 @@ Wave 2: merged 3,4 -> 9b2e1c4
 
 ## タスクループ
 
-{{ if eq .tool "claude" }}
-[deterministic-loop] 経路では、この節の 1〜4 が `sdd-task.js` の中で自動化される。**規則そのものはこの節が正**であり、[deterministic-loop] はそれを実装したものである。controller が自分で担うのは Setup、[deterministic-loop] への引数の用意、返り値の処理、ledger、裁定、人間への確認である。
-{{ else }}
-この節の 1〜4 を controller が自分で回す。[deterministic-loop] が無いので、ラウンド数を数え、上限で止め、裁定するのはすべてあなたである。
-{{ end }}
+この節の 1 から 4 を親が回す。ラウンド数を数え、上限で止め、裁定するのは親である。
 
 dispatch プロンプトに貼ったものと、subagent が返したものは、以降このセッションが続く限りあなたの context に residue として残り、毎ターン読み直される。**成果物はファイルで受け渡す。**
 
@@ -405,7 +166,7 @@ dispatch の前に BASE（`git rev-parse HEAD`）を記録する。review packag
 - **報告ファイル**は brief に合わせて名付ける（brief `…/task-N-brief.md` → report `…/task-N-report.md`）
 - dispatch プロンプトは 1 つのタスクを説明するものであって、セッションの履歴ではない。**過去タスクの要約を積み上げて貼らない**。実セッションで dispatch プロンプトが 42k 文字に達し、その 99% が貼り付けた履歴だった例がある
 - 前のタスクがこのタスクの触る領域に指摘を park しているなら、その ledger エントリへのポインタを添える
-- （手動経路のみ）dispatch 結果に出る **agent の識別子を記録する**。fix ラウンド 1-3 はこのエージェントを [resume-subagent] で再開する
+- dispatch 結果に出る **子の識別子を記録する**。fix ラウンド 1-3 はこの子を [resume-subagent] で再開する。再開できない環境では新しい子を立て、報告ファイルで記憶を引き継ぐ
 - **実装 subagent を並行させてよいのは同じ波の中だけ**。波は `Depends on:` から計算され、同じ波のタスクは互いに依存せずファイルも重ならない。波をまたいで並行させない。worktree を用意せずに並行させない（作業ツリーと git index が衝突する）
 
 ### 2. 報告を処理する
@@ -453,7 +214,7 @@ implementer が質問してきたら（着手前でも作業中でも）、明�
 
 それ以外はループに入る。1 ラウンド ＝ 1 回の fix dispatch ＋ 1 回のスコープ限定再レビュー。**1 タスクにつき最大 5 ラウンド**。
 
-**ラウンド 1-3 — 元の implementer を再開する。** 記録した agent 識別子に [resume-subagent] で未解決の指摘をそのまま送る。その context は無傷で、タスクもコードも自分の判断も覚えている。再開できない場合は、brief のパス・報告ファイルのパス・指摘を持たせて新しい implementer を dispatch する。どちらにせよ報告ファイルが永続的な記憶になる。**[deterministic-loop] 経路では常に後者**（`agent()` は毎回新しいエージェントのため）。
+**ラウンド 1-3 — 元の implementer を再開する。** 記録した agent 識別子に [resume-subagent] で未解決の指摘をそのまま送る。その context は無傷で、タスクもコードも自分の判断も覚えている。再開できない場合は、brief のパス・報告ファイルのパス・指摘を持たせて新しい implementer を dispatch する。どちらにせよ報告ファイルが永続的な記憶になる。
 
 **ラウンド 4-5 — `sdd-implementer-think` で新しい implementer を dispatch する。** brief のパス、報告ファイルのパス、未解決の指摘、そしてこの枠組みを渡す:「このタスクは過去 [N] 回別の implementer が試みた。今はあなたが担当する。何を試したかは報告ファイルにある」。3 回の再開を生き延びたループは、たいてい implementer が自分の問題を見られないという意味である。新しい目と能力の引き上げを 1 手で行う。
 
@@ -487,21 +248,9 @@ implementer が質問してきたら（着手前でも作業中でも）、明�
 
 ブランチ全体のレビューにも package を渡す。`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD` を実行する（MERGE_BASE はブランチの分岐元、例 `git merge-base master HEAD`）。出力されたパスを渡し、最終レビュアーがブランチ diff を git コマンドで再導出せず 1 ファイルを読めるようにする。
 
-{{ if eq .tool "claude" }}
-**workflow 経路**では `workflows/sdd-final-review.js` を 1 回呼ぶ。「最終レビュー → fix 波 1 回 → スコープ限定の再レビュー 1 回」がこの順に固定される。`args` に渡すもの: `plan`、`packagePath`（いま作った package）、`mergeBase`、`head`、`description`（何を実装したかの概要）、`deferred`（ledger の先送り Minor の 1 行要約の配列）、`parked`（ruling 付きで park された指摘の配列）。
-
-返り値の `status`: `CLEAN`（blocking なし）/ `FIXED`（fix 波で全部解消）/ `RESIDUAL`（`residual` が残った）/ `BLOCKED` / `AGENT_FAILED`。`triage` は先送り・park 項目について merge 前に直すべきかの判定なので、ledger に反映する。
-{{ end }}
-
-**手動経路**では `sdd-final-reviewer` を dispatch する。ledger の先送り Minor 行と park 行を指し示し、merge 前に直すべきものを選別させる。
-
 最終レビューが指摘を返したら、**指摘リスト全体を持たせた fix subagent を 1 つだけ** dispatch する。指摘ごとに fixer を立てない。指摘ごとの fixer はそれぞれ context を作り直しスイートを回し直す。実セッションで、最終レビューの fix 波が全タスクの合計より高くついた例がある。
 
 その後、fix 範囲について**スコープ限定の再レビューをちょうど 1 回**行う（`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE FIX_BASE HEAD` と `sdd-re-reviewer`）。残った指摘はタスクループのブレーカーと同じく裁定する。ruling 付きで park するか、土台になっているものなら止める。**2 回目の fix 波は無い**。残った土台級の指摘は、finishing-a-development-branch が選択肢を提示する場で、ユーザーの前に出る。
-
-{{ if eq .tool "claude" }}
-workflow 経路ではこの 2 段が `sdd-final-review.js` の中で固定されている。`RESIDUAL` が返ってきたときの裁定だけが controller の仕事である。
-{{ end }}
 
 ## 仕上げ
 
@@ -522,18 +271,8 @@ finishing-a-development-branch を起動する。
 | 「レビューはループを遅くする」 | レビュー無しのループはただの未検証の空転である。レビューはループのブレーキでありハンドルである |
 | 「ledger の記帳は手間だ」 | ledger は compaction を越えて残る唯一のもの。ledger を持たない controller は完了済みタスク列を再 dispatch している |
 | 「タスクの合間に進捗を報告したほうが親切だ」 | 実行を頼まれている。確認と要約は時間を奪う。止まるのは BLOCKED と完了時だけ |
-{{- if eq .tool "claude" }}
-| 「workflow は大げさなので今回は手で回す」 | 手で回すループが崩れるのは、context が伸びて記憶が薄れた後半である。ちょうどそこで一番効く |
-| 「全タスクを 1 つの workflow にまとめれば速い」 | ledger は タスクごとに書かれてこそ compaction を越える。人間の判断もタスク境界に置く。1 タスク 1 workflow |
-| 「workflow の中でユーザーに聞けばよい」 | workflow は背景で走り、対話手段を持たない。人間の判断が要る状態は controller に返して聞く |
-{{- else }}
 | 「ラウンド数はだいたい覚えているので数えない」 | 上限を数えないループは止まらない。ラウンドごとに ledger へ書き、5 で止める |
-{{- end }}
-| 「返ってきた status を読まずに次のタスクへ進む」 | `cannotVerify` と `minor` は controller が引き取る前提で返っている。読まなければ黙って捨てたのと同じ |
 | 「タスクは独立に見えるので worktree 無しで並行させる」 | ファイルが重ならなくても、同時に `git add` / `git commit` すれば index が衝突する。並行するなら worktree を切る |
-{{- if eq .tool "claude" }}
-| 「波の [deterministic-loop] を 1 本ずつ起動する」 | [deterministic-loop] は起動すると即座に返って背景で走る。1 メッセージにまとめないと直列になり、並行にした意味が消える |
-{{- end }}
 | 「マージ衝突は自分で解消すればよい」 | 衝突は「独立」の判断が外れた証拠である。プランの依存宣言が誤っており、同じ誤りが後の波にも残っている。止めて報告する |
 | 「先に進める波があるので失敗したタスクは後回しにする」 | 波を閉じずに進めると ledger と worktree の対応が追えなくなる。波は 1 つずつ閉じる |
 
@@ -541,33 +280,32 @@ finishing-a-development-branch を起動する。
 
 ```
 [using-git-worktrees で worktree を確認]
-[プランを 1 回読む: _cellfusion/plans/2026-07-31-feature.md]
+[プランを 1 回読む: _cellfusion/plans/2026-09-06-feature.md]
 [プランを 1 度だけ矛盾検査 — 検出なし]
 [全タスクの todo を作成]
+[task-waves で波を計算: wave 1: 1 / wave 2: 2 3]
 
-[sdd-run --plan <絶対パス>]
+[MAD の implement を開始。plan / spec / ledger の絶対パスを渡す]
 
-→ status NEEDS_ATTENTION / runId 20260731T101530-a1b2c3
-   attention: [{ task: 2, status: CAP_REACHED, rounds: 5,
-                 open: ["stale-branch が resets_at を検証していない"],
-                 branch: "sdd/.../task-2", workdir: "..." }]
-   ledger: <workspace>/<runId>/progress.md
+[wave 1] task 1
+  [task-brief → brief パス]
+  [BASE を記録: git rev-parse HEAD]
+  [implementer を起動 → DONE]
+  [review-package PLAN BASE HEAD → package パス]
+  [task-reviewer を起動 → spec ✅ / 品質 ❌ Important 1 件]
+  [fix round 1/5 → re-reviewer → ADDRESSED]
+  [ledger: Task 1: complete (commits a1b2c3d..e4f5a6b, review clean)]
 
-[open を 1 件ずつ裁定 — レビュアーの指摘は本物だが下流が乗っていない。park する]
-[ledger: Task 2: parked — <指摘> — ruling: <なぜコードのままでよいか>]
-
-[sdd-run --plan <絶対パス> --run-id 20260731T101530-a1b2c3]
-
-→ status COMPLETE
-
-[cannotVerify を ledger から拾い、1 件ずつ自分で確認 — 穴ではない]
+[wave 2] task 2 と task 3 を並列。親が node ごとに worktree を作る
+  [両方 complete → git merge --no-ff で順に取り込む]
+  [ledger: Wave 2: merged 2,3 -> 9b2e1c4]
+  [workspaces.json の integration を merged にし、archive する]
 
 [全タスク完了後]
 [review-package PLAN $(git merge-base master HEAD) HEAD → package パス]
-[dispatch-subagent: sdd-final-reviewer
-   packagePath / description / deferred（ledger の先送り 4 件）/ parked（1 件）]
+[final-reviewer を起動。package / 概要 / 先送り Minor / park 済みの指摘を渡す]
 
-→ status CLEAN / readyToMerge yes
+→ CLEAN / readyToMerge yes
 
 [このプランの workspace を削除]
 

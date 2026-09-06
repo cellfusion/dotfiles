@@ -44,41 +44,110 @@ for role in $(jq -r 'keys[]' "$FIXTURE/paseo-routing.json"); do
   done
 done
 
-# 6 つの汎用の役割がすべて routing にある。
-for role in researcher synthesizer judge reviewer implementer writer; do
+# MAD の汎用役と delivery が直接起動する author / planner / review 統合役は、Paseo routing にある。
+for role in researcher synthesizer judge reviewer implementer spec-author plan-author review-synthesizer; do
   known="$(jq -r --arg r "$role" 'has($r)' "$FIXTURE/paseo-routing.json")"
   assert_eq "$known" "true" "routing: $role がある"
 done
 
-# 汎用の役割には mad-agent が読む system prompt と出力スキーマが揃っている。
-for role in researcher synthesizer judge reviewer implementer writer; do
-  p="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-    "{{ includeTemplate \"agent-defs/prompts/$role.md\" . }}" 2>/dev/null)"
-  assert_not_contains "|$p|" "||" "$role: prompt が展開できる"
-  s="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" 2>/dev/null)"
-  ok="$(printf '%s' "$s" | jq empty 2>/dev/null && echo yes || echo no)"
-  assert_eq "$ok" "yes" "$role: schema が JSON として妥当"
-  assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/prompts/$role.md.tmpl" ] \
-    && echo yes || echo no)" "yes" "$role: prompt の配布用 .tmpl がある"
-  assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/schemas/$role.json.tmpl" ] \
-    && echo yes || echo no)" "yes" "$role: schema の配布用 .tmpl がある"
+# delivery の論理責務は manifest で 1 つの実 role に割り当てる。parent はこの map を
+# 読んで、Paseo MCP と native subagent のどちらでも同じ role を起動する。
+for duty in spec-author spec-reviewer planner plan-reviewer task-graph-analyzer \
+            implementer task-reviewer re-reviewer final-reviewer review-synthesizer; do
+  owners="$(jq -r --arg duty "$duty" '[to_entries[] | select(.value.delivery_duties | index($duty)) | .key] | length' "$FIXTURE/manifests.json")"
+  assert_eq "$owners" "1" "delivery: $duty の実 role が 1 つだけある"
 done
 
-# writer は書き込み可で、コミットしない。
-acc="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
-assert_eq "$acc" "write" "writer: access は write"
-tier="$(jq -r '.writer.tier' "$FIXTURE/manifests.json")"
-assert_eq "$tier" "work" "writer: tier は work"
-wp="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/prompts/writer.md" . }}')"
-assert_contains "$wp" "コミットしない" "writer: コミットしないと書いてある"
-assert_contains "$wp" "新しく作る" "writer: ファイルを新しく作ってよいと書いてある"
-ws="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/schemas/writer.json" . }}')"
-req="$(printf '%s' "$ws" | jq -r '.required | join(",")')"
-assert_contains "$req" "files" "writer: files は required"
-assert_contains "$req" "changes" "writer: changes は required"
+# delivery role は backend 非依存の attempt handoff 契約を持ち、prompt / schema / 両 routing
+# に実体がある。これにより role 名だけが存在して backend ごとに成果物形式が分かれる事故を防ぐ。
+for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
+  contract="$(jq -r --arg role "$role" '.[$role].artifact_contract // ""' "$FIXTURE/manifests.json")"
+  assert_eq "$contract" "mad-attempt-v1" "delivery: $role は mad-attempt-v1 を使う"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/$role.md" ] && echo yes || echo no)" \
+            "yes" "delivery: $role の prompt がある"
+  assert_eq "$([ -f "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/$role.json" ] && echo yes || echo no)" \
+            "yes" "delivery: $role の schema がある"
+  native="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/paseo-routing.json")"
+  assert_eq "$native" "true" "delivery: $role は Paseo MCP で route できる"
+done
+
+# refine の改稿役は master から取り込んだ writer である。契約・3 runtime 定義・routing は
+# 上の汎用ループが `delivery_duties` を経由してすでに検査している。ここで名指しするのは、
+# その `delivery_duties` 自体が壊れるケースだけである。`writer` が配列から抜け落ちると
+# writer は汎用ループの対象から静かに外れ、ループは何も言わずに writer を見なくなる。
+# `refine` は改稿役を起動できなくなるのに、テストは緑のままになる。
+writer_duties="$(jq -r '.writer.delivery_duties | join(",")' "$FIXTURE/manifests.json")"
+assert_eq "$writer_duties" "writer" "delivery: writer の論理責務は writer だけ"
+
+# 同じ理由で access が read に変わっても汎用ループは検査しない。writer は書き込み役でなければ
+# 対象ファイルを書き換えられず、改稿という職務そのものが果たせなくなる。
+writer_access="$(jq -r '.writer.access' "$FIXTURE/manifests.json")"
+assert_eq "$writer_access" "write" "delivery: writer は書き込み役"
+
+# 正規成果物を作る役は、status ごとに成功成果物か parent relay 用 decision request のどちらを
+# handoff するかを schema で排他的に定める。テンプレートの文字列を探すだけでなく、共有 validator
+# に実例を渡して成功と不正な混在の拒否を確認する。
+validate_example() {
+  local schema="$1"
+  local example="$2"
+  printf '%s' "$example" | SCHEMA="$schema" \
+    VALIDATOR="$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_json-schema" node -e '
+    const fs = require("fs");
+    const { validateSchema } = require(process.env.VALIDATOR);
+    let input = "";
+    process.stdin.on("data", chunk => { input += chunk; });
+    process.stdin.on("end", () => {
+      const errors = validateSchema(JSON.parse(fs.readFileSync(process.env.SCHEMA, "utf8")), JSON.parse(input));
+      process.stdout.write(errors.length === 0 ? "valid" : "invalid");
+    });
+  '
+}
+
+for role in spec-author plan-author; do
+  schema="$FIXTURE/$role-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
+  assert_eq "$(validate_example "$schema" '{"status":"ok","artifactPath":"/tmp/canonical.md","decisionRequestPath":null,"summary":"done"}')" \
+            "valid" "delivery: $role は成功時に artifactPath だけを受け取る"
+  assert_eq "$(validate_example "$schema" '{"status":"needs_decision","artifactPath":null,"decisionRequestPath":"/tmp/decision.md","summary":"need input"}')" \
+            "valid" "delivery: $role は判断待ちで decisionRequestPath だけを受け取る"
+  assert_eq "$(validate_example "$schema" '{"status":"ok","artifactPath":"/tmp/canonical.md","decisionRequestPath":"/tmp/decision.md","summary":"mixed"}')" \
+            "invalid" "delivery: $role は成功時に decision request を混在させない"
+  assert_eq "$(validate_example "$schema" '{"status":"needs_decision","artifactPath":"/tmp/canonical.md","decisionRequestPath":null,"summary":"mixed"}')" \
+            "invalid" "delivery: $role は判断待ちに成果物を混在させない"
+done
+
+# 全 role の schema が decision request の経路を持つ。無いと子は判断を求められない。
+for role in spec-author plan-author reviewer researcher judge synthesizer \
+            review-synthesizer implementer writer; do
+  schema="$FIXTURE/$role-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    "{{ includeTemplate \"agent-defs/schemas/$role.json\" . }}" > "$schema"
+  has="$(jq -r 'if (.properties.decisionRequestPath != null)
+                   and ((.required | index("decisionRequestPath")) != null)
+                then "yes" else "no" end' "$schema" 2>&1)"
+  assert_eq "$has" "yes" "$role: schema が decisionRequestPath を required で持つ"
+done
+
+# review 統合は調査統合と異なり、採用 verdict と修正可能な finding を返す専用 role を使う。
+review_schema="$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/schemas/review-synthesizer.json"
+assert_eq "$(test -f "$review_schema" && echo yes || echo no)" "yes" \
+          "delivery: review-synthesizer の schema がある"
+if [ -f "$review_schema" ]; then
+  rendered_review_schema="$FIXTURE/review-synthesizer-schema.json"
+  chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+    '{{ includeTemplate "agent-defs/schemas/review-synthesizer.json" . }}' > "$rendered_review_schema"
+  assert_contains "$(cat "$rendered_review_schema")" '"verdict"' \
+    "delivery: review-synthesizer は verdict を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"severity"' \
+    "delivery: review-synthesizer は finding severity を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"location"' \
+    "delivery: review-synthesizer は finding location を返す"
+  assert_contains "$(cat "$rendered_review_schema")" '"fix"' \
+    "delivery: review-synthesizer は finding fix を返す"
+  assert_eq "$(validate_example "$rendered_review_schema" '{"verdict":"needs_fixes","findings":[{"severity":"important","summary":"missing test","location":"tests/example.sh:12","fix":"add a regression test","planMandated":true}],"summary":"one actionable issue","strengths":null,"decisionRequestPath":null}')" \
+            "valid" "delivery: review-synthesizer は verdict と修正可能な finding を返す"
+fi
 
 # 既定の provider は claude と codex の 2 つである。
 for p in claude codex; do
@@ -121,6 +190,36 @@ done
 for f in paseo-providers paseo-routing paseo-project-routing; do
   assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/agent-defs/$f.json.tmpl" ] && echo yes || echo no)" \
             "yes" "$f: 配布用の .tmpl がある"
+done
+
+# native subagent 用 routing も Paseo MCP と同じ delivery role 集合を解決できる。
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/routing.json" . }}' > "$FIXTURE/routing.json"
+for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
+  known="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/routing.json")"
+  assert_eq "$known" "true" "delivery: $role は native subagent で route できる"
+done
+
+# routing に名前があるだけでは `[dispatch-subagent: role]` は解決しない。runtime ごとの
+# agents ディレクトリに定義が無いと、Paseo MCP が使えない環境で子を起動できない。
+for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
+  for def in "private_dot_config/claude/agents/$role.md.tmpl" \
+             "private_dot_config/opencode/agents/$role.md.tmpl" \
+             "private_dot_config/codex/agents/$role.toml.tmpl"; do
+    assert_eq "$([ -f "$CHEZMOI_SOURCE/$def" ] && echo yes || echo no)" "yes" \
+      "subagent: $role の定義がある: $def"
+  done
+done
+
+# MAD の role 名は、手書きの非 MAD エージェントと衝突しない。衝突すると
+# `[dispatch-subagent: role]` が別のエージェントを黙って起動する。
+for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
+  for handwritten in "private_dot_config/claude/agents/$role.md" \
+                     "private_dot_config/opencode/agents/$role.md" \
+                     "private_dot_config/codex/agents/$role.toml"; do
+    assert_eq "$([ -f "$CHEZMOI_SOURCE/$handwritten" ] && echo yes || echo no)" "no" \
+      "subagent: $role が手書き定義と衝突しない: $handwritten"
+  done
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

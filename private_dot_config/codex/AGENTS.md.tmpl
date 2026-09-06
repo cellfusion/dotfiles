@@ -16,6 +16,14 @@ type: `feat` 新機能 / `fix` バグ修正 / `refactor` 動作を変えない�
 - 命令形を使う（"add feature"、"added feature" ではない）
 - 1 コミット 1 論理変更
 
+## MCP ツール
+
+code mode では MCP ツールが通常のツール一覧に並ばない。`exec` の JS サンドボックスから `tools.mcp__<サーバー名>__<ツール名>` の形で呼ぶ。
+
+- Paseo のスキル（`~/.agents/skills/paseo/SKILL.md`）は `list_agents` のような素の名前で書いてあるが、実際の呼び名は `tools.mcp__paseo__list_agents` である。
+- Paseo を操作するときは、`paseo` CLI より MCP ツールを先に使う。
+- 使えるツール名が分からないときは、`exec` で `Object.keys(tools)` を出して確認する。ツール一覧に無いことを理由に「MCP が使えない」と答えない。
+
 ## Chezmoi
 
 - `~/.config` 配下を変更するときは、実体を直接編集せず `~/.local/share/chezmoi/` の対応するソースを編集する。

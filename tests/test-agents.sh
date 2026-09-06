@@ -96,8 +96,12 @@ out="$(render_agent sdd-final-reviewer opencode.md)"
 assert_contains "$out" "edit: deny" "final-reviewer/opencode: 編集を拒否"
 assert_contains "$out" "bash: deny" "final-reviewer/opencode: bash を拒否"
 
-# 全 agent の全ツールで、プロンプト本文が入っている。
-for a in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+# manifest にある全 agent の全ツールで、プロンプト本文が入っている。
+# `[dispatch-subagent: role]` は runtime の定義を引くので、manifest に role を足したのに
+# 定義が展開できないと、Paseo MCP が使えない環境でその role を起動できない。
+manifest_roles="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/manifests.json" . }}' | jq -r 'keys[]')"
+for a in $manifest_roles; do
   for r in claude.md codex.toml opencode.md; do
     out="$(render_agent "$a" "$r")"
     assert_contains "$out" "あなたは" "$a/$r: プロンプト本文がある"

@@ -8,6 +8,9 @@
   "synthesizer":           { "engine": "claude" },
   "judge":                 { "engine": "claude" },
   "reviewer":              { "engine": "claude" },
+  "review-synthesizer":    { "engine": "claude" },
   "implementer":           { "engine": "codex"  },
+  "spec-author":           { "engine": "claude" },
+  "plan-author":           { "engine": "claude" },
   "writer":                { "engine": "claude" }
 }

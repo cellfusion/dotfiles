@@ -65,10 +65,16 @@ dev server のような常駐プロセスだけ `post-start` に置く。
     wt merge
     wt remove feat/foo
 
-エージェント: SDD の task worktree は `wt switch --create <branch> --base <base> --no-cd
---format json -y --config ~/.config/worktrunk/agent.toml` で作る。作成は `sdd-run` が
-`task-worktree` 経由で行い、herdr には登録しない。worktree は
-`~/.local/state/sdd/worktrees/` に置かれる。.env のコピーと依存インストールは
+エージェント: `multi-agent-development` の `implement` と `spike` では、worktree を作るのは親である。
+`mcp__paseo__create_agent` は作成時に `workspaceId` を要求するので、子を起動する前に workspace が
+存在している必要がある。親は台帳の `cwd` から diff を取るので、子が別の場所に worktree を作ると
+親が取る diff が空になる。Paseo MCP backend では `mcp__paseo__create_workspace` を `isolation`
+`worktree`、`mode` `branch-off` で呼び、native subagent backend では `Agent` ツールの `isolation` に
+`worktree` を渡す。どちらも herdr には登録しない。子は親が渡した worktree の中で働く。
+
+`wt switch --create <branch> --base <base> --no-cd --format json -y --config
+~/.config/worktrunk/agent.toml` は、MAD を通さずに task worktree を直接作るときの経路である。この
+経路の worktree は `~/.local/state/sdd/worktrees/` に置かれる。.env のコピーと依存インストールは
 agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-start` を別途叩かない。
 
 - claude の workspace trust は cwd の祖先から継承される。`~/.local/state/sdd/worktrees`
@@ -77,8 +83,8 @@ agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-star
 
 片付けは `wt remove --no-delete-branch` → `git branch -d` の順で行う。
 
-`wt hook <type>` は worktree を誰が作ったかを問わず動く。手順は
-`using-git-worktrees` と `subagent-driven-development` のスキルに書いてある。
+`wt hook <type>` は worktree を誰が作ったかを問わず動く。worktree の作成・統合・後始末の手順は
+`using-git-worktrees` スキルにある。`implement` recipe の親はこの規約に従う。
 
 ## 注意点
 

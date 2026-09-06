@@ -22,6 +22,13 @@ assert_contains "$codex_agents" 'chezmoi apply' "Codex instructions: apply の�
 assert_contains "$codex_agents" 'private_dot_config/docs/keybindings.md' "Codex instructions: キーバインド文書を同期する"
 assert_contains "$codex_agents" '~/.local/share/chezmoi/' "Codex instructions: chezmoi ソース側を編集する"
 
+# --- Codex instructions が code mode での MCP ツールの呼び方を持っている ---
+# code mode の codex は MCP ツールを通常のツール一覧に出さない。Paseo のスキルは
+# 素の名前で書かれているため、対応づけを書いておかないと CLI に逃げる。
+assert_contains "$codex_agents" 'tools.mcp__' "Codex instructions: MCP ツールの呼び名を書く"
+assert_contains "$codex_agents" 'Object.keys(tools)' "Codex instructions: ツール一覧の確認方法を書く"
+assert_contains "$codex_agents" 'tools.mcp__paseo__list_agents' "Codex instructions: Paseo スキルの素の名前との対応を書く"
+
 # --- CLAUDE.md が実在しないものを指していない ---
 # 過去の移行で消えた設定への言及が残ると、毎セッション誤情報を配ることになる。
 claude_md="$(cat "$CHEZMOI_SOURCE/CLAUDE.md")"

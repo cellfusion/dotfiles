@@ -2,16 +2,14 @@
 name: requesting-code-review
 description: >-
   作業の区切り、大きめの機能の実装後、merge 前にレビューを依頼するときに使う。
-  レビュアー subagent に精密に組み立てた文脈だけを渡し、
+  レビューする子には評価のために精密に組み立てた文脈だけを渡し、
   自分の context を調整のために温存する。
-  SDD の外で単発に依頼する場合はレビュアー subagent の代わりに braid の
-  review レシピを呼ぶ。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
 # コードレビューを依頼する
 
-レビュアー subagent を dispatch するか、SDD の外なら braid の review レシピを呼んで、問題が
+レビュアー subagent を dispatch するか、SDD の外なら MAD の `review` recipe を使って、問題が
 波及する前に捕まえる。どちらの経路でも、レビュー側には**評価のために精密に組み立てた文脈**を
 渡す。あなたのセッション履歴は渡さない。
 
@@ -38,6 +36,9 @@ description: >-
 レビュアーの context に diff を 1 回の Read で載せる。SDD の中では従来経路を維持し、SDD の
 workspace のスクリプトを使う。
 
+`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE BASE HEAD OUTFILE`
+が使えるならそれを使う。使えない環境では下の手順で同じ形の package を作る。
+
 ```bash
 BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
@@ -63,45 +64,33 @@ echo "$OUT"
 
 **2. レビューを依頼する**
 
-SDD の中では従来経路を維持する。[dispatch-subagent: sdd-final-reviewer] し、dispatch プロンプト
-には次の 4 つだけを渡す。
+SDD の中では `sdd-final-reviewer` を [dispatch-subagent] する。SDD の外で単発に依頼する場合は
+MAD の `review` recipe を使う。呼び方は `multi-agent-development` スキルが持つ。
+
+どちらの経路でも、渡すのは次の 4 つだけである。セッション履歴を渡さない。
 
 - 何を実装したかの概要
-- プランまたは要件のパス（無ければ要件を数行で）
-- review package のパス
+- プランまたは要件の絶対パス（無ければ要件を数行で）
+- review package の絶対パス
 - 先送りされた指摘や park された指摘のリスト（あれば）
 
-SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上の 4 項目をレシピの 2 引数へ移す。
-必ずリポジトリルートで実行する。「braid の呼び方」の「引数」節が定めるとおり、`--arg` で渡す
-パスは実行時の cwd の下になければ read 役が読めない。`requirements` に渡す要件ファイルが
-リポジトリ外にあるなら、package と同じ `$REVIEWS` へ複製してからそのパスを渡す。
+MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` が採用可能な指摘へ
+統合する。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
 
-| 渡すもの | 移す先 |
-|---|---|
-| review package のパス | `review_file` |
-| プランまたは要件のパス | `requirements` |
-| 何を実装したかの概要 | 要件のパスが無い場合、概要と要件を数行にまとめた文字列を `requirements` に渡す |
-| 先送り・park された指摘のリスト | `requirements` に含める |
-
-```bash
-# 要件ファイルがあるとき。cwd の下に無ければ package と同じ場所へ複製してから渡す
-REQ="$(git rev-parse --show-toplevel)/_cellfusion/plans/PLAN.md"
-# 無いときは、概要と要件を数行にまとめた文字列をそのまま渡す
-# REQ='X を実装した。要件は次の 3 点である: ...'
-braid run review --arg requirements="$REQ" --arg review_file="$OUT"
-```
-
-呼び方は下の「braid の呼び方」に従う。dry-run を先に通す。
-
-`review` レシピは 3 つの `reviewer` を並列に走らせ、後段の `reviewer` が統合して `PASS` /
-`FAIL` と findings を返す。critical と important が 0 件のときだけ `PASS` になる。
+要件ファイルがリポジトリの外にある場合は、review package と同じ `_cellfusion/reviews/` へ複製
+してからその絶対パスを渡す。子は呼び出し元の作業ディレクトリの外を読めない engine 設定でも動く
+必要がある。
 
 **3. フィードバックに対応する**
 
-- Critical は直ちに直す
-- Important は次へ進む前に直す
+- Critical は直ちに直す。直すのは子である。親は指摘と review package の絶対パスを MAD の
+  `implement` recipe へ渡す
+- Important は次へ進む前に直す。渡すものと経路は Critical と同じにする
 - Minor は記録して後で扱う
 - レビュアーが誤っていれば技術的な根拠を添えて押し返す
+
+**親は Critical と Important を自分で直さない。** 親が書いた修正は独立したレビュアーの判定を
+受けない。修正の diff とテスト出力も親の会話に残り、以降のターンで毎回読み直される。
 
 受け取り方の作法は receiving-code-review を使う。
 
@@ -109,7 +98,7 @@ braid run review --arg requirements="$REQ" --arg review_file="$OUT"
 
 | 言い訳 | 実際 |
 |---|---|
-| 「レビュアーを立てず自分で diff を見る」 | あなたは調整役である。diff をインラインで読むと、作業を進めるための context を焼く。レビュアー subagent を立てれば、diff と評価はそちらの context に載り、返ってくるのは指摘だけになる |
+| 「レビュアーを立てず自分で diff を見る」 | あなたは調整役である。diff をインラインで読むと、その diff は以降のターンで毎回読み直され、調整に使える context が減る。レビュアー subagent を立てれば、diff と評価はそちらの context に載り、返ってくるのは指摘だけになる |
 | 「レビュアーには自分のセッション履歴が要る」 | 精密に組み立てた文脈を渡す。履歴は渡さない。そうすればレビュアーは思考過程ではなく成果物を見る |
 | 「単純だからレビューは省く」 | 単純な変更が壊すものは単純ではない |
 
@@ -125,5 +114,3 @@ braid run review --arg requirements="$REQ" --arg review_file="$OUT"
 - 技術的な根拠を添えて押し返す
 - 動作を証明するコードやテストを示す
 - 説明を求める
-
-{{ includeTemplate "agent-skills/_braid-invocation.md" . }}

@@ -1,10 +1,11 @@
 {
   "type": "object",
-  "required": ["summary", "points", "conflicts"],
+  "required": ["summary", "points", "conflicts", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "summary": { "type": "string" },
     "points": { "type": "array", "items": { "type": "string" } },
-    "conflicts": { "type": ["array", "null"], "items": { "type": "string" } }
+    "conflicts": { "type": ["array", "null"], "items": { "type": "string" } },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }

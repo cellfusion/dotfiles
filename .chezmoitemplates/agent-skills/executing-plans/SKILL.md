@@ -1,9 +1,10 @@
 ---
 name: executing-plans
 description: >-
-  実装プランを、subagent を使わずにこのセッションで直列に実行するときに使う。
-  subagent が使える環境では subagent-driven-development のほうが適する。
-  チェックポイントでレビューを挟みながらタスクを順に消化する。
+  実装が小さく、MAD を使わなくてよい実装プランを、このセッションで直列に実行するときに使う。
+  並列にできるタスクを持つプランや worktree の隔離が要るプランは
+  subagent-driven-development のほうが適する。
+  タスクの区切りでレビューを挟みながらタスクを順に消化する。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
@@ -15,7 +16,15 @@ description: >-
 
 **開始時に宣言する**: 「executing-plans を使ってこのプランを実装する」
 
-**先に確認する**: subagent が使えるなら subagent-driven-development のほうが結果が良い。タスクごとに context が隔離され、タスク単位のレビューが入り、あなた自身の context が調整のために温存される。subagent が使えない環境のときだけこのスキルを使う。
+**先に確認する**: このプランは実装が小さく、MAD を使わなくてよいか。次のどれかに当たるなら
+subagent-driven-development のほうが適する。
+
+- 依存が無く並列にできるタスクが 2 つ以上ある
+- 同時に書くタスクがあり、worktree の隔離が要る
+- タスクごとに独立したレビュアーの gate を掛けたい
+
+どれにも当たらないなら、このスキルで直列に実行する。子は立てない。親が実装し、タスクの区切りで
+自分で diff を見返す。
 
 ## 手順
 
@@ -70,6 +79,6 @@ description: >-
 - プランをまず批判的にレビューする
 - プランのステップをその通りに実行する
 - 検証を飛ばさない
-- プランがスキルを指定していればそれを起動する
 - 詰まったら止まる。推測しない
 - ユーザーの明示的な同意なしに main / master で実装を始めない
+- 実装が想定より大きいと分かったら止まる。subagent-driven-development へ切り替えるかをユーザーに聞く

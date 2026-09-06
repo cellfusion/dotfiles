@@ -42,6 +42,22 @@
 .local/bin/zk-today
 .local/bin/ralph-relay
 
+# braid は MAD へ置き換えた。旧実行バイナリを回収する。
+.local/bin/braid
+
+# braid の旧スキル配布先と、MAD の旧 shell runner / recipe を回収する。
+# 現行 MAD は親エージェントが手動オーケストレーションを担うため、これらの
+# 配布済み実体が残ると退役した braid や旧 runner が誤って参照される。
+.agents/skills/braid
+.config/claude/skills/braid
+.config/opencode/skills/braid
+.agents/skills/multi-agent-development/scripts/mad-run
+.agents/skills/multi-agent-development/scripts/mad-agent
+.agents/skills/multi-agent-development/scripts/mad-route
+.agents/skills/multi-agent-development/scripts/mad-lib.sh
+.agents/skills/multi-agent-development/scripts/mad-runs
+.agents/skills/multi-agent-development/recipes
+
 # herdr-sessions は agent-environments.zsh へ統合した。1 セッション 1 ファイルだと
 # ファイル名に環境名が現れ、public なリポジトリには置けない。環境定義は
 # ~/.config/chezmoi/private-data.toml の [[data.environments]] が持つ。

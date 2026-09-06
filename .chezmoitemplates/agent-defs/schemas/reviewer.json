@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["status", "findings", "strengths"],
+  "required": ["status", "findings", "strengths", "decisionRequestPath"],
   "additionalProperties": false,
   "properties": {
     "status": { "type": "string", "enum": ["PASS", "FAIL"] },
@@ -18,6 +18,7 @@
         }
       }
     },
-    "strengths": { "type": ["string", "null"] }
+    "strengths": { "type": ["string", "null"] },
+    "decisionRequestPath": { "type": ["string", "null"] }
   }
 }
