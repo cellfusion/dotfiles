@@ -239,10 +239,11 @@ TXT
 )
 
 assert_eq "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" \
-  "$(printf '42\t%s' "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
+  "$(printf '42\t%s\t13\t%s' "$usage_expect" "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
 
-# 5 時間の窓（Current session）や Fable の行を拾うと、別の数字と時刻が入る。
-assert_not_contains "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" "13" \
+# 5 時間の窓（Current session）の値も出力に入るので、含むかどうかでは
+# 判定できない。週次が 1 項目目に来ることで見る。Fable の行は拾わない。
+assert_eq "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse | cut -f1)" "42" \
   "採取: 5 時間の窓の使用率を週次として拾わない"
 
 # 分がちょうどのとき /usage は「7pm」と分を省く。date -j は書式に無い項目を
@@ -250,8 +251,14 @@ assert_not_contains "$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)" "13" 
 hour_expect=$(( usage_target - usage_target % 3600 ))
 hour_day="$(LC_ALL=C date -r "$hour_expect" '+%b %d')"
 hour_time="$(LC_ALL=C date -r "$hour_expect" '+%I' | sed 's/^0//')$(LC_ALL=C date -r "$hour_expect" '+%p' | tr '[:upper:]' '[:lower:]')"
-assert_eq "$(printf 'Current week (all models): 42%% used · resets %s at %s (Asia/Tokyo)\n' "$hour_day" "$hour_time" | "$COLLECT_SH" parse)" \
-  "$(printf '42\t%s' "$hour_expect")" "採取: 分を省いた書き方のリセット時刻を読む"
+week_only=$(printf 'Current week (all models): 42%% used · resets %s at %s (Asia/Tokyo)' "$hour_day" "$hour_time")
+assert_eq "$(printf '%s\n' "$week_only" | "$COLLECT_SH" parse)" \
+  "$(printf '42\t%s\t-\t-' "$hour_expect")" "採取: 分を省いた書き方のリセット時刻を読む"
+
+# 5 時間の行が無くても採取全体は落とさない。上の assert は出力しか見ていない。
+printf '%s\n' "$week_only" | "$COLLECT_SH" parse >/dev/null
+week_only_rc=$?
+assert_eq "$week_only_rc" "0" "採取: 5 時間の行が無くても parse は成功する"
 
 no_week=$(cat <<TXT
 You are currently using your subscription to power your Claude Code usage
@@ -271,7 +278,15 @@ assert_eq "$no_reset_out" "" "採取: リセット時刻が無ければ何も出
 
 printf '%s\n' "$usage_text" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
-  "$(printf '42\t%s\tok\t-\t-' "$usage_expect")" "採取: 書いたキャッシュを usage.sh が ok として読む"
+  "$(printf '42\t%s\tok\t13\t%s' "$usage_expect" "$usage_expect")" "採取: 書いたキャッシュを usage.sh が ok として読む"
+
+# 5 時間の値が取れたときだけキーを書く。書かなければ古いキャッシュと同じ形になり、
+# provider_claude が扱う場合分けが 1 つで済む。
+assert_contains "$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")" 'session_pct' \
+  "採取: 5 時間の値が取れたらキャッシュに session_pct を書く"
+printf '%s\n' "$week_only" | HOME="$fixture_home" "$COLLECT_SH" record week-only-claude
+assert_not_contains "$(cat "$fixture_home/.cache/sketchybar-usage/week-only-claude.json")" 'session_pct' \
+  "採取: 5 時間の値が無ければキャッシュに session_pct を書かない"
 
 kept_cache=$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")
 printf '%s\n' "$no_week" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
