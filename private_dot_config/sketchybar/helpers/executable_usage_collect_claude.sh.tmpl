@@ -3,7 +3,7 @@
 # launchd の com.cellfusion.sketchybar-usage-claude が定期的に実行する。
 # 背景と有効化の手順は ~/.config/docs/sketchybar-usage.md にある。
 #
-# 無引数: 定義された環境ごとに claude を 1 回実行し、週次の使用率を
+# 無引数: 定義された環境ごとに claude を 1 回実行し、週次と 5 時間制限の使用率を
 #         ~/.cache/sketchybar-usage/<環境名>-claude.json へ書く。
 # parse:  標準入力の /usage の出力から used_pct<TAB>resets_at<TAB>session_pct<TAB>session_resets_at を出す。
 # record <cache_key>: 標準入力を parse してキャッシュへ書く。

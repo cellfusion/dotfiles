@@ -57,7 +57,7 @@ provider_codex() {
     | map(select(. != null and .window_minutes != null and .window_minutes >= 10080))
     | if length == 0 then empty
       else max_by(.window_minutes)
-      | [((.used_percent // empty) | floor), (.resets_at // empty)]
+      | [(.used_percent | if . == null then "" else floor end), (.resets_at // "")]
       | @tsv
       end' 2>/dev/null)
   pct=$(printf '%s' "$limits" | cut -f1)
@@ -73,7 +73,7 @@ provider_codex() {
     | map(select(. != null and .window_minutes != null and .window_minutes < 10080))
     | if length == 0 then empty
       else min_by(.window_minutes)
-      | [((.used_percent // empty) | floor), (.resets_at // empty)]
+      | [(.used_percent | if . == null then "" else floor end), (.resets_at // "")]
       | @tsv
       end' 2>/dev/null)
   session_pct=$(printf '%s' "$session_limits" | cut -f1)

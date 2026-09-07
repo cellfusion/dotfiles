@@ -135,17 +135,32 @@ rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
   "$(printf '31\t%s\tok\t31\t1700000000' "$primary_reset")" "週次と5時間の両方があれば週次側が選ばれる"
 
+# 5時間側の used_percent または resets_at が欠けていても、欠損した値を
+# もう一方の値として扱わず、両方を - にする。
+session_pct_only_log='{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":31.0,"window_minutes":300},"secondary":{"used_percent":31.0,"window_minutes":10080,"resets_at":4102444800}}}}'
+put_log "$fixture_home" ".config/codex/sessions/2026/08/05/session-pct-only.jsonl" "$session_pct_only_log" 202608050000
+rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
+  "$(printf '31\t%s\tok\t-\t-' "$primary_reset")" "5時間側のリセット時刻が欠けていれば両方を - にする"
+
+session_reset_only_log='{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"window_minutes":300,"resets_at":1700000000},"secondary":{"used_percent":31.0,"window_minutes":10080,"resets_at":4102444800}}}}'
+put_log "$fixture_home" ".config/codex/sessions/2026/08/06/session-reset-only.jsonl" "$session_reset_only_log" 202608060000
+rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
+assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
+  "$(printf '31\t%s\tok\t-\t-' "$primary_reset")" "5時間側の使用率が欠けていれば両方を - にする"
+
 # 集約テストの前提(primary Codex はログもキャッシュも無く error)へ戻す。
 rm -rf "$fixture_home/.config/codex/sessions"
 rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 
 now=$(date +%s)
-printf '{"used_pct":"23","resets_at":"%s","ts":%s}\n' "$primary_reset" "$now" > \
+printf '{"used_pct":"23","resets_at":"%s","session_pct":"58","session_resets_at":"1700000000","ts":%s}\n' \
+  "$primary_reset" "$now" > \
   "$fixture_home/.cache/sketchybar-usage/default-claude.json"
 printf '{"used_pct":"71","resets_at":"%s","ts":%s}\n' "$secondary_reset" "$now" > \
   "$fixture_home/.cache/sketchybar-usage/work-claude.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude" default-claude)" \
-  "$(printf '23\t%s\tok\t-\t-' "$primary_reset")" "default Claude のキャッシュを読む"
+  "$(printf '23\t%s\tok\t58\t1700000000' "$primary_reset")" "default Claude のキャッシュを読む"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" claude "$fixture_home/.config/claude_work" work-claude)" \
   "$(printf '71\t%s\tok\t-\t-' "$secondary_reset")" "work Claude のキャッシュを読む"
 
@@ -165,7 +180,9 @@ assert_not_contains "$statusline" 'AGENT_ENV_SESSION' \
 
 aggregate=$(HOME="$fixture_home" "$USAGE_SH")
 assert_eq "$(printf '%s\n' "$aggregate" | awk 'END { print NR }')" "5" "無引数実行は定義された環境別レコードを出す"
-assert_contains "$aggregate" "$(printf 'P1\tclaude\t23')" "集約に default Claude を含める"
+assert_eq "$(printf '%s\n' "$aggregate" | awk -F '\t' '$1 == "P1" && $2 == "claude" { print }')" \
+  "$(printf 'P1\tclaude\t23\t%s\tok\tcrit\t58\t1700000000\twarn' "$primary_reset")" \
+  "集約の default Claude が 5 時間の severity を 9 項目目に出す"
 assert_contains "$aggregate" "$(printf 'P1\tcodex\t-\t-\terror\tnone\t-\t-\tnone')" "集約の default Codex error をレコード内に閉じ込める"
 assert_contains "$aggregate" "$(printf 'P2\tclaude\t71')" "集約に work Claude を含める"
 assert_contains "$aggregate" "$(printf 'P2\tcodex\t67')" "集約に work Codex を含める"
