@@ -44,8 +44,8 @@ $0.03 かかるため、定期実行の経路としては選んでいない。
 3. `~/.cache/sketchybar-usage/<環境名>-claude.json` へ `{ts, used_pct, resets_at}` を書く。
 
 環境名は chezmoi の `[[data.environments]]` から描画時に埋め込む。実行時の
-`AGENT_ENV_SESSION` を見ないので、Paseo が provider ごとに `CLAUDE_CONFIG_DIR`
-だけを差し替える起動経路でも、環境と値の対応が崩れない。
+`AGENT_ENV_SESSION` を見ないので、Paseo が provider ごとに設定ディレクトリの変数を
+差し替える起動経路でも、環境と値の対応が崩れない。
 
 実行に失敗した環境のキャッシュは書き換えない。前の値が残るため、ウィジェットは
 30 分後に `stale` へ落ちる。失敗した環境があると、終了ステータスが 1 になる。

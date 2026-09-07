@@ -20,6 +20,11 @@ cat > "$cfg" <<'EOF'
     session = "solo"
     label   = "P3"
     agents  = ["codex"]
+
+[[data.environments]]
+    session = "both"
+    label   = "P4"
+    agents  = ["claude", "codex"]
 EOF
 
 SCRIPT="$(mktemp)"
@@ -139,6 +144,29 @@ assert_eq "$(jq -r '.agents.providers["codex-solo"].env.CODEX_HOME' < "$paseo_cf
   "$fixture/codex_solo" "3 つ目: codex-solo に CODEX_HOME を足す"
 assert_eq "$(jq -r '.agents.providers | has("claude-solo")' < "$paseo_cfg")" "false" \
   "claude を持たない環境に claude-<session> を作らない"
+
+# --- provider は環境が持つ全ツールの設定ディレクトリを注入する ---
+# claude の provider で動く親が codex の子プロセスを起動すると、子は親の CODEX_HOME を
+# 継承する。claude 側の変数しか注入しないと、子が別環境の codex アカウントで動く。
+assert_eq "$(jq -r '.agents.providers.claude.env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
+  "$fixture/claude" "先頭環境: claude に CLAUDE_CONFIG_DIR を足す"
+assert_eq "$(jq -r '.agents.providers.claude.env.CODEX_HOME' < "$paseo_cfg")" \
+  "$fixture/codex" "先頭環境: claude にも CODEX_HOME を足す"
+assert_eq "$(jq -r '.agents.providers.codex.env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
+  "$fixture/claude" "先頭環境: codex にも CLAUDE_CONFIG_DIR を足す"
+assert_eq "$(jq -r '.agents.providers.codex.env.CODEX_HOME' < "$paseo_cfg")" \
+  "$fixture/codex" "先頭環境: codex に CODEX_HOME を足す"
+assert_eq "$(jq -r '.agents.providers["claude-both"].env.CODEX_HOME' < "$paseo_cfg")" \
+  "$fixture/codex_both" "4 つ目: claude-both にも CODEX_HOME を足す"
+assert_eq "$(jq -r '.agents.providers["codex-both"].env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
+  "$fixture/claude_both" "4 つ目: codex-both にも CLAUDE_CONFIG_DIR を足す"
+
+# 環境が持たないツールの変数は注入しない。注入すると、その環境に無い設定ディレクトリを
+# 子が使ってしまう。
+assert_eq "$(jq -r '.agents.providers["claude-work"].env | has("CODEX_HOME")' < "$paseo_cfg")" \
+  "false" "codex を持たない環境の provider に CODEX_HOME を足さない"
+assert_eq "$(jq -r '.agents.providers["codex-solo"].env | has("CLAUDE_CONFIG_DIR")' < "$paseo_cfg")" \
+  "false" "claude を持たない環境の provider に CLAUDE_CONFIG_DIR を足さない"
 
 # --- Paseo が書いた他の設定を壊さない ---
 assert_eq "$(jq -r '.agents.providers.copilot.enabled' < "$paseo_cfg")" "false" \
