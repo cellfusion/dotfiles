@@ -71,8 +71,34 @@ attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、
 一致した rule は、候補に 2 段階の上書きを掛ける。第 1 に、rule の `roles` に対象の role の項が
 あるとき、その配列が `paseo-routing.json` の候補配列そのものを置き換える。`roles` に対象の role が
 無いときは `paseo-routing.json` の候補をそのまま使う。第 2 に、rule の `providerMap` は候補の
-provider id を別の provider id へ読み替える対応表である。置き換えた後の候補に `providerMap` を
-当てる。親はこの読み替え後の provider id で利用可能性と model を確認する。
+provider id を別の provider id へ読み替える対応表である。
+
+`roles` の置き換えと `providerMap` の間で、親は自分が動いている AI 環境を候補に当てる。当てるのは
+validator の `--resolve-candidates` である。`MAD_VALIDATE` の決め方は「成果物契約の受け入れ検証」と
+同じで、`chezmoi apply` 前は配布先に validator が無いのでソース側を使う。
+
+```bash
+MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
+if [ ! -x "$MAD_VALIDATE" ]; then
+  MAD_VALIDATE="$(git rev-parse --show-toplevel)/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
+fi
+bash "$MAD_VALIDATE" --resolve-candidates researcher
+bash "$MAD_VALIDATE" --resolve-candidates researcher '[{"provider":"claude"}]'
+```
+
+第 2 引数を渡さないときは `paseo-routing.json` の候補を使う。rule の `roles` で候補を差し替えた
+親は、差し替えた後の配列を第 2 引数に渡す。
+
+`--resolve-candidates` は、環境変数 `AGENT_ENV` が持つ環境名を候補の provider id に付ける。Paseo は
+provider ごとに `AGENT_ENV` を注入するので、親が `claude-work` で動いていれば `work` が入る。
+`AGENT_ENV` が `default` か未設定なら、先頭環境は接尾辞を持たないので候補を変えない。それ以外の
+環境では、`codex` と `claude` の候補が `codex-work`、`claude-work`、`codex`、`claude` の順に
+なる。同じ環境の provider を先に置き、読み替え前の候補を後ろに残す。同じ環境の provider が
+すべて使えないときだけ、親は後ろの候補へ落とす。
+
+`--resolve-candidates` の出力に rule の `providerMap` を当てる。仕事のリポジトリで使う provider を
+`providerMap` が名指ししている場合、その指定が環境の読み替えより優先する。親はこの読み替え後の
+provider id で利用可能性と model を確認する。
 
 tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
 持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
@@ -88,7 +114,10 @@ claude の `write` が対応する `bypassPermissions` は、許可の確認を�
 パスの制限ではない。書き込む役が worktree の外に書かない保証は、role のプロンプトの指示だけである。
 仕事のリポジトリでこの mode を使うかどうかは利用者が判断する。
 
-native subagent 側は `~/.agents/agent-defs/routing.json` の engine 解決に従う。
+native subagent 側は `~/.agents/agent-defs/routing.json` の engine 解決に従う。native subagent は
+provider を選ばず、親のプロセスから環境変数を継承する。どの環境のアカウントで動くかは、親を
+起動した Paseo の provider が注入した `CLAUDE_CONFIG_DIR` と `CODEX_HOME` が決める。親はこの
+2 つを子へ渡す前に書き換えない。
 
 ### 子の起動
 

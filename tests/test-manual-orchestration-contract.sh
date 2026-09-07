@@ -124,6 +124,50 @@ status=$?
 assert_eq "$status" "0" "selector: Paseo MCP が利用不可でも selector が成功する"
 assert_contains "$out" '"backend":"subagent"' "selector: Paseo MCP が利用不可なら native subagent を選ぶ"
 
+# 候補解決は、親が動いている AI 環境の provider を先に並べる。親が work で動いていても
+# 候補が claude と codex のままだと、子が別アカウントの使用量を消費する。
+DEFS="$FIXTURE/defs"
+mkdir -p "$DEFS"
+printf '%s\n' '{
+  "researcher": [{ "provider": "codex" }, { "provider": "claude" }],
+  "reviewer": [{ "provider": "claude", "tier": "deep" }]
+}' > "$DEFS/paseo-routing.json"
+
+resolve() { AGENT_DEFS_DIR="$DEFS" bash "$VALIDATOR" --resolve-candidates "$@" 2>&1; }
+
+out="$(AGENT_ENV=work resolve researcher)"
+status=$?
+assert_eq "$status" "0" "candidates: AGENT_ENV があっても解決が成功する"
+assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
+  '["codex-work","claude-work","codex","claude"]' \
+  "candidates: 同じ環境の provider を先に並べ、既定環境を後ろに残す"
+
+out="$(AGENT_ENV=default resolve researcher)"
+assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
+  '["codex","claude"]' \
+  "candidates: 先頭環境では接尾辞を付けない"
+
+out="$(env -u AGENT_ENV bash -c "AGENT_DEFS_DIR='$DEFS' bash '$VALIDATOR' --resolve-candidates researcher" 2>&1)"
+assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
+  '["codex","claude"]' \
+  "candidates: AGENT_ENV が未設定なら先頭環境として扱う"
+
+# provider 以外のキーは読み替えで落とさない。tier を落とすと役割の model が変わる。
+out="$(AGENT_ENV=work resolve reviewer)"
+assert_eq "$(printf '%s' "$out" | jq -c '[.[] | {provider, tier}]' 2>/dev/null)" \
+  '[{"provider":"claude-work","tier":"deep"},{"provider":"claude","tier":"deep"}]' \
+  "candidates: 読み替えても tier などの指定を保つ"
+
+# 親が project rule で候補を差し替えたときは、その候補を第 2 引数で渡す。
+out="$(AGENT_ENV=work resolve researcher '[{"provider":"claude"}]')"
+assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
+  '["claude-work","claude"]' \
+  "candidates: 渡した候補に読み替えを当てる"
+
+out="$(AGENT_ENV=work resolve nonexistent-role)"
+status=$?
+assert_not_contains "|$status|" "|0|" "candidates: routing に無い役割は失敗する"
+
 # 完了した research は既定の 3 調査 node と synthesis output を全て持つ。
 rm -rf "$RUN/nodes/research-3"
 out="$(bash "$VALIDATOR" "$RUN" 2>&1)"

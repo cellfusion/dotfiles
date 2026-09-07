@@ -209,7 +209,43 @@ if [ "$#" -eq 1 ] && [ "$1" = "--select-backend" ]; then
   exit 0
 fi
 
-[ "$#" -eq 1 ] || fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend'
+# 役割の候補 provider に、親が動いている AI 環境を当てて並べ直す。親の環境は AGENT_ENV が
+# 持つ。Paseo は provider ごとに AGENT_ENV を注入するので、親が claude-work で動いていれば
+# work が入る。zsh が設定する AGENT_ENV_SESSION は対話 shell を経ないと更新されないため、
+# ここでは使わない。
+#
+#   manual-orchestration-validate --resolve-candidates ROLE [CANDIDATES_JSON]
+#
+# CANDIDATES_JSON を渡さない場合は paseo-routing.json の候補を使う。project rule の roles で
+# 候補を差し替えた親は、差し替えた後の配列を渡す。providerMap は読み替えの後に当てる。
+if [ "$#" -ge 2 ] && [ "$1" = "--resolve-candidates" ]; then
+  [ "$#" -le 3 ] ||
+    fail 'usage: manual-orchestration-validate --resolve-candidates ROLE [CANDIDATES_JSON]'
+  resolve_role="$2"
+  if [ "$#" -eq 3 ]; then
+    candidates="$3"
+    printf '%s' "$candidates" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1 ||
+      fail "--resolve-candidates: CANDIDATES_JSON must be a non-empty JSON array"
+  else
+    defs_dir="${AGENT_DEFS_DIR:-$HOME/.agents/agent-defs}"
+    routing_file="$defs_dir/paseo-routing.json"
+    [ -f "$routing_file" ] || fail "$routing_file: routing file does not exist"
+    candidates="$(jq -c --arg r "$resolve_role" '.[$r] // empty' "$routing_file")"
+    [ -n "$candidates" ] || fail "$routing_file: $resolve_role has no candidates"
+  fi
+  # 先頭環境は接尾辞を持たないので、読み替えるのは default 以外のときだけである。
+  # 読み替えた候補を先に置き、読み替え前の候補を後ろに残す。同じ環境の provider が
+  # すべて使えないときは、親が後ろの候補へ落とせる。
+  printf '%s' "$candidates" | jq -c --arg s "${AGENT_ENV:-default}" '
+    (if $s == "" or $s == "default" then []
+     else [ .[] | .provider = "\(.provider)-\($s)" ] end) + . as $all
+    | reduce $all[] as $c ([]; if any(.[]; .provider == $c.provider) then . else . + [$c] end)
+  ' || fail "--resolve-candidates: failed to resolve $resolve_role"
+  exit 0
+fi
+
+[ "$#" -eq 1 ] ||
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --resolve-candidates ROLE [CANDIDATES_JSON]'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
