@@ -1,6 +1,6 @@
 #!/bin/sh
 # SketchyBar agent usage provider.
-# 無引数: 定義された環境 × agent の分だけ environment<TAB>agent<TAB>used_pct<TAB>resets_at<TAB>status<TAB>severity を出力する。
+# 無引数: 定義された環境 × agent の分だけ environment<TAB>agent<TAB>used_pct<TAB>resets_at<TAB>status<TAB>severity<TAB>session_pct<TAB>session_resets_at<TAB>session_severity を出力する。
 set -u
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
@@ -19,7 +19,7 @@ cache_put() {
   printf '%s' "$2" > "$cache_file.tmp" 2>/dev/null && mv "$cache_file.tmp" "$cache_file" 2>/dev/null
 }
 
-error_record() { printf -- '-\t-\terror'; }
+error_record() { printf -- '-\t-\terror\t-\t-'; }
 
 # provider_codex <session_dir> <cache_key>
 provider_codex() {
@@ -40,7 +40,9 @@ provider_codex() {
       pct=$(printf '%s' "$cached" | jq -r '.used_pct // empty' 2>/dev/null)
       reset=$(printf '%s' "$cached" | jq -r '.resets_at // empty' 2>/dev/null)
       if [ -n "$pct" ] && [ -n "$reset" ]; then
-        printf '%s\t%s\tstale' "$pct" "$reset"
+        # キャッシュから読む経路は status が stale になり、Lua が 5 時間の
+        # 数値を描かない。表示に出ない値は保存しないので、ここでは - を出す。
+        printf '%s\t%s\tstale\t-\t-' "$pct" "$reset"
         return
       fi
     fi
@@ -48,13 +50,14 @@ provider_codex() {
     return
   fi
 
-  limits=$(grep '"rate_limits"' "$session_file" | tail -1 | jq -r '
+  limits_line=$(grep '"rate_limits"' "$session_file" | tail -1)
+  limits=$(printf '%s' "$limits_line" | jq -r '
     (.payload.rate_limits // .rate_limits) as $r
     | [$r.primary, $r.secondary]
     | map(select(. != null and .window_minutes != null and .window_minutes >= 10080))
     | if length == 0 then empty
       else max_by(.window_minutes)
-      | [((.used_percent // empty) | floor), (.resets_at // empty)]
+      | [(.used_percent | if . == null then "" else floor end), (.resets_at // "")]
       | @tsv
       end' 2>/dev/null)
   pct=$(printf '%s' "$limits" | cut -f1)
@@ -62,9 +65,25 @@ provider_codex() {
   case "$pct" in ''|*[!0-9]*) error_record; return;; esac
   case "$reset" in ''|*[!0-9]*) error_record; return;; esac
 
+  # 5 時間の窓は週次より短い窓のうち最も短いものを採る。取れなくても週次の
+  # status は ok のままにする。
+  session_limits=$(printf '%s' "$limits_line" | jq -r '
+    (.payload.rate_limits // .rate_limits) as $r
+    | [$r.primary, $r.secondary]
+    | map(select(. != null and .window_minutes != null and .window_minutes < 10080))
+    | if length == 0 then empty
+      else min_by(.window_minutes)
+      | [(.used_percent | if . == null then "" else floor end), (.resets_at // "")]
+      | @tsv
+      end' 2>/dev/null)
+  session_pct=$(printf '%s' "$session_limits" | cut -f1)
+  session_reset=$(printf '%s' "$session_limits" | cut -f2)
+  case "$session_pct" in ''|*[!0-9]*) session_pct=-; session_reset=-;; esac
+  case "$session_reset" in ''|*[!0-9]*) session_pct=-; session_reset=-;; esac
+
   cache_put "$cache_key" "$(jq -n --arg p "$pct" --arg r "$reset" --argjson ts "$(date +%s)" \
     '{ts:$ts, used_pct:$p, resets_at:$r}')" || :
-  printf '%s\t%s\tok' "$pct" "$reset"
+  printf '%s\t%s\tok\t%s\t%s' "$pct" "$reset" "$session_pct" "$session_reset"
 }
 
 # provider_claude <config_dir> <cache_key>
@@ -82,11 +101,18 @@ provider_claude() {
   case "$reset" in ''|*[!0-9]*) error_record; return;; esac
   case "$ts" in ''|*[!0-9]*) error_record; return;; esac
 
+  # 5 時間のキーは、採取が Current session: の行を読めたときだけ書かれる。
+  # 持たない古いキャッシュでは両方を - にする。
+  session_pct=$(printf '%s' "$cached" | jq -r '.session_pct // empty' 2>/dev/null)
+  session_reset=$(printf '%s' "$cached" | jq -r '.session_resets_at // empty' 2>/dev/null)
+  case "$session_pct" in ''|*[!0-9]*) session_pct=-; session_reset=-;; esac
+  case "$session_reset" in ''|*[!0-9]*) session_pct=-; session_reset=-;; esac
+
   now=$(date +%s)
   if [ $((now - ts)) -lt "$CLAUDE_STALE_AFTER" ]; then
-    printf '%s\t%s\tok' "$pct" "$reset"
+    printf '%s\t%s\tok\t%s\t%s' "$pct" "$reset" "$session_pct" "$session_reset"
   else
-    printf '%s\t%s\tstale' "$pct" "$reset"
+    printf '%s\t%s\tstale\t%s\t%s' "$pct" "$reset" "$session_pct" "$session_reset"
   fi
 }
 
@@ -118,6 +144,24 @@ pace_of() {
   fi
 }
 
+# level_of <used_pct> <status>
+# 5 時間の窓は使い始めに使用が集中するので、経過時間と比べる pace_of ではなく
+# 使用率そのものでしきい値を切る。
+level_of() {
+  used_pct="${1:-}"
+  status="${2:-}"
+  case "$used_pct" in ''|*[!0-9]*) printf 'none'; return;; esac
+  [ "$status" = ok ] || { printf 'none'; return; }
+
+  if [ "$used_pct" -ge 80 ]; then
+    printf 'crit'
+  elif [ "$used_pct" -ge 50 ]; then
+    printf 'warn'
+  else
+    printf 'ok'
+  fi
+}
+
 provider_dispatch() {
   case "${1:-}" in
     codex) provider_codex "${2:-}" "${3:-}" ;;
@@ -135,14 +179,20 @@ emit_record() {
   pct=$(printf '%s' "$output" | cut -f1)
   reset=$(printf '%s' "$output" | cut -f2)
   status=$(printf '%s' "$output" | cut -f3)
-  case "$status" in ok|stale|error) :;; *) pct=-; reset=-; status=error;; esac
+  session_pct=$(printf '%s' "$output" | cut -f4)
+  session_reset=$(printf '%s' "$output" | cut -f5)
+  case "$status" in ok|stale|error) :;; *) pct=-; reset=-; status=error; session_pct=-; session_reset=-;; esac
+  [ -n "$session_pct" ] || session_pct=-
+  [ -n "$session_reset" ] || session_reset=-
   if [ "$status" = ok ]; then
     severity=$(pace_of "$pct" "$reset" "$status")
   else
     severity=none
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$environment" "$agent" "$pct" "$reset" "$status" "$severity"
+  session_severity=$(level_of "$session_pct" "$status")
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$environment" "$agent" "$pct" "$reset" "$status" "$severity" \
+    "$session_pct" "$session_reset" "$session_severity"
 }
 
 cmd="${1:-}"
@@ -150,6 +200,7 @@ case "$cmd" in
   codex) shift; provider_codex "${1:-}" "${2:-}"; exit 0 ;;
   claude) shift; provider_claude "${1:-}" "${2:-}"; exit 0 ;;
   pace) shift; pace_of "${1:-}" "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
+  level) shift; level_of "${1:-}" "${2:-}"; exit 0 ;;
 esac
 
 {{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
