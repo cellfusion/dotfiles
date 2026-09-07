@@ -21,6 +21,7 @@ local agent_specs = {
 		label = "Claude",
 		name = "widgets.usage.{{ $env.session }}.claude",
 		popup_name = "widgets.usage.popup.{{ $env.session }}.claude",
+		env_popup_name = "widgets.usage.popup.env.{{ $env.session }}",
 		icon = app_icons["Claude"],
 	},
 {{- end }}
@@ -32,6 +33,7 @@ local agent_specs = {
 		label = "Codex",
 		name = "widgets.usage.{{ $env.session }}.codex",
 		popup_name = "widgets.usage.popup.{{ $env.session }}.codex",
+		env_popup_name = "widgets.usage.popup.env.{{ $env.session }}",
 		icon = app_icons["ChatGPT"],
 	},
 {{- end }}
@@ -53,6 +55,9 @@ local function empty_record()
 		resets_at = "-",
 		status = "error",
 		severity = "none",
+		session_pct = "-",
+		session_resets_at = "-",
+		session_severity = "none",
 	}
 end
 
@@ -145,19 +150,41 @@ sbar.add("item", "widgets.usage.padding", {
 	width = settings.group_paddings,
 })
 
-local popup_width = 360
+local popup_width = 400
 local popup_items = {}
+local popup_last_env = nil
 for _, spec in ipairs(agent_specs) do
+	-- popup の行は add した順に上から並ぶ。環境の切れ目で見出し行を先に置く。
+	if spec.env_key ~= popup_last_env then
+		sbar.add("item", spec.env_popup_name, {
+			position = "popup." .. usage_bracket.name,
+			icon = { drawing = false },
+			label = {
+				string = spec.environment,
+				color = colors.grey,
+				align = "left",
+				width = popup_width,
+				font = { family = settings.font.text, style = settings.font.style_map["Bold"] },
+			},
+		})
+		popup_last_env = spec.env_key
+	end
 	popup_items[spec.environment .. "\t" .. spec.agent] = sbar.add("item", spec.popup_name, {
 		position = "popup." .. usage_bracket.name,
-		icon = { drawing = false },
-		label = {
-			string = spec.environment .. "  " .. spec.label .. "  --%  reset --  --  error",
+		icon = {
+			string = string.format("%-8s5h %4s  %s", spec.label, "--%", "--"),
 			color = colors.grey,
 			align = "left",
-			font = { family = settings.font.text, style = settings.font.style_map["Regular"] },
+			width = popup_width / 2,
+			font = { family = settings.font.numbers, style = settings.font.style_map["Regular"] },
 		},
-		width = popup_width,
+		label = {
+			string = string.format("7d %4s  %s", "--%", "error"),
+			color = colors.grey,
+			align = "right",
+			width = popup_width / 2,
+			font = { family = settings.font.numbers, style = settings.font.style_map["Regular"] },
+		},
 	})
 end
 
@@ -166,30 +193,39 @@ local function parse_records(result)
 		records[spec.environment .. "\t" .. spec.agent] = empty_record()
 	end
 	for line in (result or ""):gmatch("[^\n]+") do
-		local environment, agent, used_pct, resets_at, status, severity = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+		local environment, agent, used_pct, resets_at, status, severity, session_pct, session_resets_at, session_severity =
+			line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
 		if environment and records[environment .. "\t" .. agent] then
 			records[environment .. "\t" .. agent] = {
 				used_pct = used_pct ~= "" and used_pct or "-",
 				resets_at = resets_at ~= "" and resets_at or "-",
 				status = status ~= "" and status or "error",
 				severity = severity ~= "" and severity or "none",
+				session_pct = session_pct ~= "" and session_pct or "-",
+				session_resets_at = session_resets_at ~= "" and session_resets_at or "-",
+				session_severity = session_severity ~= "" and session_severity or "none",
 			}
 		end
 	end
 end
 
-local function format_usage(record)
-	if record.used_pct == "-" or record.used_pct == "" then
+local function format_usage(used_pct)
+	if used_pct == "-" or used_pct == "" then
 		return "--%"
 	end
-	return record.used_pct .. "%"
+	return used_pct .. "%"
+end
+
+-- 週次と 5 時間で severity が別なので、status と severity を引数に取る。
+local function color_of(status, severity)
+	if status ~= "ok" then
+		return colors.grey
+	end
+	return severity_color[severity] or colors.grey
 end
 
 local function color_for(record)
-	if record.status ~= "ok" then
-		return colors.grey
-	end
-	return severity_color[record.severity] or colors.grey
+	return color_of(record.status, record.severity)
 end
 
 local function format_remaining(resets_at, now)
@@ -215,25 +251,33 @@ end
 
 local function update_display(spec, item)
 	local record = records[spec.environment .. "\t" .. spec.agent]
-	local color = color_for(record)
 	item:set({
-		icon = { color = color },
-		label = { string = format_usage(record), color = color },
+		icon = { color = color_of(record.status, record.session_severity) },
+		label = { string = format_usage(record.used_pct), color = color_for(record) },
 	})
 end
 
 local function update_popup(spec)
 	local key = spec.environment .. "\t" .. spec.agent
 	local record = records[key]
-	local color = color_for(record)
 	local now = os.time()
+	-- status が ok でない行は数値を描かず、右の列に stale か error を出す。
+	local session_usage, remaining = "--%", "--"
+	local week_usage, week_reset = "--%", record.status
+	if record.status == "ok" then
+		session_usage = format_usage(record.session_pct)
+		remaining = format_remaining(record.session_resets_at, now)
+		week_usage = format_usage(record.used_pct)
+		week_reset = format_reset(record.resets_at)
+	end
 	popup_items[key]:set({
+		icon = {
+			string = string.format("%-8s5h %4s  %s", spec.label, session_usage, remaining),
+			color = color_of(record.status, record.session_severity),
+		},
 		label = {
-			string = spec.environment .. "  " .. spec.label .. "  " .. format_usage(record)
-				.. "  reset " .. format_reset(record.resets_at)
-				.. "  " .. format_remaining(record.resets_at, now)
-				.. "  " .. record.status,
-			color = color,
+			string = string.format("7d %4s  %s", week_usage, week_reset),
+			color = color_of(record.status, record.severity),
 		},
 	})
 end
@@ -251,17 +295,15 @@ local function update()
 	end)
 end
 
-local function show_popup()
-	usage_bracket:set({ popup = { drawing = true } })
-end
-
-local function hide_popup()
-	usage_bracket:set({ popup = { drawing = false } })
+-- bracket 自体はマウスの入力を受け取らないので、bracket に入っている各項目が
+-- クリックを受ける。開いた popup はマウスの位置では閉じない。
+local function toggle_popup()
+	update()
+	usage_bracket:set({ popup = { drawing = "toggle" } })
 end
 
 for _, item in ipairs(display_items) do
-	item:subscribe("mouse.entered", show_popup)
-	item:subscribe("mouse.exited.global", hide_popup)
+	item:subscribe("mouse.clicked", toggle_popup)
 end
 
 items_by_key[agent_specs[1].environment .. "\t" .. agent_specs[1].agent]

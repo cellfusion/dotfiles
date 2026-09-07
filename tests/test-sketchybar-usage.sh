@@ -39,8 +39,32 @@ assert_contains "$usage_lua" 'widgets.usage.default.claude' "default Claude の 
 assert_contains "$usage_lua" 'widgets.usage.default.codex' "default Codex の item 名を固定する"
 assert_contains "$usage_lua" 'widgets.usage.work.claude' "work Claude の item 名を固定する"
 assert_contains "$usage_lua" 'widgets.usage.work.codex' "work Codex の item 名を固定する"
-assert_contains "$usage_lua" 'mouse.entered' "ホバー開始イベントを購読する"
-assert_contains "$usage_lua" 'mouse.exited.global' "ホバー終了イベントを購読する"
+assert_contains "$usage_lua" 'subscribe("mouse.clicked"' "クリックで popup を開閉する"
+assert_not_contains "$usage_lua" 'mouse.entered' "ホバーで popup を開かない"
+assert_not_contains "$usage_lua" 'mouse.exited' "マウスが外れても popup を閉じない"
+assert_contains "$usage_lua" 'drawing = "toggle"' "popup を toggle で切り替える"
+assert_contains "$usage_lua" 'popup_width = 400' "popup の幅を 400 にする"
+
+# 受け入れ条件 13 は icon と label の「両方」を求める。含むかどうかでは片方だけの
+# 実装でも通るので、agent 行の 2 か所に出る回数で見る。見出し行は
+# settings.font.text と width = popup_width を使うので、この数には入れない。
+assert_eq "$(printf '%s\n' "$usage_lua" | grep -cF 'family = settings.font.numbers')" "2" \
+  "popup の agent 行が icon と label の両方に SF Mono を使う"
+assert_eq "$(printf '%s\n' "$usage_lua" | grep -cF 'width = popup_width / 2')" "2" \
+  "popup の agent 行が icon と label の両方を半分の幅にする"
+
+assert_contains "$usage_lua" 'widgets.usage.popup.env.default' "default の popup 見出し行がある"
+assert_contains "$usage_lua" 'widgets.usage.popup.env.work' "work の popup 見出し行がある"
+assert_contains "$usage_lua" 'widgets.usage.popup.env.solo' "solo の popup 見出し行がある"
+
+# 受け入れ条件 15。バーのアイコンは 5 時間の severity、ラベルは週次の severity で
+# 色を決める。color_for は週次側を呼ぶ関数なので、その定義も合わせて見る。
+assert_contains "$usage_lua" 'icon = { color = color_of(record.status, record.session_severity) }' \
+  "バーのアイコンを 5 時間の severity で塗る"
+assert_contains "$usage_lua" 'label = { string = format_usage(record.used_pct), color = color_for(record) }' \
+  "バーのラベルを週次の severity で塗る"
+assert_contains "$usage_lua" 'return color_of(record.status, record.severity)' \
+  "color_for が週次の severity で色を決める"
 assert_contains "$usage_lua" 'update_freq = 120' "使用率の更新間隔を維持する"
 assert_contains "$usage_lua" 'popup.default.claude' "default Claude の popup 行を持つ"
 assert_contains "$usage_lua" 'popup.default.codex' "default Codex の popup 行を持つ"
