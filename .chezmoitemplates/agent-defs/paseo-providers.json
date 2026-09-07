@@ -8,12 +8,23 @@
       "models" (dict "fast" "gpt-5.6-luna" "work" "gpt-5.6-luna" "think" "gpt-5.6-terra" "deep" "gpt-5.6-sol")
       "thinking" (dict "fast" "medium" "work" "high" "think" "high" "deep" "high")
       "modes" (dict "read" "auto" "write" "auto") -}}
+{{- /*
+  provider の一覧は [[data.environments]] から作る。id の規則は Paseo の provider を作る
+  .chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl と同じで、先頭環境は接尾辞を
+  持たず、2 つ目以降が `<agent>-<session>` になる。両者がずれると、Paseo に存在しない
+  provider を MAD が候補に選ぶ。
+*/ -}}
 {{- $base := dict "claude" $claude "codex" $codex -}}
-{{- $out := dict "claude" $claude "codex" $codex -}}
-{{- $extra := (index ((index . "mad") | default dict) "providers") | default dict -}}
-{{- range $id, $family := $extra -}}
-{{-   if hasKey $base $family -}}
-{{-     $out = set $out $id (index $base $family) -}}
+{{- $envs := list (dict "session" "default" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
+{{- $out := dict -}}
+{{- range $i, $env := $envs -}}
+{{-   range $agent := $env.agents -}}
+{{-     if hasKey $base $agent -}}
+{{-       $id := $agent -}}
+{{-       if $i -}}{{- $id = printf "%s-%s" $agent $env.session -}}{{- end -}}
+{{-       $out = set $out $id (index $base $agent) -}}
+{{-     end -}}
 {{-   end -}}
 {{- end -}}
 {{ $out | toPrettyJson }}

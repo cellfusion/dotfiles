@@ -200,12 +200,70 @@ assert_eq "$fam" "codex" "providers: codex の family は codex"
 kind="$(jq -r '.rules | type' "$FIXTURE/paseo-project-routing.json")"
 assert_eq "$kind" "array" "project-routing: rules は配列"
 
-# 2 つのアセットは chezmoi のテンプレートで、追加分を data から読む。
+# provider の一覧は AI 環境の定義から作る。手で書く対応表は持たない。二重に持つと、
+# 環境を足したときに Paseo の provider だけが増えて MAD が追従しなくなる。
 prov_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/paseo-providers.json")"
-assert_contains "$prov_src" 'index . "mad"' "providers: テンプレートが mad のデータを読む"
-assert_contains "$prov_src" '"providers"' "providers: テンプレートが mad.providers を読む"
+assert_contains "$prov_src" 'environments' "providers: テンプレートが environments を読む"
+assert_not_contains "$prov_src" 'index . "mad"' "providers: テンプレートは mad.providers を読まない"
 rules_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/paseo-project-routing.json")"
 assert_contains "$rules_src" '"projectRules"' "project-routing: テンプレートが mad.projectRules を読む"
+
+# 環境ごとの provider id は、Paseo の provider を作る 90-agent-envs スクリプトと同じ規則で
+# 決まる。先頭環境は接尾辞を持たず、2 つ目以降が `<agent>-<session>` になる。
+envs_cfg="$(mktemp)"
+cat > "$envs_cfg" <<'EOF'
+[[data.environments]]
+    session = "default"
+    label   = "P1"
+    agents  = ["claude", "codex"]
+
+[[data.environments]]
+    session = "work"
+    label   = "P2"
+    agents  = ["claude", "codex"]
+
+[[data.environments]]
+    session = "solo"
+    label   = "P3"
+    agents  = ["codex"]
+EOF
+chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$envs_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-envs.json"
+
+for p in claude codex claude-work codex-work codex-solo; do
+  known="$(jq -r --arg p "$p" 'has($p)' "$FIXTURE/providers-envs.json")"
+  assert_eq "$known" "true" "providers: 環境定義から $p を作る"
+done
+# 環境が持たない AI ツールの provider は作らない。Paseo 側にも存在しないため、
+# 候補に残すと解決できない provider を親が選ぶ。
+known="$(jq -r 'has("claude-solo")' "$FIXTURE/providers-envs.json")"
+assert_eq "$known" "false" "providers: agents に無い claude-solo は作らない"
+known="$(jq -r 'has("claude-default")' "$FIXTURE/providers-envs.json")"
+assert_eq "$known" "false" "providers: 先頭環境に接尾辞を付けない"
+
+for p in claude claude-work; do
+  fam="$(jq -r --arg p "$p" '.[$p].family' "$FIXTURE/providers-envs.json")"
+  assert_eq "$fam" "claude" "providers: $p の family は claude"
+done
+for p in codex codex-work codex-solo; do
+  fam="$(jq -r --arg p "$p" '.[$p].family' "$FIXTURE/providers-envs.json")"
+  assert_eq "$fam" "codex" "providers: $p の family は codex"
+done
+# 環境ごとの provider も tier と access の対応を持つ。family の定義をそのまま引くため、
+# 既定 provider と同じ model になる。
+m="$(jq -r '."claude-work".models.think' "$FIXTURE/providers-envs.json")"
+assert_eq "$m" "$(jq -r '.claude.models.think' "$FIXTURE/providers-envs.json")" \
+  "providers: claude-work は claude と同じ think model を持つ"
+
+# 環境定義を持たないマシンでは、既定の 2 つだけを作る。clone した直後の状態にあたるので、
+# 実行するマシンの private-data.toml ではなく空の設定を与えて確かめる。
+empty_cfg="$(mktemp)"
+printf '[data]\n' > "$empty_cfg"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$empty_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-empty.json"
+assert_eq "$(jq -c 'keys' "$FIXTURE/providers-empty.json")" '["claude","codex"]' \
+  "providers: 環境定義が無ければ claude と codex だけ"
+rm -f "$envs_cfg" "$empty_cfg"
 
 # プロジェクト規則は name と match を持ち、providerMap の置換先が providers にある。
 n="$(jq '.rules | length' "$FIXTURE/paseo-project-routing.json")"
