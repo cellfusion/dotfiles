@@ -48,7 +48,7 @@ trap 'rm -f "$ENV_ZSH" "$EMPTY_ZSH" "$cfg" "$empty_cfg"' EXIT
 # 環境変数として前置しても上書きされてしまう。
 run_env() {
   local file="${3:-$ENV_ZSH}"
-  HERDR_SESSION="$1" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$file'; $2" 2>&1
+  AGENT_ENV='' HERDR_SESSION="$1" zsh -f -c "XDG_CONFIG_HOME=/xdg; source '$file'; $2" 2>&1
 }
 
 # $1 の AGENT_ENV と $2 の HERDR_SESSION で $ENV_ZSH を source し、$3 を評価する。
