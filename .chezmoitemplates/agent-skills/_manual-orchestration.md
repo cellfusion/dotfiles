@@ -34,12 +34,21 @@ run の `state.json` と attempt の `state.json` は別の責務を持つ。双
   `decision_request` に request ファイルの絶対パスを記録する。worktree を作る run では、確定した
   base を `base` に記録する。
 - attempt state: `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、
-  `started_at`、`finished_at`、
+  `started_at`、`finished_at`、`child_ref`、
   `backend`、`backend_reason`、`parent_decision`。`node`、`attempt`、`round` はディレクトリ名や
   ログの文言ではなく state の第一級フィールドである
 - `state`: `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` の
   いずれか。user gate では run の `state` と `phase_state` を `waiting_for_user` にする。
-- `started_at` と `finished_at`: 状態が変わった時刻。未開始・実行中なら未設定でもよい
+- `started_at` と `finished_at`: 状態が変わった時刻。書式は UTC の ISO 8601、すなわち
+  `YYYY-MM-DDTHH:MM:SSZ` とする。`state` が `running` の attempt では `started_at` を必須にする。
+  期限超過の判定が `started_at` を読むためである。`finished_at` は未完了なら未設定でもよい
+- `child_ref`: 親が起動した子の識別子。Paseo MCP なら `mcp__paseo__create_agent` が返した
+  `agentId`、`Agent` ツールなら `Agent` ツールが返した識別子を入れる。この値が無いと、親は後から
+  子の生存を確認できない。`state` が `pending` の attempt は子をまだ起動していないので
+  `child_ref` を持たなくてよい。それ以外の `state` では非空の文字列にする
+
+親は子を起動した直後に、その attempt state の `child_ref` と `started_at` を書く。書いてから
+「子の完了検知」の見張りを起動する。
 - `backend`: `paseo-mcp` または `subagent` と、選択理由
 - `error`: 失敗時のエラー概要。成功時は空でもよい
 - `parent_decision`: 親が確認した境界での継続、再実行、停止、統合の判断
@@ -100,6 +109,39 @@ provider ごとに `AGENT_ENV` を注入するので、親が `claude-work` で�
 `providerMap` が名指ししている場合、その指定が環境の読み替えより優先する。親はこの読み替え後の
 provider id で利用可能性と model を確認する。
 
+親は候補を確定する前に、候補の provider id をすべて validator へ渡して 5 時間のセッション枠の残量を
+確かめる。`MAD_VALIDATE` の決め方は「成果物契約の受け入れ検証」と同じで、`chezmoi apply` 前は配布先に
+validator が無いのでソース側を使う。
+
+```bash
+bash "$MAD_VALIDATE" --check-usage claude-work claude codex-work codex
+```
+
+出力は 1 行 1 provider の JSON object で、引数の順に並ぶ。フィールドは `provider`、`session_pct`、
+`session_resets_at`、`verdict` の 4 つである。`session_pct` は 5 時間のセッション枠の使用率で、整数か
+`null` になる。`session_resets_at` はセッション枠の回復時刻で、unix 時刻の整数か `null` になる。
+`verdict` は `ok`、`low`、`exhausted`、`unknown` のいずれかで、使用率が 95 以上なら `exhausted`、
+80 以上なら `low`、それ未満なら `ok`、使用率が取れないなら `unknown` になる。
+
+親は候補を次の順で並べ直す。
+
+1. `--resolve-candidates ROLE [CANDIDATES_JSON]` で AI 環境を当てた候補の並びを得る。
+2. 一致した rule の `providerMap` を当てる。
+3. 並べ直した後の provider id をすべて `--check-usage` に渡す。
+4. `verdict` が `exhausted` の候補を、互いの相対順序を保ったまま末尾へ移す。`low` と `unknown` は
+   移さない。
+5. 移した候補と理由を attempt state の `backend_reason` に書く。
+6. 並べ直した候補に対して、この節の残りの手順どおり可用性と model と `thinkingOptions` を確かめる。
+
+すべての候補が `exhausted` だったときは、親は子を起動しない。run の `state` と `phase_state` を
+`waiting_for_user` にし、`next_action` に全候補が `exhausted` であることと最も早い
+`session_resets_at` を書いてユーザーへ渡す。`session_resets_at` は unix 時刻なので、ユーザーへ渡す
+前に読める時刻へ変換する。残量のある候補が無い状態で起動すると、成果物を残さずに終わる子を作り、
+再実行も同じ結果になるためである。
+
+残量が分からないときは run を止めない。`--check-usage` は `unknown` を返して終了コード 0 で終わる。
+親は `unknown` の候補を並べ直しの対象にしない。
+
 tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
 持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
 優先順位どおりに調べ、次のすべてを満たす最初の候補を採用する。第 1 に、provider が利用可能である。
@@ -141,6 +183,58 @@ checkout の `.chezmoitemplates/agent-defs/` 側を読む。
 
 親は子の構造化出力を attempt の `result.json` へ保存する。schema に合わない出力は親が整形せず、
 その attempt を `failed` として記録する。schema を持たない補助的な子だけが `result.md` を残す。
+
+### 子の完了検知
+
+親は子を起動した直後に、その attempt に対する見張りを 1 つ、背景の Bash で起動する。前面の Bash では
+`sleep` が拒否されるため、`run_in_background` を `true` にして起動する。背景の Bash は終了時に親を
+呼び戻すので、通知が届かない子でも親が必ず再開する。
+
+Paseo MCP の子は `paseo wait` で待つ。
+
+```bash
+CHILD_REF="<create_agent が返した agentId>"
+status="$(paseo wait "$CHILD_REF" --timeout <待ち時間> --json 2>/dev/null | jq -r '.status // "unknown"')"
+printf 'watchdog %s %s\n' "$CHILD_REF" "$status"
+```
+
+`paseo wait` は子が `idle` になるまで待ち、`--timeout` の秒数を超えたら戻る。返す JSON の `status` は
+`idle`、`timeout`、`error` のいずれかである。終了コードはどの場合も 0 なので、親は終了コードではなく
+`status` で判断する。`--json` の `message` は子の直近の活動履歴を全文で持つため、親は
+`jq -r '.status'` で 1 語だけを取り出す。JSON をそのまま出力すると、別の子の本文が親の文脈へ流れ込み、
+「本文を親の会話へ転記しない」という契約に反する。
+
+`Agent` ツールの子は shell から生存を確認する手段が無いので、待ち時間だけで終わる。
+
+```bash
+CHILD_REF="<Agent ツールが返した識別子>"
+sleep <待ち時間>
+printf 'watchdog %s timeout\n' "$CHILD_REF"
+```
+
+`<待ち時間>` は「既定値」の表が持つ秒数を使う。既定は 1200 秒、`implement` と `spike` は 3600 秒で
+ある。親がレシピごとに値を指定した場合は、指定した値を使う。
+
+見張りが終わると親に通知が届く。親は次の順で処理する。
+
+1. 子の完了通知を先に受け取っていたなら、見張りを `TaskStop` で止め、通常どおり成果物を確認する。
+   停止に失敗しても構わない。後から届く `watchdog ... timeout` は、attempt に構造化出力が既にある
+   ため 2 の判定で通常の処理へ進む。
+2. 完了通知を受け取っていないなら、attempt に構造化出力が残っているかを確認する。残っていれば
+   通常どおり処理する。
+3. 出力が無く、見張りの `status` が `idle` だったなら、その子は成果物を残さずに終了している。親は
+   attempt を `failed` として記録し、`error` に構造化出力が無いことと `status` の値を書く。同じ node に
+   新しい `<attempt-id>` を発行して、同じ backend で 1 回だけ再実行してよい。再実行の前に「provider と
+   model の解決」の残量確認を通す。
+4. 出力が無く、`status` が `timeout`、`error`、`unknown` のいずれかだったなら、親は再実行しない。
+   run の `state` と `phase_state` を `waiting_for_user` にし、`next_action` に裁定待ちであることと
+   `status` の値を書いてユーザーへ渡す。子が生きたまま二重に走ることを防ぐためである。`Agent`
+   ツールの子は常にこの経路へ入る。
+
+親は `mcp__paseo__create_agent` の `notifyOnFinish` を既定の `true` から変えない。見張りは通知の
+代わりではなく、通知が届かない場合の受け皿である。
+
+1 attempt につき見張りは 1 つとする。見張りは子を停止せず、観測した `status` を親へ返すだけである。
 
 ### worktree 隔離
 
@@ -235,6 +329,13 @@ bash "$MAD_VALIDATE" "$RUN_DIR"
 ```
 
 validator が失敗した run は `ok` にせず、親が `failed` または `stopped` と記録して確認する。
+
+validator は `overdue attempt: <node>/<attempt> started_at=<値> elapsed=<秒>s limit=<秒>s` の行を
+標準出力へ出すことがある。`state` が `running` の attempt が、`started_at` から待ち時間を超えて
+残っているという観測結果であり、契約違反ではないので終了コードは 0 のままである。この行を受け取った
+親は「子の完了検知」の 3 と 4 の手順へ進む。待ち時間は recipe から決まり、run state に
+`child_timeout_seconds` が正の整数としてあればその値を使う。この行は run の `state` によらず出るので、
+`stopped` の run に残った `running` の attempt も報告の対象になる。
 
 レシピごとに、run を `ok` にする前に `completed_nodes` と `adopted_attempts` へ入っていなければ
 ならない node がある。親はこの node ID をそのまま使う。
