@@ -26,6 +26,7 @@ mkdir -p "$repo"
 git -C "$repo" init -q
 git -C "$repo" config user.email test@example.com
 git -C "$repo" config user.name test
+git -C "$repo" config commit.gpgsign false
 cat > "$repo/2026-09-08-thing.md" <<'PLAN'
 # プラン
 
