@@ -148,8 +148,10 @@ for s in agent-route agent-docs-dir json-schema; do
   assert_contains "$managed" ".agents/skills/_shared/scripts/$s" \
     "_shared のスクリプトを配る: $s"
 done
-assert_not_contains "$managed" ".agents/skills/_shared/scripts/cellfusion-workdir" \
+assert_not_contains "$managed_files" ".agents/skills/_shared/scripts/cellfusion-workdir" \
   "退役した cellfusion-workdir を配らない"
+assert_contains "$chezmoiremove" ".agents/skills/_shared/scripts/cellfusion-workdir" \
+  "回収: .chezmoiremove が退役した cellfusion-workdir を削除対象にする"
 
 # --- 退役した relay / loam を配らない ---
 # relay は CPU/メモリ対策で無効化したまま復帰せず、loam はバイナリも残っていない。

@@ -19,6 +19,9 @@
 
 .agents/skills/subagent-driven-development/scripts/herdr-dispatch
 
+# cellfusion-workdir は agent-docs-dir へ置き換えたため、旧共有スクリプトを回収する。
+.agents/skills/_shared/scripts/cellfusion-workdir
+
 # relay は CPU/メモリ対策で無効化したまま復帰しないと決めた。スキルとフックを
 # まとめて回収する。MCP 登録の削除は claude-mcp-removed.json 側が続けて行うため、
 # そちらのリストからは relay を外さない。

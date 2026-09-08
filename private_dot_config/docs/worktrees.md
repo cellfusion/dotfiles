@@ -101,8 +101,10 @@ spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レ
 
 `braid` の review 役は現在の作業ディレクトリの外を読めない。`braid run review` へ渡す
 review package と要件ファイルは、呼ぶ直前に `<repo-root>/.agent-review/` へ複製し、
-複製先のパスを `--arg` に渡す。`.agent-review/` は global gitignore と自己無視の
-`.gitignore` の 2 段で無視され、`braid` が終わったら削除する。
+複製先のパスを `--arg` に渡す。実行ごとの staging directory
+`<repo-root>/.agent-review/run.XXXXXX/` だけを `braid` 終了後に削除し、
+`.agent-review/` とその `.gitignore` は残す。global gitignore と自己無視の
+`.gitignore` の 2 段で無視される。
 
 SDD の task worktree（`~/.local/state/sdd/worktrees/`）とは別系統である。task worktree の
 置き場所は `~/.config/worktrunk/agent.toml` が決めている。
