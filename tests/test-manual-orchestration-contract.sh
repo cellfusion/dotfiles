@@ -797,4 +797,86 @@ assert_eq "$(jq -r '."codex-work".usage.agent' "$FIXTURE/providers-envs.json")" 
   "usage: codex-work の usage.agent は codex である"
 rm -f "$usage_empty_cfg" "$usage_envs_cfg"
 
+# --- 起動前の残量確認: 5 時間のセッション枠が尽きた候補を親が末尾へ回せるようにする ---
+# 採取は SketchyBar の usage.sh に任せる。テストは偽の採取スクリプトへ差し替え、実際の
+# Claude と Codex へ問い合わせない。
+USAGE_DIR="$FIXTURE/usage"
+mkdir -p "$USAGE_DIR"
+FAKE_USAGE="$USAGE_DIR/usage.sh"
+CALL_LOG="$USAGE_DIR/calls"
+cat > "$FAKE_USAGE" <<EOF
+#!/usr/bin/env bash
+printf 'call\n' >> "$CALL_LOG"
+printf 'P1\tclaude\t12\t1788000000\tok\tok\t10\t1788010000\tok\n'
+printf 'P1\tcodex\t20\t1788000000\tok\tok\t85\t1788020000\tcrit\n'
+printf 'P2\tclaude\t30\t1788000000\tok\tok\t97\t1788030000\tcrit\n'
+printf 'P2\tcodex\t40\t1788000000\tok\tok\t-\t-\tnone\n'
+EOF
+chmod +x "$FAKE_USAGE"
+
+printf '%s\n' '{
+  "claude": { "family": "claude", "usage": { "environment": "P1", "agent": "claude" } },
+  "codex": { "family": "codex", "usage": { "environment": "P1", "agent": "codex" } },
+  "claude-work": { "family": "claude", "usage": { "environment": "P2", "agent": "claude" } },
+  "codex-work": { "family": "codex", "usage": { "environment": "P2", "agent": "codex" } }
+}' > "$DEFS/paseo-providers.json"
+
+check_usage() {
+  AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
+    bash "$VALIDATOR" --check-usage "$@" 2>&1
+}
+
+rm -f "$CALL_LOG"
+out="$(check_usage claude codex claude-work codex-work)"
+status=$?
+assert_eq "$status" "0" "check-usage: 4 つの provider を判定して成功する"
+assert_eq "$(printf '%s\n' "$out" | head -1)" \
+  '{"provider":"claude","session_pct":10,"session_resets_at":1788010000,"verdict":"ok"}' \
+  "check-usage: provider と使用率と回復時刻と判定を 1 行の JSON で出す"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].verdict]')" \
+  '["ok","low","exhausted","unknown"]' \
+  "check-usage: 使用率から ok と low と exhausted と unknown を出す"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]')" \
+  '["claude","codex","claude-work","codex-work"]' \
+  "check-usage: 引数の順に 1 行ずつ返す"
+assert_eq "$(wc -l < "$CALL_LOG" | tr -d ' ')" "1" \
+  "check-usage: provider の数によらず採取スクリプトを 1 回だけ実行する"
+
+# 残量が分からないことを理由に run を止めない。採取できない 3 つの場合はどれも unknown で
+# 終了コード 0 にする。
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$USAGE_DIR/absent.sh" \
+  bash "$VALIDATOR" --check-usage claude 2>&1)"
+status=$?
+assert_eq "$status" "0" "check-usage: 採取スクリプトが無くても終了コード 0 で終わる"
+assert_eq "$out" \
+  '{"provider":"claude","session_pct":null,"session_resets_at":null,"verdict":"unknown"}' \
+  "check-usage: 採取スクリプトが無ければ unknown を返す"
+
+# 配布先の 2026-08-27 の版は 6 列しか出さず、5 時間の枠の 3 列を持たない。
+SIX_USAGE="$USAGE_DIR/usage-six.sh"
+cat > "$SIX_USAGE" <<'EOF'
+#!/usr/bin/env bash
+printf 'P1\tclaude\t12\t1788000000\tok\tok\n'
+EOF
+chmod +x "$SIX_USAGE"
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$SIX_USAGE" \
+  bash "$VALIDATOR" --check-usage claude 2>&1)"
+status=$?
+assert_eq "$status" "0" "check-usage: 6 列の採取スクリプトでも終了コード 0 で終わる"
+assert_contains "$out" '"verdict":"unknown"' \
+  "check-usage: 6 列の採取スクリプトでは unknown を返す"
+
+out="$(check_usage claude-absent)"
+status=$?
+assert_eq "$status" "0" "check-usage: 対応表に無い provider でも終了コード 0 で終わる"
+assert_contains "$out" '"provider":"claude-absent","session_pct":null' \
+  "check-usage: paseo-providers.json に無い provider は unknown を返す"
+
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
+  bash "$VALIDATOR" --check-usage 2>&1)"
+status=$?
+assert_eq "$status" "1" "check-usage: provider を渡さない呼び方を拒否する"
+assert_contains "$out" "usage: manual-orchestration-validate --check-usage" \
+  "check-usage: provider を渡さない呼び方に使い方を示す"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

@@ -102,6 +102,16 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchyba
 `stale` が出るなら採取が失敗している。launchd ジョブの記録は
 `~/Library/Logs/sketchybar-usage-claude.err.log` にある。
 
+## MAD の残量確認も読む
+
+`usage.sh` の 9 列の出力は、SketchyBar のウィジェットだけでなく MAD の validator
+`~/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate` も読む。MAD の親
+エージェントは子を起動する前に `manual-orchestration-validate --check-usage <provider>...` を呼ぶ。
+validator は `usage.sh` を引数なしで 1 回実行し、`~/.agents/agent-defs/paseo-providers.json` の
+`usage.environment` と `usage.agent` に一致する行を選び、第 7 列の 5 時間の使用率から `ok`、`low`、
+`exhausted`、`unknown` を判定する。親はこの判定で候補の provider を並べ直し、すべてが `exhausted` なら
+子を起動せずにユーザーへ渡す。列の並びを変えると、状態バーの表示と MAD の残量確認が同時に壊れる。
+
 ## 色の決め方
 
 severity は `crit` が赤、`warn` が黄、`ok` が緑、`none` が灰である。
