@@ -7,15 +7,20 @@ SRC="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts"
 
 FIXTURE="$(mktemp -d)"
 trap 'rm -rf "$FIXTURE"' EXIT
-mkdir -p "$FIXTURE/scripts" "$FIXTURE/recipes" "$FIXTURE/repo" "$FIXTURE/bin"
+mkdir -p "$FIXTURE/scripts" "$FIXTURE/recipes" "$FIXTURE/repo/.git" "$FIXTURE/bin" \
+         "$FIXTURE/bin-outside" "$FIXTURE/shared"
 cp "$SRC/executable_mad-run" "$FIXTURE/scripts/mad-run"
 cp "$SRC/mad-lib.sh" "$FIXTURE/scripts/mad-lib.sh"
 chmod +x "$FIXTURE/scripts/mad-run"
+cp "$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_agent-docs-dir" \
+   "$FIXTURE/shared/agent-docs-dir"
+chmod +x "$FIXTURE/shared/agent-docs-dir"
 
 cat > "$FIXTURE/bin/git" <<FAKE
 #!/usr/bin/env bash
 case "\$*" in
-  "rev-parse --show-toplevel") printf '%s\n' "$FIXTURE/repo" ;;
+  "rev-parse --git-common-dir") printf '%s\n' "$FIXTURE/repo/.git" ;;
+  "remote get-url origin") printf 'git@github.com:cellfusion/dotfiles.git\n' ;;
   *) exit 1 ;;
 esac
 FAKE
@@ -46,7 +51,9 @@ RECIPE
 
 run() {
   MAD_RECIPES_DIR="$FIXTURE/recipes" \
-  MAD_GIT_BIN="$FIXTURE/bin/git" \
+  MAD_DOCS_DIR_BIN="$FIXTURE/shared/agent-docs-dir" \
+  AGENT_DOCS_ROOT="$FIXTURE/docs" \
+  PATH="$FIXTURE/bin:$PATH" \
   bash "$FIXTURE/scripts/mad-run" "$@"
 }
 
@@ -56,7 +63,8 @@ assert_contains "$out" "missing=fallback" "無い引数は既定値になる"
 assert_contains "$out" 'list=["a","b"]' "配列の引数を JSON 配列で渡す"
 assert_contains "$out" "timeout=60" "タイムアウトを渡す"
 assert_contains "$out" "dry=0" "既定は dry-run ではない"
-assert_contains "$out" "run_dir=$FIXTURE/repo/_cellfusion/mad/" "run ディレクトリをリポジトリの下に作る"
+assert_contains "$out" "run_dir=$FIXTURE/docs/cellfusion/dotfiles/mad/" \
+  "run ディレクトリを agent-docs-dir の下に作る"
 
 out="$(run probe --arg topic=abc 2>/dev/null)"
 assert_contains "$out" 'list=["x"]' "配列の引数が無ければ既定値になる"
@@ -64,8 +72,27 @@ assert_contains "$out" 'list=["x"]' "配列の引数が無ければ既定値に�
 run_dir="$(printf '%s\n' "$out" | sed -n 's/^run_dir=//p')"
 assert_eq "$([ -f "$run_dir/args.json" ] && echo yes || echo no)" "yes" "args.json を書く"
 assert_eq "$([ -d "$run_dir/.cache" ] && echo yes || echo no)" "yes" "キャッシュのディレクトリを作る"
-assert_eq "$([ -f "$FIXTURE/repo/_cellfusion/.gitignore" ] && echo yes || echo no)" \
-          "yes" "_cellfusion/.gitignore を用意する"
+assert_eq "${run_dir#"$FIXTURE/docs/"}" "cellfusion/dotfiles/mad/$(basename "$run_dir")" \
+  "run ディレクトリが fixture の下にある"
+
+src="$(cat "$FIXTURE/scripts/mad-run")"
+assert_not_contains "$src" "MAD_GIT_BIN" "mad-run は git を差し替える環境変数を読まない"
+assert_not_contains "$src" "rev-parse" "mad-run は git rev-parse を呼ばない"
+assert_not_contains "$src" "_cellfusion" "mad-run は _cellfusion を書かない"
+
+cat > "$FIXTURE/bin-outside/git" <<'OUTSIDE'
+#!/usr/bin/env bash
+exit 128
+OUTSIDE
+chmod +x "$FIXTURE/bin-outside/git"
+MAD_RECIPES_DIR="$FIXTURE/recipes" \
+MAD_DOCS_DIR_BIN="$FIXTURE/shared/agent-docs-dir" \
+AGENT_DOCS_ROOT="$FIXTURE/docs-outside" \
+PATH="$FIXTURE/bin-outside:$PATH" \
+bash "$FIXTURE/scripts/mad-run" probe --arg topic=abc >/dev/null 2>&1
+assert_eq "$?" "1" "git リポジトリの外では 1 で終わる"
+assert_eq "$([ -d "$FIXTURE/docs-outside" ] && echo yes || echo no)" \
+          "no" "git リポジトリの外では run ディレクトリを作らない"
 
 out="$(run probe --arg topic=abc --dry-run 2>/dev/null)"
 assert_contains "$out" "dry=1" "--dry-run を渡す"

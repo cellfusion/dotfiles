@@ -14,6 +14,13 @@ cp "$SRC/scripts/executable_mad-agent" "$FIXTURE/scripts/mad-agent"
 cp "$SRC/scripts/mad-lib.sh" "$FIXTURE/scripts/mad-lib.sh"
 chmod +x "$FIXTURE/scripts/mad-run" "$FIXTURE/scripts/mad-route" "$FIXTURE/scripts/mad-agent"
 
+mkdir -p "$FIXTURE/repo/.git" "$FIXTURE/shared"
+cp "$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_agent-docs-dir" \
+   "$FIXTURE/shared/agent-docs-dir"
+chmod +x "$FIXTURE/shared/agent-docs-dir"
+
+DOCS_SLUG="$(basename "$FIXTURE")/repo"
+
 for f in manifests paseo-providers paseo-routing paseo-project-routing; do
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"agent-defs/$f.json\" . }}" > "$FIXTURE/defs/$f.json"
@@ -57,6 +64,7 @@ cat > "$FIXTURE/bin/git" <<FAKE
 #!/usr/bin/env bash
 case "\$*" in
   "rev-parse --show-toplevel") printf '%s\n' "$FIXTURE/repo" ;;
+  "rev-parse --git-common-dir") printf '%s\n' "$FIXTURE/repo/.git" ;;
   "remote get-url origin") printf '\n' ;;
   *) exit 1 ;;
 esac
@@ -80,6 +88,9 @@ dry() {
   MAD_DEFS_DIR="$FIXTURE/defs" \
   MAD_PASEO_BIN="$FIXTURE/bin/paseo" \
   MAD_GIT_BIN="$FIXTURE/bin/git" \
+  MAD_DOCS_DIR_BIN="$FIXTURE/shared/agent-docs-dir" \
+  AGENT_DOCS_ROOT="$FIXTURE/docs" \
+  PATH="$FIXTURE/bin:$PATH" \
   FAKE_DIR="$FIXTURE/paseo" \
   bash "$FIXTURE/scripts/mad-run" "$@" --dry-run 2>/dev/null
 }
@@ -143,6 +154,9 @@ live() {
   MAD_DEFS_DIR="$FIXTURE/defs" \
   MAD_PASEO_BIN="$FIXTURE/bin/paseo" \
   MAD_GIT_BIN="$FIXTURE/bin/git" \
+  MAD_DOCS_DIR_BIN="$FIXTURE/shared/agent-docs-dir" \
+  AGENT_DOCS_ROOT="$FIXTURE/docs" \
+  PATH="$FIXTURE/bin:$PATH" \
   FAKE_DIR="$FIXTURE/paseo" \
   bash "$FIXTURE/scripts/mad-run" "$@"
 }
@@ -152,7 +166,7 @@ live() {
 run_dir_from() {
   local id
   id="$(grep -o '[0-9]\{8\}T[0-9]\{6\}-[0-9a-f]\{6\}' "$1" | head -1)"
-  printf '%s' "$FIXTURE/repo/_cellfusion/mad/$id"
+  printf '%s' "$FIXTURE/docs/$DOCS_SLUG/mad/$id"
 }
 
 out="$(live research --arg topic=対象 \
@@ -182,7 +196,7 @@ err="$(cat "$FIXTURE/live-ng.err")"
 assert_eq "$status" "1" "本実行: 1 つ落ちると非ゼロで終わる"
 assert_contains "$err" "research-2" "本実行: 失敗したノードの名前を出す"
 assert_contains "$err" "boom" "本実行: 失敗したノードの標準エラーの末尾を出す"
-assert_contains "$err" "_cellfusion/mad/" "本実行: run ディレクトリのパスを出す"
+assert_contains "$err" "$FIXTURE/docs/$DOCS_SLUG/mad/" "本実行: run ディレクトリのパスを出す"
 
 run_dir="$(run_dir_from "$FIXTURE/live-ng.err")"
 assert_eq "$([ -f "$run_dir/synthesis.json" ] && echo yes || echo no)" \

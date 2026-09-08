@@ -4,7 +4,11 @@ set -u
 
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 RECIPES="${MAD_RECIPES_DIR:-$SCRIPTS/../recipes}"
-GIT="${MAD_GIT_BIN:-git}"
+DOCS_DIR_BIN="${MAD_DOCS_DIR_BIN:-}"
+if [ -z "$DOCS_DIR_BIN" ]; then
+  DOCS_DIR_BIN="$SCRIPTS/../../_shared/scripts/agent-docs-dir"
+  [ -f "$DOCS_DIR_BIN" ] || DOCS_DIR_BIN="$SCRIPTS/../../_shared/scripts/executable_agent-docs-dir"
+fi
 
 recipe="${1:-}"
 if [ -z "$recipe" ]; then
@@ -44,16 +48,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-root="$("$GIT" rev-parse --show-toplevel 2>/dev/null)" || root="$PWD"
-
-# _cellfusion は git 追跡外の作業ディレクトリである。無ければ自己無視を置いて作る。
-if [ ! -f "$root/_cellfusion/.gitignore" ]; then
-  mkdir -p "$root/_cellfusion" || exit 1
-  printf '*\n' > "$root/_cellfusion/.gitignore"
-fi
-
 run_id="$(date +%Y%m%dT%H%M%S)-$(od -An -tx1 -N3 /dev/urandom | tr -d ' \n')"
-run_dir="$root/_cellfusion/mad/$run_id"
+run_dir="$(bash "$DOCS_DIR_BIN" "mad/$run_id")" || exit 1
 mkdir -p "$run_dir/.cache" || exit 1
 printf '%s' "$args" > "$run_dir/args.json"
 
