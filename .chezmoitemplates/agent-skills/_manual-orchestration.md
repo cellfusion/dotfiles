@@ -114,7 +114,7 @@ provider id で利用可能性と model を確認する。
 validator が無いのでソース側を使う。
 
 ```bash
-bash "$MAD_VALIDATE" --check-usage claude-pxgrid claude codex-pxgrid codex
+bash "$MAD_VALIDATE" --check-usage claude-work claude codex-work codex
 ```
 
 出力は 1 行 1 provider の JSON object で、引数の順に並ぶ。フィールドは `provider`、`session_pct`、
