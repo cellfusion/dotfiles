@@ -15,15 +15,18 @@
   provider を MAD が候補に選ぶ。
 */ -}}
 {{- $base := dict "claude" $claude "codex" $codex -}}
-{{- $envs := list (dict "session" "default" "agents" (list "claude" "codex")) -}}
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
 {{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
 {{- $out := dict -}}
 {{- range $i, $env := $envs -}}
+{{-   $label := "" -}}
+{{-   if hasKey $env "label" -}}{{- $label = $env.label -}}{{- end -}}
 {{-   range $agent := $env.agents -}}
 {{-     if hasKey $base $agent -}}
 {{-       $id := $agent -}}
 {{-       if $i -}}{{- $id = printf "%s-%s" $agent $env.session -}}{{- end -}}
-{{-       $out = set $out $id (index $base $agent) -}}
+{{-       $entry := merge (dict "usage" (dict "environment" $label "agent" $agent)) (index $base $agent) -}}
+{{-       $out = set $out $id $entry -}}
 {{-     end -}}
 {{-   end -}}
 {{- end -}}

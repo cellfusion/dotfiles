@@ -749,4 +749,52 @@ out="$(validate_run "$DR")"
 assert_not_contains "$out" "decision_request の実体" \
   "decision_request の実体がある run では、その指摘を出さない"
 
+# --- provider の usage: 残量確認が読む環境ラベルと agent 名 ---
+# provider ごとに別の dict を作らないと、同じ family の provider が同じラベルを共有する。
+PROV="$FIXTURE/providers-default.json"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$PROV"
+for p in $(jq -r 'keys[]' "$PROV"); do
+  env_label="$(jq -r --arg p "$p" '.[$p].usage.environment // ""' "$PROV")"
+  assert_not_contains "|$env_label|" "||" "usage: $p が usage.environment を持つ"
+  agent_name="$(jq -r --arg p "$p" '.[$p].usage.agent // ""' "$PROV")"
+  assert_eq "$agent_name" "$(jq -r --arg p "$p" '.[$p].family' "$PROV")" \
+    "usage: $p の usage.agent は family と一致する"
+done
+
+# 環境定義を持たないマシンでは、既定の環境ラベルを usage.sh のテンプレートと揃える。
+# 2 つの既定がずれると、その環境の provider の行が採取結果から引けなくなる。
+usage_empty_cfg="$(mktemp)"
+printf '[data]\n' > "$usage_empty_cfg"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  --config "$usage_empty_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-empty.json"
+assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-empty.json")" "P1" \
+  "usage: 環境定義が無ければ既定のラベル P1 を使う"
+
+# 同じ family の provider が別々の環境ラベルを持つ。同じラベルを返すなら、テンプレートが
+# provider 間で dict を共有しており、残量確認が別のアカウントの行を読むことになる。
+usage_envs_cfg="$(mktemp)"
+cat > "$usage_envs_cfg" <<'EOF'
+[[data.environments]]
+    session = "default"
+    label   = "P1"
+    agents  = ["claude", "codex"]
+
+[[data.environments]]
+    session = "work"
+    label   = "P2"
+    agents  = ["claude", "codex"]
+EOF
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  --config "$usage_envs_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-envs.json"
+assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-envs.json")" "P1" \
+  "usage: 先頭環境の claude は P1 を持つ"
+assert_eq "$(jq -r '."claude-work".usage.environment' "$FIXTURE/providers-envs.json")" "P2" \
+  "usage: 2 つ目の環境の claude-work は P2 を持つ"
+assert_eq "$(jq -r '."codex-work".usage.agent' "$FIXTURE/providers-envs.json")" "codex" \
+  "usage: codex-work の usage.agent は codex である"
+rm -f "$usage_empty_cfg" "$usage_envs_cfg"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
