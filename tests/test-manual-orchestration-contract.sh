@@ -509,8 +509,10 @@ assert_contains "$out" "limit=1200s" "validator: plan の待ち時間は 1200 �
 edit_json "$OD_ATTEMPT" \
   --arg t "$(date -u -r "$(( $(date -u '+%s') - 300 ))" '+%Y-%m-%dT%H:%M:%SZ')" \
   '.started_at = $t'
-edit_json "$OD/state.json" '.child_timeout_seconds = 60'
+edit_json "$OD/state.json" '.child_timeout_seconds = 60.0'
 out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 小数表記の child_timeout_seconds でも期限超過を報告して成功する"
 assert_contains "$out" "limit=60s" "validator: child_timeout_seconds を期限の判定に使う"
 edit_json "$OD/state.json" 'del(.child_timeout_seconds)'
 out="$(validate_run "$OD")"
@@ -932,6 +934,13 @@ assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]')" \
   "check-usage: 引数の順に 1 行ずつ返す"
 assert_eq "$(wc -l < "$CALL_LOG" | tr -d ' ')" "1" \
   "check-usage: provider の数によらず採取スクリプトを 1 回だけ実行する"
+
+# provider は JSON 文字列としてエスケープし、引用符を含む値でも各行を JSON として読める。
+out="$(check_usage 'a"b')"
+status=$?
+assert_eq "$status" "0" "check-usage: 引用符を含む provider でも成功する"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]' 2>/dev/null)" '["a\"b"]' \
+  "check-usage: 引用符を含む provider を有効な JSON のまま保持する"
 
 # 残量が分からないことを理由に run を止めない。採取できない 3 つの場合はどれも unknown で
 # 終了コード 0 にする。
