@@ -46,12 +46,12 @@ run の `state.json` と attempt の `state.json` は別の責務を持つ。双
   `agentId`、`Agent` ツールなら `Agent` ツールが返した識別子を入れる。この値が無いと、親は後から
   子の生存を確認できない。`state` が `pending` の attempt は子をまだ起動していないので
   `child_ref` を持たなくてよい。それ以外の `state` では非空の文字列にする
-
-親は子を起動した直後に、その attempt state の `child_ref` と `started_at` を書く。書いてから
-「子の完了検知」の見張りを起動する。
 - `backend`: `paseo-mcp` または `subagent` と、選択理由
 - `error`: 失敗時のエラー概要。成功時は空でもよい
 - `parent_decision`: 親が確認した境界での継続、再実行、停止、統合の判断
+
+親は子を起動した直後に、その attempt state の `child_ref` と `started_at` を書く。書いてから
+「子の完了検知」の見張りを起動する。
 
 attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、attempt のディレクトリ名と
 一致させる。`round` は run state の `current_round` 以下の非負整数にする。この照合によって、並列子の
@@ -84,13 +84,11 @@ provider id を別の provider id へ読み替える対応表である。
 
 `roles` の置き換えと `providerMap` の間で、親は自分が動いている AI 環境を候補に当てる。当てるのは
 validator の `--resolve-candidates` である。`MAD_VALIDATE` の決め方は「成果物契約の受け入れ検証」と
-同じで、`chezmoi apply` 前は配布先に validator が無いのでソース側を使う。
+同じである。このブランチを merge した後に `chezmoi apply` を実行してから MAD を使うため、配布先の
+validator を使う。
 
 ```bash
 MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
-if [ ! -x "$MAD_VALIDATE" ]; then
-  MAD_VALIDATE="$(git rev-parse --show-toplevel)/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
-fi
 bash "$MAD_VALIDATE" --resolve-candidates researcher
 bash "$MAD_VALIDATE" --resolve-candidates researcher '[{"provider":"claude"}]'
 ```
@@ -137,7 +135,7 @@ bash "$MAD_VALIDATE" --check-usage claude-work claude codex-work codex
 `waiting_for_user` にし、`next_action` に全候補が `exhausted` であることと最も早い
 `session_resets_at` を書いてユーザーへ渡す。`session_resets_at` は unix 時刻なので、ユーザーへ渡す
 前に読める時刻へ変換する。残量のある候補が無い状態で起動すると、成果物を残さずに終わる子を作り、
-再実行も同じ結果になるためである。
+再実行も同じ結果になるためである。子を起動しなかった attempt は `state` を `pending` のまま残す。
 
 残量が分からないときは run を止めない。`--check-usage` は `unknown` を返して終了コード 0 で終わる。
 親は `unknown` の候補を並べ直しの対象にしない。
@@ -317,14 +315,11 @@ run を `failed` として停止する。後者は変更が無いという結果
 ### 成果物契約の受け入れ検証
 
 親は子を起動する backend と切り離して、run の完了前に次を実行する。これは Paseo MCP の実在ツールを
-呼ばず、作成済みの state と成果物だけを検証する。`chezmoi apply` 前は配布先に validator が無いので、
-その場合はこの checkout のソース側を使う。
+呼ばず、作成済みの state と成果物だけを検証する。このブランチを merge した後に `chezmoi apply` を
+実行してから MAD を使うため、配布先の validator を使う。
 
 ```bash
 MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
-if [ ! -x "$MAD_VALIDATE" ]; then
-  MAD_VALIDATE="$(git rev-parse --show-toplevel)/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
-fi
 bash "$MAD_VALIDATE" "$RUN_DIR"
 ```
 

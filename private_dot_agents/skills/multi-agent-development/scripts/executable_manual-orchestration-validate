@@ -310,8 +310,9 @@ if [ "$#" -ge 1 ] && [ "$1" = "--check-usage" ]; then
         esac
         ;;
     esac
-    printf '{"provider":"%s","session_pct":%s,"session_resets_at":%s,"verdict":"%s"}\n' \
-      "$provider" "$session_pct" "$session_resets_at" "$usage_verdict"
+    jq -cn --arg provider "$provider" --argjson session_pct "$session_pct" \
+      --argjson session_resets_at "$session_resets_at" --arg verdict "$usage_verdict" \
+      '{provider: $provider, session_pct: $session_pct, session_resets_at: $session_resets_at, verdict: $verdict}'
   done
   exit 0
 fi
@@ -363,7 +364,7 @@ case "$recipe" in
 esac
 if jq -e '.child_timeout_seconds | type == "number" and . > 0 and floor == .' \
   "$run_state" >/dev/null 2>&1; then
-  child_timeout="$(jq -r '.child_timeout_seconds' "$run_state")"
+  child_timeout="$(jq -r '.child_timeout_seconds | floor' "$run_state")"
 fi
 has_non_ok_adopted_attempt=0
 has_research_downstream=0
