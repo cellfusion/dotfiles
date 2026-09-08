@@ -57,7 +57,7 @@ Paseo の側から `paseo ls` と `paseo stop` で追える。
 ### 出力
 
 成功すると最終ノードの構造化 JSON が標準出力に出る。ノードごとのプロンプト・出力・ログは
-run ディレクトリ `_cellfusion/mad/<runId>/` に残る。
+run ディレクトリ `~/docs/<owner>/<repo>/mad/<runId>/` に残る。
 
 ### 失敗したとき
 

@@ -189,6 +189,23 @@ for skill in brainstorming writing-plans; do
   done
 done
 
+# 保存先が作業ツリーの外へ出たので、消える前提の記述が残っていない。
+for tool in claude codex opencode; do
+  out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
+  assert_not_contains "$out" "_cellfusion" "sdd/$tool: 旧保存先を書かない"
+  assert_not_contains "$out" "git clean -fdx" "sdd/$tool: git clean で消える前提を書かない"
+  assert_contains "$out" '~/docs/<owner>/<repo>/sdd/' "sdd/$tool: 新しい workspace のパスを書く"
+
+  out="$(render_template "agent-skills/finishing-a-development-branch/SKILL.md" "$tool")"
+  assert_not_contains "$out" "_cellfusion" "fdb/$tool: 旧保存先を書かない"
+  assert_not_contains "$out" "git clean -fdx" "fdb/$tool: git clean で消える前提を書かない"
+  assert_contains "$out" '~/docs/<owner>/<repo>/' "fdb/$tool: 成果物の残る場所を書く"
+
+  out="$(render_template "agent-skills/multi-agent-development/SKILL.md" "$tool")"
+  assert_not_contains "$out" "_cellfusion" "mad/$tool: 旧保存先を書かない"
+  assert_contains "$out" '~/docs/<owner>/<repo>/mad/' "mad/$tool: 新しい run ディレクトリを書く"
+done
+
 # SDD のエスカレーションは model 上書きではなく agent の切り替えで表す。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/subagent-driven-development/SKILL.md" "$tool")"
