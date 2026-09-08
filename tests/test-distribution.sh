@@ -144,10 +144,12 @@ assert_contains "$managed" ".config/worktrunk/config.toml" "worktrunk: 人用 co
 assert_not_contains "$managed_files" "subagent-driven-development/scripts/herdr-dispatch" \
   "herdr-dispatch を配らない"
 
-for s in agent-route cellfusion-workdir json-schema; do
+for s in agent-route agent-docs-dir json-schema; do
   assert_contains "$managed" ".agents/skills/_shared/scripts/$s" \
     "_shared のスクリプトを配る: $s"
 done
+assert_not_contains "$managed" ".agents/skills/_shared/scripts/cellfusion-workdir" \
+  "退役した cellfusion-workdir を配らない"
 
 # --- 退役した relay / loam を配らない ---
 # relay は CPU/メモリ対策で無効化したまま復帰せず、loam はバイナリも残っていない。
