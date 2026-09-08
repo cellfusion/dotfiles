@@ -179,8 +179,13 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_agents/skills/subagent-drive
 for skill in brainstorming writing-plans; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"
-    assert_contains "$out" ".agents/skills/_shared/scripts/cellfusion-workdir" \
-      "$skill/$tool: 保存前に cellfusion-workdir を呼ぶ"
+    assert_contains "$out" ".agents/skills/_shared/scripts/agent-docs-dir" \
+      "$skill/$tool: 保存前に agent-docs-dir を呼ぶ"
+    assert_not_contains "$out" "cellfusion-workdir" "$skill/$tool: 旧スクリプトを呼ばない"
+    assert_not_contains "$out" "_cellfusion" "$skill/$tool: 旧保存先を書かない"
+    assert_not_contains "$out" "git clean -fdx" \
+      "$skill/$tool: git clean で成果物が消えるとは書かない"
+    assert_contains "$out" '~/docs/<owner>/<repo>/' "$skill/$tool: 新しい保存先を書く"
   done
 done
 

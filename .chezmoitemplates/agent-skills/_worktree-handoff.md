@@ -10,7 +10,7 @@
 
 ### 2. ブランチ名を決める
 
-plan のファイル名から日付を落として `feat/<feature-name>` にする。`_cellfusion/plans/2026-08-14-worktree-handoff.md` なら `feat/worktree-handoff` である。
+plan のファイル名から日付を落として `feat/<feature-name>` にする。`~/docs/<owner>/<repo>/plans/2026-08-14-worktree-handoff.md` なら `feat/worktree-handoff` である。
 
 ```bash
 git rev-parse --verify "feat/<feature-name>" 2>/dev/null
@@ -60,7 +60,7 @@ herdr agent prompt "<agent-name>" "<指示>" --wait --timeout 120000
 
 指示に入れるのは次の 4 点だけである。会話の履歴や経緯を貼らない。
 
-- plan の**絶対パス**。**委譲元チェックアウト側のパスを渡す。** `_cellfusion/` は git 追跡外でブランチに乗らないため、worktree の中には存在しない
+- plan の**絶対パス**。保存先はリポジトリの作業ツリーの外にあり、どのチェックアウトから見ても同じ絶対パスなので、そのまま渡せばよい
 - このプランを subagent-driven-development で実装すること
 - worktree は用意済みなので、新しく worktree を切らないこと
 - この worktree のブランチ名

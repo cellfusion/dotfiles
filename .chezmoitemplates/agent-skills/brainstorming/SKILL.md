@@ -27,7 +27,7 @@ todo リストでも 1 関数のユーティリティでも設定変更でも、
 2. **質問を 1 問ずつ投げる** — 目的・制約・成功条件を理解する
 3. **2-3 案を提示する** — トレードオフと推奨を添える
 4. **設計を提示する** — セクションごとに合意を取る
-5. **spec を書く** — `_cellfusion/specs/YYYY-MM-DD-<topic>-design.md`
+5. **spec を書く** — `agent-docs-dir specs` が返すディレクトリの `YYYY-MM-DD-<topic>-design.md`
 6. **spec を self-review する** — placeholder / 内部矛盾 / スコープ / 曖昧さ
 7. **プレビューを開く** — 実行環境に応じた別の端末で spec を開く
 8. **承認 gate** — [ask-user] で承認を取り、選ばれた処理を実行する
@@ -111,8 +111,8 @@ digraph brainstorming {
 
 ## spec を書く
 
-- 書く前に `~/.agents/skills/_shared/scripts/cellfusion-workdir` を実行する。`_cellfusion/` を作り、自己無視の `.gitignore` を置く。global の gitignore が無い環境（新しいマシン、他人の環境、CI）ではこれが唯一の無視の根拠になるので省略しない
-- 合意した設計を `_cellfusion/specs/YYYY-MM-DD-<topic>-design.md` に書く
+- 書く前に `~/.agents/skills/_shared/scripts/agent-docs-dir specs` を実行する。保存先を求めて作り、絶対パスを 1 行で返す。保存先は `~/docs/<owner>/<repo>/specs/` であり、リポジトリの作業ツリーの外にある
+- 合意した設計を、返ってきたディレクトリの `YYYY-MM-DD-<topic>-design.md` に書く
   - プロジェクト側の CLAUDE.md に置き場所の指定があればそちらを優先する
 - 日付はその日の実際の日付を使う。相対表現（「今日」「先週」）は書かない
 

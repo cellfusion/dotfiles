@@ -22,7 +22,7 @@ git rev-parse --git-dir
   - **承認&worktree で委譲** — worktree を新しい workspace として切り、そこで起動した Claude セッションに{{ .nextLabel }}を渡す（herdr 管理下のときだけ出す）
 {{- end }}
   - **承認&継続** — {{ .nextLabel }}へ進む
-  - **承認のみ** — {{ .artifact }} を `_cellfusion/` に残してここで終わる
+  - **承認のみ** — {{ .artifact }} を `~/docs/<owner>/<repo>/` に残してここで終わる
 {{- if .issue }}
   - **承認&継続（issue化）** — issue を立てて番号を追記し、{{ .nextLabel }}へ進む（`gh` が使えるときだけ出す）
   - **承認（issue化）** — issue を立てて番号を追記し、ここで終わる（`gh` が使えるときだけ出す）
@@ -43,7 +43,7 @@ git rev-parse --git-dir
 
 ### 承認のみ
 
-{{ .artifact }} は `_cellfusion/` に残る。次のスキルは起動しない。ファイルの絶対パスを最終報告して終了する。
+{{ .artifact }} は `~/docs/<owner>/<repo>/` に残る。次のスキルは起動しない。ファイルの絶対パスを最終報告して終了する。
 {{ if .issue }}
 ### issue 化を伴う分岐
 
@@ -57,7 +57,7 @@ git rev-parse --git-dir
    > Issue: [#123](https://github.com/owner/repo/issues/123)
    ```
 
-4. ファイルは削除しない。`_cellfusion/` に残したままにする
+4. ファイルは削除しない。`~/docs/<owner>/<repo>/` に残したままにする
 5. issue の番号と URL を報告する
 
 そのうえで、「承認&継続（issue化）」なら下の引き継ぎ節に従って進み、issue 番号も次へ伝える。「承認（issue化）」ならファイルの絶対パスと issue 番号を最終報告して終了する。
@@ -68,4 +68,4 @@ git rev-parse --git-dir
 
 ### 何も選ばれなかった場合
 
-中止として扱い、そこで止める。ファイルは `_cellfusion/` に残したままにする。
+中止として扱い、そこで止める。ファイルは `~/docs/<owner>/<repo>/` に残したままにする。
