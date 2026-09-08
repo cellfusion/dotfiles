@@ -66,6 +66,7 @@ write_attempt_in() {
   \"finished_at\": \"2026-09-05T00:01:00Z\",
   \"backend\": \"subagent\",
   \"backend_reason\": \"Paseo MCP unavailable\",
+  \"child_ref\": \"child-$node_id-$attempt_id\",
   \"parent_decision\": \"accepted\"
 }" > "$attempt_dir/state.json"
 }
@@ -411,6 +412,7 @@ write_recipe_run() {
     run_id: $run, node: $node, attempt: "attempt-001", round: 0,
     state: "ok", phase: "child_work", phase_state: "ok",
     next_action: "await parent decision",
+    child_ref: "child-\($node)-attempt-001",
     backend: "subagent", backend_reason: "Paseo MCP unavailable",
     parent_decision: "accepted"
   }' > "$attempt_dir/state.json"
@@ -454,6 +456,97 @@ for recipe in spec plan implement review delivery; do
   assert_eq "$status" "1" "validator: $recipe は $node_id を欠く ok run を拒否する"
   assert_contains "$out" "$node_id" "validator: $recipe に欠けた必須 output を示す"
 done
+
+# --- child_ref と期限超過: 成果物を残さずに終わった子を親が後から追えるようにする ---
+OD="$FIXTURE/run-overdue"
+mkdir -p "$OD"
+write_attempt_in "$OD" planner a1 'プラン'
+OD_ATTEMPT="$OD/nodes/planner/attempts/a1/state.json"
+printf '%s\n' "{
+  \"run_id\": \"run-overdue\",
+  \"recipe\": \"plan\",
+  \"state\": \"running\",
+  \"phase\": \"planner\",
+  \"phase_state\": \"running\",
+  \"next_action\": \"await planner\",
+  \"current_round\": 0,
+  \"started_at\": \"2026-09-06T00:00:00Z\",
+  \"backend\": \"subagent\",
+  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"parent_decision\": \"await child\",
+  \"active_nodes\": [\"planner\"],
+  \"completed_nodes\": [],
+  \"adopted_attempts\": {},
+  \"artifact_paths\": []
+}" > "$OD/state.json"
+
+edit_json() {
+  local file="$1"
+  shift
+  jq "$@" "$file" > "$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
+# 待ち時間の中にいる running は、子が正常に走っている状態なので報告しない。
+edit_json "$OD_ATTEMPT" --arg t "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  '.state = "running" | .phase_state = "running" | .started_at = $t | del(.finished_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 待ち時間の中の running を受け入れる"
+assert_not_contains "$out" "overdue attempt:" \
+  "validator: 待ち時間の中の running を報告しない"
+
+# 期限を過ぎた running は報告するが、契約違反ではないので終了コードは 0 のままにする。
+edit_json "$OD_ATTEMPT" '.started_at = "2020-01-01T00:00:00Z"'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 期限超過の報告で終了コードを変えない"
+assert_contains "$out" "overdue attempt: planner/a1 started_at=2020-01-01T00:00:00Z" \
+  "validator: 期限を過ぎた running の node と attempt を示す"
+assert_contains "$out" "limit=1200s" "validator: plan の待ち時間は 1200 秒である"
+
+# 親がレシピごとに指定した待ち時間は run state の child_timeout_seconds が持つ。
+edit_json "$OD_ATTEMPT" \
+  --arg t "$(date -u -r "$(( $(date -u '+%s') - 300 ))" '+%Y-%m-%dT%H:%M:%SZ')" \
+  '.started_at = $t'
+edit_json "$OD/state.json" '.child_timeout_seconds = 60.0'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 小数表記の child_timeout_seconds でも期限超過を報告して成功する"
+assert_contains "$out" "limit=60s" "validator: child_timeout_seconds を期限の判定に使う"
+edit_json "$OD/state.json" 'del(.child_timeout_seconds)'
+out="$(validate_run "$OD")"
+assert_not_contains "$out" "overdue attempt:" \
+  "validator: child_timeout_seconds が無ければ既定の待ち時間で判定する"
+
+# 期限超過の判定が started_at を読むので、running では書式まで検証する。
+edit_json "$OD_ATTEMPT" 'del(.started_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: started_at を持たない running を拒否する"
+assert_contains "$out" "started_at must be a non-empty string" \
+  "validator: 欠けた started_at を示す"
+
+edit_json "$OD_ATTEMPT" '.started_at = "2026-09-06 00:00:00"'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: 書式に合わない started_at を拒否する"
+assert_contains "$out" "started_at must match YYYY-MM-DDTHH:MM:SSZ" \
+  "validator: started_at の書式を示す"
+
+# child_ref が無いと、親は成果物を残さずに終わった子の生存を後から確認できない。
+edit_json "$OD_ATTEMPT" '.started_at = "2020-01-01T00:00:00Z" | del(.child_ref)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: child_ref を欠く running を拒否する"
+assert_contains "$out" "child_ref must be a non-empty string" \
+  "validator: 欠けた child_ref を示す"
+
+# pending は子をまだ起動していないので、child_ref も started_at も要求しない。
+edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | del(.started_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: pending の attempt には child_ref を要求しない"
 
 # implement と spike は子が同時にファイルを書くので、node ごとに worktree を作る。
 # 台帳が無いと、どの run がどの workspace を作ったかが追えなくなる。
@@ -748,5 +841,142 @@ printf '質問と選択肢\n' > "$DR_FILE"
 out="$(validate_run "$DR")"
 assert_not_contains "$out" "decision_request の実体" \
   "decision_request の実体がある run では、その指摘を出さない"
+
+# --- provider の usage: 残量確認が読む環境ラベルと agent 名 ---
+# provider ごとに別の dict を作らないと、同じ family の provider が同じラベルを共有する。
+PROV="$FIXTURE/providers-default.json"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$PROV"
+for p in $(jq -r 'keys[]' "$PROV"); do
+  env_label="$(jq -r --arg p "$p" '.[$p].usage.environment // ""' "$PROV")"
+  assert_not_contains "|$env_label|" "||" "usage: $p が usage.environment を持つ"
+  agent_name="$(jq -r --arg p "$p" '.[$p].usage.agent // ""' "$PROV")"
+  assert_eq "$agent_name" "$(jq -r --arg p "$p" '.[$p].family' "$PROV")" \
+    "usage: $p の usage.agent は family と一致する"
+done
+
+# 環境定義を持たないマシンでは、既定の環境ラベルを usage.sh のテンプレートと揃える。
+# 2 つの既定がずれると、その環境の provider の行が採取結果から引けなくなる。
+usage_empty_cfg="$(mktemp)"
+printf '[data]\n' > "$usage_empty_cfg"
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  --config "$usage_empty_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-empty.json"
+assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-empty.json")" "P1" \
+  "usage: 環境定義が無ければ既定のラベル P1 を使う"
+
+# 同じ family の provider が別々の環境ラベルを持つ。同じラベルを返すなら、テンプレートが
+# provider 間で dict を共有しており、残量確認が別のアカウントの行を読むことになる。
+usage_envs_cfg="$(mktemp)"
+cat > "$usage_envs_cfg" <<'EOF'
+[[data.environments]]
+    session = "default"
+    label   = "P1"
+    agents  = ["claude", "codex"]
+
+[[data.environments]]
+    session = "work"
+    label   = "P2"
+    agents  = ["claude", "codex"]
+EOF
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  --config "$usage_envs_cfg" --config-format toml \
+  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-envs.json"
+assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-envs.json")" "P1" \
+  "usage: 先頭環境の claude は P1 を持つ"
+assert_eq "$(jq -r '."claude-work".usage.environment' "$FIXTURE/providers-envs.json")" "P2" \
+  "usage: 2 つ目の環境の claude-work は P2 を持つ"
+assert_eq "$(jq -r '."codex-work".usage.agent' "$FIXTURE/providers-envs.json")" "codex" \
+  "usage: codex-work の usage.agent は codex である"
+rm -f "$usage_empty_cfg" "$usage_envs_cfg"
+
+# --- 起動前の残量確認: 5 時間のセッション枠が尽きた候補を親が末尾へ回せるようにする ---
+# 採取は SketchyBar の usage.sh に任せる。テストは偽の採取スクリプトへ差し替え、実際の
+# Claude と Codex へ問い合わせない。
+USAGE_DIR="$FIXTURE/usage"
+mkdir -p "$USAGE_DIR"
+FAKE_USAGE="$USAGE_DIR/usage.sh"
+CALL_LOG="$USAGE_DIR/calls"
+cat > "$FAKE_USAGE" <<EOF
+#!/usr/bin/env bash
+printf 'call\n' >> "$CALL_LOG"
+printf 'P1\tclaude\t12\t1788000000\tok\tok\t10\t1788010000\tok\n'
+printf 'P1\tcodex\t20\t1788000000\tok\tok\t85\t1788020000\tcrit\n'
+printf 'P2\tclaude\t30\t1788000000\tok\tok\t97\t1788030000\tcrit\n'
+printf 'P2\tcodex\t40\t1788000000\tok\tok\t-\t-\tnone\n'
+EOF
+chmod +x "$FAKE_USAGE"
+
+printf '%s\n' '{
+  "claude": { "family": "claude", "usage": { "environment": "P1", "agent": "claude" } },
+  "codex": { "family": "codex", "usage": { "environment": "P1", "agent": "codex" } },
+  "claude-work": { "family": "claude", "usage": { "environment": "P2", "agent": "claude" } },
+  "codex-work": { "family": "codex", "usage": { "environment": "P2", "agent": "codex" } }
+}' > "$DEFS/paseo-providers.json"
+
+check_usage() {
+  AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
+    bash "$VALIDATOR" --check-usage "$@" 2>&1
+}
+
+rm -f "$CALL_LOG"
+out="$(check_usage claude codex claude-work codex-work)"
+status=$?
+assert_eq "$status" "0" "check-usage: 4 つの provider を判定して成功する"
+assert_eq "$(printf '%s\n' "$out" | head -1)" \
+  '{"provider":"claude","session_pct":10,"session_resets_at":1788010000,"verdict":"ok"}' \
+  "check-usage: provider と使用率と回復時刻と判定を 1 行の JSON で出す"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].verdict]')" \
+  '["ok","low","exhausted","unknown"]' \
+  "check-usage: 使用率から ok と low と exhausted と unknown を出す"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]')" \
+  '["claude","codex","claude-work","codex-work"]' \
+  "check-usage: 引数の順に 1 行ずつ返す"
+assert_eq "$(wc -l < "$CALL_LOG" | tr -d ' ')" "1" \
+  "check-usage: provider の数によらず採取スクリプトを 1 回だけ実行する"
+
+# provider は JSON 文字列としてエスケープし、引用符を含む値でも各行を JSON として読める。
+out="$(check_usage 'a"b')"
+status=$?
+assert_eq "$status" "0" "check-usage: 引用符を含む provider でも成功する"
+assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]' 2>/dev/null)" '["a\"b"]' \
+  "check-usage: 引用符を含む provider を有効な JSON のまま保持する"
+
+# 残量が分からないことを理由に run を止めない。採取できない 3 つの場合はどれも unknown で
+# 終了コード 0 にする。
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$USAGE_DIR/absent.sh" \
+  bash "$VALIDATOR" --check-usage claude 2>&1)"
+status=$?
+assert_eq "$status" "0" "check-usage: 採取スクリプトが無くても終了コード 0 で終わる"
+assert_eq "$out" \
+  '{"provider":"claude","session_pct":null,"session_resets_at":null,"verdict":"unknown"}' \
+  "check-usage: 採取スクリプトが無ければ unknown を返す"
+
+# 配布先の 2026-08-27 の版は 6 列しか出さず、5 時間の枠の 3 列を持たない。
+SIX_USAGE="$USAGE_DIR/usage-six.sh"
+cat > "$SIX_USAGE" <<'EOF'
+#!/usr/bin/env bash
+printf 'P1\tclaude\t12\t1788000000\tok\tok\n'
+EOF
+chmod +x "$SIX_USAGE"
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$SIX_USAGE" \
+  bash "$VALIDATOR" --check-usage claude 2>&1)"
+status=$?
+assert_eq "$status" "0" "check-usage: 6 列の採取スクリプトでも終了コード 0 で終わる"
+assert_contains "$out" '"verdict":"unknown"' \
+  "check-usage: 6 列の採取スクリプトでは unknown を返す"
+
+out="$(check_usage claude-absent)"
+status=$?
+assert_eq "$status" "0" "check-usage: 対応表に無い provider でも終了コード 0 で終わる"
+assert_contains "$out" '"provider":"claude-absent","session_pct":null' \
+  "check-usage: paseo-providers.json に無い provider は unknown を返す"
+
+out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
+  bash "$VALIDATOR" --check-usage 2>&1)"
+status=$?
+assert_eq "$status" "1" "check-usage: provider を渡さない呼び方を拒否する"
+assert_contains "$out" "usage: manual-orchestration-validate --check-usage" \
+  "check-usage: provider を渡さない呼び方に使い方を示す"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
