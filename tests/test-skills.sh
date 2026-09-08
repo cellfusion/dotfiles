@@ -171,12 +171,11 @@ for s in review-package sdd-workspace task-brief task-waves; do
             "no" "旧 scripts が残っていない: $s"
 done
 
-# _cellfusion/ の自己無視を作るスクリプトは 1 箇所にあり、そこへ書き込む
-# 3 つのスキルすべてが書き込む前にそれを呼ぶ。
-assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_cellfusion-workdir" ] && echo yes || echo no)" \
-          "yes" "cellfusion-workdir の実体がある"
+# 保存先を解決するスクリプトは 1 箇所にあり、SDD の workspace もそれを経由する。
+assert_eq "$([ -f "$CHEZMOI_SOURCE/private_dot_agents/skills/_shared/scripts/executable_agent-docs-dir" ] && echo yes || echo no)" \
+          "yes" "agent-docs-dir の実体がある"
 assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_agents/skills/subagent-driven-development/scripts/executable_sdd-workspace")" \
-  "cellfusion-workdir" "sdd-workspace が cellfusion-workdir を呼ぶ"
+  "agent-docs-dir" "sdd-workspace が agent-docs-dir を呼ぶ"
 for skill in brainstorming writing-plans; do
   for tool in claude codex opencode; do
     out="$(render_template "agent-skills/$skill/SKILL.md" "$tool")"

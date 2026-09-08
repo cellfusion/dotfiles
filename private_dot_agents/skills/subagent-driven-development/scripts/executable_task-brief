@@ -4,7 +4,7 @@
 # タスク本文が通過しない。
 #
 # Usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
-# 既定の OUTFILE: <repo-root>/_cellfusion/sdd/<plan-basename>/task-<N>-brief.md
+# 既定の OUTFILE: ~/docs/<owner>/<repo>/sdd/<plan-basename>/task-<N>-brief.md
 set -euo pipefail
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
