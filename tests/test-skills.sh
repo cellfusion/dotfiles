@@ -373,10 +373,12 @@ assert_contains "$braid_src" 'includeTemplate "agent-skills/_braid-invocation.md
   "braid: 呼び方を共有パーシャルから取り込む"
 assert_not_contains "$braid_src" "command -v braid" "braid: 呼び方の本文を自前で持たない"
 
-# SDD 外の単発レビューは review package をリポジトリ内に作り、braid の review レシピを呼ぶ。
+# SDD 外の単発レビューは agent-docs-dir の正本を使い、braid の review レシピを呼ぶ。
 for tool in claude codex opencode; do
   out="$(render_template "agent-skills/requesting-code-review/SKILL.md" "$tool")"
-  assert_contains "$out" "_cellfusion/reviews/" "rcr/$tool: package をリポジトリ内に作る"
+  assert_contains "$out" "agent-docs-dir reviews" "rcr/$tool: package の正本を agent-docs-dir の下に作る"
+  assert_not_contains "$out" "cellfusion-workdir" "rcr/$tool: 旧スクリプトを呼ばない"
+  assert_not_contains "$out" "_cellfusion" "rcr/$tool: 旧保存先を書かない"
   assert_contains "$out" "braid run review" "rcr/$tool: review レシピを呼ぶ"
   assert_contains "$out" "--arg requirements=" "rcr/$tool: requirements 引数を渡す"
   assert_contains "$out" "--arg review_file=" "rcr/$tool: review_file 引数を渡す"
@@ -384,8 +386,24 @@ for tool in claude codex opencode; do
   assert_not_contains "$out" "mktemp -t review" "rcr/$tool: /tmp に package を作らない"
   assert_not_contains "$out" 'requirements=<' "rcr/$tool: bash ブロックの中で < をリダイレクトにしない"
   assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
-  assert_contains "$out" "cellfusion-workdir" "rcr/$tool: reviews を cellfusion-workdir 経由で作る"
+  assert_contains "$out" '.agent-review' "rcr/$tool: 複製先を .agent-review にする"
+  assert_contains "$out" '"$STAGE/.gitignore"' "rcr/$tool: 複製先に .gitignore を書く"
+  assert_contains "$out" "自己無視" "rcr/$tool: 複製先を自己無視させると書く"
+  assert_contains "$out" '--arg review_file="$STAGED_REVIEW"' \
+    "rcr/$tool: review_file には複製先を渡す"
+  assert_contains "$out" '--arg requirements="$STAGED_REQ"' \
+    "rcr/$tool: requirements には複製先を渡す"
+  assert_not_contains "$out" '--arg review_file="$OUT"' \
+    "rcr/$tool: 正本のパスをそのまま渡さない"
+  assert_not_contains "$out" '--arg requirements="$REQ_SRC"' \
+    "rcr/$tool: 要件の正本のパスをそのまま渡さない"
+  assert_contains "$out" 'rm -rf "$STAGE"' "rcr/$tool: 複製を消す"
+  assert_contains "$out" "成功しても失敗しても" "rcr/$tool: 成功時も失敗時も消すと書く"
 done
+
+ignore="$(cat "$CHEZMOI_SOURCE/private_dot_config/git/ignore")"
+assert_contains "$ignore" ".agent-review/" "global gitignore が .agent-review/ を無視する"
+assert_contains "$ignore" "_cellfusion/" "global gitignore が _cellfusion/ を無視し続ける"
 
 rcr_src="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")"
 assert_contains "$rcr_src" 'includeTemplate "agent-skills/_braid-invocation.md"' \

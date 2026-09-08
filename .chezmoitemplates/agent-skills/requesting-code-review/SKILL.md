@@ -43,14 +43,10 @@ BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-SDD の外で単発に依頼する場合は、リポジトリ内の `_cellfusion/reviews/` に作る。`/tmp` を使わない
-のは、read 役が現在の作業ディレクトリの外を読めない engine 設定でも同じ入力を読めるようにする
-ためである。`_cellfusion/` が無ければ
-`~/.agents/skills/_shared/scripts/cellfusion-workdir` が作る。
+SDD の外で単発に依頼する場合は、`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。
 
 ```bash
-REVIEWS="$(~/.agents/skills/_shared/scripts/cellfusion-workdir)/reviews"
-mkdir -p "$REVIEWS"
+REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
 OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
 {
   echo "# Review package: ${BASE_SHA}..${HEAD_SHA}"
@@ -71,10 +67,7 @@ SDD の中では従来経路を維持する。[dispatch-subagent: sdd-final-revi
 - review package のパス
 - 先送りされた指摘や park された指摘のリスト（あれば）
 
-SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上の 4 項目をレシピの 2 引数へ移す。
-必ずリポジトリルートで実行する。「braid の呼び方」の「引数」節が定めるとおり、`--arg` で渡す
-パスは実行時の cwd の下になければ read 役が読めない。`requirements` に渡す要件ファイルが
-リポジトリ外にあるなら、package と同じ `$REVIEWS` へ複製してからそのパスを渡す。
+SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上の 4 項目をレシピの 2 引数へ移す。必ずリポジトリルートで実行する。「braid の呼び方」の「引数」節が定めるとおり、`--arg` で渡すパスは実行時の cwd の下になければ read 役が読めない。review package の正本も plan もリポジトリの作業ツリーの外にあるので、呼ぶ直前に `<repo-root>/.agent-review/` へ複製し、複製先のパスを `--arg` に渡す。要件をファイルではなく文字列で渡す場合は、要件の複製が要らない。
 
 | 渡すもの | 移す先 |
 |---|---|
@@ -84,12 +77,29 @@ SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上�
 | 先送り・park された指摘のリスト | `requirements` に含める |
 
 ```bash
-# 要件ファイルがあるとき。cwd の下に無ければ package と同じ場所へ複製してから渡す
-REQ="$(git rev-parse --show-toplevel)/_cellfusion/plans/PLAN.md"
-# 無いときは、概要と要件を数行にまとめた文字列をそのまま渡す
-# REQ='X を実装した。要件は次の 3 点である: ...'
-braid run review --arg requirements="$REQ" --arg review_file="$OUT"
+# 要件ファイルの正本。plan なら agent-docs-dir plans の下にある
+REQ_SRC="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)/PLAN.md"
+
+# read 役は cwd の外を読めないので、リポジトリ内へ複製してから渡す
+STAGE="$(git rev-parse --show-toplevel)/.agent-review"
+mkdir -p "$STAGE"
+printf '*\n' > "$STAGE/.gitignore"
+cp "$OUT" "$STAGE/"
+cp "$REQ_SRC" "$STAGE/"
+STAGED_REVIEW="$STAGE/$(basename "$OUT")"
+STAGED_REQ="$STAGE/$(basename "$REQ_SRC")"
+
+braid run review --arg requirements="$STAGED_REQ" --arg review_file="$STAGED_REVIEW"
+status=$?
+
+# 成功しても失敗しても複製は消す
+rm -rf "$STAGE"
+exit "$status"
 ```
+
+要件をファイルではなく文字列で渡すときは、`STAGED_REQ` の代わりに概要と要件を数行にまとめた文字列をそのまま `--arg requirements=` に渡す。複製が要るのは review package だけになる。
+
+`.agent-review/` に置く `.gitignore` は自己無視である。global の gitignore が無い環境でも複製がコミットに混ざらないようにする。削除できずに残っても、自己無視が効くので `git status` には出ない。
 
 呼び方は下の「braid の呼び方」に従う。dry-run を先に通す。
 
