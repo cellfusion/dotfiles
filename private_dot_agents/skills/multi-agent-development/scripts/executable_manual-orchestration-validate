@@ -244,8 +244,71 @@ if [ "$#" -ge 2 ] && [ "$1" = "--resolve-candidates" ]; then
   exit 0
 fi
 
+# 子を起動する前に、5 時間のセッション枠の残量を provider ごとに判定する。採取は
+# SketchyBar の usage.sh に任せる。実測で 1 回に約 8 秒かかるため、provider の数に
+# よらず 1 回だけ実行する。
+#
+#   manual-orchestration-validate --check-usage PROVIDER [PROVIDER...]
+#
+# 残量が分からないことを理由に run を止めないため、引数の使い方が誤っている場合を
+# 除いて終了コードは 0 にする。
+if [ "$#" -ge 1 ] && [ "$1" = "--check-usage" ]; then
+  shift
+  [ "$#" -ge 1 ] ||
+    fail 'usage: manual-orchestration-validate --check-usage PROVIDER [PROVIDER...]'
+  usage_script="${MANUAL_ORCHESTRATION_USAGE_SCRIPT:-$HOME/.config/sketchybar/helpers/usage.sh}"
+  defs_dir="${AGENT_DEFS_DIR:-$HOME/.agents/agent-defs}"
+  providers_file="$defs_dir/paseo-providers.json"
+  usage_rows=""
+  if [ -x "$usage_script" ]; then
+    usage_rows="$("$usage_script" 2>/dev/null)" || usage_rows=""
+  fi
+  for provider in "$@"; do
+    session_pct=""
+    session_resets_at=""
+    if [ -n "$usage_rows" ] && [ -f "$providers_file" ]; then
+      env_label="$(jq -r --arg p "$provider" '.[$p].usage.environment // empty' \
+        "$providers_file" 2>/dev/null)"
+      agent_name="$(jq -r --arg p "$provider" '.[$p].usage.agent // empty' \
+        "$providers_file" 2>/dev/null)"
+      if [ -n "$env_label" ] && [ -n "$agent_name" ]; then
+        usage_row="$(printf '%s\n' "$usage_rows" |
+          awk -F'\t' -v e="$env_label" -v a="$agent_name" '$1 == e && $2 == a { print; exit }')"
+        if [ -n "$usage_row" ]; then
+          session_pct="$(printf '%s' "$usage_row" | cut -f7)"
+          session_resets_at="$(printf '%s' "$usage_row" | cut -f8)"
+        fi
+      fi
+    fi
+    case "$session_pct" in
+      # 採取スクリプトは取得に失敗した組み合わせを - で出す。6 列しか出さない版では
+      # 第 7 列が空になるので、どちらもこの分岐へ入る。
+      ''|*[!0-9]*)
+        usage_verdict="unknown"
+        session_pct="null"
+        session_resets_at="null"
+        ;;
+      *)
+        if [ "$session_pct" -ge 95 ]; then
+          usage_verdict="exhausted"
+        elif [ "$session_pct" -ge 80 ]; then
+          usage_verdict="low"
+        else
+          usage_verdict="ok"
+        fi
+        case "$session_resets_at" in
+          ''|*[!0-9]*) session_resets_at="null" ;;
+        esac
+        ;;
+    esac
+    printf '{"provider":"%s","session_pct":%s,"session_resets_at":%s,"verdict":"%s"}\n' \
+      "$provider" "$session_pct" "$session_resets_at" "$usage_verdict"
+  done
+  exit 0
+fi
+
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --resolve-candidates ROLE [CANDIDATES_JSON]'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --resolve-candidates ROLE [CANDIDATES_JSON] | --check-usage PROVIDER [PROVIDER...]'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
