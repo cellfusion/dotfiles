@@ -80,10 +80,17 @@ SDD の外で単発に依頼する場合は `braid run review` を呼ぶ。上�
 # 要件ファイルの正本。plan なら agent-docs-dir plans の下にある
 REQ_SRC="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)/PLAN.md"
 
-# read 役は cwd の外を読めないので、リポジトリ内へ複製してから渡す
-STAGE="$(git rev-parse --show-toplevel)/.agent-review"
-mkdir -p "$STAGE"
-printf '*\n' > "$STAGE/.gitignore"
+# read 役は cwd の外を読めないので、リポジトリ内へ複製してから渡す。
+# root は共有・従来の内容を残し、実行ごとの一意なサブディレクトリだけを消す。
+STAGE_ROOT="$(git rev-parse --show-toplevel)/.agent-review"
+mkdir -p "$STAGE_ROOT"
+if [ ! -e "$STAGE_ROOT/.gitignore" ]; then
+  printf '*\n' > "$STAGE_ROOT/.gitignore"
+fi
+STAGE="$(mktemp -d "$STAGE_ROOT/run.XXXXXX")"
+cleanup() { rm -rf -- "$STAGE"; }
+trap cleanup EXIT
+# trap は成功しても失敗しても、一意な複製先だけを消す。
 cp "$OUT" "$STAGE/"
 cp "$REQ_SRC" "$STAGE/"
 STAGED_REVIEW="$STAGE/$(basename "$OUT")"
@@ -91,9 +98,6 @@ STAGED_REQ="$STAGE/$(basename "$REQ_SRC")"
 
 braid run review --arg requirements="$STAGED_REQ" --arg review_file="$STAGED_REVIEW"
 status=$?
-
-# 成功しても失敗しても複製は消す
-rm -rf "$STAGE"
 exit "$status"
 ```
 

@@ -4,6 +4,33 @@ set -euo pipefail
 
 root="${AGENT_DOCS_ROOT:-$HOME/docs}"
 die() { printf 'agent-docs-dir: %s\n' "$1" >&2; exit 1; }
+case "$root" in
+  /*) ;;
+  *) die "保存先 root は絶対パスでなければならない: $root" ;;
+esac
+
+validate_component() {
+  local label=$1 value=$2
+  case "$value" in
+    ''|.|..|*/*) die "$label が不正である: $value" ;;
+  esac
+}
+
+validate_subdir() {
+  local value=$1 part
+  case "$value" in
+    ''|/*) die "保存先の構成要素が不正である: $value" ;;
+  esac
+  while :; do
+    part="${value%%/*}"
+    case "$part" in
+      ''|.|..) die "保存先の構成要素が不正である: $1" ;;
+    esac
+    [ "$value" = "$part" ] && break
+    value="${value#*/}"
+  done
+}
+
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || die 'git リポジトリの外では保存先を決められない'
 [ -n "$common_dir" ] || die 'git リポジトリの外では保存先を決められない'
 common_dir=$(cd "$common_dir" && pwd) || die "git ディレクトリへ移動できない: $common_dir"
@@ -26,8 +53,12 @@ if [ -z "$slug" ]; then
   if [ -z "$owner" ] || [ -z "$repo" ] || [ "$owner" = "/" ] || [ "$repo" = "/" ]; then die "<owner>/<repo> を決められない: $checkout"; fi
   slug="$owner/$repo"
 fi
+validate_component 'owner' "$owner"
+validate_component 'repo' "$repo"
 dir="$root/$slug"
-for arg in "$@"; do dir="$dir/$arg"; done
+for arg in "$@"; do
+  validate_subdir "$arg"
+  dir="$dir/$arg"
+done
 mkdir -p "$dir" || die "ディレクトリを作れない: $dir"
 printf '%s\n' "$dir"
-

@@ -387,7 +387,14 @@ for tool in claude codex opencode; do
   assert_not_contains "$out" 'requirements=<' "rcr/$tool: bash ブロックの中で < をリダイレクトにしない"
   assert_contains "$out" "SDD の中では従来経路" "rcr/$tool: SDD 内の経路は変えない"
   assert_contains "$out" '.agent-review' "rcr/$tool: 複製先を .agent-review にする"
-  assert_contains "$out" '"$STAGE/.gitignore"' "rcr/$tool: 複製先に .gitignore を書く"
+  assert_contains "$out" 'STAGE_ROOT="$(git rev-parse --show-toplevel)/.agent-review"' \
+    "rcr/$tool: 複製先の root をリポジトリ内にする"
+  assert_contains "$out" 'STAGE="$(mktemp -d "$STAGE_ROOT/run.XXXXXX")"' \
+    "rcr/$tool: 一意な複製先サブディレクトリを作る"
+  assert_contains "$out" '"$STAGE_ROOT/.gitignore"' \
+    "rcr/$tool: 複製先 root の .gitignore を書く"
+  assert_contains "$out" '[ ! -e "$STAGE_ROOT/.gitignore" ]' \
+    "rcr/$tool: 既存の .gitignore を保持する"
   assert_contains "$out" "自己無視" "rcr/$tool: 複製先を自己無視させると書く"
   assert_contains "$out" '--arg review_file="$STAGED_REVIEW"' \
     "rcr/$tool: review_file には複製先を渡す"
@@ -397,7 +404,9 @@ for tool in claude codex opencode; do
     "rcr/$tool: 正本のパスをそのまま渡さない"
   assert_not_contains "$out" '--arg requirements="$REQ_SRC"' \
     "rcr/$tool: 要件の正本のパスをそのまま渡さない"
-  assert_contains "$out" 'rm -rf "$STAGE"' "rcr/$tool: 複製を消す"
+  assert_contains "$out" 'trap cleanup EXIT' "rcr/$tool: 複製を trap で消す"
+  assert_contains "$out" 'rm -rf -- "$STAGE"' "rcr/$tool: 一意な複製先だけを消す"
+  assert_not_contains "$out" 'rm -rf "$STAGE_ROOT"' "rcr/$tool: 複製先 root を消さない"
   assert_contains "$out" "成功しても失敗しても" "rcr/$tool: 成功時も失敗時も消すと書く"
 done
 
