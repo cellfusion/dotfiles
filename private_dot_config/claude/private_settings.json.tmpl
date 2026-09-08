@@ -1,6 +1,11 @@
 {
   "permissions": {
+    "additionalDirectories": [
+      "~/docs"
+    ],
     "allow": [
+      "Read(~/docs/**)",
+      "Edit(~/docs/**)",
       "Bash(cargo test:*)",
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
