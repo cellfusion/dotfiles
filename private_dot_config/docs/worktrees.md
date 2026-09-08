@@ -80,6 +80,33 @@ agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-star
 `wt hook <type>` は worktree を誰が作ったかを問わず動く。手順は
 `using-git-worktrees` と `subagent-driven-development` のスキルに書いてある。
 
+## エージェントの成果物の置き場所
+
+spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レビュー package は
+`~/docs/<owner>/<repo>/` に置く。パスは
+`~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。
+
+| サブディレクトリ | 置くもの |
+|---|---|
+| `specs/` | brainstorming が書く spec |
+| `plans/` | writing-plans が書く実装プラン |
+| `sdd/<plan-basename>/` | SDD の ledger・brief・report・review package |
+| `mad/<runId>/` | MAD の run ディレクトリ |
+| `reviews/` | SDD 外の単発レビュー package |
+
+`<owner>/<repo>` は本体チェックアウトの remote の URL から決まる。remote が 1 つも無ければ
+本体チェックアウトの絶対パスの末尾 2 要素を使う。worktree から呼んでも本体チェックアウトから
+呼んでも同じパスになるので、**成果物は同じリポジトリのすべての worktree で共有される**。
+リポジトリの作業ツリーの外にあるため、作業ツリーを掃除しても worktree を消しても残る。
+
+`braid` の review 役は現在の作業ディレクトリの外を読めない。`braid run review` へ渡す
+review package と要件ファイルは、呼ぶ直前に `<repo-root>/.agent-review/` へ複製し、
+複製先のパスを `--arg` に渡す。`.agent-review/` は global gitignore と自己無視の
+`.gitignore` の 2 段で無視され、`braid` が終わったら削除する。
+
+SDD の task worktree（`~/.local/state/sdd/worktrees/`）とは別系統である。task worktree の
+置き場所は `~/.config/worktrunk/agent.toml` が決めている。
+
 ## 注意点
 
 - `worktree-path` は user config 専用で、リポジトリ側の `.config/wt.toml` には

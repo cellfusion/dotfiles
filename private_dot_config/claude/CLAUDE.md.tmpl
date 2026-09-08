@@ -117,7 +117,7 @@
 スキルに書かれていない、この環境固有の前提:
 
 - **Research & Reuse** — 新規実装の前にコードベースで既存資産を探し、あるものを再利用する
-- **仕様変更はドキュメント先行** — 正式なドキュメント（`docs/`）を実装より先に更新して仕様と実装の乖離を防ぐ。spec は `_cellfusion/specs/`、実装プランは `_cellfusion/plans/`。`_cellfusion/` は git 追跡外の作業ディレクトリで、`docs/` は正式なドキュメント専用にする
+- **仕様変更はドキュメント先行** — 正式なドキュメント（`docs/`）を実装より先に更新して仕様と実装の乖離を防ぐ。spec は `~/docs/<owner>/<repo>/specs/`、実装プランは `~/docs/<owner>/<repo>/plans/` に置く。パスは `~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。保存先はリポジトリの作業ツリーの外にあり、`docs/` はリポジトリの正式なドキュメント専用にする
 - **検証コマンド** — `/verify`（ビルド・型・lint・テスト）と `/pre-commit-review`（セキュリティ・品質）。`finishing-a-development-branch` の Step 1 がこれらを回す
 
 ## Shell Execution
