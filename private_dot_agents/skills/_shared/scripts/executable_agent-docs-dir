@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# エージェントの成果物を置くディレクトリを解決し、作って、絶対パスを 1 行で返す。
+set -euo pipefail
+
+root="${AGENT_DOCS_ROOT:-$HOME/docs}"
+die() { printf 'agent-docs-dir: %s\n' "$1" >&2; exit 1; }
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || die 'git リポジトリの外では保存先を決められない'
+[ -n "$common_dir" ] || die 'git リポジトリの外では保存先を決められない'
+common_dir=$(cd "$common_dir" && pwd) || die "git ディレクトリへ移動できない: $common_dir"
+checkout=$(dirname "$common_dir")
+url=$(git remote get-url origin 2>/dev/null) || url=""
+if [ -z "$url" ]; then
+  name=$(git remote 2>/dev/null | head -1) || name=""
+  if [ -n "$name" ]; then url=$(git remote get-url "$name" 2>/dev/null) || url=""; fi
+fi
+slug=""
+if [ -n "$url" ]; then
+  norm=$(printf '%s' "$url" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##; s#^[^@/]+@([^:/]+)[:/]#\1/#; s#\.git$##')
+  owner=$(printf '%s' "$norm" | awk -F/ 'NF>=2 { print $(NF-1) }')
+  repo=$(printf '%s' "$norm" | awk -F/ 'NF>=2 { print $NF }')
+  if [ -n "$owner" ] && [ -n "$repo" ]; then slug="$owner/$repo"; fi
+fi
+if [ -z "$slug" ]; then
+  owner=$(basename "$(dirname "$checkout")")
+  repo=$(basename "$checkout")
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ "$owner" = "/" ] || [ "$repo" = "/" ]; then die "<owner>/<repo> を決められない: $checkout"; fi
+  slug="$owner/$repo"
+fi
+dir="$root/$slug"
+for arg in "$@"; do dir="$dir/$arg"; done
+mkdir -p "$dir" || die "ディレクトリを作れない: $dir"
+printf '%s\n' "$dir"
+
