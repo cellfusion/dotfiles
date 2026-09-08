@@ -66,6 +66,7 @@ write_attempt_in() {
   \"finished_at\": \"2026-09-05T00:01:00Z\",
   \"backend\": \"subagent\",
   \"backend_reason\": \"Paseo MCP unavailable\",
+  \"child_ref\": \"child-$node_id-$attempt_id\",
   \"parent_decision\": \"accepted\"
 }" > "$attempt_dir/state.json"
 }
@@ -411,6 +412,7 @@ write_recipe_run() {
     run_id: $run, node: $node, attempt: "attempt-001", round: 0,
     state: "ok", phase: "child_work", phase_state: "ok",
     next_action: "await parent decision",
+    child_ref: "child-\($node)-attempt-001",
     backend: "subagent", backend_reason: "Paseo MCP unavailable",
     parent_decision: "accepted"
   }' > "$attempt_dir/state.json"
@@ -454,6 +456,95 @@ for recipe in spec plan implement review delivery; do
   assert_eq "$status" "1" "validator: $recipe は $node_id を欠く ok run を拒否する"
   assert_contains "$out" "$node_id" "validator: $recipe に欠けた必須 output を示す"
 done
+
+# --- child_ref と期限超過: 成果物を残さずに終わった子を親が後から追えるようにする ---
+OD="$FIXTURE/run-overdue"
+mkdir -p "$OD"
+write_attempt_in "$OD" planner a1 'プラン'
+OD_ATTEMPT="$OD/nodes/planner/attempts/a1/state.json"
+printf '%s\n' "{
+  \"run_id\": \"run-overdue\",
+  \"recipe\": \"plan\",
+  \"state\": \"running\",
+  \"phase\": \"planner\",
+  \"phase_state\": \"running\",
+  \"next_action\": \"await planner\",
+  \"current_round\": 0,
+  \"started_at\": \"2026-09-06T00:00:00Z\",
+  \"backend\": \"subagent\",
+  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"parent_decision\": \"await child\",
+  \"active_nodes\": [\"planner\"],
+  \"completed_nodes\": [],
+  \"adopted_attempts\": {},
+  \"artifact_paths\": []
+}" > "$OD/state.json"
+
+edit_json() {
+  local file="$1"
+  shift
+  jq "$@" "$file" > "$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
+# 待ち時間の中にいる running は、子が正常に走っている状態なので報告しない。
+edit_json "$OD_ATTEMPT" --arg t "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  '.state = "running" | .phase_state = "running" | .started_at = $t | del(.finished_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 待ち時間の中の running を受け入れる"
+assert_not_contains "$out" "overdue attempt:" \
+  "validator: 待ち時間の中の running を報告しない"
+
+# 期限を過ぎた running は報告するが、契約違反ではないので終了コードは 0 のままにする。
+edit_json "$OD_ATTEMPT" '.started_at = "2020-01-01T00:00:00Z"'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: 期限超過の報告で終了コードを変えない"
+assert_contains "$out" "overdue attempt: planner/a1 started_at=2020-01-01T00:00:00Z" \
+  "validator: 期限を過ぎた running の node と attempt を示す"
+assert_contains "$out" "limit=1200s" "validator: plan の待ち時間は 1200 秒である"
+
+# 親がレシピごとに指定した待ち時間は run state の child_timeout_seconds が持つ。
+edit_json "$OD_ATTEMPT" \
+  --arg t "$(date -u -r "$(( $(date -u '+%s') - 300 ))" '+%Y-%m-%dT%H:%M:%SZ')" \
+  '.started_at = $t'
+edit_json "$OD/state.json" '.child_timeout_seconds = 60'
+out="$(validate_run "$OD")"
+assert_contains "$out" "limit=60s" "validator: child_timeout_seconds を期限の判定に使う"
+edit_json "$OD/state.json" 'del(.child_timeout_seconds)'
+out="$(validate_run "$OD")"
+assert_not_contains "$out" "overdue attempt:" \
+  "validator: child_timeout_seconds が無ければ既定の待ち時間で判定する"
+
+# 期限超過の判定が started_at を読むので、running では書式まで検証する。
+edit_json "$OD_ATTEMPT" 'del(.started_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: started_at を持たない running を拒否する"
+assert_contains "$out" "started_at must be a non-empty string" \
+  "validator: 欠けた started_at を示す"
+
+edit_json "$OD_ATTEMPT" '.started_at = "2026-09-06 00:00:00"'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: 書式に合わない started_at を拒否する"
+assert_contains "$out" "started_at must match YYYY-MM-DDTHH:MM:SSZ" \
+  "validator: started_at の書式を示す"
+
+# child_ref が無いと、親は成果物を残さずに終わった子の生存を後から確認できない。
+edit_json "$OD_ATTEMPT" '.started_at = "2020-01-01T00:00:00Z" | del(.child_ref)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: child_ref を欠く running を拒否する"
+assert_contains "$out" "child_ref must be a non-empty string" \
+  "validator: 欠けた child_ref を示す"
+
+# pending は子をまだ起動していないので、child_ref も started_at も要求しない。
+edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | del(.started_at)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "0" "validator: pending の attempt には child_ref を要求しない"
 
 # implement と spike は子が同時にファイルを書くので、node ごとに worktree を作る。
 # 台帳が無いと、どの run がどの workspace を作ったかが追えなくなる。
