@@ -106,7 +106,7 @@ print_procedure() {
   note '失敗した子は同じ backend で再指示、再実行、停止のいずれかを親が裁定する。'
 
   say "2. run ディレクトリを作り、run ID を発行する"
-  note '  RUN_DIR="$(git rev-parse --show-toplevel)/_cellfusion/orchestration/$RUN_ID"'
+  note '  RUN_DIR="$(agent-docs-dir "orchestration/$RUN_ID")"'
   note 'run 全体の状態は $RUN_DIR/state.json だけに置く。子の成果物は'
   note '$RUN_DIR/nodes/<node-id>/attempts/<attempt-id>/ に分ける。'
   note 'state.json の recipe は research、phase は research、backend は 1 で選んだ値にする。'
@@ -181,7 +181,7 @@ print_procedure() {
   note '  "phase_state": "stopped"'
   note '  parent_decision に停止の理由を書く'
   note '止めた run のディレクトリは rm -rf "$RUN_DIR" で消してよい。'
-  note '_cellfusion/ は git の追跡外なので、リポジトリには残らない。'
+  note 'run ディレクトリはリポジトリの作業ツリーの外にあるので、リポジトリには残らない。'
 
   say "期待する結果"
   note '1. backend が paseo-mcp または subagent のどちらかに 1 度だけ決まること'
@@ -295,12 +295,9 @@ case "$MODE" in
     BACKEND_REASON="$(printf '%s' "$BACKEND_JSON" | jq -r '.backend_reason')"
 
     say "run ディレクトリを作る"
-    WORKDIR="$(bash "$HOME/.agents/skills/_shared/scripts/cellfusion-workdir" 2>/dev/null)" ||
-      WORKDIR="$(git rev-parse --show-toplevel)/_cellfusion"
-    mkdir -p "$WORKDIR"
-    [ -f "$WORKDIR/.gitignore" ] || printf '*\n' > "$WORKDIR/.gitignore"
     RUN_ID="mad-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-    RUN_DIR="$WORKDIR/orchestration/$RUN_ID"
+    RUN_DIR="$(bash "$HOME/.agents/skills/_shared/scripts/agent-docs-dir" \
+      "orchestration/$RUN_ID")" || exit 1
     mkdir -p "$RUN_DIR/nodes"
 
     jq -n \

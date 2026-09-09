@@ -97,7 +97,7 @@ spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レ
 | `specs/` | brainstorming が書く spec |
 | `plans/` | writing-plans が書く実装プラン |
 | `sdd/<plan-basename>/` | SDD の ledger・brief・report・review package |
-| `mad/<runId>/` | MAD の run ディレクトリ |
+| `orchestration/<run-id>/` | MAD の run ディレクトリ |
 | `reviews/` | SDD 外の単発レビュー package |
 
 `<owner>/<repo>` は本体チェックアウトの remote の URL から決まる。remote が 1 つも無ければ

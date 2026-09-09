@@ -2,11 +2,11 @@
 
 MAD は親エージェントが実行の進行を管理する。レシピを開始するたびに、次の共通契約を使う。
 
-1. 親は一意な run ID を発行し、`~/.agents/skills/_shared/scripts/cellfusion-workdir` を
-   実行してから、作業ディレクトリ配下に `_cellfusion/orchestration/<run-id>/` を作る。
-   `cellfusion-workdir` は `_cellfusion/.gitignore` を書くので、`~/.config/git/ignore` に
-   `_cellfusion` が無い環境でも run の成果物が呼び出し元のリポジトリに混ざらない。親は run
-   全体の状態と各子の成果物をこのディレクトリに集める。
+1. 親は一意な run ID を発行し、`~/.agents/skills/_shared/scripts/agent-docs-dir` に
+   `orchestration/<run-id>` を渡して run ディレクトリを作る。返るパスは
+   `~/docs/<owner>/<repo>/orchestration/<run-id>/` である。保存先はリポジトリの作業ツリーの
+   外にあるので、run の成果物が呼び出し元のリポジトリに混ざらない。親は run 全体の状態と
+   各子の成果物をこのディレクトリに集める。
 2. 親は最初に Paseo MCP の接続可否を確認する。利用可能なら Paseo MCP で子を起動し、状態確認、
    ログ取得、中断を行う。`manual-orchestration-validate --select-backend` は backend selector の
    成果物形式を確認できる。利用できない場合だけ、`[dispatch-subagent: role]` で組み込みの
@@ -262,7 +262,7 @@ worktree を作らない。
 新しい node ID を発行する。台帳の既存の key を別の `workspace_id` で上書きしてはならない。上書きすると
 前の `workspace_id` が台帳から消え、後片付けの対象から外れる。
 
-`_cellfusion/` は git 管理外なので worktree の中には現れない。子へ渡す要件ファイルは絶対パスにする。
+run ディレクトリはリポジトリの作業ツリーの外にあるので、worktree の中には現れない。子へ渡す要件ファイルは絶対パスにする。
 
 ### base の確定
 

@@ -93,7 +93,7 @@ Paseo MCP と native subagent はともに同じ role と `mad-attempt-v1` を�
 
 | スクリプト | 呼ぶ側 | 用途 |
 |---|---|---|
-| `sdd-workspace` | 親 | プランごとの作業ディレクトリ `_cellfusion/sdd/<plan-basename>/` を解決して絶対パスを出す。brief、report、review package、ledger の置き場になる |
+| `sdd-workspace` | 親 | プランごとの作業ディレクトリ `~/docs/<owner>/<repo>/sdd/<plan-basename>/` を解決して絶対パスを出す。brief、report、review package、ledger の置き場になる |
 | `task-waves` | 親 | プランの `Depends on:` と `Files:` を読み、同時に走らせてよい task の波を出す。同じ波の task が同じファイルに触れていないかも検証する |
 | `task-brief` | 親 | プランから 1 task 分の本文を切り出して brief ファイルに書く。`implementer` は brief だけを読む |
 | `review-package` | 親 | 記録した base と head から、コミット一覧、変更ファイルの stat、文脈付き diff を 1 ファイルにまとめる。`task-reviewer` はこれを 1 回の Read で読む |

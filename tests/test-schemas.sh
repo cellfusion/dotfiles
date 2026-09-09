@@ -113,7 +113,7 @@ done
 # structured output（codex exec --output-schema）は optional property を許さない。
 # 全 property が required に入り、任意の項目は nullable で、すべての object に
 # additionalProperties: false が要る。違反すると 400 invalid_json_schema で turn が失敗する。
-# 詳細は _cellfusion/specs/2026-08-20-sdd-herdr-remediation.md の §11。
+# 詳細は ~/docs/<owner>/<repo>/specs/2026-08-20-sdd-herdr-remediation.md の §11。
 for a in sdd-implementer sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
   out="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"agent-defs/schemas/$a.json\" . }}")"
