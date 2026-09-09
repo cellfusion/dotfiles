@@ -2,7 +2,7 @@
 name: writing-plans
 description: >-
   spec や要件が固まった多段階の作業を、コードに触る前に実装プランへ落とすときに使う。
-  brainstorming の次段として起動する。プランは _cellfusion/plans/ に書き、
+  brainstorming の次段として起動する。プランは agent-docs-dir plans が返す場所に書き、
   承認後に subagent-driven-development へ引き継ぐ。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
@@ -19,15 +19,14 @@ plan がどうあるべきかの基準は、`plan-author` と `reviewer` の rol
 
 **開始時に宣言する**: 「writing-plans を使って実装プランを作る」
 
-**保存先**: `_cellfusion/plans/YYYY-MM-DD-<feature-name>.md`（プロジェクト側 CLAUDE.md の指定が
-あればそちらを優先）
+**保存先**: `~/.agents/skills/_shared/scripts/agent-docs-dir plans` が返すディレクトリの
+`YYYY-MM-DD-<feature-name>.md`（プロジェクト側 CLAUDE.md の指定があればそちらを優先）
 
-**始める前に** `~/.agents/skills/_shared/scripts/cellfusion-workdir` を実行する。`_cellfusion/` を
-作り、自己無視の `.gitignore` を置く。global の gitignore が無い環境（新しいマシン、他人の環境、
-CI）ではこれが唯一の無視の根拠になるので省略しない。
+**始める前に** `~/.agents/skills/_shared/scripts/agent-docs-dir plans` を実行する。保存先を作って
+絶対パスを 1 行で返す。保存先は `~/docs/<owner>/<repo>/plans/` である。
 
-`_cellfusion/` は git 追跡外である。プランは `git clean -fdx` で消え、`git log` からは復旧
-できない。ブランチにも乗らないので worktree の中には現れない（後段のスキルへは絶対パスで渡す）。
+保存先はリポジトリの作業ツリーの外にある。本体チェックアウトから呼んでも worktree から呼んでも
+同じ絶対パスになるので、後段のスキルへは絶対パスで渡す。
 
 ## スコープ確認
 

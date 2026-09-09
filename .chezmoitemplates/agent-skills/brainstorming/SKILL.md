@@ -172,14 +172,14 @@ frontend-design やその他の実装スキルをここから起動してはな�
 
 ## spec を書く
 
-- 書く前に `~/.agents/skills/_shared/scripts/cellfusion-workdir` を実行する。`_cellfusion/` を作り、
-  自己無視の `.gitignore` を置く。global の gitignore が無い環境（新しいマシン、他人の環境、CI）
-  ではこれが唯一の無視の根拠になるので省略しない
+- 書く前に `~/.agents/skills/_shared/scripts/agent-docs-dir specs` を実行する。保存先を作って
+  絶対パスを 1 行で返す。保存先は `~/docs/<owner>/<repo>/specs/` で、リポジトリの作業ツリーの
+  外にある
 - spec を書くのは子である。MAD の `spec` recipe で `spec-author` を呼ぶ。呼び方は
   `multi-agent-development` スキルが持つ
 - 子へ渡すのは、合意した設計、既知の制約、調査成果物の絶対パス、spec の書き出し先である。
-  書き出し先は `_cellfusion/specs/YYYY-MM-DD-<topic>-design.md` とする。プロジェクト側の CLAUDE.md
-  に置き場所の指定があればそちらを優先する
+  書き出し先は `agent-docs-dir specs` が返したディレクトリの `YYYY-MM-DD-<topic>-design.md` と
+  する。プロジェクト側の CLAUDE.md に置き場所の指定があればそちらを優先する
 - 日付はその日の実際の日付を使う。相対表現（「今日」「先週」）は書かない
 - 親は spec の本文を書かない。会話へ転記もしない。受け取るのは正規 spec の絶対パスである
 - 子が `decisionRequestPath` を返したら、親が [ask-user] でユーザーへ渡し、回答を `decision.md` に

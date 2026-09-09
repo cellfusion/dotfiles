@@ -45,12 +45,12 @@ digraph when_to_use {
 
 **ledger を用意する**。会話の記憶は compaction を越えない。実セッションで、自分の位置を見失った controller が完了済みのタスク列をまるごと再 dispatch した事故が観測されている。進捗は todo だけでなく ledger ファイルで追う。
 
-- プランごとに 1 つの workspace を持つ。スキル開始時に `~/.agents/skills/subagent-driven-development/scripts/sdd-workspace PLAN_FILE` を実行する。git 管理外のディレクトリ（`<repo-root>/_cellfusion/sdd/<plan-basename>/`）のパスが出力される。**このプランの**成果物（ledger、brief、report、review package）はすべてそこに置く。別プランのディレクトリは読むことも書くこともしない
+- プランごとに 1 つの workspace を持つ。スキル開始時に `~/.agents/skills/subagent-driven-development/scripts/sdd-workspace PLAN_FILE` を実行する。リポジトリの作業ツリーの外のディレクトリ（`~/docs/<owner>/<repo>/sdd/<plan-basename>/`）のパスが出力される。**このプランの**成果物（ledger、brief、report、review package）はすべてそこに置く。別プランのディレクトリは読むことも書くこともしない
 - `<workspace>/progress.md` を確認する。1 行目が自分のプランファイルを指しているなら、`Task <N>: complete` の行があるタスクは**完了済み**。再 dispatch せず、その行が無い最初のタスクから再開する。最後の行が fix ラウンドで終わっているタスクはループの途中なので、次のラウンドから再開する。1 行目が別のプランを指す ledger は他人の進捗なので、そのまま置いて自分のものを新規に作る
 - ledger は 1 行目に素性を書いて作る: `# SDD ledger — plan: <plan file path>`
 - ledger は復旧地図である。そこに書かれたコミットは、あなたの context がそれを作った記憶を失っても git に存在する。compaction 後は自分の記憶より ledger と `git log` を信じる
-- `git clean -fdx` は `_cellfusion/` を消す（git 管理外の作業領域なので）。workspace は `git log` から復旧できるが、plan と spec は git のどこにも無いので復旧できない
-- **plan は worktree の外にあることがある**。plan は untracked なのでブランチに乗らず、main チェックアウトの `_cellfusion/plans/X.md` は worktree の中には現れない。scripts にもレビュアーにも plan は絶対パスで渡す
+- workspace はリポジトリの作業ツリーの外にあるので、作業ツリーを掃除しても worktree を消しても残る。同じリポジトリの本体チェックアウトとすべての worktree が同じ workspace を指す
+- **plan は常に worktree の外にある**。plan は `~/docs/<owner>/<repo>/plans/` にあり、どのチェックアウトから見ても同じ絶対パスになる。scripts にもレビュアーにも plan は絶対パスで渡す
 
 **プランを 1 回読む**。文脈と Global Constraints を頭に入れ、タスクごとに todo を作る。
 
@@ -280,7 +280,7 @@ finishing-a-development-branch を起動する。
 
 ```
 [using-git-worktrees で worktree を確認]
-[プランを 1 回読む: _cellfusion/plans/2026-09-06-feature.md]
+[プランを 1 回読む: ~/docs/<owner>/<repo>/plans/2026-09-06-feature.md]
 [プランを 1 度だけ矛盾検査 — 検出なし]
 [全タスクの todo を作成]
 [task-waves で波を計算: wave 1: 1 / wave 2: 2 3]

@@ -111,19 +111,19 @@ async function runScript(file, argsValue, overrides = {}) {
 }
 
 const taskArgs = {
-  plan: '_cellfusion/plans/2026-07-31-thing.md',
+  plan: '~/docs/cellfusion/dotfiles/plans/2026-07-31-thing.md',
   taskNumber: 1,
   taskName: 'スライスを選ぶと次のスライス点で止まる',
-  briefPath: '_cellfusion/sdd/2026-07-31-thing/task-1-brief.md',
-  reportPath: '_cellfusion/sdd/2026-07-31-thing/task-1-report.md',
+  briefPath: '~/docs/cellfusion/dotfiles/sdd/2026-07-31-thing/task-1-brief.md',
+  reportPath: '~/docs/cellfusion/dotfiles/sdd/2026-07-31-thing/task-1-report.md',
   base: 'base9999',
   globalConstraints: '- core は platform-agnostic を保つ',
   context: 'サンプラーのスライス機能の 1 段目',
 }
 
 const finalArgs = {
-  plan: '_cellfusion/plans/2026-07-31-thing.md',
-  packagePath: '_cellfusion/sdd/2026-07-31-thing/review-mb..head.diff',
+  plan: '~/docs/cellfusion/dotfiles/plans/2026-07-31-thing.md',
+  packagePath: '~/docs/cellfusion/dotfiles/sdd/2026-07-31-thing/review-mb..head.diff',
   mergeBase: 'mb00000',
   head: 'head0000',
   description: 'サンプラーのスライス機能',

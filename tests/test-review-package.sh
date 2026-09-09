@@ -16,6 +16,7 @@ mkdir -p "$repo"
 git -C "$repo" init -q
 git -C "$repo" config user.email test@example.com
 git -C "$repo" config user.name test
+git -C "$repo" config commit.gpgsign false
 printf 'plan\n' > "$repo/plan.md"
 printf 'a\n' > "$repo/a.txt"
 git -C "$repo" add -A

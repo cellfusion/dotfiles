@@ -44,14 +44,10 @@ BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-SDD の外で単発に依頼する場合は、リポジトリ内の `_cellfusion/reviews/` に作る。`/tmp` を使わない
-のは、read 役が現在の作業ディレクトリの外を読めない engine 設定でも同じ入力を読めるようにする
-ためである。`_cellfusion/` が無ければ
-`~/.agents/skills/_shared/scripts/cellfusion-workdir` が作る。
+SDD の外で単発に依頼する場合は、`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。
 
 ```bash
-REVIEWS="$(~/.agents/skills/_shared/scripts/cellfusion-workdir)/reviews"
-mkdir -p "$REVIEWS"
+REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
 OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
 {
   echo "# Review package: ${BASE_SHA}..${HEAD_SHA}"
@@ -77,9 +73,37 @@ MAD の `review` recipe を使う。呼び方は `multi-agent-development` ス�
 MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` が採用可能な指摘へ
 統合する。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
 
-要件ファイルがリポジトリの外にある場合は、review package と同じ `_cellfusion/reviews/` へ複製
-してからその絶対パスを渡す。子は呼び出し元の作業ディレクトリの外を読めない engine 設定でも動く
-必要がある。
+review package も plan もリポジトリの作業ツリーの外にある。子は呼び出し元の作業ディレクトリの
+外を読めない engine 設定でも動く必要があるので、渡す前に `<repo-root>/.agent-review/` の下の
+一意なディレクトリへ複製し、複製先の絶対パスを渡す。
+
+```bash
+# 要件ファイルの正本。plan なら agent-docs-dir plans の下にある
+REQ_SRC="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)/PLAN.md"
+
+# 子は cwd の外を読めないので、リポジトリ内へ複製してから渡す。
+# root は従来の内容を残し、実行ごとの一意なサブディレクトリだけを消す。
+STAGE_ROOT="$(git rev-parse --show-toplevel)/.agent-review"
+mkdir -p "$STAGE_ROOT"
+if [ ! -e "$STAGE_ROOT/.gitignore" ]; then
+  printf '*\n' > "$STAGE_ROOT/.gitignore"
+fi
+STAGE="$(mktemp -d "$STAGE_ROOT/run.XXXXXX")"
+cleanup() { rm -rf -- "$STAGE"; }
+trap cleanup EXIT
+# trap は成功しても失敗しても、一意な複製先だけを消す。
+cp "$OUT" "$STAGE/"
+cp "$REQ_SRC" "$STAGE/"
+STAGED_REVIEW="$STAGE/$(basename "$OUT")"
+STAGED_REQ="$STAGE/$(basename "$REQ_SRC")"
+```
+
+要件をファイルではなく文字列で渡すときは、`STAGED_REQ` の代わりに概要と要件を数行にまとめた
+文字列を子へ渡す。複製が要るのは review package だけになる。
+
+`.agent-review/` に置く `.gitignore` は自己無視である。global の gitignore が無い環境でも複製が
+コミットに混ざらないようにする。削除できずに残っても、自己無視が効くので `git status` には
+出ない。
 
 **3. フィードバックに対応する**
 
