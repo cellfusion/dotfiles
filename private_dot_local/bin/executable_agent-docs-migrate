@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# 旧保存先 _cellfusion/ の中身を、agent-docs-dir が返す ~/docs/<owner>/<repo>/ へ移す。
+# 既定は dry-run で、--apply を付けたときだけファイルを動かす。
+#
+# 移行先に同じ名前のファイルがあるときは中身を比べる。一致すれば移行元を消し、
+# 違えば移行元に残してパスを報告する。
+#
+# Usage: agent-docs-migrate [--apply] [PATH ...]
+set -u
+
+DOCS_DIR_BIN="${AGENT_DOCS_DIR_BIN:-$HOME/.agents/skills/_shared/scripts/agent-docs-dir}"
+
+die() { printf 'agent-docs-migrate: %s\n' "$1" >&2; exit 1; }
+
+apply=0
+targets=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) apply=1 ;;
+    -h|--help)
+      printf 'usage: agent-docs-migrate [--apply] [PATH ...]\n'
+      exit 0
+      ;;
+    -*) printf 'agent-docs-migrate: 知らないオプション: %s\n' "$1" >&2; exit 2 ;;
+    *) targets[${#targets[@]}]="$1" ;;
+  esac
+  shift
+done
+[ ${#targets[@]} -gt 0 ] || targets[0]="$PWD"
+
+[ "$apply" -eq 1 ] || printf 'dry-run: --apply を付けると実行する\n'
+
+# 移さないファイル。.gitignore は _cellfusion の自己無視で、移行先では使わない。
+skip_file() {
+  case "$1" in
+    */.DS_Store) return 0 ;;
+  esac
+  [ "$1" = "$2/.gitignore" ]
+}
+
+for target in "${targets[@]}"; do
+  root="$(git -C "$target" rev-parse --show-toplevel 2>/dev/null)" ||
+    die "git リポジトリの中ではない: $target"
+  work="$root/_cellfusion"
+  if [ ! -d "$work" ]; then
+    printf '%s: _cellfusion が無い\n' "$root"
+    continue
+  fi
+
+  dest="$(cd "$root" && bash "$DOCS_DIR_BIN")" || die "保存先を決められない: $root"
+
+  moved=0
+  removed=0
+  kept=0
+  kept_paths=""
+  while IFS= read -r src; do
+    skip_file "$src" "$work" && continue
+    rel="${src#"$work"/}"
+    if [ -e "$dest/$rel" ]; then
+      if cmp -s "$src" "$dest/$rel"; then
+        removed=$((removed + 1))
+        [ "$apply" -eq 1 ] && { rm -f "$src" || die "消せない: $src"; }
+      else
+        kept=$((kept + 1))
+        kept_paths="$kept_paths$src"$'\n'
+      fi
+    else
+      moved=$((moved + 1))
+      if [ "$apply" -eq 1 ]; then
+        mkdir -p "$(dirname "$dest/$rel")" || die "ディレクトリを作れない: $dest/$rel"
+        mv "$src" "$dest/$rel" || die "移せない: $src"
+      fi
+    fi
+  done < <(find "$work" -type f)
+
+  printf '%s: 移動 %d 件 / 一致で削除 %d 件 / 残留 %d 件 -> %s\n' \
+    "$root" "$moved" "$removed" "$kept" "$dest"
+  [ -z "$kept_paths" ] || printf '%s' "$kept_paths" | while IFS= read -r p; do
+    printf '  残留: %s\n' "$p"
+  done
+
+  # 空になったディレクトリだけを畳む。通常ファイルでないエントリは移せないので、
+  # 残っていれば _cellfusion ごと残してパスを報告する。
+  if [ "$apply" -eq 1 ]; then
+    if [ "$kept" -eq 0 ]; then
+      find "$work" -type f \( -name .DS_Store -o -path "$work/.gitignore" \) -delete 2>/dev/null
+    fi
+    find "$work" -depth -type d -empty -delete 2>/dev/null
+    [ ! -d "$work" ] || printf '  残った: %s\n' "$work"
+  fi
+done
