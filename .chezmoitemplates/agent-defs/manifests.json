@@ -56,7 +56,7 @@
     "delivery_duties": ["judge"]
   },
   "reviewer": {
-    "tier": "work",
+    "tier": "think",
     "access": "read",
     "description": "レビュー役。spec 準拠と品質を見て PASS か FAIL と指摘を返す。読み取り専用。",
     "artifact_contract": "mad-attempt-v1",
