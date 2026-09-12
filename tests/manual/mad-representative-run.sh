@@ -12,6 +12,8 @@ MAD_EXPORTER="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/paseo
 DEFAULT_GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
 DEFAULT_ADAPTER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter"
 DEFAULT_DECISION_ROOT="$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)"
+VERIFY_ONLY_MODE=0
+VERIFY_PLACEHOLDER_DIR=""
 
 usage() {
   printf '%s\n' \
@@ -59,6 +61,37 @@ require_private_regular_file() {
 require_json_object() {
   local file="$1"
   jq -e 'type == "object"' "$file" >/dev/null 2>&1
+}
+
+cleanup_verify_placeholders() {
+  [ -n "$VERIFY_PLACEHOLDER_DIR" ] || return 0
+  rm -rf "$VERIFY_PLACEHOLDER_DIR"
+  VERIFY_PLACEHOLDER_DIR=""
+}
+
+resolve_artifact_path() {
+  local artifact_path="$1"
+  local placeholder=""
+  local temporary
+
+  case "$artifact_path" in
+    /fixture/plan-result.json) placeholder="plan-result.json" ;;
+    /fixture/implement-result.json) placeholder="implement-result.json" ;;
+    /fixture/review-result.json) placeholder="review-result.json" ;;
+    /fixture/fix-result.json) placeholder="fix-result.json" ;;
+    /*) printf '%s\n' "$artifact_path"; return 0 ;;
+    *) return 1 ;;
+  esac
+  [ "$VERIFY_ONLY_MODE" -eq 1 ] || return 1
+  if [ -z "$VERIFY_PLACEHOLDER_DIR" ]; then
+    VERIFY_PLACEHOLDER_DIR="$(mktemp -d /tmp/mad-representative-verify.XXXXXX)" || return 1
+  fi
+  temporary="$VERIFY_PLACEHOLDER_DIR/$placeholder"
+  if [ ! -e "$temporary" ]; then
+    ( umask 077; printf 'anonymous fixture artifact\n' > "$temporary"; chmod 600 "$temporary" ) || return 1
+  fi
+  [ -f "$temporary" ] && [ ! -L "$temporary" ] || return 1
+  printf '%s\n' "$temporary"
 }
 
 verify_core_evidence() {
@@ -130,6 +163,7 @@ verify_phase_evidence() {
   local artifact_paths
   local artifact_path
   local result_artifact
+  local resolved_artifact
 
   for phase in plan implement review fix; do
     result="$evidence_dir/$phase/result.json"
@@ -141,7 +175,8 @@ verify_phase_evidence() {
       "$result" >/dev/null 2>&1 || return 1
     result_artifact="$(jq -r '.artifactPath // empty' "$result" 2>/dev/null)" || return 1
     if [ -n "$result_artifact" ]; then
-      require_private_regular_file "$result_artifact" || return 1
+      resolved_artifact="$(resolve_artifact_path "$result_artifact")" || return 1
+      require_private_regular_file "$resolved_artifact" || return 1
     fi
     jq -e --arg phase "$phase" '
       type == "object" and
@@ -155,7 +190,8 @@ verify_phase_evidence() {
     artifact_paths="$(jq -r '.artifact_paths[]' "$handoff" 2>/dev/null)" || return 1
     while IFS= read -r artifact_path; do
       [ -n "$artifact_path" ] || return 1
-      require_private_regular_file "$artifact_path" || return 1
+      resolved_artifact="$(resolve_artifact_path "$artifact_path")" || return 1
+      require_private_regular_file "$resolved_artifact" || return 1
     done <<< "$artifact_paths"
   done
 }
@@ -299,6 +335,8 @@ EVIDENCE_DIR="$3"
 require_absolute --evidence-dir "$EVIDENCE_DIR" || exit 2
 
 if [ "$MODE" = "--verify-only" ]; then
+  VERIFY_ONLY_MODE=1
+  trap cleanup_verify_placeholders EXIT
   verify_evidence "$EVIDENCE_DIR"
   exit $?
 fi

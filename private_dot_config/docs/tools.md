@@ -326,12 +326,14 @@ phase artifact を取得し、`MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS`（既�
 承認変数を読まず、adapter を呼ばない。
 
     bash tests/test-paseo-mad.sh
+    bash tests/manual/mad-representative-run.sh --verify-only \
+      --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
 
-この test は public fixture を一時 directory へコピーし、test 管理の匿名 artifact を
-0600 で作って handoff の absolute path を補ってから verify-only を呼ぶ。fixture の
-mode は Git が保存しないため、単体で別の証跡を検査するときは `find` で列挙した証跡を
-`chmod 600` にしてから実行する。証跡には credential、auth/history、raw response、
-remote URL を入れない。
+fixture の handoff は `/fixture/*.json` という匿名 placeholder を使い、verify-only が
+一時 directory に 0600 の regular file として解決する。`--run` の child artifact は
+実在する 0600 regular file でなければ受け付けない。fixture の mode は Git が保存しない
+ため、単体で別の証跡を検査するときは `find` で列挙した証跡を `chmod 600` にしてから
+実行する。証跡には credential、auth/history、raw response、remote URL を入れない。
 
 ### Paseo プラグイン pr-review
 

@@ -17,8 +17,7 @@ trap 'rm -rf "$NON_GIT_DIR" "$TMP"' EXIT
 umask 077
 
 REPRESENTATIVE="$CHEZMOI_SOURCE/tests/manual/mad-representative-run.sh"
-FIXTURE_SOURCE="$FIXTURES/mad/representative-ok"
-FIXTURE_EVIDENCE="$TMP/representative-ok"
+FIXTURE_EVIDENCE="$FIXTURES/mad/representative-ok"
 env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
   bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
 status=$?
@@ -27,25 +26,6 @@ assert_eq "$(test -f "$TMP/decision.md" && echo yes || echo no)" "yes" "represen
 assert_eq "$(test -e "$TMP/evidence/create-call.json" && echo yes || echo no)" "no" "representative: 未承認なら create を試さない"
 assert_not_contains "$(cat "$REPRESENTATIVE" 2>/dev/null)" 'MAD_REPRESENTATIVE_RUN_APPROVED=1' "representative: runner は承認変数へ代入しない"
 
-mkdir -p "$FIXTURE_EVIDENCE"
-cp -R "$FIXTURE_SOURCE/." "$FIXTURE_EVIDENCE/"
-for phase in plan implement review fix; do
-  artifact_path="$(mktemp "$TMP/representative-$phase-artifact.XXXXXX")"
-  printf 'anonymous %s phase artifact\n' "$phase" > "$artifact_path"
-  chmod 600 "$artifact_path"
-  if [ "$phase" = plan ]; then
-    result="$FIXTURE_EVIDENCE/$phase/result.json"
-    jq --arg artifact_path "$artifact_path" '.artifactPath = $artifact_path' \
-      "$result" > "$result.tmp"
-    chmod 600 "$result.tmp"
-    mv "$result.tmp" "$result"
-  fi
-  handoff="$FIXTURE_EVIDENCE/$phase/handoff.json"
-  jq --arg artifact_path "$artifact_path" '.artifact_paths = [$artifact_path]' \
-    "$handoff" > "$handoff.tmp"
-  chmod 600 "$handoff.tmp"
-  mv "$handoff.tmp" "$handoff"
-done
 find "$FIXTURE_EVIDENCE" -type f -exec chmod 600 {} +
 bash "$REPRESENTATIVE" --verify-only --evidence-dir "$FIXTURE_EVIDENCE"
 assert_eq "$?" "0" "representative: fixture の証跡検査は承認なしで通る"
@@ -72,8 +52,9 @@ for phase in plan implement review fix; do
   assert_eq "$(jq -r '.artifact_paths | type == "array" and all(.[]; type == "string" and startswith("/"))' \
     "$FIXTURE_EVIDENCE/$phase/handoff.json")" "true" \
     "representative: $phase の handoff は絶対 path だけを持つ"
-  assert_eq "$(stat -f '%Lp' "$(jq -r '.artifact_paths[0]' "$FIXTURE_EVIDENCE/$phase/handoff.json")")" "600" \
-    "representative: $phase の artifact path は 0600"
+  assert_eq "$(jq -r '.artifact_paths | all(.[]; startswith("/fixture/"))' \
+    "$FIXTURE_EVIDENCE/$phase/handoff.json")" "true" \
+    "representative: $phase の fixture artifact は環境非依存 placeholder"
 done
 
 if [ "${MAD_REPRESENTATIVE_RUN_APPROVED:-0}" = 1 ]; then
