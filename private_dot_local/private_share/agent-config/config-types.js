@@ -30,7 +30,7 @@ function assertFeatureValues(value) {
   for (const [key, scalar] of Object.entries(value)) {
     if (!/^[a-z][a-z0-9_-]*$/.test(key)) throw new TypeError('resolved-config: featureValues の key が不正')
     const scalarType = typeof scalar
-    const ok = scalarType === 'boolean' || scalarType === 'string' || (scalarType === 'number' && Number.isInteger(scalar) && Number.isFinite(scalar))
+    const ok = scalarType === 'boolean' || scalarType === 'string' || (scalarType === 'number' && Number.isFinite(scalar))
     if (!ok) throw new TypeError('resolved-config: featureValues の値が許可した scalar でない')
   }
 }

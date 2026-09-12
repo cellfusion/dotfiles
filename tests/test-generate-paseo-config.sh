@@ -67,6 +67,10 @@ const exported = assertResolvedConfig(read(process.env.EXPORT))
 const dispatched = assertResolvedConfig(read(process.env.DISPATCH))
 if (exported.scope !== 'export' || 'selection' in exported) process.exit(1)
 if (dispatched.scope !== 'dispatch' || !dispatched.selection) process.exit(1)
+const decimalFeature = JSON.parse(JSON.stringify(exported))
+decimalFeature.resolutions[0].candidates[0].featureValues.temperature = 0.5
+const decimalResolved = assertResolvedConfig(decimalFeature)
+if (decimalResolved.resolutions[0].candidates[0].featureValues.temperature !== 0.5) process.exit(1)
 for (const resolved of [exported, dispatched]) {
   if (!resolved.environments.some((environment) => environment.name === resolved.defaultEnvironment)) process.exit(1)
 }
