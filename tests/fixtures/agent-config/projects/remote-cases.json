@@ -1,0 +1,13 @@
+{
+  "matching": [
+    "ssh://git@EXAMPLE.test/Org/Repo.git",
+    "git@EXAMPLE.test:Org/Repo.git",
+    "https://EXAMPLE.test/Org/Repo.git"
+  ],
+  "unsupported": [
+    "https://EXAMPLE.test/Org/Repo.git?ref=main",
+    "https://EXAMPLE.test/Org/Repo.git#fragment",
+    "https://EXAMPLE.test/Org//Repo.git",
+    "ftp://EXAMPLE.test/Org/Repo.git"
+  ]
+}
