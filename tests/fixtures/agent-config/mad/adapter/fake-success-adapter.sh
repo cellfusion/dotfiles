@@ -8,7 +8,11 @@ fi
 
 case "${1:-}" in
   list-providers)
-    printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pie","available":false,"modeIds":[]}]}'
+    if [ "${PASEO_FAKE_OPAQUE_MODE_IDS:-0}" = "1" ]; then
+      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto","mode: observed"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto","mode: observed"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pie","available":false,"modeIds":[]}]}'
+    else
+      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pie","available":false,"modeIds":[]}]}'
+    fi
     ;;
   list-models)
     [ "${2:-}" = "--provider" ] || exit 2

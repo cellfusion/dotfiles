@@ -209,7 +209,13 @@ cat > "$FAKE_PASEO" <<'EOF'
 #!/usr/bin/env bash
 set -u
 if [ "${1:-}" = "provider" ] && [ "${2:-}" = "ls" ]; then
-  if [ "${PASEO_FAKE_BAD:-0}" = "1" ]; then
+  if [ "${PASEO_FAKE_MISSING_UNAVAILABLE_MODE_IDS:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"unavailable"}]'
+  elif [ "${PASEO_FAKE_MISSING_MODE_IDS:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","defaultMode":"auto"}]'
+  elif [ "${PASEO_FAKE_BAD_MODE_IDS:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","modeIds":["auto",42]}]'
+  elif [ "${PASEO_FAKE_BAD:-0}" = "1" ]; then
     printf '%s\n' '[{"provider":"codex","status":"available","modeIds":["mode: opaque"]},{"provider":"broken","status":"available","modeIds":"not-an-array"}]'
   else
     printf '%s\n' '[{"provider":"codex","status":"available","modeIds":["mode: opaque"]}]'
@@ -239,6 +245,18 @@ adapter_models="$(PASEO_CLI="$FAKE_PASEO" "$CHEZMOI_SOURCE/private_dot_agents/sk
 assert_eq "$?" "0" "adapter: list-models は成功する"
 assert_eq "$(printf '%s' "$adapter_models" | jq -c '.models[0]')" \
   '{"id":"model/opaque","thinkingOptionIds":["thinking option"]}' "adapter: model/thinking option をそのまま転送する"
+PASEO_FAKE_MISSING_MODE_IDS=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+  >/dev/null 2>&1
+assert_eq "$?" "1" "adapter: 欠損 modeIds を defaultMode で補完せず拒否する"
+PASEO_FAKE_MISSING_UNAVAILABLE_MODE_IDS=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+  >/dev/null 2>&1
+assert_eq "$?" "1" "adapter: unavailable の欠損 modeIds を空配列で補完せず拒否する"
+PASEO_FAKE_BAD_MODE_IDS=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+  >/dev/null 2>&1
+assert_eq "$?" "1" "adapter: string array でない modeIds を拒否する"
 PASEO_FAKE_BAD=1 PASEO_CLI="$FAKE_PASEO" \
   "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
   >/dev/null 2>&1
@@ -257,6 +275,24 @@ adapter_create="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAK
 assert_eq "$?" "0" "adapter: create-agent は検証済み request を受理する"
 assert_eq "$adapter_create" '{"status":"accepted"}' "adapter: create-agent の stdout discriminator"
 assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=false' "adapter: notifyOnFinish を create payload に渡す"
+
+opaque_attempt="$TMP/mad-opaque-mode"
+mkdir -p "$opaque_attempt"
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_OPAQUE_MODE_IDS=1 bash "$MAD_RUNNER" --exercise-success \
+  --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$opaque_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$opaque_attempt/call-log.json")"
+assert_eq "$?" "0" "MAD opaque mode: 実測 modeIds を持つ run が成功する"
+assert_eq "$out" "" "MAD opaque mode: runner は stdout を出さない"
+assert_eq "$(jq -c '.providers.codex.modeIds' "$opaque_attempt/snapshot.json")" \
+  '["auto","mode: observed"]' "MAD opaque mode: 実測 modeIds を snapshot に転送する"
+assert_eq "$(jq -c '.providers.claude.modeIds' "$opaque_attempt/snapshot.json")" \
+  '["auto","mode: observed"]' "MAD opaque mode: provider ごとの modeIds を保持する"
+assert_eq "$(jq -r '.modeId' "$opaque_attempt/launch.json")" "auto" \
+  "MAD opaque mode: launch の modeId は auto を維持する"
+assert_eq "$(jq -r '[.events[] | select(.operation == "create_agent") | .payload.settings.modeId][0]' "$opaque_attempt/call-log.json")" \
+  "auto" "MAD opaque mode: create payload の modeId は auto を維持する"
 
 # 既存の exercise-create 経路も、snapshot または launch の検証前に create を呼ばない。
 for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set-mismatch \
