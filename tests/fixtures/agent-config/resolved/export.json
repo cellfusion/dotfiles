@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "type": "resolved-config",
+  "scope": "export",
+  "defaultEnvironment": "primary",
+  "providerFamilies": [
+    { "family": "claude", "displayName": "Claude", "setup": null, "featureAllowlist": {} },
+    { "family": "codex", "displayName": "Codex", "setup": null, "featureAllowlist": {} },
+    { "family": "opencode", "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
+    { "family": "pie", "displayName": "Pie", "setup": null, "featureAllowlist": {} }
+  ],
+  "environments": [
+    { "name": "primary", "eligibleFamilies": ["claude", "codex", "opencode", "pie"] },
+    { "name": "lab", "eligibleFamilies": ["claude", "codex"] }
+  ],
+  "resolutions": [
+    { "environment": "primary", "tier": "work", "candidates": [{ "family": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
+  ]
+}
