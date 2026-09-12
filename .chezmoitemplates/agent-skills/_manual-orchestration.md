@@ -87,7 +87,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 ## child の起動と完了検知
 
-child の role、prompt、schema、workspace を決めた後、親は `mcp__paseo__create_agent` を呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId` は launch と create request の検証済み値を使い、`notifyOnFinish` は `true` を渡す。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
+child の role、prompt、schema、workspace を決めた後、親は `paseo-mcp-adapter` の `create-agent --request` を呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`notifyOnFinish` は launch と create request の検証済み値を使う。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
 
 起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は `paseo wait <agent-id> --timeout <seconds> --json` または対応する MCP の status を使う。返ってきた status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。
 

@@ -50,11 +50,6 @@ function nonEmptyString(value, code, label) {
   if (typeof value !== 'string' || value.length === 0) fail(code, `${label}: 非空 string が必要である`)
 }
 
-function nonRemoteUrlString(value, code, label) {
-  nonEmptyString(value, code, label)
-  if (value.includes('://')) fail(code, `${label}: URL が許可されない`)
-}
-
 function safeIdentifier(value, code, label) {
   nonEmptyString(value, code, label)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) fail(code, `${label}: identifier が不正である`)
@@ -109,13 +104,13 @@ function assertMadLaunchSpecV1(value, featureAllowlist) {
   if (value.version !== 1 || value.type !== 'mad-launch-spec' || value.status !== 'ok') {
     fail(code, 'mad launch: success discriminator が不正である')
   }
-  nonRemoteUrlString(value.profileName, code, 'mad launch profileName')
-  nonRemoteUrlString(value.environment, code, 'mad launch environment')
+  safeIdentifier(value.profileName, code, 'mad launch profileName')
+  safeIdentifier(value.environment, code, 'mad launch environment')
   if (!TIERS.includes(value.tier)) fail(code, 'mad launch tier が不正である')
-  nonRemoteUrlString(value.provider, code, 'mad launch provider')
-  nonRemoteUrlString(value.model, code, 'mad launch model')
+  safeIdentifier(value.provider, code, 'mad launch provider')
+  nonEmptyString(value.model, code, 'mad launch model')
   if (value.modeId !== 'auto') fail(code, 'mad launch modeId は auto でなければならない')
-  nonRemoteUrlString(value.thinkingOptionId, code, 'mad launch thinkingOptionId')
+  nonEmptyString(value.thinkingOptionId, code, 'mad launch thinkingOptionId')
   assertFeatureValues(value.featureValues, featureAllowlist, code, 'mad launch featureValues')
   assertWarnings(value.warnings, code, 'mad launch warnings')
   return value
@@ -127,7 +122,7 @@ function assertMadCreateRequestV1(value, featureAllowlist) {
   nonEmptyString(value.title, code, 'mad create request title')
   nonEmptyString(value.workspaceId, code, 'mad create request workspaceId')
   nonEmptyString(value.initialPrompt, code, 'mad create request initialPrompt')
-  nonRemoteUrlString(value.provider, code, 'mad create request provider')
+  nonEmptyString(value.provider, code, 'mad create request provider')
   if (typeof value.notifyOnFinish !== 'boolean') fail(code, 'mad create request notifyOnFinish が不正である')
   exactKeys(value.settings, MAD_SETTINGS_KEYS, code, 'mad create request settings')
   if (value.settings.modeId !== 'auto') fail(code, 'mad create request modeId は auto でなければならない')
@@ -284,7 +279,7 @@ function assertProviderRecord(value, code, label) {
     fail(code, `${label}: modeIds が不正である`)
   }
   if (new Set(value.modeIds).size !== value.modeIds.length) fail(code, `${label}: modeIds が重複する`)
-  for (const modeId of value.modeIds) safeIdentifier(modeId, code, `${label} modeId`)
+  for (const modeId of value.modeIds) nonEmptyString(modeId, code, `${label} modeId`)
 }
 
 function assertModelResponse(value, providerId) {
@@ -296,7 +291,7 @@ function assertModelResponse(value, providerId) {
   const ids = new Set()
   for (const [index, model] of value.models.entries()) {
     exactKeys(model, ['id', 'thinkingOptionIds'], code, `list models ${providerId}[${index}]`)
-    safeIdentifier(model.id, code, `list models ${providerId}[${index}] id`)
+    nonEmptyString(model.id, code, `list models ${providerId}[${index}] id`)
     if (ids.has(model.id)) fail(code, `list models ${providerId}: model が重複する`)
     ids.add(model.id)
     if (!Array.isArray(model.thinkingOptionIds) ||
@@ -306,7 +301,7 @@ function assertModelResponse(value, providerId) {
     if (new Set(model.thinkingOptionIds).size !== model.thinkingOptionIds.length) {
       fail(code, `list models ${providerId}[${index}]: thinkingOptionIds が重複する`)
     }
-    for (const option of model.thinkingOptionIds) safeIdentifier(option, code, `list models ${providerId}[${index}] thinkingOptionId`)
+    for (const option of model.thinkingOptionIds) nonEmptyString(option, code, `list models ${providerId}[${index}] thinkingOptionId`)
   }
   return value
 }

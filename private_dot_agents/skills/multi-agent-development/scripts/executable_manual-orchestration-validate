@@ -231,18 +231,9 @@ write_private_text() {
   return 0
 }
 
-mad_source_share_dir() {
-  local script_dir
-  script_dir="$(cd "$(dirname "$0")" && pwd -P)"
-  cd "$script_dir/../../../../private_dot_local/private_share/agent-config" 2>/dev/null && pwd -P
-}
-
 mad_default_share_dir() {
-  if [ -n "${HOME:-}" ] && [ -f "$HOME/.local/share/agent-config/mad-contract.js" ]; then
-    printf '%s\n' "$HOME/.local/share/agent-config"
-  else
-    mad_source_share_dir
-  fi
+  [ -n "${HOME:-}" ] || return 1
+  printf '%s\n' "$HOME/.local/share/agent-config"
 }
 
 mad_add_event() {
@@ -289,7 +280,8 @@ normalize_list_providers() {
     elif (any(.providers[]; (type != "object" or (keys | sort) != ["available","id","modeIds"]))) then error
     elif (any(.providers[]; (.id | type != "string" or (test("^[A-Za-z0-9][A-Za-z0-9._-]*$") | not)))) then error
     elif (any(.providers[]; (.available | type != "boolean"))) then error
-    elif (any(.providers[]; (.modeIds | type != "array" or any(.[]; type != "string" or length == 0 or (test("^[A-Za-z0-9][A-Za-z0-9._-]*$") | not) or (contains("://")) )))) then error
+    elif (any(.providers[]; (.modeIds | type != "array" or any(.[]; type != "string" or length == 0)))) then error
+    elif (any(.providers[]; ([.modeIds] | flatten | length) != ([.modeIds] | flatten | unique | length))) then error
     elif ([.providers[].id] | length) != ([.providers[].id] | unique | length) then error
     elif (($ids - [.providers[].id]) | length) != 0 then error
     else {providers: [.providers[] | .id as $id | select(any($ids[]; . == $id)) | {id,available,modeIds}]} end
@@ -301,9 +293,9 @@ normalize_list_models() {
   jq -c --arg provider "$provider" '
     if (type != "object" or (keys | sort) != ["models","provider"] or .provider != $provider or (.models | type) != "array") then error
     elif (any(.models[]; (type != "object" or (keys | sort) != ["id","thinkingOptionIds"]))) then error
-    elif (any(.models[]; (.id | type != "string" or length == 0 or (test("^[A-Za-z0-9][A-Za-z0-9._-]*$") | not)))) then error
+    elif (any(.models[]; (.id | type != "string" or length == 0))) then error
     elif ([.models[].id] | length) != ([.models[].id] | unique | length) then error
-    elif (any(.models[]; (.thinkingOptionIds | type != "array" or any(.[]; type != "string" or length == 0 or (test("^[A-Za-z0-9][A-Za-z0-9._-]*$") | not) or (contains("://")) )))) then error
+    elif (any(.models[]; (.thinkingOptionIds | type != "array" or any(.[]; type != "string" or length == 0)))) then error
     elif (any(.models[]; ([.thinkingOptionIds] | flatten | length) != ([.thinkingOptionIds] | flatten | unique | length))) then error
     else {provider:.provider,models:[.models[] | {id,thinkingOptionIds}]} end
   ' 2>/dev/null
@@ -313,9 +305,9 @@ normalize_launch_success() {
   jq -c '
     if (keys | sort) != ["environment","featureValues","modeId","model","profileName","provider","status","thinkingOptionId","tier","type","version","warnings"] then error
     elif (.version != 1 or .type != "mad-launch-spec" or .status != "ok" or .modeId != "auto") then error
-    elif (any([.profileName,.environment,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0 or contains("://"))) then error
+    elif (any([.profileName,.environment,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0)) then error
     elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
-    elif (.featureValues | type != "object" or any(to_entries[]; (.value | (type == "boolean" or type == "string" or type == "number")))) then error
+    elif (.featureValues | type != "object" or any(to_entries[]; (.value | (type != "boolean" and type != "string" and type != "number")))) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     else . end
   ' 2>/dev/null
@@ -325,12 +317,14 @@ normalize_launch_failure() {
   jq -c '
     if (keys | sort) != ["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"] then error
     elif (.version != 1 or .type != "mad-launch-failure" or .status != "unresolved" or .reasonCode != "candidates_exhausted") then error
-    elif (any([.profileName,.environment][]; type != "string" or length == 0 or contains("://"))) then error
+    elif (any([.profileName,.environment][]; type != "string" or length == 0)) then error
     elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     elif (.candidates | type != "array") then error
     elif (any(.candidates[]; (type != "object" or (keys | sort) != ["model","provider","reasonCode","thinkingOptionId"]))) then error
-    elif (any(.candidates[]; any([.provider,.model,.thinkingOptionId,.reasonCode][]; type != "string" or length == 0 or contains("://")))) then error
+    elif (any(.candidates[]; any([.provider,.model,.thinkingOptionId][]; type != "string" or length == 0))) then error
+    elif ((.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason)) == null) then error
+    elif (any(.candidates[]; (.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason)) == null)) then error
     else . end
   ' 2>/dev/null
 }
@@ -386,6 +380,7 @@ mad_exercise_create() {
   local launch=""
   local adapter=""
   local create_log=""
+  local share_dir=""
   local contract
   local validation
   local request_path
@@ -393,13 +388,14 @@ mad_exercise_create() {
   local adapter_status
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --snapshot|--launch|--adapter|--create-log)
+      --snapshot|--launch|--adapter|--create-log|--share-dir)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --snapshot) snapshot="$2" ;;
           --launch) launch="$2" ;;
           --adapter) adapter="$2" ;;
           --create-log) create_log="$2" ;;
+          --share-dir) share_dir="$2" ;;
         esac
         shift 2
         ;;
@@ -410,13 +406,21 @@ mad_exercise_create() {
   mad_require_non_empty --launch "$launch" || return 2
   mad_require_non_empty --adapter "$adapter" || return 2
   mad_require_non_empty --create-log "$create_log" || return 2
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
   mad_require_absolute --snapshot "$snapshot" || return 2
   mad_require_absolute --launch "$launch" || return 2
   mad_require_absolute --adapter "$adapter" || return 2
   mad_require_absolute --create-log "$create_log" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
   [ -f "$adapter" ] && [ -x "$adapter" ] || { printf 'manual-orchestration-validate: adapter is unavailable\n' >&2; return 2; }
-  contract="$(mad_default_share_dir)/mad-contract.js"
+  contract="$share_dir/mad-contract.js"
   [ -f "$contract" ] || { printf 'manual-orchestration-validate: Paseo contract is unavailable\n' >&2; return 2; }
+  node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
   write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":0}' || return 2
   validation="$(node - "$contract" "$snapshot" "$launch" <<'NODE' 2>/dev/null
 const fs = require('node:fs')
@@ -442,7 +446,7 @@ NODE
     rm -f "$request_path"
     return 2
   fi
-  response="$("$adapter" create-agent --request "$request_path" 2>/dev/null)"
+  response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$request_path" 2>/dev/null)"
   adapter_status=$?
   rm -f "$request_path"
   write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":1}' || return 2
@@ -538,13 +542,14 @@ mad_exercise_success() {
   [ -d "$project" ] || { printf 'manual-orchestration-validate: project is unavailable\n' >&2; return 2; }
   mkdir -p "$attempt_dir" || return 2
   contract="$share_dir/mad-contract.js"
-  [ -f "$contract" ] || { printf 'manual-orchestration-validate: Paseo contract is unavailable\n' >&2; return 2; }
   MAD_ATTEMPT_DIR="$attempt_dir"
   MAD_CONTRACT="$contract"
   MAD_EVENTS='[]'
   MAD_SEQUENCE=0
   mad_persist_state pending || return 2
   mad_persist_log || return 2
+  [ -f "$contract" ] && node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 ||
+    mad_finish_failure resolve 2 failed 0
 
   node -e 'require(process.argv[1]).writeResolvedExport0600(process.argv[2], process.argv[3])' \
     "$contract" "$input" "$attempt_dir/resolved-export.json" >/dev/null 2>&1 ||
@@ -558,7 +563,7 @@ mad_exercise_success() {
     '{operation:"enumerate_materialized_provider_ids",providerIds:$providerIds}')" ||
     mad_finish_failure discovery 2 waiting_for_user 0
 
-  providers_raw="$("$adapter" list-providers 2>/dev/null)"
+  providers_raw="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" list-providers 2>/dev/null)"
   provider_status=$?
   if [ "$provider_status" -ne 0 ]; then
     mad_finish_failure discovery 2 waiting_for_user 0
@@ -577,7 +582,7 @@ mad_exercise_success() {
     mad_finish_failure discovery 2 waiting_for_user 0
 
   while IFS= read -r provider; do
-    models_raw="$("$adapter" list-models --provider "$provider" 2>/dev/null)"
+    models_raw="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" list-models --provider "$provider" 2>/dev/null)"
     provider_status=$?
     if [ "$provider_status" -ne 0 ]; then
       mad_finish_failure list_models 2 waiting_for_user 0
@@ -637,7 +642,7 @@ mad_exercise_success() {
     '. + {operation:"build_create_request",path:$path}')" ||
     mad_finish_failure request_build 2 failed 0
 
-  create_response="$("$adapter" create-agent --request "$attempt_dir/create-request.json" 2>/dev/null)"
+  create_response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$attempt_dir/create-request.json" 2>/dev/null)"
   create_status=$?
   create_calls=1
   request_payload="$(jq -c . "$attempt_dir/create-request.json" 2>/dev/null)" ||

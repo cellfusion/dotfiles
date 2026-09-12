@@ -24,6 +24,11 @@ function safeId(value) {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
 }
 
+function opaqueStrings(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.length > 0) &&
+    new Set(value).size === value.length
+}
+
 function paseo(args) {
   const result = spawnSync(process.env.PASEO_CLI || 'paseo', args, { encoding: 'utf8' })
   if (result.error || result.status !== 0) fail('Paseo MCP transport failed', 1)
@@ -37,9 +42,25 @@ function listProviders() {
   const providers = []
   const seen = new Set()
   for (const row of rows) {
-    if (!row || typeof row !== 'object' || !safeId(row.provider) || seen.has(row.provider)) continue
+    if (!row || typeof row !== 'object' || !safeId(row.provider) || seen.has(row.provider)) {
+      fail('provider discovery response is invalid', 1)
+    }
+    const available = typeof row.available === 'boolean'
+      ? row.available
+      : row.status === 'available'
+        ? true
+        : row.status === 'unavailable'
+          ? false
+          : null
+    if (available === null) fail('provider discovery response is invalid', 1)
+    const modeIds = Object.prototype.hasOwnProperty.call(row, 'modeIds')
+      ? row.modeIds
+      : available
+        ? typeof row.defaultMode === 'string' && row.defaultMode.length > 0 ? [row.defaultMode] : null
+        : []
+    if (modeIds === null || !opaqueStrings(modeIds)) fail('provider discovery response is invalid', 1)
     seen.add(row.provider)
-    providers.push({ id: row.provider, available: row.status === 'available', modeIds: row.status === 'available' ? ['auto'] : [] })
+    providers.push({ id: row.provider, available, modeIds: [...modeIds] })
   }
   process.stdout.write(JSON.stringify({ providers }) + '\n')
 }
@@ -52,12 +73,12 @@ function listModels(provider) {
   const models = []
   const seen = new Set()
   for (const row of rows) {
-    if (!row || typeof row !== 'object' || !safeId(row.id) || seen.has(row.id)) continue
-    const thinkingOptionIds = Array.isArray(row.thinkingOptionIds)
-      ? row.thinkingOptionIds.filter(safeId)
-      : []
+    if (!row || typeof row !== 'object' || typeof row.id !== 'string' || row.id.length === 0 || seen.has(row.id)) {
+      fail('model discovery response is invalid', 1)
+    }
+    if (!opaqueStrings(row.thinkingOptionIds)) fail('model discovery response is invalid', 1)
     seen.add(row.id)
-    models.push({ id: row.id, thinkingOptionIds: [...new Set(thinkingOptionIds)] })
+    models.push({ id: row.id, thinkingOptionIds: [...row.thinkingOptionIds] })
   }
   process.stdout.write(JSON.stringify({ provider, models }) + '\n')
 }
@@ -86,9 +107,7 @@ function readCreateRequest(requestPath) {
   try {
     const contract = require(path.join(shareDir, 'mad-contract.js'))
     contract.assertMadCreateRequestV1(request, {})
-  } catch (error) {
-    if (!error || error.code !== 'MODULE_NOT_FOUND') fail('request shape is invalid')
-  }
+  } catch { fail('request shape is invalid') }
   return request
 }
 
@@ -98,16 +117,29 @@ function createAgent(requestPath) {
   if (separator <= 0 || separator === request.provider.length - 1) fail('request provider is invalid')
   const provider = request.provider.slice(0, separator)
   const model = request.provider.slice(separator + 1)
-  if (!safeId(provider) || !safeId(model) || Object.keys(request.settings.features).length !== 0) {
+  if (!safeId(provider) || model.length === 0 || Object.keys(request.settings.features).length !== 0) {
     fail('request provider is invalid')
   }
+  const createPayload = {
+    title: request.title,
+    workspaceId: request.workspaceId,
+    initialPrompt: request.initialPrompt,
+    notifyOnFinish: request.notifyOnFinish,
+    provider: request.provider,
+    settings: {
+      modeId: request.settings.modeId,
+      thinkingOptionId: request.settings.thinkingOptionId,
+      features: { ...request.settings.features },
+    },
+  }
   const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
-    'run', '--background', '--json', '--title', request.title,
-    '--provider', `${provider}/${model}`,
-    '--thinking', request.settings.thinkingOptionId,
-    '--mode', request.settings.modeId,
-    '--workspace', request.workspaceId,
-    request.initialPrompt,
+    'run', '--background', '--json', '--title', createPayload.title,
+    '--provider', createPayload.provider,
+    '--thinking', createPayload.settings.thinkingOptionId,
+    '--mode', createPayload.settings.modeId,
+    '--workspace', createPayload.workspaceId,
+    '--label', `notifyOnFinish=${createPayload.notifyOnFinish}`,
+    createPayload.initialPrompt,
   ], { encoding: 'utf8' })
   if (result.error || result.status !== 0) fail('Paseo MCP create failed', 1)
   process.stdout.write('{"status":"accepted"}\n')

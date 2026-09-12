@@ -35,6 +35,27 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
+manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/manifests.json" . }}')"
+routing="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/routing.json" . }}')"
+paseo_routing="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/paseo-routing.json" . }}')"
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_eq "$(printf '%s' "$manifest" | jq -r --arg role "$role" 'has($role)')" "true" \
+    "role map: manifest に $role がある"
+  assert_eq "$(printf '%s' "$routing" | jq -r --arg role "$role" 'has($role)')" "true" \
+    "role map: routing に $role がある"
+  assert_eq "$(printf '%s' "$paseo_routing" | jq -r --arg role "$role" 'has($role)')" "true" \
+    "role map: Paseo routing に $role がある"
+done
+for legacy_role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+  assert_eq "$(printf '%s' "$manifest" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
+    "role map: manifest に旧 role $legacy_role がない"
+  assert_eq "$(printf '%s' "$routing" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
+    "role map: routing に旧 role $legacy_role がない"
+  assert_eq "$(printf '%s' "$paseo_routing" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
+    "role map: Paseo routing に旧 role $legacy_role がない"
+done
+assert_not_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")" \
+  'mcp__paseo__create_agent' "create: manual doc は adapter だけを使う"
 
 export_json="$TMP/resolved-export.json"
 enumeration_json="$TMP/provider-enumeration.json"
@@ -55,7 +76,7 @@ done
 
 attempt="$TMP/mad-success"
 mkdir -p "$attempt"
-out="$(bash "$MAD_RUNNER" --exercise-success \
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -100,6 +121,23 @@ assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount]
   "MAD 成功: create_agent は一回だけ"
 assert_eq "$(jq -r '.state' "$attempt/state.json")" "running" "MAD 成功: state は running"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
+
+broken_share="$TMP/broken-share"
+mkdir -p "$broken_share"
+printf '%s\n' "module.exports = require('./missing-module.js')" > "$broken_share/mad-contract.js"
+broken_attempt="$TMP/mad-broken-contract"
+mkdir -p "$broken_attempt"
+out="$(bash "$MAD_RUNNER" --exercise-success \
+  --generator "$GENERATOR" --share-dir "$broken_share" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$broken_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$broken_attempt/call-log.json" 2>/dev/null)"
+assert_eq "$?" "2" "MAD contract load: 壊れた share-dir を拒否する"
+assert_eq "$out" "" "MAD contract load: stdout を出さない"
+assert_eq "$(jq -r '.events[-1] | [.operation,.stage,.createCalls,.state] | join(" ")' "$broken_attempt/call-log.json")" \
+  "failure resolve 0 failed" "MAD contract load: adapter を呼ばずに failed にする"
+assert_eq "$(test -e "$broken_attempt/create-request.json" && echo yes || echo no)" "no" \
+  "MAD contract load: request を作らない"
 
 fail_case() {
   stage="$1"; adapter="$2"; role="$3"; input_config="$4"; expected_exit="$5"; expected_state="$6"
@@ -164,11 +202,68 @@ process.exit(0)
 NODE
 assert_eq "$?" "0" "contract: allowlist と integer と auto mode を強制する"
 
+# adapter は discovery の mode/model/thinking 値を opaque なまま転送し、異常な行を捨てずに拒否する。
+FAKE_PASEO="$TMP/fake-paseo"
+FAKE_PASEO_ARGS="$TMP/fake-paseo-args"
+cat > "$FAKE_PASEO" <<'EOF'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = "provider" ] && [ "${2:-}" = "ls" ]; then
+  if [ "${PASEO_FAKE_BAD:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","modeIds":["mode: opaque"]},{"provider":"broken","status":"available","modeIds":"not-an-array"}]'
+  else
+    printf '%s\n' '[{"provider":"codex","status":"available","modeIds":["mode: opaque"]}]'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = "provider" ] && [ "${2:-}" = "models" ]; then
+  if [ "${PASEO_FAKE_BAD_MODELS:-0}" = "1" ]; then
+    printf '%s\n' '[{"id":"model/opaque","thinkingOptionIds":["thinking option"]},{"id":"broken","thinkingOptionIds":"not-an-array"}]'
+  else
+    printf '%s\n' '[{"id":"model/opaque","thinkingOptionIds":["thinking option"]}]'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = "run" ]; then
+  printf '%s\n' "$@" > "$PASEO_FAKE_ARGS"
+  exit 0
+fi
+exit 2
+EOF
+chmod +x "$FAKE_PASEO"
+adapter_providers="$(PASEO_CLI="$FAKE_PASEO" "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers)"
+assert_eq "$?" "0" "adapter: list-providers は成功する"
+assert_eq "$(printf '%s' "$adapter_providers" | jq -c '.providers[0]')" \
+  '{"id":"codex","available":true,"modeIds":["mode: opaque"]}' "adapter: modeIds をそのまま転送する"
+adapter_models="$(PASEO_CLI="$FAKE_PASEO" "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-models --provider codex)"
+assert_eq "$?" "0" "adapter: list-models は成功する"
+assert_eq "$(printf '%s' "$adapter_models" | jq -c '.models[0]')" \
+  '{"id":"model/opaque","thinkingOptionIds":["thinking option"]}' "adapter: model/thinking option をそのまま転送する"
+PASEO_FAKE_BAD=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+  >/dev/null 2>&1
+assert_eq "$?" "1" "adapter: 異常な provider 行を破棄せず拒否する"
+PASEO_FAKE_BAD_MODELS=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-models --provider codex \
+  >/dev/null 2>&1
+assert_eq "$?" "1" "adapter: 異常な model 行を破棄せず拒否する"
+opaque_request="$TMP/opaque-create-request.json"
+jq '.notifyOnFinish = false | .provider = "codex/model/opaque" | .settings.thinkingOptionId = "thinking option"' \
+  "$MAD_FIXTURES/create-request-success.json" > "$opaque_request"
+chmod 600 "$opaque_request"
+adapter_create="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+  create-agent --request "$opaque_request")"
+assert_eq "$?" "0" "adapter: create-agent は検証済み request を受理する"
+assert_eq "$adapter_create" '{"status":"accepted"}' "adapter: create-agent の stdout discriminator"
+assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=false' "adapter: notifyOnFinish を create payload に渡す"
+
 # 既存の exercise-create 経路も、snapshot または launch の検証前に create を呼ばない。
 for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set-mismatch \
   mode-ids-not-string-array model-entry-not-object; do
   create_log="$TMP/exercise-snapshot-$invalid_snapshot.json"
   out="$(bash "$MAD_RUNNER" --exercise-create \
+    --share-dir "$SHARE" \
     --snapshot "$FIXTURES/snapshots/$invalid_snapshot.json" \
     --launch "$FIXTURES/launch/success.json" --adapter "$SUCCESS_ADAPTER" \
     --create-log "$create_log" 2>/dev/null)"
@@ -180,6 +275,7 @@ for invalid_launch in exhausted invalid-extra-field invalid-non-auto-mode invali
   invalid-non-integer-feature; do
   create_log="$TMP/exercise-launch-$invalid_launch.json"
   out="$(bash "$MAD_RUNNER" --exercise-create \
+    --share-dir "$SHARE" \
     --snapshot "$FIXTURES/snapshots/all-available.json" \
     --launch "$FIXTURES/launch/$invalid_launch.json" --adapter "$SUCCESS_ADAPTER" \
     --create-log "$create_log" 2>/dev/null)"
