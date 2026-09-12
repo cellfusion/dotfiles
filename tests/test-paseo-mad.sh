@@ -16,6 +16,44 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$NON_GIT_DIR" "$TMP"' EXIT
 umask 077
 
+REPRESENTATIVE="$CHEZMOI_SOURCE/tests/manual/mad-representative-run.sh"
+FIXTURE_EVIDENCE="$FIXTURES/mad/representative-ok"
+env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
+  bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
+status=$?
+assert_eq "$([ "$status" -ne 0 ] && printf yes || printf no)" "yes" "representative: 承認は外側の前提条件である"
+assert_eq "$(test -f "$TMP/decision.md" && echo yes || echo no)" "yes" "representative: 未承認なら decision request を書く"
+assert_eq "$(test -e "$TMP/evidence/create-call.json" && echo yes || echo no)" "no" "representative: 未承認なら create を試さない"
+assert_not_contains "$(cat "$REPRESENTATIVE" 2>/dev/null)" 'MAD_REPRESENTATIVE_RUN_APPROVED=1' "representative: runner は承認変数へ代入しない"
+
+find "$FIXTURE_EVIDENCE" -type f -exec chmod 600 {} +
+bash "$REPRESENTATIVE" --verify-only --evidence-dir "$FIXTURE_EVIDENCE"
+assert_eq "$?" "0" "representative: fixture の証跡検査は承認なしで通る"
+assert_eq "$(jq -r '.create_calls' "$FIXTURE_EVIDENCE/create-call.json")" "1" "representative: create はちょうど一回"
+assert_eq "$(jq -c '.request | keys | sort' "$FIXTURE_EVIDENCE/create-call.json")" \
+  '["initialPrompt","notifyOnFinish","provider","settings","title","workspaceId"]' "representative: create payload の key set"
+assert_eq "$(jq -c '.request.settings | keys | sort' "$FIXTURE_EVIDENCE/create-call.json")" \
+  '["features","modeId","thinkingOptionId"]' "representative: settings の key set"
+assert_eq "$(jq -r '.request.settings.modeId' "$FIXTURE_EVIDENCE/create-call.json")" "auto" "representative: modeId は auto"
+assert_eq "$(jq -c '.runStates' "$FIXTURE_EVIDENCE/state-transition.json")" '["running","ok"]' "representative: run の遷移"
+assert_eq "$(jq -c '.phaseStates' "$FIXTURE_EVIDENCE/state-transition.json")" \
+  '["plan:ok","implement:ok","review:ok","fix:ok"]' "representative: 各 phase が完了した"
+assert_eq "$(jq -c '[.events[].operation]' "$FIXTURE_EVIDENCE/call-log.json")" \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent"]' \
+  "representative: call log の並び"
+assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$FIXTURE_EVIDENCE/call-log.json")" "1" \
+  "representative: create_agent はちょうど一回"
+for evidence in snapshot.json launch.json create-call.json call-log.json state-transition.json \
+  plan/result.json plan/handoff.json implement/result.json implement/handoff.json \
+  review/result.json review/handoff.json fix/result.json fix/handoff.json; do
+  assert_eq "$(stat -f '%HT:%Lp' "$FIXTURE_EVIDENCE/$evidence")" "Regular File:600" "representative: $evidence は 0600 の regular file"
+done
+for phase in plan implement review fix; do
+  assert_eq "$(jq -r '.artifact_paths | type == "array" and all(.[]; type == "string" and startswith("/"))' \
+    "$FIXTURE_EVIDENCE/$phase/handoff.json")" "true" \
+    "representative: $phase の handoff は絶対 path だけを持つ"
+done
+
 out="$(MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=0 bash "$MAD_RUNNER" --select-backend 2>&1)"
 assert_eq "$?" "1" "backend: MCP が無ければ Paseo-only run を開始しない"
 assert_contains "$out" 'paseo-mcp' "backend: 必要な backend を述べる"

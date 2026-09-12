@@ -1,0 +1,4 @@
+{
+  "runStates": ["running", "ok"],
+  "phaseStates": ["plan:ok", "implement:ok", "review:ok", "fix:ok"]
+}

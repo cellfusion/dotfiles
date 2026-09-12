@@ -313,6 +313,24 @@ MAD を通さない経路のために残してある。撤去したのは旧 MAD
 実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
 `--dry-run` で手順だけを読める。
 
+旧 asset の削除へ進む前に、`tests/manual/mad-representative-run.sh` で Paseo の代表
+MAD run を 1 回通す。`--run` は外側から `MAD_REPRESENTATIVE_RUN_APPROVED=1` を
+明示したときだけ discovery、launch、create、plan、implement、review、fix を実行し、
+成功時に `$PASEO_MIGRATION_EVIDENCE_DIR/representative-decision.txt` へ
+`approved-success` を atomic に記録する。未承認または途中失敗なら `DECISION_REQUEST_PATH`
+へ decision request を残し、後続 phase と削除を行わない。
+
+実機を使わず保存済み証跡を検査する場合は、次の verify-only 経路を使う。これは
+承認変数を読まず、adapter を呼ばない。
+
+    bash tests/test-paseo-mad.sh
+    bash tests/manual/mad-representative-run.sh --verify-only \
+      --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
+
+fixture の mode は Git が保存しないため、単体で検査するときは `find` で列挙した証跡を
+`chmod 600` にしてから実行する。証跡には credential、auth/history、raw response、
+remote URL を入れない。
+
 ### Paseo プラグイン pr-review
 
 サイドバーの「PR レビュー」からプロジェクトと PR を選ぶと、worktree の workspace を
