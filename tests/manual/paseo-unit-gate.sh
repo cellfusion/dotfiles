@@ -9,11 +9,18 @@ cd "$CHEZMOI_SOURCE" || exit 2
 
 record() {
   local decision_file="$1"; shift
-  local suite
-  if "$@"; then
+  local suite suite_output
+  if suite_output="$("$@" 2>&1)"; then
     suite=0
   else
     suite=$?
+  fi
+  printf '%s\n' "$suite_output"
+  if [ "$suite" -eq 0 ] && ! printf '%s\n' "$suite_output" | awk '
+    $1 == "SUMMARY" { count += 1; if ($3 != "0") failed = 1 }
+    END { exit count == 0 || failed }
+  '; then
+    suite=1
   fi
   if [ "$suite" -eq 0 ]; then
     write_unit_decision "$EVIDENCE/$decision_file" continue || return 2
@@ -110,6 +117,10 @@ case "${1:-}" in
     require_unit_decision "$EVIDENCE/$2" "$3"
     ;;
   observe) observe_paseo_shape ;;
-  record-unit2|record-unit3) printf '%s is not implemented yet\n' "${1:-}" >&2; exit 2 ;;
+  record-unit2) record unit2-decision.txt bash -c 'bash tests/test-generate-paseo-config.sh \
+    && bash tests/test-agent-env-script.sh \
+    && bash tests/test-distribution.sh \
+    && bash tests/test-no-private-identifiers.sh' ;;
+  record-unit3) printf '%s is not implemented yet\n' "${1:-}" >&2; exit 2 ;;
   *) printf 'usage: paseo-unit-gate.sh {record-unit1|observe|record-unit2|record-unit3|require <file> <value>}\n' >&2; exit 2 ;;
 esac
