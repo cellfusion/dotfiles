@@ -39,6 +39,7 @@ function ensurePrimaryEntry(pathname, label) {
   const entry = readEntry(pathname, label)
   if (!entry) fail(`${label}: primary に存在しない`)
   if (entry.isSymbolicLink()) fail(`${label}: symlink は許可しない`)
+  if (!entry.isFile()) fail(`${label}: directory 以外の regular file が必要である`)
   return entry
 }
 

@@ -284,9 +284,12 @@ SETUP_XDG="$TMP/setup-xdg"; mkdir -p "$SETUP_XDG/claude" "$SETUP_XDG/codex"
 for name in agents commands skills hooks CLAUDE.md settings.json; do : > "$SETUP_XDG/claude/$name"; done
 for name in agents AGENTS.md; do : > "$SETUP_XDG/codex/$name"; done
 SETUP_MODULE="$SHARE/directory-setup.js"
-run_setup() {
+run_setup_with_xdg() {
   node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {setupDirectories}=require(process.argv[2]); try { setupDirectories(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config,{xdgConfigHome:process.argv[4],defaultEnvironment:"primary"}); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' \
-    "$VALIDATOR" "$SETUP_MODULE" "$VALID" "$SETUP_XDG"
+    "$VALIDATOR" "$SETUP_MODULE" "$VALID" "$1"
+}
+run_setup() {
+  run_setup_with_xdg "$SETUP_XDG"
 }
 run_setup
 assert_eq "$?" "0" "setup: 初回の実行は成功する"
@@ -296,6 +299,15 @@ assert_eq "$(test -e "$SETUP_XDG/claude_lab/.claude.json" && echo yes || echo no
 assert_eq "$(test -e "$SETUP_XDG/opencode_lab" && echo yes || echo no)" "no" "setup: setup:null は directory を作らない"
 run_setup
 assert_eq "$?" "0" "setup: 同じ内容の再実行は成功する"
+
+DIRECTORY_SOURCE_XDG="$TMP/directory-source-xdg"; mkdir -p "$DIRECTORY_SOURCE_XDG/claude/agents" "$DIRECTORY_SOURCE_XDG/codex"
+for name in commands skills hooks CLAUDE.md settings.json; do : > "$DIRECTORY_SOURCE_XDG/claude/$name"; done
+for name in agents AGENTS.md; do : > "$DIRECTORY_SOURCE_XDG/codex/$name"; done
+run_setup_with_xdg "$DIRECTORY_SOURCE_XDG"
+assert_eq "$?" "2" "setup: symlink source の directory entry は拒否する"
+assert_eq "$(test -e "$DIRECTORY_SOURCE_XDG/claude_lab" && echo yes || echo no)" "no" \
+  "setup: directory source の拒否時に root を作らない"
+
 rm -f "$SETUP_XDG/codex_lab/AGENTS.md"
 printf 'real file\n' > "$SETUP_XDG/codex_lab/AGENTS.md"
 run_setup
