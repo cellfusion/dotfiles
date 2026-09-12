@@ -1,0 +1,6 @@
+{
+  "run_id": "representative-run",
+  "node": "implement",
+  "attempt": "ok",
+  "artifact_paths": ["/fixture/implement-result.json"]
+}

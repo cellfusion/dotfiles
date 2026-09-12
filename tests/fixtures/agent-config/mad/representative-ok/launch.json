@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "type": "mad-launch-spec",
+  "status": "ok",
+  "profileName": "work_primary",
+  "environment": "primary",
+  "tier": "work",
+  "provider": "codex",
+  "model": "sample-work",
+  "modeId": "auto",
+  "thinkingOptionId": "high",
+  "featureValues": {},
+  "warnings": [
+    "environment tier missing: primary/work; using common tier",
+    "project remote unavailable; remote routing skipped"
+  ]
+}

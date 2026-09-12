@@ -1,0 +1,6 @@
+{
+  "run_id": "representative-run",
+  "node": "fix",
+  "attempt": "ok",
+  "artifact_paths": ["/fixture/fix-result.json"]
+}

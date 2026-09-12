@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "type": "mad-call-log",
+  "events": [
+    {
+      "seq": 0,
+      "operation": "enumerate_materialized_provider_ids",
+      "providerIds": ["claude", "claude-lab", "codex", "codex-lab", "opencode", "pie"]
+    },
+    {
+      "seq": 1,
+      "operation": "list_providers",
+      "callCount": 1,
+      "materializedProviderIds": ["claude", "claude-lab", "codex", "codex-lab", "opencode", "pie"],
+      "availableProviderIds": ["claude", "codex"]
+    },
+    { "seq": 2, "operation": "list_models", "callCount": 1, "provider": "claude" },
+    { "seq": 3, "operation": "list_models", "callCount": 1, "provider": "codex" },
+    {
+      "seq": 4,
+      "operation": "write_snapshot",
+      "path": "/fixture/snapshot.json",
+      "mode": 600,
+      "regularFile": true
+    },
+    {
+      "seq": 5,
+      "operation": "resolve",
+      "exitCode": 0,
+      "outputType": "mad-launch-spec",
+      "stdoutDocuments": 1
+    },
+    {
+      "seq": 6,
+      "operation": "build_create_request",
+      "path": "/fixture/create-request.json",
+      "topLevelKeys": ["title", "workspaceId", "initialPrompt", "notifyOnFinish", "provider", "settings"],
+      "settingsKeys": ["modeId", "thinkingOptionId", "features"],
+      "mode": 600,
+      "regularFile": true,
+      "validatedBeforeWrite": true
+    },
+    {
+      "seq": 7,
+      "operation": "create_agent",
+      "callCount": 1,
+      "requestPath": "/fixture/create-request.json"
+    }
+  ]
+}
