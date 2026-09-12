@@ -11,6 +11,27 @@ managed_files="$(chezmoi managed --source "$CHEZMOI_SOURCE" --include=files,syml
 # `chezmoi managed` 自体が成功していること（.chezmoiremove と source の衝突などを検出する）。
 assert_not_contains "$managed" "inconsistent state" "managed が inconsistent state を出さない"
 
+# Paseo の設定生成に必要な CLI と runtime 非依存の契約を配布する。正本は利用者の
+# 秘密領域なので配布しない。
+assert_contains "$managed" ".local/bin/generate-paseo-config" "distribution: 生成 CLI を配る"
+assert_contains "$managed" ".local/share/agent-config/config-types.js" "distribution: runtime 非依存の契約を配る"
+assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
+assert_contains "$managed" ".local/share/agent-config/agent-config.sample.json" "distribution: 匿名 sample を配る"
+assert_not_contains "$managed" ".config/chezmoi/agent-config.json" "distribution: 正本を配らない"
+hook_source="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
+for legacy in private-data.toml setup_paseo_provider list_providers; do
+  assert_not_contains "$hook_source" "$legacy" "hook: $legacy を持たない"
+done
+docs="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
+for step in 'generate-paseo-config resolve' 'generate-paseo-config --diff' 'generate-paseo-config --check'; do
+  assert_contains "$docs" "$step" "docs: 移行手順に $step がある"
+done
+assert_contains "$docs" "--paseo-config <absolute-copy>" \
+  "docs: 承認前の各検査と試行 write が target copy を明示する"
+assert_contains "$docs" "--paseo-config <absolute-target>" \
+  "docs: 承認後の通常 write も target path を明示する"
+assert_contains "$docs" 'chezmoi apply' "docs: apply が利用者の明示許可であることを書く"
+
 # リポジトリの作業用ディレクトリを配らない。
 for d in docs tests _cellfusion; do
   assert_not_contains "$(printf '%s\n' "$managed" | grep "^$d" || true)" "$d" \
@@ -284,3 +305,4 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

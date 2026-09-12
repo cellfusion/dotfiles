@@ -18,7 +18,7 @@
 | ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
 | Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
-| AI 環境ディレクトリ | `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` | `run_onchange_after_90-agent-envs.sh` |
+| AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
 
 マニフェストを持つスクリプトは、そのハッシュを埋め込んでいる。マニフェストを
 書き換えたときだけ `chezmoi apply` で走る。マニフェストを持たない 4 本
@@ -70,10 +70,9 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
 1. **アクセシビリティ権限の付与**（yabai と skhd）。システム設定 → プライバシーと
    セキュリティ → アクセシビリティ で許可する。付与するまでウィンドウ操作と
    ホットキーは効かない
-2. **`~/.config/chezmoi/private-data.toml` の配置**。AI 環境の定義（`[[data.environments]]`）、
-   Cloudflare のアカウント ID、AWS プロファイル、1Password のパス、再汚染テストの禁止語を
-   持つ。無くても apply は通り、各テンプレートは既定値で描画される。AI 環境については
-   「claude と codex を持つ `default` 環境 1 つ」が既定値になる
+2. **`~/.config/chezmoi/private-data.toml` の配置**。Cloudflare のアカウント ID、AWS プロファイル、
+   1Password のパス、再汚染テストの禁止語を持つ。無くても apply は通り、各テンプレートは既定値で
+   描画される。Paseo の AI 環境、tier、provider、model は下の `agent-config.json` へ移す。
 3. **1Password へのサインイン**。AWS の `credential_process` が `op read` を呼ぶ
 4. **AquaSKK の導入と入力ソースへの追加**。2026-08-27 に Brewfile から外したので
    apply では入らない。手で入れたうえで、システム設定 → キーボード → 入力ソース で
@@ -96,6 +95,56 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 システム設定 → プライバシーとセキュリティ → フルディスクアクセス に
 `~/.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events`
 を足す。makefile が ad-hoc 署名を打っているので、付与は再ビルドをまたいで保持される。
+
+## Paseo agent config の移行
+
+旧 `~/.config/chezmoi/private-data.toml` にある Paseo の環境・project rule・tier・model・provider の
+設定は自動変換しない。秘密、credential、auth、history の値を公開 sample や報告へ写さず、利用者が
+`$XDG_CONFIG_HOME/chezmoi/agent-config.json`（`XDG_CONFIG_HOME` 未設定時は
+`$HOME/.config/chezmoi/agent-config.json`）へ手で移す。公開 schema と sample は
+`~/.local/share/agent-config/agent-config.schema.json` と
+`~/.local/share/agent-config/agent-config.sample.json` で確認する。
+
+移行時は次の対応にする。
+
+1. environment の定義は `environments` に移し、`providers` はその environment で eligible な
+   provider family の一覧だけにする。root `providers` には全 family の base record を持たせ、
+   environment 側の eligibility だけを理由に base record を省略しない。
+2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。明示した
+   `--environment` が最優先で、無ければ最初に一致した rule、どれにも一致しなければ
+   `defaults.environment` を使う。
+3. tier は `tiers` または対象 environment の `tiers` に移す。environment tier があればそれを使い、
+   無ければ共通 tier を使う。role の tier と候補の順序も保持する。
+4. model と provider の優先順位は各 tier の `candidates` 配列の順序にする。先頭から provider の
+   availability、`auto` mode、model、thinking option を確認し、最初に成立した候補を使う。
+   `fast` は入力時だけ `light` に正規化されるため、正本には書かない。
+5. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
+   family 名をそのまま root `providers` の key にする。v1 ではその family の `setup` は `null`、
+   `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
+
+実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
+その copy に対して次の順序で確認する。`generate-paseo-config resolve` は正本、project、role、
+provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
+global option は subcommand より前に置くため、実際の呼び出しは
+`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> resolve \
+--project <absolute-project> --role <role> --provenance <provenance> --snapshot <absolute-snapshot>` とする。
+
+次に `generate-paseo-config --diff` で copy に対する managed projection だけを確認する。明示的な
+copy path を付けた実際の呼び出しは
+`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> --diff` とする。
+差分が意図どおりなら、同じ明示的な copy path に対して試行 write を行う。
+`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy>` の後、
+`generate-paseo-config --check` を
+`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> --check` として実行する。
+`--check` が 0 になることを確認するまで実 target へ write しない。0 は一致または成功、1 は差分、
+2 は入力・path・schema などの不備、4 は候補が尽きたことを表す。`--diff` と `--check` は target を
+書き換えない。
+
+copy の `--check` が 0 になった後、利用者が内容を確認して明示承認した場合だけ、同じ正本に対して
+flags なしの `generate-paseo-config --input <absolute-input> --paseo-config <absolute-target>` を
+実 target へ実行する。実 target の path を省略して既定値へ向ける手順は書かない。legacy との衝突、
+stale な provider・profile・directory は自動削除しない。auth と history の有無を利用者が確認した
+うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
 
 ## core
 
