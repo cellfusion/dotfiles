@@ -26,6 +26,10 @@ docs="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
 for step in 'generate-paseo-config resolve' 'generate-paseo-config --diff' 'generate-paseo-config --check'; do
   assert_contains "$docs" "$step" "docs: 移行手順に $step がある"
 done
+assert_contains "$docs" "--paseo-config <absolute-copy>" \
+  "docs: 承認前の各検査と試行 write が target copy を明示する"
+assert_contains "$docs" "--paseo-config <absolute-target>" \
+  "docs: 承認後の通常 write も target path を明示する"
 assert_contains "$docs" 'chezmoi apply' "docs: apply が利用者の明示許可であることを書く"
 
 # リポジトリの作業用ディレクトリを配らない。
