@@ -15,6 +15,7 @@ assert_not_contains "$managed" "inconsistent state" "managed が inconsistent st
 # 秘密領域なので配布しない。
 assert_contains "$managed" ".local/bin/generate-paseo-config" "distribution: 生成 CLI を配る"
 assert_contains "$managed" ".local/share/agent-config/config-types.js" "distribution: runtime 非依存の契約を配る"
+assert_contains "$managed" ".local/share/agent-config/mad-contract.js" "distribution: MAD の契約 module を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.sample.json" "distribution: 匿名 sample を配る"
 assert_not_contains "$managed" ".config/chezmoi/agent-config.json" "distribution: 正本を配らない"
@@ -125,10 +126,18 @@ for f in routing.json tiers.json manifests.json; do
     "agent-defs: $f を ~/.agents へ配る"
 done
 
-# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP と
-# native subagent がどちらも同じ prompt/schema を参照できることを保証する。
+# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP が
+# prompt/schema と artifact contract の唯一の dispatch 経路であることを保証する。
 delivery_manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/manifests.json" . }}')"
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_eq "$(printf '%s' "$delivery_manifest" | jq -r --arg role "$role" 'has($role)')" "true" \
+    "MAD manifest: $role がある"
+done
+for role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+  assert_eq "$(printf '%s' "$delivery_manifest" | jq -r --arg role "$role" 'has($role)')" "false" \
+    "MAD manifest: 旧 role $role がない"
+done
 for a in $(printf '%s' "$delivery_manifest" | jq -r \
   'to_entries[] | select(.value.delivery_duties | length > 0) | .key'); do
   assert_contains "$managed" ".agents/agent-defs/prompts/$a.md" \
@@ -137,15 +146,19 @@ for a in $(printf '%s' "$delivery_manifest" | jq -r \
     "MAD delivery: schemas/$a.json を ~/.agents へ配る"
 done
 
-# `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
-# schema だけを配っても、agent 定義が配られていない role は native subagent で起動できない。
-for a in $(printf '%s' "$delivery_manifest" | jq -r 'keys[]'); do
-  assert_contains "$managed" ".config/claude/agents/$a.md" \
-    "MAD subagent: claude の $a 定義を配る"
-  assert_contains "$managed" ".config/opencode/agents/$a.md" \
-    "MAD subagent: opencode の $a 定義を配る"
-  assert_contains "$managed" ".config/codex/agents/$a.toml" \
-    "MAD subagent: codex の $a 定義を配る"
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
+    "MAD role: prompts/$role.md を ~/.agents へ配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
+    "MAD role: schemas/$role.json を ~/.agents へ配る"
+done
+
+mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+mad_manual="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+for forbidden in paseo-routing.json paseo-providers.json paseo-project-routing.json manifests.json \
+  --resolve-candidates --check-usage subagent-driven-development; do
+  assert_not_contains "$mad_skill$mad_manual" "$forbidden" \
+    "MAD docs: legacy routing reference $forbidden がない"
 done
 
 # review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
@@ -158,8 +171,11 @@ assert_contains "$managed" ".agents/agent-defs/schemas/review-synthesizer.json" 
 # 配る routing.json はテンプレートと同じ内容になる。
 rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/routing.json" . }}')"
-assert_contains "$rendered" '"sdd-implementer"' "routing: implementer の項がある"
+assert_contains "$rendered" '"implementer"' "routing: implementer の項がある"
 assert_contains "$rendered" '"engine": "codex"' "routing: 既定で codex を使う役割がある"
+for role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+  assert_not_contains "$rendered" "\"$role\"" "routing: 旧 role $role がない"
+done
 
 # routing の engine は claude と codex だけ。
 assert_not_contains "$rendered" "opencode" "routing: opencode は対象外"
@@ -264,6 +280,10 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
 # 配布しない。braid も 3 runtime のいずれにも配布しない。
 assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/manual-orchestration-validate" \
   "MAD: validator を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-mcp-adapter" \
+  "MAD: Paseo MCP adapter を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate" \
+  "MAD: plan dependency validator を共有パスへ配る"
 for legacy in \
   ".agents/skills/multi-agent-development/scripts/mad-route" \
   ".agents/skills/multi-agent-development/scripts/mad-agent" \

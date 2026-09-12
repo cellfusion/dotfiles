@@ -15,30 +15,40 @@ done
 
 route() { AGENT_DEFS_DIR="$FIXTURE" node "$ROUTE" "$@"; }
 
-out="$(route sdd-implementer)"
+out="$(route implementer)"
 assert_contains "$out" "engine=codex" "implementer: 既定は codex"
 assert_contains "$out" "model=gpt-5.6-luna" "implementer: work/codex は luna"
 assert_contains "$out" "effort=high" "implementer: effort は high"
 assert_contains "$out" "access=write" "implementer: 書き込み可"
 assert_contains "$out" "sandbox=workspace-write" "implementer: sandbox は workspace-write"
 
-out="$(route sdd-task-reviewer)"
+out="$(route task-reviewer)"
 assert_contains "$out" "engine=claude" "task-reviewer: claude"
 assert_contains "$out" "model=sonnet" "task-reviewer: work/claude は sonnet"
 assert_contains "$out" "sandbox=read-only" "task-reviewer: 読み取り専用"
 
-out="$(route sdd-implementer-think)"
-assert_contains "$out" "engine=claude" "implementer-think: 既定は claude"
-assert_contains "$out" "model=opus" "implementer-think: think/claude は opus"
+out="$(route re-reviewer)"
+assert_contains "$out" "engine=claude" "re-reviewer: claude"
+assert_contains "$out" "model=sonnet" "re-reviewer: fast/claude は sonnet"
+assert_contains "$out" "effort=medium" "re-reviewer: effort は medium"
+
+out="$(route final-reviewer)"
+assert_contains "$out" "engine=claude" "final-reviewer: claude"
+assert_contains "$out" "model=opus" "final-reviewer: deep/claude は opus"
+assert_contains "$out" "sandbox=read-only" "final-reviewer: 読み取り専用"
+
+out="$(route final-reviewer)"
+assert_contains "$out" "engine=claude" "final-reviewer: 既定は claude"
+assert_contains "$out" "model=opus" "final-reviewer: deep/claude は opus"
 
 # engine を差し替えると model も追随する。
 node -e '
 const fs = require("node:fs"), p = process.argv[1]
 const d = JSON.parse(fs.readFileSync(p, "utf8"))
-d["sdd-implementer"].engine = "claude"
+d["implementer"].engine = "claude"
 fs.writeFileSync(p, JSON.stringify(d))
 ' "$FIXTURE/routing.json"
-out="$(route sdd-implementer)"
+out="$(route implementer)"
 assert_contains "$out" "engine=claude" "engine を claude にすると claude になる"
 assert_contains "$out" "model=sonnet" "engine を claude にすると sonnet になる"
 
@@ -46,10 +56,10 @@ assert_contains "$out" "model=sonnet" "engine を claude にすると sonnet に
 node -e '
 const fs = require("node:fs"), p = process.argv[1]
 const d = JSON.parse(fs.readFileSync(p, "utf8"))
-d["sdd-implementer"] = { engine: "codex", tier: "think" }
+d["implementer"] = { engine: "codex", tier: "think" }
 fs.writeFileSync(p, JSON.stringify(d))
 ' "$FIXTURE/routing.json"
-out="$(route sdd-implementer)"
+out="$(route implementer)"
 assert_contains "$out" "model=gpt-5.6-terra" "tier 上書きで terra になる"
 
 # 未知の役割はエラーで落ちる。

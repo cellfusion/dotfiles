@@ -1,6 +1,8 @@
 {{- $tiers := includeTemplate "agent-defs/tiers.json" . | fromJson -}}
 {{- $manifests := includeTemplate "agent-defs/manifests.json" . | fromJson -}}
+{{- $legacyManifests := includeTemplate "agent-defs/legacy-agent-manifests.json" . | fromJson -}}
 {{- $m := index $manifests .agent -}}
+{{- if not $m }}{{- $m = index $legacyManifests .agent -}}{{- end -}}
 {{- $t := index $tiers $m.tier "codex" -}}
 name = {{ .agent | quote }}
 description = {{ $m.description | quote }}

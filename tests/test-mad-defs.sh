@@ -51,7 +51,7 @@ for role in researcher synthesizer judge reviewer implementer spec-author plan-a
 done
 
 # delivery の論理責務は manifest で 1 つの実 role に割り当てる。parent はこの map を
-# 読んで、Paseo MCP と native subagent のどちらでも同じ role を起動する。
+# 読んで、Paseo MCP で同じ role を起動する。
 for duty in spec-author spec-reviewer planner plan-reviewer task-graph-analyzer \
             implementer task-reviewer re-reviewer final-reviewer review-synthesizer; do
   owners="$(jq -r --arg duty "$duty" '[to_entries[] | select(.value.delivery_duties | index($duty)) | .key] | length' "$FIXTURE/manifests.json")"
@@ -287,34 +287,19 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
             "yes" "$f: 配布用の .tmpl がある"
 done
 
-# native subagent 用 routing も Paseo MCP と同じ delivery role 集合を解決できる。
+# 配布する routing も manifest と同じ delivery role 集合を解決できる。
 chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/routing.json" . }}' > "$FIXTURE/routing.json"
 for role in $(jq -r 'to_entries[] | select(.value.delivery_duties | length > 0) | .key' "$FIXTURE/manifests.json"); do
   known="$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/routing.json")"
-  assert_eq "$known" "true" "delivery: $role は native subagent で route できる"
+  assert_eq "$known" "true" "delivery: $role は配布 routing で route できる"
 done
 
-# routing に名前があるだけでは `[dispatch-subagent: role]` は解決しない。runtime ごとの
-# agents ディレクトリに定義が無いと、Paseo MCP が使えない環境で子を起動できない。
-for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
-  for def in "private_dot_config/claude/agents/$role.md.tmpl" \
-             "private_dot_config/opencode/agents/$role.md.tmpl" \
-             "private_dot_config/codex/agents/$role.toml.tmpl"; do
-    assert_eq "$([ -f "$CHEZMOI_SOURCE/$def" ] && echo yes || echo no)" "yes" \
-      "subagent: $role の定義がある: $def"
-  done
-done
-
-# MAD の role 名は、手書きの非 MAD エージェントと衝突しない。衝突すると
-# `[dispatch-subagent: role]` が別のエージェントを黙って起動する。
-for role in $(jq -r 'keys[]' "$FIXTURE/manifests.json"); do
-  for handwritten in "private_dot_config/claude/agents/$role.md" \
-                     "private_dot_config/opencode/agents/$role.md" \
-                     "private_dot_config/codex/agents/$role.toml"; do
-    assert_eq "$([ -f "$CHEZMOI_SOURCE/$handwritten" ] && echo yes || echo no)" "no" \
-      "subagent: $role が手書き定義と衝突しない: $handwritten"
-  done
+for role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
+  assert_eq "$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/manifests.json")" "false" \
+    "MAD manifest: 旧 role $role がない"
+  assert_eq "$(jq -r --arg role "$role" 'has($role)' "$FIXTURE/routing.json")" "false" \
+    "MAD routing: 旧 role $role がない"
 done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

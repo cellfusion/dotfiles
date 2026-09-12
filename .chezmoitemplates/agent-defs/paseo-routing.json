@@ -5,12 +5,10 @@
   "reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
   "review-synthesizer": [{ "provider": "claude" }, { "provider": "codex" }],
   "implementer": [{ "provider": "codex" }, { "provider": "claude" }],
+  "task-reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
+  "re-reviewer": [{ "provider": "codex" }, { "provider": "claude" }],
+  "final-reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
   "spec-author": [{ "provider": "claude" }, { "provider": "codex" }],
   "plan-author": [{ "provider": "claude" }, { "provider": "codex" }],
-  "writer": [{ "provider": "claude" }, { "provider": "codex" }],
-  "sdd-implementer": [{ "provider": "codex" }, { "provider": "claude" }],
-  "sdd-implementer-think": [{ "provider": "claude" }, { "provider": "codex" }],
-  "sdd-task-reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
-  "sdd-re-reviewer": [{ "provider": "claude" }, { "provider": "codex" }],
-  "sdd-final-reviewer": [{ "provider": "claude" }, { "provider": "codex" }]
+  "writer": [{ "provider": "claude" }, { "provider": "codex" }]
 }
