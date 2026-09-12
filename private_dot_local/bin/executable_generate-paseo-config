@@ -4,21 +4,38 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { validateConfig, ConfigError } = require('../private_share/agent-config/config-validator.js')
-const { resolveDispatch, resolveExport } = require('../private_share/agent-config/resolver.js')
+const AGENT_CONFIG_DIR_CANDIDATES = [
+  path.join(__dirname, '..', 'share', 'agent-config'),
+  path.join(__dirname, '..', 'private_share', 'agent-config'),
+]
+const AGENT_CONFIG_DIR = AGENT_CONFIG_DIR_CANDIDATES.find((directory) =>
+  fs.existsSync(path.join(directory, 'config-validator.js')))
+  || AGENT_CONFIG_DIR_CANDIDATES[0]
+
+const { validateConfig, ConfigError } = require(path.join(AGENT_CONFIG_DIR, 'config-validator.js'))
+const { resolveDispatch, resolveExport } = require(path.join(AGENT_CONFIG_DIR, 'resolver.js'))
 const {
   assertAvailabilitySnapshot,
   materializePaseo,
   resolvePaseoLaunch,
-} = require('../private_share/agent-config/paseo-exporter.js')
-const { mergeManagedPaseo } = require('../private_share/agent-config/raw-json-merge.js')
+} = require(path.join(AGENT_CONFIG_DIR, 'paseo-exporter.js'))
+const { mergeManagedPaseo } = require(path.join(AGENT_CONFIG_DIR, 'raw-json-merge.js'))
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 function fail(message) {
   throw new ConfigError(message)
 }
 
-function requireAbsoluteFile(value, option) {
+function requireAbsolutePath(value, option) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${option}: 絶対 path が必要である`)
+  return value
+}
+
+function requireAbsoluteFile(value, option) {
+  requireAbsolutePath(value, option)
   let stats
   try {
     stats = fs.statSync(value)
@@ -27,6 +44,59 @@ function requireAbsoluteFile(value, option) {
   }
   if (!stats.isFile()) fail(`${option}: regular file が必要である`)
   return value
+}
+
+function homeDirectory() {
+  if (typeof process.env.HOME !== 'string' || process.env.HOME.length === 0 || !path.isAbsolute(process.env.HOME)) {
+    fail('HOME: 絶対 path が必要である')
+  }
+  return process.env.HOME
+}
+
+function defaultInputPath(home) {
+  const configHome = process.env.XDG_CONFIG_HOME || path.join(home === undefined ? homeDirectory() : home, '.config')
+  requireAbsolutePath(configHome, 'XDG_CONFIG_HOME')
+  return path.join(configHome, 'chezmoi', 'agent-config.json')
+}
+
+function defaultTargetPath(home) {
+  return path.join(home, '.paseo', 'config.json')
+}
+
+function resolveWritePaths(args) {
+  let home
+  const getHome = () => {
+    if (home === undefined) home = homeDirectory()
+    return home
+  }
+  const input = args.input === undefined
+    ? defaultInputPath(home)
+    : requireAbsolutePath(args.input, '--input')
+  const paseoConfig = args.paseoConfig === undefined
+    ? defaultTargetPath(getHome())
+    : requireAbsolutePath(args.paseoConfig, '--paseo-config')
+  return { input, paseoConfig }
+}
+
+function isMissingFileError(error) {
+  return error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+}
+
+function existingRegularFile(pathname, label) {
+  try {
+    const stats = fs.statSync(pathname)
+    if (!stats.isFile()) fail(`${label}: regular file が必要である`)
+    return true
+  } catch (error) {
+    if (isMissingFileError(error)) return false
+    if (error instanceof ConfigError) throw error
+    fail(`${label}: file を検査できない`)
+  }
+}
+
+function warnMissingFiles(inputPresent, targetPresent) {
+  if (!inputPresent) process.stderr.write('generate-paseo-config: input agent-config.json が存在しないため skip する\n')
+  if (!targetPresent) process.stderr.write('generate-paseo-config: target config.json が存在しないため skip する\n')
 }
 
 function parseArgs(argv) {
@@ -53,9 +123,15 @@ function parseArgs(argv) {
 
   if (subcommand === undefined) {
     let check = false
+    let diff = false
     while (index < argv.length) {
       if (argv[index] === '--check' && !check) {
         check = true
+        index += 1
+        continue
+      }
+      if (argv[index] === '--diff' && !diff) {
+        diff = true
         index += 1
         continue
       }
@@ -64,7 +140,8 @@ function parseArgs(argv) {
       }
       fail(`option ${argv[index]}: 不明である`)
     }
-    return { ...globals, check, subcommand: undefined, options: {} }
+    if (check && diff) fail('--check と --diff は同時に指定できない')
+    return { ...globals, check, diff, subcommand: undefined, options: {} }
   }
 
   const options = {}
@@ -135,10 +212,91 @@ function writeAtomic(pathname, raw) {
   }
 }
 
+const MANAGED_PROFILE_FIELDS = ['id', 'name', 'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues']
+
+function hasOwn(value, key) {
+  return value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function existingManagedProfile(profile, materializedProfile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null
+  const projected = {}
+  for (const key of MANAGED_PROFILE_FIELDS) {
+    if (hasOwn(profile, key)) projected[key] = profile[key]
+  }
+  return projected
+}
+
+function existingManagedProvider(provider, materializedProvider) {
+  if (!provider || typeof provider !== 'object' || Array.isArray(provider)) return null
+  const projected = {}
+  for (const key of ['extends', 'label']) {
+    if (hasOwn(provider, key)) projected[key] = provider[key]
+  }
+  if (isObject(provider.env)) {
+    const env = {}
+    for (const key of Object.keys(materializedProvider.env)) {
+      if (hasOwn(provider.env, key)) env[key] = provider.env[key]
+    }
+    if (Object.keys(env).length > 0) projected.env = env
+  }
+  return projected
+}
+
+function existingManagedProjection(raw, materialized) {
+  let target
+  try {
+    target = JSON.parse(raw)
+  } catch {
+    fail('target: JSON として parse できない')
+  }
+  const profiles = isObject(target) && isObject(target.daemon) && Array.isArray(target.daemon.agentProfiles)
+    ? target.daemon.agentProfiles
+    : []
+  const providers = isObject(target) && isObject(target.agents) && isObject(target.agents.providers)
+    ? target.agents.providers
+    : {}
+  return {
+    daemon: {
+      agentProfiles: materialized.profiles.map((profile) => existingManagedProfile(
+        profiles.find((entry) => isObject(entry) && entry.id === profile.id),
+        profile,
+      )),
+    },
+    agents: {
+      providers: Object.fromEntries(Object.entries(materialized.providers).map(([id, provider]) => [
+        id,
+        existingManagedProvider(providers[id], provider),
+      ])),
+    },
+  }
+}
+
+function formatManagedDiff(targetRaw, materialized, mergedRaw) {
+  const before = JSON.stringify(existingManagedProjection(targetRaw, materialized), null, 2)
+  const after = JSON.stringify(existingManagedProjection(mergedRaw, materialized), null, 2)
+  if (before === after) return ''
+  const oldLines = before.split('\n').map((line) => `-${line}`)
+  const newLines = after.split('\n').map((line) => `+${line}`)
+  return [
+    '--- paseo managed/current',
+    '+++ paseo managed/generated',
+    '@@',
+    ...oldLines,
+    ...newLines,
+  ].join('\n') + '\n'
+}
+
 function runWrite(args) {
-  if (args.input === undefined || args.paseoConfig === undefined) fail('--input と --paseo-config が必要である')
-  const inputPath = requireAbsoluteFile(args.input, '--input')
-  const targetPath = requireAbsoluteFile(args.paseoConfig, '--paseo-config')
+  const paths = resolveWritePaths(args)
+  const inputPresent = existingRegularFile(paths.input, '--input')
+  const targetPresent = existingRegularFile(paths.paseoConfig, '--paseo-config')
+  if (!inputPresent || !targetPresent) {
+    warnMissingFiles(inputPresent, targetPresent)
+    return 0
+  }
+  const inputPath = paths.input
+  const targetPath = paths.paseoConfig
   const inputRaw = fs.readFileSync(inputPath, 'utf8')
   const { config } = validateConfig(inputRaw)
   const materialized = materializePaseo(resolveExport(config))
@@ -146,6 +304,10 @@ function runWrite(args) {
   const merged = mergeManagedPaseo(targetRaw, materialized)
   for (const warning of merged.warnings) process.stderr.write(`${warning}\n`)
   if (args.check) return merged.changed ? 1 : 0
+  if (args.diff) {
+    if (merged.changed) process.stdout.write(formatManagedDiff(targetRaw, materialized, merged.raw))
+    return merged.changed ? 1 : 0
+  }
   writeAtomic(targetPath, merged.raw)
   return 0
 }

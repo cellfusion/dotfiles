@@ -242,8 +242,66 @@ fi
 EXPORTER="$SHARE/paseo-exporter.js"
 SNAPSHOTS="$FIXTURES/snapshots"
 GENERATE="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
+GENERATOR="$GENERATE"
 NON_GIT_DIR="$TMP/non-git"; mkdir -p "$NON_GIT_DIR"
 generate() { "$GENERATE" "$@"; }
+
+DIFF_TARGET="$TMP/diff-target.json"; cp "$FIXTURES/targets/auth-history-sentinel.json" "$DIFF_TARGET"
+mtime="$(stat -f '%m' "$DIFF_TARGET")"
+diff_out="$(generate --input "$VALID" --paseo-config "$DIFF_TARGET" --diff)"
+assert_eq "$?" "1" "diff: 差分は exit 1"
+assert_not_contains "$diff_out" 'AUTH_HISTORY_SENTINEL' "diff: 保護対象の raw text を出さない"
+assert_eq "$(stat -f '%m' "$DIFF_TARGET")" "$mtime" "diff: target を書かない"
+generate --input "$VALID" --paseo-config "$DIFF_TARGET" >/dev/null
+generate --input "$VALID" --paseo-config "$DIFF_TARGET" --diff >/dev/null
+assert_eq "$?" "0" "diff: 一致は exit 0"
+
+FAKE_HOME="$TMP/fake-home"; mkdir -p "$FAKE_HOME/.config/chezmoi" "$FAKE_HOME/.paseo"
+cp "$VALID" "$FAKE_HOME/.config/chezmoi/agent-config.json"
+cp "$FIXTURES/targets/base.json" "$FAKE_HOME/.paseo/config.json"
+env -u XDG_CONFIG_HOME HOME="$FAKE_HOME" node "$GENERATOR" --check >/dev/null
+assert_eq "$?" "1" "default: XDG 未設定なら HOME/.config を既定 input にする"
+XDG_HOME="$TMP/xdg"; mkdir -p "$XDG_HOME/chezmoi"
+cp "$VALID" "$XDG_HOME/chezmoi/agent-config.json"
+HOME="$FAKE_HOME" XDG_CONFIG_HOME="$XDG_HOME" node "$GENERATOR" --check >/dev/null
+assert_eq "$?" "1" "default: XDG_CONFIG_HOME を既定 input にする"
+generate --input "tests/fixtures/agent-config/valid-v1.json" --check >/dev/null 2>&1
+assert_eq "$?" "2" "default: 相対 path の override は exit 2"
+generate --paseo-config "tests/fixtures/agent-config/targets/base.json" --check >/dev/null 2>&1
+assert_eq "$?" "2" "default: 相対 target path の override は exit 2"
+
+EMPTY_HOME="$TMP/empty-home"; mkdir -p "$EMPTY_HOME"
+warning="$(env -u XDG_CONFIG_HOME HOME="$EMPTY_HOME" node "$GENERATOR" 2>&1 >/dev/null)"
+assert_eq "$?" "0" "skip: input が無ければ exit 0"
+assert_contains "$warning" 'agent-config.json' "skip: 不在の側だけを warning する"
+NO_TARGET_HOME="$TMP/no-target-home"; mkdir -p "$NO_TARGET_HOME/.config/chezmoi"
+cp "$VALID" "$NO_TARGET_HOME/.config/chezmoi/agent-config.json"
+warning="$(env -u XDG_CONFIG_HOME HOME="$NO_TARGET_HOME" node "$GENERATOR" 2>&1 >/dev/null)"
+assert_eq "$?" "0" "skip: target が無ければ exit 0"
+assert_eq "$(test -e "$NO_TARGET_HOME/.paseo/config.json" && echo yes || echo no)" "no" "skip: config を新しく作らない"
+
+SETUP_XDG="$TMP/setup-xdg"; mkdir -p "$SETUP_XDG/claude" "$SETUP_XDG/codex"
+for name in agents commands skills hooks CLAUDE.md settings.json; do : > "$SETUP_XDG/claude/$name"; done
+for name in agents AGENTS.md; do : > "$SETUP_XDG/codex/$name"; done
+SETUP_MODULE="$SHARE/directory-setup.js"
+run_setup() {
+  node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {setupDirectories}=require(process.argv[2]); try { setupDirectories(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config,{xdgConfigHome:process.argv[4],defaultEnvironment:"primary"}); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' \
+    "$VALIDATOR" "$SETUP_MODULE" "$VALID" "$SETUP_XDG"
+}
+run_setup
+assert_eq "$?" "0" "setup: 初回の実行は成功する"
+assert_eq "$(stat -f '%Lp' "$SETUP_XDG/claude_lab")" "700" "setup: non-primary root は 0700"
+assert_eq "$(readlink "$SETUP_XDG/claude_lab/agents")" "../claude/agents" "setup: 相対 symlink を張る"
+assert_eq "$(test -e "$SETUP_XDG/claude_lab/.claude.json" && echo yes || echo no)" "no" "setup: preservedMutable を作らない"
+assert_eq "$(test -e "$SETUP_XDG/opencode_lab" && echo yes || echo no)" "no" "setup: setup:null は directory を作らない"
+run_setup
+assert_eq "$?" "0" "setup: 同じ内容の再実行は成功する"
+rm -f "$SETUP_XDG/codex_lab/AGENTS.md"
+printf 'real file\n' > "$SETUP_XDG/codex_lab/AGENTS.md"
+run_setup
+assert_eq "$?" "2" "setup: 実体がある destination は exit 2"
+assert_eq "$(test -L "$SETUP_XDG/codex_lab/AGENTS.md" && echo yes || echo no)" "no" "setup: 実体を置換しない"
+assert_eq "$(cat "$SETUP_XDG/codex_lab/AGENTS.md")" "real file" "setup: 実体の中身を変えない"
 
 export_json="$TMP/resolved-export.json"
 node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveExport}=require(process.argv[2]); process.stdout.write(JSON.stringify(resolveExport(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config)))' \
