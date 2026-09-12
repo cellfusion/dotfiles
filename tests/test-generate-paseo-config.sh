@@ -213,5 +213,31 @@ process.exit(0)
 NODE
 assert_eq "$?" "0" "remote: SSH と SCP と HTTPS を同じ canonical key へ正規化する"
 
+OBSERVED="$FIXTURES/targets/observed-shape.json"
+if [ -f "$OBSERVED" ]; then
+  jq -e '
+    .profile.requiredKeys == ["id","model","name","provider","thinkingOptionId"] and
+    .profile.optionalKeys == ["modeId","featureValues"] and
+    .profile.optionalKeyTypes.modeId == "string" and
+    .profile.optionalKeyTypes.featureValues == "object" and
+    .providers.allowUnmanagedRecords == true and
+    .providers.base.env == "object" and
+    .providers.base.extendsAbsent == true and
+    .providers.nonPrimary.extends == "string" and
+    .providers.nonPrimary.label == "string" and
+    .providers.nonPrimary.env == "object"
+  ' "$OBSERVED" >/dev/null
+  assert_eq "$?" "0" "observed: 実測済み profile/provider shape を固定する"
+  jq -e '
+    def allowed: ["daemon","daemonAgentProfiles","profile","providers","requiredKeys","optionalKeys",
+      "optionalKeyTypes","base","nonPrimary","type","nonEmpty","additionalProperties","hasBaseRecord",
+      "hasNonPrimaryRecord","allowUnmanagedRecords","extendsAbsent","id","name","provider","model","modeId","thinkingOptionId",
+      "featureValues","label","env","extends","object","array","string","boolean"];
+    [paths(scalars) as $p | getpath($p)]
+    | all(.[]; . == true or . == false or (type == "string" and (. as $value | allowed | index($value) != null)))
+  ' "$OBSERVED" >/dev/null
+  assert_eq "$?" "0" "observed: allowlist 外の scalar と target の値を持たない"
+fi
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
