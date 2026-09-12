@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "required": ["verdicts", "newBreakage", "outOfScope", "round", "head", "packageBase", "packageHead"],
+  "additionalProperties": false,
+  "properties": {
+    "round": { "type": "integer" },
+    "head": { "type": "string" },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding", "addressed", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "finding": { "type": "string" },
+          "addressed": { "type": "boolean" },
+          "evidence": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "newBreakage": {
+      "type": "array",
+      "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
+    },
+    "outOfScope": { "type": "array", "items": { "type": "string" } },
+    "packageBase": { "type": "string" },
+    "packageHead": { "type": "string" }
+  }
+}

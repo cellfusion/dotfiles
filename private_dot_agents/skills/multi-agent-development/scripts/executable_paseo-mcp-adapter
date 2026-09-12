@@ -1,0 +1,132 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+function fail(message, status = 2) {
+  if (process.argv[2] === 'create-agent') {
+    const reasonCode = status === 1 ? 'transport_failure' : 'invalid_request'
+    process.stdout.write(JSON.stringify({ status: 'error', reasonCode }) + '\n')
+  }
+  process.stderr.write(`paseo-mcp-adapter: ${message}\n`)
+  process.exit(status)
+}
+
+function exactKeys(value, expected) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort())
+}
+
+function safeId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
+}
+
+function paseo(args) {
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', args, { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP transport failed', 1)
+  return result.stdout || ''
+}
+
+function listProviders() {
+  let rows
+  try { rows = JSON.parse(paseo(['provider', 'ls', '--json'])) } catch { fail('provider discovery response is invalid', 1) }
+  if (!Array.isArray(rows)) fail('provider discovery response is invalid', 1)
+  const providers = []
+  const seen = new Set()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || !safeId(row.provider) || seen.has(row.provider)) continue
+    seen.add(row.provider)
+    providers.push({ id: row.provider, available: row.status === 'available', modeIds: row.status === 'available' ? ['auto'] : [] })
+  }
+  process.stdout.write(JSON.stringify({ providers }) + '\n')
+}
+
+function listModels(provider) {
+  if (!safeId(provider)) fail('provider is invalid')
+  let rows
+  try { rows = JSON.parse(paseo(['provider', 'models', '--json', '--thinking', provider])) } catch { fail('model discovery response is invalid', 1) }
+  if (!Array.isArray(rows)) fail('model discovery response is invalid', 1)
+  const models = []
+  const seen = new Set()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || !safeId(row.id) || seen.has(row.id)) continue
+    const thinkingOptionIds = Array.isArray(row.thinkingOptionIds)
+      ? row.thinkingOptionIds.filter(safeId)
+      : []
+    seen.add(row.id)
+    models.push({ id: row.id, thinkingOptionIds: [...new Set(thinkingOptionIds)] })
+  }
+  process.stdout.write(JSON.stringify({ provider, models }) + '\n')
+}
+
+function readCreateRequest(requestPath) {
+  if (typeof requestPath !== 'string' || !requestPath.startsWith('/')) fail('request path must be absolute')
+  let stats
+  try { stats = fs.lstatSync(requestPath) } catch { fail('request file is unavailable') }
+  if (!stats.isFile() || stats.isSymbolicLink() || (stats.mode & 0o777) !== 0o600) fail('request file must be a 0600 regular file')
+  let request
+  try { request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) } catch { fail('request JSON is invalid') }
+  if (!exactKeys(request, ['title', 'workspaceId', 'initialPrompt', 'notifyOnFinish', 'provider', 'settings'])) fail('request shape is invalid')
+  for (const field of ['title', 'workspaceId', 'initialPrompt', 'provider']) {
+    if (typeof request[field] !== 'string' || request[field].length === 0) fail('request shape is invalid')
+  }
+  if (typeof request.notifyOnFinish !== 'boolean' || !exactKeys(request.settings, ['modeId', 'thinkingOptionId', 'features']) ||
+      request.settings.modeId !== 'auto' || typeof request.settings.thinkingOptionId !== 'string' ||
+      request.settings.thinkingOptionId.length === 0 || request.settings.features === null ||
+      typeof request.settings.features !== 'object' || Array.isArray(request.settings.features) ||
+      Object.values(request.settings.features).some((value) =>
+        !(typeof value === 'boolean' || typeof value === 'string' ||
+          (typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value))))) {
+    fail('request shape is invalid')
+  }
+  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+  try {
+    const contract = require(path.join(shareDir, 'mad-contract.js'))
+    contract.assertMadCreateRequestV1(request, {})
+  } catch (error) {
+    if (!error || error.code !== 'MODULE_NOT_FOUND') fail('request shape is invalid')
+  }
+  return request
+}
+
+function createAgent(requestPath) {
+  const request = readCreateRequest(requestPath)
+  const separator = request.provider.indexOf('/')
+  if (separator <= 0 || separator === request.provider.length - 1) fail('request provider is invalid')
+  const provider = request.provider.slice(0, separator)
+  const model = request.provider.slice(separator + 1)
+  if (!safeId(provider) || !safeId(model) || Object.keys(request.settings.features).length !== 0) {
+    fail('request provider is invalid')
+  }
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
+    'run', '--background', '--json', '--title', request.title,
+    '--provider', `${provider}/${model}`,
+    '--thinking', request.settings.thinkingOptionId,
+    '--mode', request.settings.modeId,
+    '--workspace', request.workspaceId,
+    request.initialPrompt,
+  ], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP create failed', 1)
+  process.stdout.write('{"status":"accepted"}\n')
+}
+
+const args = process.argv.slice(2)
+switch (args[0]) {
+  case 'list-providers':
+    if (args.length !== 1) fail('list-providers arguments are invalid')
+    listProviders()
+    break
+  case 'list-models':
+    if (args.length !== 3 || args[1] !== '--provider') fail('list-models arguments are invalid')
+    listModels(args[2])
+    break
+  case 'create-agent':
+    if (args.length !== 3 || args[1] !== '--request') fail('create-agent arguments are invalid')
+    createAgent(args[2])
+    break
+  default:
+    fail('command is invalid')
+}

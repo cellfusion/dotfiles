@@ -15,6 +15,7 @@ assert_not_contains "$managed" "inconsistent state" "managed が inconsistent st
 # 秘密領域なので配布しない。
 assert_contains "$managed" ".local/bin/generate-paseo-config" "distribution: 生成 CLI を配る"
 assert_contains "$managed" ".local/share/agent-config/config-types.js" "distribution: runtime 非依存の契約を配る"
+assert_contains "$managed" ".local/share/agent-config/mad-contract.js" "distribution: MAD の契約 module を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.sample.json" "distribution: 匿名 sample を配る"
 assert_not_contains "$managed" ".config/chezmoi/agent-config.json" "distribution: 正本を配らない"
@@ -135,6 +136,21 @@ for a in $(printf '%s' "$delivery_manifest" | jq -r \
     "MAD delivery: prompts/$a.md を ~/.agents へ配る"
   assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
     "MAD delivery: schemas/$a.json を ~/.agents へ配る"
+done
+
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
+    "MAD role: prompts/$role.md を ~/.agents へ配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
+    "MAD role: schemas/$role.json を ~/.agents へ配る"
+done
+
+mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+mad_manual="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+for forbidden in paseo-routing.json paseo-providers.json paseo-project-routing.json manifests.json \
+  --resolve-candidates --check-usage subagent-driven-development; do
+  assert_not_contains "$mad_skill$mad_manual" "$forbidden" \
+    "MAD docs: legacy routing reference $forbidden がない"
 done
 
 # `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
@@ -264,6 +280,10 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
 # 配布しない。braid も 3 runtime のいずれにも配布しない。
 assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/manual-orchestration-validate" \
   "MAD: validator を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-mcp-adapter" \
+  "MAD: Paseo MCP adapter を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate" \
+  "MAD: plan dependency validator を共有パスへ配る"
 for legacy in \
   ".agents/skills/multi-agent-development/scripts/mad-route" \
   ".agents/skills/multi-agent-development/scripts/mad-agent" \
