@@ -122,4 +122,86 @@ for forbidden in profileName modeId reasonCode providerId paseo-availability-sna
   assert_not_contains "$export_json" "$forbidden" "catalog: $forbidden を含まない"
 done
 
+NON_GIT_DIR="$TMP/non-git"; mkdir -p "$NON_GIT_DIR"
+MISSING_PROJECT="$TMP/missing"
+PROJECT_FILE="$TMP/project-file"; : > "$PROJECT_FILE"
+GIT_ROOT="$TMP/git-root"; git init -q "$GIT_ROOT"
+GIT_SUBDIRECTORY="$GIT_ROOT/nested"; mkdir -p "$GIT_SUBDIRECTORY"
+dispatch() {
+  node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveDispatch}=require(process.argv[2]); try { const config=validateConfig(fs.readFileSync(process.argv[3],"utf8")).config; console.log(JSON.stringify(resolveDispatch(config,{project:process.argv[4],role:process.argv[5],provenance:process.argv[6],tier:process.argv[7]||undefined,environment:process.argv[8]||undefined}))) } catch (error) { process.exit(error.exitCode || 1) }' \
+    "$VALIDATOR" "$RESOLVER" "${6:-$VALID}" "$1" "$2" "$3" "${4:-}" "${5:-}"
+}
+
+out="$(dispatch "$NON_GIT_DIR" re-reviewer mad-fix fast)"
+assert_eq "$(printf '%s' "$out" | jq -r '.scope')" "dispatch" "dispatch: scope は dispatch"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier')" "light" "dispatch: fast は light に正規化する"
+assert_eq "$(printf '%s' "$out" | jq -r '.defaultEnvironment')" "primary" "dispatch: defaultEnvironment を持つ"
+assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(contains("fast"))) | length')" "1" \
+  "dispatch: fast の互換 warning は一回だけ"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier, (.resolutions[].tier)' | sort -u | tr '\n' ' ')" "light " \
+  "dispatch: 正規化後の tier に fast が残らない"
+
+out="$(dispatch "$NON_GIT_DIR" final-reviewer mad-fix)"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier')" "deep" "dispatch: role tier を使う"
+out="$(dispatch "$NON_GIT_DIR" reviewer mad-fix)"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier')" "work" "dispatch: tier 欠落時は work"
+assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(. == "tier missing for role reviewer; using work")) | length')" \
+  "1" "dispatch: tier 欠落の warning は一回だけ"
+
+dispatch "$NON_GIT_DIR" reviewer plain-caller work >/dev/null 2>&1
+assert_eq "$?" "2" "dispatch: 通常 caller の tier override は exit 2"
+dispatch "$NON_GIT_DIR" reviewer mad-escalation deep >/dev/null 2>&1
+assert_eq "$?" "0" "dispatch: mad-escalation の override は受理する"
+
+for rejected in "non-git" "$MISSING_PROJECT" "$PROJECT_FILE" "$GIT_SUBDIRECTORY"; do
+  dispatch "$rejected" reviewer mad-fix >/dev/null 2>&1
+  assert_eq "$?" "2" "project: $rejected を拒否する"
+done
+dispatch "$GIT_ROOT" reviewer mad-fix >/dev/null 2>&1
+assert_eq "$?" "0" "project: Git の toplevel そのものは受理する"
+dispatch "$NON_GIT_DIR" reviewer mad-fix >/dev/null
+assert_eq "$?" "0" "project: 既存の絶対 path の non-Git directory を受理する"
+dispatch "$NON_GIT_DIR" reviewer mad-fix "" no-such-environment >/dev/null 2>&1
+assert_eq "$?" "2" "project: 不正な明示 environment は exit 2"
+out="$(dispatch "$NON_GIT_DIR" reviewer mad-fix "" lab)"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "lab" "project: 明示 environment が最優先"
+
+PATH_ROOT="$TMP/path-root"; mkdir -p "$PATH_ROOT/child"
+CANONICAL_ROOT="$(cd "$PATH_ROOT" && pwd -P)"
+path_config() {
+  node -e 'const fs=require("node:fs"); const config=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const rules=JSON.parse(fs.readFileSync(process.argv[2],"utf8")); config.projectRouting.rules=JSON.parse(JSON.stringify(rules[process.argv[3]]).split("<PROJECT_ROOT>").join(process.argv[4])); fs.writeFileSync(process.argv[5], JSON.stringify(config))' \
+    "$VALID" "$FIXTURES/projects/path-rules.json" "$1" "$CANONICAL_ROOT" "$2"
+}
+path_config exact "$TMP/path-exact.json"
+out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-exact.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "lab" "path: realpath の完全一致で environment を選ぶ"
+out="$(dispatch "$CANONICAL_ROOT/child" reviewer mad-fix "" "" "$TMP/path-exact.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: 部分 path は一致しない"
+path_config prefix "$TMP/path-prefix.json"
+out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-prefix.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: prefix では一致しない"
+path_config glob "$TMP/path-glob.json"
+out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-glob.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: glob では一致しない"
+path_config remote-and-path "$TMP/path-and.json"
+out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-and.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: remote と path の両方がある rule は AND で判定する"
+assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(contains("remote routing skipped"))) | length')" "1" \
+  "path: remote を取得できないときは warning だけを足して path の判定を続ける"
+
+REMOTE_TEST="$RESOLVER" CASES="$FIXTURES/projects/remote-cases.json" node - <<'NODE'
+const fs = require('node:fs')
+const { canonicalRemoteKey } = require(process.env.REMOTE_TEST)
+const cases = JSON.parse(fs.readFileSync(process.env.CASES, 'utf8'))
+for (const url of cases.matching) {
+  if (canonicalRemoteKey(url) !== 'example.test/Org/Repo') process.exit(1)
+}
+for (const url of cases.unsupported) {
+  if (canonicalRemoteKey(url) !== null) process.exit(1)
+}
+process.exit(0)
+NODE
+assert_eq "$?" "0" "remote: SSH と SCP と HTTPS を同じ canonical key へ正規化する"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0
