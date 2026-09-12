@@ -9,6 +9,10 @@ SCHEMA="$SHARE/agent-config.schema.json"
 SAMPLE="$SHARE/agent-config.sample.json"
 TYPES="$SHARE/config-types.js"
 VALID="$FIXTURES/valid-v1.json"
+VALIDATOR="$SHARE/config-validator.js"
+RESOLVER="$SHARE/resolver.js"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 
 assert_eq "$(jq -r '."$schema"' "$SCHEMA")" "https://json-schema.org/draft/2020-12/schema" "schema: Draft 2020-12"
 assert_eq "$(jq -c '.tiers | keys' "$SAMPLE")" '["deep","light","think","work"]' "sample: 四 tier をちょうど持つ"
@@ -92,5 +96,30 @@ for (const value of invalid) {
 process.exit(0)
 NODE
 assert_eq "$?" "0" "types: defaultEnvironment と scope と Paseo field を検査する"
+
+TARGET="$TMP/paseo-config.json"
+printf '{"daemon":{"agentProfiles":[]},"agents":{"providers":{}}}' > "$TARGET"
+before="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
+invalids=(malformed unknown-field cross-reference-unknown-environment cross-reference-unknown-provider cross-reference-unknown-role-tier candidate-duplicate-provider environment-candidate-not-eligible tier-missing tier-fast-present feature-allowlist-unknown-key feature-allowlist-object-value feature-allowlist-wrong-scalar feature-allowlist-non-empty secret-feature secret-allowlist-key unknown-family-with-setup reserved-env-agent-env reserved-env-managed reserved-env-case-variant shared-config-env setup-path-collision setup-path-absolute setup-path-parent setup-path-parent-child-overlap setup-directory-pattern-mismatch generated-id-collision generated-physical-path-collision default-environment-unknown remote-rule-scheme remote-rule-auth remote-rule-port remote-rule-query remote-rule-dot-segment remote-rule-dot-git routing-rule-tier-field)
+for invalid in "${invalids[@]}"; do
+  out="$(node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' "$VALIDATOR" "$FIXTURES/invalid/$invalid.json" 2>"$TMP/$invalid.stderr")"
+  status=$?
+  assert_eq "$status" "2" "validator: $invalid は exit 2"
+  assert_eq "$out" "" "validator: $invalid は stdout を出さない"
+  assert_eq "$(shasum -a 256 "$TARGET" | cut -d' ' -f1)" "$before" "validator: $invalid は target を変えない"
+done
+
+export_json="$(node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveExport}=require(process.argv[2]); console.log(JSON.stringify(resolveExport(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config)))' "$VALIDATOR" "$RESOLVER" "$VALID")"
+assert_eq "$(printf '%s' "$export_json" | jq -r '.scope')" "export" "catalog: scope は export"
+assert_eq "$(printf '%s' "$export_json" | jq -r '.defaultEnvironment')" "primary" "catalog: defaultEnvironment は defaults.environment"
+assert_eq "$(printf '%s' "$export_json" | jq -r 'has("selection")')" "false" "catalog: export は selection を持たない"
+assert_eq "$(printf '%s' "$export_json" | jq -r '.resolutions | length')" "8" "catalog: 2 environment と 4 tier の組"
+assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .tier == "work") | .candidates[].family]')" '["codex"]' "catalog: environment tier は common tier を継承しない"
+assert_eq "$(printf '%s' "$export_json" | jq -r '[.resolutions[] | select(.environment == "lab" and .tier == "work") | .candidates[].model] | .[0]')" "sample-lab-work" "catalog: environment tier の candidate をそのまま使う"
+assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .tier == "deep") | .warnings[]]')" '["environment tier missing: lab/deep; using common tier"]' "catalog: tier 欠落の warning は一回だけ"
+assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .tier == "deep") | .candidates[].family]')" '["claude"]' "catalog: eligibility で filter する"
+for forbidden in profileName modeId reasonCode providerId paseo-availability-snapshot; do
+  assert_not_contains "$export_json" "$forbidden" "catalog: $forbidden を含まない"
+done
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
