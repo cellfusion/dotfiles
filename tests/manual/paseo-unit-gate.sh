@@ -4,7 +4,7 @@
 set -u
 CHEZMOI_SOURCE="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
-EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-$HOME/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence}"
+EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)}"
 cd "$CHEZMOI_SOURCE" || exit 2
 
 record() {
