@@ -136,8 +136,9 @@ out="$(dispatch "$NON_GIT_DIR" re-reviewer mad-fix fast)"
 assert_eq "$(printf '%s' "$out" | jq -r '.scope')" "dispatch" "dispatch: scope は dispatch"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier')" "light" "dispatch: fast は light に正規化する"
 assert_eq "$(printf '%s' "$out" | jq -r '.defaultEnvironment')" "primary" "dispatch: defaultEnvironment を持つ"
-assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(contains("fast"))) | length')" "1" \
-  "dispatch: fast の互換 warning は一回だけ"
+assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(. == "compatibility: tier alias normalized to light")) | length')" "1" \
+  "dispatch: tier alias の互換 warning は一回だけ"
+assert_not_contains "$out" "fast" "dispatch: resolved config に fast を含まない"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier, (.resolutions[].tier)' | sort -u | tr '\n' ' ')" "light " \
   "dispatch: 正規化後の tier に fast が残らない"
 
@@ -188,6 +189,15 @@ out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-and.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: remote と path の両方がある rule は AND で判定する"
 assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(contains("remote routing skipped"))) | length')" "1" \
   "path: remote を取得できないときは warning だけを足して path の判定を続ける"
+
+REMOTE_GIT_ROOT="$TMP/remote-git-root"; git init -q "$REMOTE_GIT_ROOT"
+git -C "$REMOTE_GIT_ROOT" config --add remote.origin.url ""
+git -C "$REMOTE_GIT_ROOT" config --add remote.origin.url "https://EXAMPLE.test/Org/Repo.git"
+out="$(dispatch "$REMOTE_GIT_ROOT" reviewer mad-fix)"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" \
+  "remote: 空 URL と有効 URL の混在を unavailable として扱う"
+assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(contains("remote routing skipped"))) | length')" "1" \
+  "remote: 空 URL と有効 URL の混在 warning は一回だけ"
 
 REMOTE_TEST="$RESOLVER" CASES="$FIXTURES/projects/remote-cases.json" node - <<'NODE'
 const fs = require('node:fs')

@@ -143,10 +143,11 @@ function canonicalRemoteKey(originFetchUrl) {
 }
 
 function projectRemote(project) {
-  const result = spawnSync('git', ['-C', project, 'remote', 'get-url', '--all', 'origin'], { encoding: 'utf8' })
+  const result = spawnSync('git', ['-C', project, 'config', '--get-all', 'remote.origin.url'], { encoding: 'utf8' })
   if (result.error || result.status !== 0) return null
-  const urls = (result.stdout || '').split('\n').filter((url) => url.length > 0)
-  if (urls.length !== 1) return null
+  const output = result.stdout || ''
+  const urls = (output.endsWith('\n') ? output.slice(0, -1) : output).split('\n')
+  if (urls.length !== 1 || urls[0].length === 0) return null
   return canonicalRemoteKey(urls[0])
 }
 
@@ -192,7 +193,7 @@ function selectTier(config, role, provenance, callerTier) {
   let requested = callerTier
   if (requested === 'fast') {
     requested = 'light'
-    warnings.push('compatibility: --tier fast normalized to light')
+    warnings.push('compatibility: tier alias normalized to light')
   }
   if (requested !== undefined) {
     if (!PROVENANCE_ALLOWING_TIER_OVERRIDE.includes(provenance)) {
