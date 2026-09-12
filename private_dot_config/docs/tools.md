@@ -318,16 +318,18 @@ MAD run を 1 回通す。`--run` は外側から `MAD_REPRESENTATIVE_RUN_APPROV
 明示したときだけ discovery、launch、create、plan、implement、review、fix を実行し、
 成功時に `$PASEO_MIGRATION_EVIDENCE_DIR/representative-decision.txt` へ
 `approved-success` を atomic に記録する。未承認または途中失敗なら `DECISION_REQUEST_PATH`
-へ decision request を残し、後続 phase と削除を行わない。
+へ decision request を残し、後続 phase と削除を行わない。create 後は child が書く
+phase artifact を取得し、`MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS`（既定 600 秒）の
+上限内に全 phase の検証が終わらなければ成功扱いにしない。
 
 実機を使わず保存済み証跡を検査する場合は、次の verify-only 経路を使う。これは
 承認変数を読まず、adapter を呼ばない。
 
     bash tests/test-paseo-mad.sh
-    bash tests/manual/mad-representative-run.sh --verify-only \
-      --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
 
-fixture の mode は Git が保存しないため、単体で検査するときは `find` で列挙した証跡を
+この test は public fixture を一時 directory へコピーし、test 管理の匿名 artifact を
+0600 で作って handoff の absolute path を補ってから verify-only を呼ぶ。fixture の
+mode は Git が保存しないため、単体で別の証跡を検査するときは `find` で列挙した証跡を
 `chmod 600` にしてから実行する。証跡には credential、auth/history、raw response、
 remote URL を入れない。
 

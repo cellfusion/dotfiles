@@ -129,6 +129,7 @@ verify_phase_evidence() {
   local handoff
   local artifact_paths
   local artifact_path
+  local result_artifact
 
   for phase in plan implement review fix; do
     result="$evidence_dir/$phase/result.json"
@@ -136,12 +137,25 @@ verify_phase_evidence() {
     require_private_regular_file "$result" || return 1
     require_private_regular_file "$handoff" || return 1
     require_json_object "$result" || return 1
-    jq -e '.artifact_paths | type == "array" and length > 0 and all(.[]; type == "string" and startswith("/"))' \
+    jq -e 'if has("artifactPath") then (.artifactPath | type == "string" and startswith("/")) else true end' \
+      "$result" >/dev/null 2>&1 || return 1
+    result_artifact="$(jq -r '.artifactPath // empty' "$result" 2>/dev/null)" || return 1
+    if [ -n "$result_artifact" ]; then
+      require_private_regular_file "$result_artifact" || return 1
+    fi
+    jq -e --arg phase "$phase" '
+      type == "object" and
+      (.run_id | type == "string" and length > 0) and
+      .node == $phase and
+      (.attempt | type == "string" and length > 0) and
+      (.artifact_paths | type == "array" and length > 0 and
+        all(.[]; type == "string" and startswith("/")))
+    ' \
       "$handoff" >/dev/null 2>&1 || return 1
     artifact_paths="$(jq -r '.artifact_paths[]' "$handoff" 2>/dev/null)" || return 1
     while IFS= read -r artifact_path; do
       [ -n "$artifact_path" ] || return 1
-      [ -f "$artifact_path" ] && [ ! -L "$artifact_path" ] || return 1
+      require_private_regular_file "$artifact_path" || return 1
     done <<< "$artifact_paths"
   done
 }
@@ -161,34 +175,34 @@ verify_evidence() {
   verify_phase_evidence "$evidence_dir" || return 1
 }
 
-write_phase_evidence() {
+phase_evidence_ready() {
   local evidence_dir="$1"
-  local phase="$2"
-  local result_path="$evidence_dir/$phase/result.json"
-  local result
-  local handoff
+  local phase
 
-  case "$phase" in
-    plan)
-      result="$(jq -cn --arg artifactPath "$result_path" \
-        '{status:"ok",artifactPath:$artifactPath,decisionRequestPath:null,summary:"representative plan complete"}')" || return 1
-      ;;
-    implement)
-      result='{"baseHead":"representative-base","changedFiles":["representative.txt"],"summary":"representative implementation complete","decisionRequestPath":null}'
-      ;;
-    review)
-      result='{"specVerdict":"compliant","qualityVerdict":"approved","findings":[],"round":0,"head":"representative-head","packageBase":"representative-base","packageHead":"representative-head","cannotVerify":null,"strengths":"representative review complete"}'
-      ;;
-    fix)
-      result='{"round":1,"head":"representative-head","verdicts":[],"newBreakage":[],"outOfScope":[],"packageBase":"representative-base","packageHead":"representative-head"}'
-      ;;
-    *) return 1 ;;
+  for phase in plan implement review fix; do
+    require_private_regular_file "$evidence_dir/$phase/result.json" || return 1
+    require_private_regular_file "$evidence_dir/$phase/handoff.json" || return 1
+  done
+  require_private_regular_file "$evidence_dir/state-transition.json" || return 1
+  verify_evidence "$evidence_dir" >/dev/null 2>&1
+}
+
+wait_for_phase_evidence() {
+  local evidence_dir="$1"
+  local timeout_seconds="${MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS:-600}"
+  local started
+  local now
+
+  case "$timeout_seconds" in
+    ''|*[!0-9]*) return 1 ;;
   esac
-
-  write_private_file "$result_path" "$result" || return 1
-  handoff="$(jq -cn --arg phase "$phase" --arg artifactPath "$result_path" \
-    '{run_id:"representative-run",node:$phase,attempt:"ok",artifact_paths:[$artifactPath]}')" || return 1
-  write_private_file "$evidence_dir/$phase/handoff.json" "$handoff"
+  [ "$timeout_seconds" -le 600 ] || return 1
+  started="$(date -u '+%s')" || return 1
+  while ! phase_evidence_ready "$evidence_dir"; do
+    now="$(date -u '+%s')" || return 1
+    [ "$((now - started))" -lt "$timeout_seconds" ] || return 1
+    sleep 1
+  done
 }
 
 write_run_evidence() {
@@ -203,8 +217,8 @@ write_run_evidence() {
   local create_call
   local call_log
   local phase
-  local state_transition
   local evidence
+  local phase_prompt
 
   [ -f "$generator" ] || return 1
   [ -f "$adapter" ] && [ -x "$adapter" ] || return 1
@@ -214,6 +228,7 @@ write_run_evidence() {
   [ -d "$share_dir" ] || return 1
   [ -L "$evidence_dir" ] && return 1
   mkdir -p "$evidence_dir" || return 1
+  [ -z "$(find "$evidence_dir" -mindepth 1 -print -quit)" ] || return 1
 
   RUN_TMP_DIR="$(mktemp -d /tmp/paseo-mad-representative.XXXXXX)" || return 1
   trap 'rm -rf "$RUN_TMP_DIR"' EXIT
@@ -222,15 +237,31 @@ write_run_evidence() {
   attempt_dir="$RUN_TMP_DIR/attempt"
   install -m 600 "$FIXTURES/valid-v1.json" "$input" || return 1
   mkdir -p "$project" "$attempt_dir" || return 1
+  for phase in plan implement review fix; do
+    mkdir -p "$evidence_dir/$phase" || return 1
+  done
+  phase_prompt="$(printf '%s\n' \
+    'Run the representative Paseo MAD delivery phases in order: plan, implement, review, fix.' \
+    'Use the plan-author, implementer, task-reviewer, and re-reviewer role prompts and schemas from the repository.' \
+    'Write each structured result and handoff atomically as a 0600 regular file, include run_id, node, attempt, and artifact_paths in every handoff, and stop if a phase fails.' \
+    "plan result: $evidence_dir/plan/result.json" \
+    "plan handoff: $evidence_dir/plan/handoff.json" \
+    "implement result: $evidence_dir/implement/result.json" \
+    "implement handoff: $evidence_dir/implement/handoff.json" \
+    "review result: $evidence_dir/review/result.json" \
+    "review handoff: $evidence_dir/review/handoff.json" \
+    "fix result: $evidence_dir/fix/result.json" \
+    "fix handoff: $evidence_dir/fix/handoff.json" \
+    "state transition: $evidence_dir/state-transition.json")" || return 1
 
-  # Task 8 の成功経路を adapter 経由で一度だけ実行する。adapter の stdout と
-  # 実運用の request payload は一時領域に閉じ、証跡の call log には残さない。
+  # Task 8 の成功経路を adapter 経由で一度だけ実行する。phase artifact は
+  # create 後に child が実際に書いたものを取得し、runner は固定結果を生成しない。
   bash "$MAD_RUNNER" --exercise-success \
     --generator "$generator" --share-dir "$share_dir" --input "$input" \
     --adapter "$adapter" --attempt-dir "$attempt_dir" --project "$project" \
     --role implementer --provenance mad-representative \
     --title 'representative title' --workspace-id representative-workspace \
-    --initial-prompt 'representative prompt' --notify-on-finish true \
+    --initial-prompt "$phase_prompt" --notify-on-finish true \
     --call-log "$attempt_dir/call-log.json" >/dev/null 2>&1 || return 1
 
   for evidence in snapshot.json launch.json; do
@@ -244,15 +275,7 @@ write_run_evidence() {
     "$attempt_dir/call-log.json" 2>/dev/null)" || return 1
   write_private_file "$evidence_dir/call-log.json" "$call_log" || return 1
 
-  for phase in plan implement review fix; do
-    if [ "${MAD_REPRESENTATIVE_FAIL_PHASE:-}" = "$phase" ]; then
-      return 1
-    fi
-    mkdir -p "$evidence_dir/$phase" || return 1
-    write_phase_evidence "$evidence_dir" "$phase" || return 1
-  done
-  state_transition='{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}'
-  write_private_file "$evidence_dir/state-transition.json" "$state_transition" || return 1
+  wait_for_phase_evidence "$evidence_dir" || return 1
   verify_evidence "$evidence_dir"
 }
 

@@ -19,7 +19,7 @@
     {
       "seq": 4,
       "operation": "write_snapshot",
-      "path": "/etc/hosts",
+      "path": "/fixture/snapshot.json",
       "mode": 600,
       "regularFile": true
     },
@@ -33,7 +33,7 @@
     {
       "seq": 6,
       "operation": "build_create_request",
-      "path": "/etc/hosts",
+      "path": "/fixture/create-request.json",
       "topLevelKeys": ["title", "workspaceId", "initialPrompt", "notifyOnFinish", "provider", "settings"],
       "settingsKeys": ["modeId", "thinkingOptionId", "features"],
       "mode": 600,
@@ -44,7 +44,7 @@
       "seq": 7,
       "operation": "create_agent",
       "callCount": 1,
-      "requestPath": "/etc/hosts"
+      "requestPath": "/fixture/create-request.json"
     }
   ]
 }
