@@ -1,0 +1,190 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+const { validateConfig, ConfigError } = require('../private_share/agent-config/config-validator.js')
+const { resolveDispatch, resolveExport } = require('../private_share/agent-config/resolver.js')
+const {
+  assertAvailabilitySnapshot,
+  materializePaseo,
+  resolvePaseoLaunch,
+} = require('../private_share/agent-config/paseo-exporter.js')
+const { mergeManagedPaseo } = require('../private_share/agent-config/raw-json-merge.js')
+
+function fail(message) {
+  throw new ConfigError(message)
+}
+
+function requireAbsoluteFile(value, option) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${option}: 絶対 path が必要である`)
+  let stats
+  try {
+    stats = fs.statSync(value)
+  } catch {
+    fail(`${option}: file が存在しない`)
+  }
+  if (!stats.isFile()) fail(`${option}: regular file が必要である`)
+  return value
+}
+
+function parseArgs(argv) {
+  const globals = { input: undefined, paseoConfig: undefined }
+  let index = 0
+  while (index < argv.length) {
+    const option = argv[index]
+    if (option === '--input' || option === '--paseo-config') {
+      if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) fail(`${option}: value がない`)
+      const key = option === '--input' ? 'input' : 'paseoConfig'
+      if (globals[key] !== undefined) fail(`${option}: 重複している`)
+      globals[key] = argv[index + 1]
+      index += 2
+      continue
+    }
+    break
+  }
+
+  let subcommand
+  if (index < argv.length && argv[index] === 'resolve') {
+    subcommand = 'resolve'
+    index += 1
+  }
+
+  if (subcommand === undefined) {
+    let check = false
+    while (index < argv.length) {
+      if (argv[index] === '--check' && !check) {
+        check = true
+        index += 1
+        continue
+      }
+      if (argv[index] === '--input' || argv[index] === '--paseo-config') {
+        fail(`${argv[index]}: global option は subcommand より前に置く`)
+      }
+      fail(`option ${argv[index]}: 不明である`)
+    }
+    return { ...globals, check, subcommand: undefined, options: {} }
+  }
+
+  const options = {}
+  while (index < argv.length) {
+    const option = argv[index]
+    if (option === '--input' || option === '--paseo-config' || option === '--check') {
+      fail(`${option}: global option は subcommand より前に置く`)
+    }
+    const allowed = ['--project', '--role', '--provenance', '--snapshot', '--tier', '--environment']
+    if (!allowed.includes(option)) fail(`option ${option}: 不明である`)
+    const key = option.slice(2)
+    if (options[key] !== undefined) fail(`${option}: 重複している`)
+    if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) fail(`${option}: value がない`)
+    options[key] = argv[index + 1]
+    index += 2
+  }
+  return { ...globals, check: false, subcommand, options }
+}
+
+function readFile(pathname, option) {
+  requireAbsoluteFile(pathname, option)
+  try {
+    return fs.readFileSync(pathname, 'utf8')
+  } catch {
+    fail(`${option}: 読み込めない`)
+  }
+}
+
+function writeAtomic(pathname, raw) {
+  const directory = path.dirname(pathname)
+  const basename = path.basename(pathname)
+  let temporary
+  let descriptor
+  try {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = path.join(directory, `.${basename}.tmp-${process.pid}-${Date.now()}-${attempt}`)
+      try {
+        descriptor = fs.openSync(candidate, 'wx', 0o600)
+        temporary = candidate
+        break
+      } catch (error) {
+        if (error && error.code !== 'EEXIST') throw error
+      }
+    }
+    if (!temporary || descriptor === undefined) fail('target: temporary file を作れない')
+    fs.writeFileSync(descriptor, raw, 'utf8')
+    fs.fsyncSync(descriptor)
+    fs.closeSync(descriptor)
+    descriptor = undefined
+    fs.renameSync(temporary, pathname)
+    temporary = undefined
+    fs.chmodSync(pathname, 0o600)
+    try {
+      const directoryDescriptor = fs.openSync(directory, 'r')
+      try { fs.fsyncSync(directoryDescriptor) } finally { fs.closeSync(directoryDescriptor) }
+    } catch {
+      // Directory fsync is not available on every supported filesystem.
+    }
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor) } catch {}
+    }
+    if (temporary !== undefined) {
+      try { fs.unlinkSync(temporary) } catch {}
+    }
+    if (error instanceof ConfigError) throw error
+    throw new ConfigError(`target: atomic write に失敗した (${error.code || 'I/O'})`)
+  }
+}
+
+function runWrite(args) {
+  if (args.input === undefined || args.paseoConfig === undefined) fail('--input と --paseo-config が必要である')
+  const inputPath = requireAbsoluteFile(args.input, '--input')
+  const targetPath = requireAbsoluteFile(args.paseoConfig, '--paseo-config')
+  const inputRaw = fs.readFileSync(inputPath, 'utf8')
+  const { config } = validateConfig(inputRaw)
+  const materialized = materializePaseo(resolveExport(config))
+  const targetRaw = fs.readFileSync(targetPath, 'utf8')
+  const merged = mergeManagedPaseo(targetRaw, materialized)
+  for (const warning of merged.warnings) process.stderr.write(`${warning}\n`)
+  if (args.check) return merged.changed ? 1 : 0
+  writeAtomic(targetPath, merged.raw)
+  return 0
+}
+
+function runResolve(args) {
+  if (args.input === undefined) fail('--input が必要である')
+  const required = ['project', 'role', 'provenance', 'snapshot']
+  for (const key of required) if (args.options[key] === undefined) fail(`--${key} が必要である`)
+  const inputRaw = readFile(args.input, '--input')
+  const { config } = validateConfig(inputRaw)
+  const dispatch = resolveDispatch(config, {
+    project: args.options.project,
+    role: args.options.role,
+    provenance: args.options.provenance,
+    tier: args.options.tier,
+    environment: args.options.environment,
+  })
+  const snapshotRaw = readFile(args.options.snapshot, '--snapshot')
+  let snapshot
+  try {
+    snapshot = JSON.parse(snapshotRaw)
+  } catch {
+    fail('snapshot: JSON として parse できない')
+  }
+  assertAvailabilitySnapshot(snapshot)
+  const launch = resolvePaseoLaunch(dispatch, snapshot)
+  process.stdout.write(`${JSON.stringify(launch)}\n`)
+  return launch.status === 'ok' ? 0 : 4
+}
+
+function main(argv) {
+  const args = parseArgs(argv)
+  if (args.subcommand === 'resolve') return runResolve(args)
+  return runWrite(args)
+}
+
+try {
+  process.exitCode = main(process.argv.slice(2))
+} catch (error) {
+  process.stderr.write(`generate-paseo-config: ${error instanceof Error ? error.message : '失敗した'}\n`)
+  process.exitCode = error && Number.isInteger(error.exitCode) ? error.exitCode : 2
+}

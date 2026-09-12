@@ -1,0 +1,1 @@
+{"daemon":{"agentProfiles":[]},"agents":{"providers":{"claude":{"label":"Claude","env":{"AGENT_ENV":"primary"}},"claude-lab":{"extends":"claude","label":"Claude (lab)","env":{"AGENT_ENV":"lab"}}}}}

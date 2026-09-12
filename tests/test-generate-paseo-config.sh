@@ -239,5 +239,123 @@ if [ -f "$OBSERVED" ]; then
   assert_eq "$?" "0" "observed: allowlist 外の scalar と target の値を持たない"
 fi
 
+EXPORTER="$SHARE/paseo-exporter.js"
+SNAPSHOTS="$FIXTURES/snapshots"
+GENERATE="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
+NON_GIT_DIR="$TMP/non-git"; mkdir -p "$NON_GIT_DIR"
+generate() { "$GENERATE" "$@"; }
+
+export_json="$TMP/resolved-export.json"
+node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveExport}=require(process.argv[2]); process.stdout.write(JSON.stringify(resolveExport(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config)))' \
+  "$VALIDATOR" "$RESOLVER" "$VALID" > "$export_json"
+materialized="$(node -e 'const fs=require("node:fs"); const {materializePaseo}=require(process.argv[1]); process.stdout.write(JSON.stringify(materializePaseo(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
+assert_eq "$(printf '%s' "$materialized" | jq -c '.providers | keys')" \
+  '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "exporter: base 全件と eligible な non-primary"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude | has("extends")')" "false" "exporter: base は extends を持たない"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].extends')" "claude" "exporter: non-primary は base を extends する"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].label')" "Claude (lab)" "exporter: non-primary の label"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.AGENT_ENV')" "primary" "exporter: base の AGENT_ENV は defaultEnvironment"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].env.AGENT_ENV')" "lab" "exporter: non-primary の AGENT_ENV"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.CLAUDE_CONFIG_DIR')" \
+  '$XDG_CONFIG_HOME/claude' "exporter: base の設定 directory"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].env.CLAUDE_CONFIG_DIR')" \
+  '$XDG_CONFIG_HOME/claude_lab' "exporter: non-primary の設定 directory"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.CODEX_HOME // "absent"')" "absent" \
+  "exporter: 他 family の設定 env を混ぜない"
+assert_eq "$(printf '%s' "$materialized" | jq -c '.providers.pie.env | keys')" \
+  '["AGENT_ENV","CHEZMOI_AGENT_CONFIG_MANAGED"]' "exporter: setup:null は marker と AGENT_ENV だけ"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.pie.env.CHEZMOI_AGENT_CONFIG_MANAGED')" "1" "exporter: managed marker"
+assert_eq "$(printf '%s' "$materialized" | jq -c '[.profiles[] | .id] | sort | .[0:2]')" \
+  '["agent_profile_managed_deep_lab","agent_profile_managed_deep_primary"]' "exporter: profile ID の規則"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "agent_profile_managed_work_lab") | .name')" \
+  "work_lab" "exporter: profile name は tier_environment"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "agent_profile_managed_work_lab") | .provider')" \
+  "codex-lab" "exporter: profile は materialized provider ID を指す"
+assert_eq "$(printf '%s' "$materialized" | jq -c '[.profiles[].modeId] | unique')" '["auto"]' "exporter: modeId は auto だけ"
+enumeration="$(node -e 'const fs=require("node:fs"); const {enumerateMaterializedProviderIds}=require(process.argv[1]); process.stdout.write(JSON.stringify(enumerateMaterializedProviderIds(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
+assert_eq "$enumeration" '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "exporter: provider ID の列挙"
+
+launch="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role re-reviewer \
+  --provenance mad-fix --tier fast --snapshot "$SNAPSHOTS/all-available.json")"
+assert_eq "$?" "0" "launch: 成功は exit 0"
+assert_eq "$(printf '%s' "$launch" | jq -c 'keys|sort')" \
+  '["environment","featureValues","modeId","model","profileName","provider","status","thinkingOptionId","tier","type","version","warnings"]' \
+  "launch: 成功の key set"
+assert_eq "$(printf '%s' "$launch" | jq -r '.modeId,.tier,.profileName,.provider,.model' | tr '\n' ' ')" \
+  "auto light light_primary codex sample-light " "launch: auto と light と profileName と candidate"
+assert_eq "$(printf '%s\n' "$launch" | jq -s 'length')" "1" "launch: stdout は JSON 1 件"
+generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer --provenance mad-fix \
+  --snapshot "$SNAPSHOTS/all-available.json" --paseo-config "$TMP/target.json" >/dev/null 2>&1
+assert_eq "$?" "2" "CLI: subcommand の後ろに置いた global option は exit 2"
+
+exhausted="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer \
+  --provenance mad-fix --snapshot "$SNAPSHOTS/provider-unavailable.json")"
+assert_eq "$?" "4" "launch: 候補の尽きは exit 4"
+assert_eq "$(printf '%s' "$exhausted" | jq -c 'keys|sort')" \
+  '["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"]' \
+  "launch: 失敗の key set"
+assert_eq "$(printf '%s' "$exhausted" | jq -r '.reasonCode')" "candidates_exhausted" "launch: 失敗の reasonCode"
+
+for case in provider-missing:provider_missing_from_snapshot provider-unavailable:provider_unavailable \
+  auto-mode-unavailable:auto_mode_unavailable model-unavailable:model_unavailable \
+  thinking-option-unavailable:thinking_option_unavailable; do
+  snapshot="${case%%:*}"; reason="${case#*:}"
+  out="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer \
+    --provenance mad-fix --snapshot "$SNAPSHOTS/$snapshot.json")"
+  assert_eq "$?" "4" "launch: $reason は候補の尽き"
+  assert_eq "$(printf '%s' "$out" | jq -r '.candidates[0].reasonCode')" "$reason" "launch: $reason を返す"
+done
+
+for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set-mismatch \
+  mode-ids-not-string-array model-entry-not-object; do
+  out="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer \
+    --provenance mad-fix --snapshot "$SNAPSHOTS/$invalid_snapshot.json" 2>/dev/null)"
+  assert_eq "$?" "2" "snapshot: $invalid_snapshot は exit 2"
+  assert_eq "$out" "" "snapshot: $invalid_snapshot は stdout を出さない"
+done
+
+TARGET="$TMP/target.json"; cp "$FIXTURES/targets/auth-history-sentinel.json" "$TARGET"
+before="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
+generate --input "$VALID" --paseo-config "$TARGET" --check >/dev/null
+assert_eq "$?" "1" "merge: check は差分を 1 で返す"
+assert_eq "$(shasum -a 256 "$TARGET" | cut -d' ' -f1)" "$before" "merge: check は書かない"
+generate --input "$VALID" --paseo-config "$TARGET" >/dev/null
+assert_eq "$?" "0" "merge: 通常 write は成功する"
+generate --input "$VALID" --paseo-config "$TARGET" --check >/dev/null
+assert_eq "$?" "0" "merge: write の後の check は一致する"
+assert_eq "$(stat -f '%Lp' "$TARGET")" "600" "merge: target は 0600"
+assert_contains "$(cat "$TARGET")" 'AUTH_HISTORY_SENTINEL' "merge: auth と history の raw text を保つ"
+assert_eq "$(jq -r '.agents.providers.claude.auth.AUTH_HISTORY_SENTINEL' "$TARGET")" \
+  "$(jq -r '.agents.providers.claude.auth.AUTH_HISTORY_SENTINEL' "$FIXTURES/targets/auth-history-sentinel.json")" \
+  "merge: managed 外の値は変わらない"
+
+for collision in collision-profile-name collision-provider-marker; do
+  cp "$FIXTURES/targets/$collision.json" "$TMP/$collision.json"
+  before="$(shasum -a 256 "$TMP/$collision.json" | cut -d' ' -f1)"
+  out="$(generate --input "$VALID" --paseo-config "$TMP/$collision.json" 2>/dev/null)"
+  assert_eq "$?" "2" "merge: $collision は exit 2"
+  assert_eq "$out" "" "merge: $collision は stdout を出さない"
+  assert_eq "$(shasum -a 256 "$TMP/$collision.json" | cut -d' ' -f1)" "$before" "merge: $collision は target を変えない"
+done
+
+cp "$FIXTURES/targets/legacy-adoption.json" "$TMP/legacy.json"
+generate --input "$VALID" --paseo-config "$TMP/legacy.json" >/dev/null
+assert_eq "$?" "0" "merge: marker の無い期待どおりの record は採用する"
+assert_eq "$(jq -r '.agents.providers.claude.env.CHEZMOI_AGENT_CONFIG_MANAGED' "$TMP/legacy.json")" "1" \
+  "merge: 採用した record に marker を足す"
+
+cp "$FIXTURES/targets/stale.json" "$TMP/stale.json"
+stale_warning="$(generate --input "$VALID" --paseo-config "$TMP/stale.json" 2>&1 >/dev/null)"
+assert_eq "$?" "0" "merge: stale record があっても成功する"
+assert_contains "$stale_warning" 'remove manually' "merge: stale は warning にする"
+assert_eq "$(jq -r '.daemon.agentProfiles | map(select(.id == "agent_profile_managed_work_retired")) | length' "$TMP/stale.json")" "1" \
+  "merge: stale record を削除しない"
+
+cp "$FIXTURES/targets/missing-parents.json" "$TMP/missing-parents.json"
+before="$(shasum -a 256 "$TMP/missing-parents.json" | cut -d' ' -f1)"
+generate --input "$VALID" --paseo-config "$TMP/missing-parents.json" >/dev/null 2>&1
+assert_eq "$?" "2" "merge: 親が無い target は exit 2"
+assert_eq "$(shasum -a 256 "$TMP/missing-parents.json" | cut -d' ' -f1)" "$before" "merge: 親が無い target を変えない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
