@@ -252,12 +252,17 @@ function providerMarker(provider) {
 
 function hasExpectedLegacyProvider(provider, patch) {
   if (!isObject(provider)) return false
+  if (patch.extends !== undefined) {
+    return Object.prototype.hasOwnProperty.call(provider, 'extends') &&
+      provider.extends === patch.extends &&
+      isObject(provider.env) &&
+      provider.env.AGENT_ENV === patch.env.AGENT_ENV
+  }
   if (Object.prototype.hasOwnProperty.call(provider, 'extends')) {
-    if (patch.extends === undefined || provider.extends !== patch.extends) return false
+    return false
   }
   if (isObject(provider.env) && Object.prototype.hasOwnProperty.call(provider.env, 'AGENT_ENV')) {
     if (provider.env.AGENT_ENV !== patch.env.AGENT_ENV) return false
-    if (patch.extends !== undefined && provider.extends !== patch.extends) return false
   }
   return true
 }
@@ -359,6 +364,10 @@ function mergeManagedPaseo(raw, materialized) {
     if (marker !== undefined) throw new ConfigError(`target provider ${entry.key}: managed marker が不正である`)
     if (!materializedProviderById.has(entry.key)) continue
     if (!hasExpectedLegacyProvider(entry.value.value, materializedProviderById.get(entry.key))) {
+      if (materializedProviderById.get(entry.key).extends !== undefined) {
+        warnings.push(`legacy provider preserved: ${entry.key}; remove manually`)
+        continue
+      }
       throw new ConfigError(`target provider ${entry.key}: ownership が衝突する`)
     }
     mergeProvider(raw, entry.value, materializedProviderById.get(entry.key), edits, insertions)

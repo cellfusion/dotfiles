@@ -344,6 +344,32 @@ assert_eq "$?" "0" "merge: marker の無い期待どおりの record は採用�
 assert_eq "$(jq -r '.agents.providers.claude.env.CHEZMOI_AGENT_CONFIG_MANAGED' "$TMP/legacy.json")" "1" \
   "merge: 採用した record に marker を足す"
 
+cp "$FIXTURES/targets/legacy-adoption.json" "$TMP/legacy-mismatch.json"
+node -e 'const fs=require("node:fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); value.agents.providers["claude-lab"].env.AGENT_ENV="mismatch"; fs.writeFileSync(file, JSON.stringify(value))' \
+  "$TMP/legacy-mismatch.json"
+legacy_mismatch_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-mismatch.json" 2>&1 >/dev/null)"
+assert_eq "$?" "0" "merge: 不一致の legacy non-primary は既存 record を保つ"
+assert_contains "$legacy_mismatch_warning" 'legacy provider preserved: claude-lab' \
+  "merge: 不一致の legacy non-primary は warning を返す"
+assert_eq "$(jq -c '.agents.providers["claude-lab"]' "$TMP/legacy-mismatch.json")" \
+  '{"extends":"claude","label":"Claude (lab)","env":{"AGENT_ENV":"mismatch"}}' \
+  "merge: 不一致の legacy non-primary は record を更新しない"
+assert_eq "$(jq -r '.agents.providers["claude-lab"].env.CHEZMOI_AGENT_CONFIG_MANAGED // "absent"' "$TMP/legacy-mismatch.json")" \
+  "absent" "merge: 不一致の legacy non-primary に marker を足さない"
+
+cp "$FIXTURES/targets/legacy-adoption.json" "$TMP/legacy-extends-mismatch.json"
+node -e 'const fs=require("node:fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); value.agents.providers["claude-lab"].extends="other"; fs.writeFileSync(file, JSON.stringify(value))' \
+  "$TMP/legacy-extends-mismatch.json"
+legacy_extends_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-extends-mismatch.json" 2>&1 >/dev/null)"
+assert_eq "$?" "0" "merge: extends 不一致の legacy non-primary は既存 record を保つ"
+assert_contains "$legacy_extends_warning" 'legacy provider preserved: claude-lab' \
+  "merge: extends 不一致の legacy non-primary は warning を返す"
+assert_eq "$(jq -c '.agents.providers["claude-lab"]' "$TMP/legacy-extends-mismatch.json")" \
+  '{"extends":"other","label":"Claude (lab)","env":{"AGENT_ENV":"lab"}}' \
+  "merge: extends 不一致の legacy non-primary は record を更新しない"
+assert_eq "$(jq -r '.agents.providers["claude-lab"].env.CHEZMOI_AGENT_CONFIG_MANAGED // "absent"' "$TMP/legacy-extends-mismatch.json")" \
+  "absent" "merge: extends 不一致の legacy non-primary に marker を足さない"
+
 cp "$FIXTURES/targets/stale.json" "$TMP/stale.json"
 stale_warning="$(generate --input "$VALID" --paseo-config "$TMP/stale.json" 2>&1 >/dev/null)"
 assert_eq "$?" "0" "merge: stale record があっても成功する"
