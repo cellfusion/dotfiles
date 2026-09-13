@@ -49,6 +49,15 @@ function modeIdsFromLabels(value) {
   return labels.map((label) => MODE_LABEL_TO_ID[label])
 }
 
+function normalizeEnabled(value) {
+  if (typeof value !== 'string') fail('provider discovery response is invalid', 1)
+  const normalized = value.toLowerCase()
+  if (!['enabled', 'disabled'].includes(normalized)) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return normalized
+}
+
 function providerModeIds(row) {
   const realCliShape = ['enabled', 'label', 'defaultMode', 'modes']
     .some((field) => Object.prototype.hasOwnProperty.call(row, field))
@@ -56,11 +65,11 @@ function providerModeIds(row) {
     if (!exactKeys(row, ['provider', 'status', 'enabled', 'label', 'defaultMode', 'modes']) ||
         !safeId(row.provider) ||
         !['available', 'unavailable'].includes(row.status) ||
-        !['enabled', 'disabled'].includes(row.enabled) ||
         typeof row.label !== 'string' || row.label.length === 0 ||
         typeof row.defaultMode !== 'string' || row.defaultMode.length === 0) {
       fail('provider discovery response is invalid', 1)
     }
+    normalizeEnabled(row.enabled)
     return modeIdsFromLabels(row.modes)
   }
 
@@ -95,8 +104,11 @@ function listProviders() {
       fail('provider discovery response is invalid', 1)
     }
     const modeIds = providerModeIds(row)
+    const available = Object.prototype.hasOwnProperty.call(row, 'enabled')
+      ? normalizeEnabled(row.enabled) === 'enabled'
+      : rawStatus === 'available'
     seen.add(row.provider)
-    providers.push({ id: row.provider, available: rawStatus === 'available', modeIds })
+    providers.push({ id: row.provider, available, modeIds })
   }
   process.stdout.write(JSON.stringify({ providers }) + '\n')
 }

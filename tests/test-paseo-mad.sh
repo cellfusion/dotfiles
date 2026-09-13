@@ -336,7 +336,15 @@ cat > "$FAKE_PASEO" <<'EOF'
 #!/usr/bin/env bash
 set -u
 if [ "${1:-}" = "provider" ] && [ "${2:-}" = "ls" ]; then
-  if [ "${PASEO_FAKE_REAL_PROVIDER_SHAPE:-0}" = "1" ]; then
+  if [ "${PASEO_FAKE_REAL_PROVIDER_SHAPE_CAPITALIZED:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":"Plan Mode, Always Ask, Accept File Edits, Auto mode, Bypass"},{"provider":"codex-lab","status":"unavailable","enabled":"Disabled","label":"Codex Lab","defaultMode":"none","modes":""}]'
+  elif [ "${PASEO_FAKE_REAL_UNKNOWN_ENABLED:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"unknown","label":"Codex","defaultMode":"auto","modes":"Auto mode"}]'
+  elif [ "${PASEO_FAKE_REAL_EMPTY_ENABLED:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"","label":"Codex","defaultMode":"auto","modes":"Auto mode"}]'
+  elif [ "${PASEO_FAKE_REAL_BAD_ENABLED_TYPE:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":true,"label":"Codex","defaultMode":"auto","modes":"Auto mode"}]'
+  elif [ "${PASEO_FAKE_REAL_PROVIDER_SHAPE:-0}" = "1" ]; then
     printf '%s\n' '[{"provider":"codex","status":"available","enabled":"enabled","label":"Codex","defaultMode":"auto","modes":"Plan Mode, Always Ask, Accept File Edits, Auto mode, Bypass"},{"provider":"codex-lab","status":"unavailable","enabled":"disabled","label":"Codex Lab","defaultMode":"none","modes":""}]'
   elif [ "${PASEO_FAKE_REAL_MISSING_MODES:-0}" = "1" ]; then
     printf '%s\n' '[{"provider":"codex","status":"available","enabled":"enabled","label":"Codex","defaultMode":"auto"}]'
@@ -388,6 +396,23 @@ assert_eq "$?" "0" "adapter: 実 CLI discovery shape を受理する"
 assert_eq "$(printf '%s' "$real_shape_providers" | jq -c '.providers')" \
   '[{"id":"codex","available":true,"modeIds":["plan","default","acceptEdits","auto","bypassPermissions"]},{"id":"codex-lab","available":false,"modeIds":[]}]' \
   "adapter: modes の表示 label を mode ID に正規化する"
+capitalized_real_shape_providers="$(PASEO_FAKE_REAL_PROVIDER_SHAPE_CAPITALIZED=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers)"
+assert_eq "$?" "0" "adapter: 実 CLI の Enabled/Disabled shape を受理する"
+assert_eq "$(printf '%s' "$capitalized_real_shape_providers" | jq -c '.providers')" \
+  '[{"id":"codex","available":true,"modeIds":["plan","default","acceptEdits","auto","bypassPermissions"]},{"id":"codex-lab","available":false,"modeIds":[]}]' \
+  "adapter: Enabled/Disabled を eligibility に正規化する"
+for invalid_enabled in UNKNOWN_ENABLED EMPTY_ENABLED BAD_ENABLED_TYPE; do
+  case "$invalid_enabled" in
+    UNKNOWN_ENABLED) env_name=PASEO_FAKE_REAL_UNKNOWN_ENABLED ;;
+    EMPTY_ENABLED) env_name=PASEO_FAKE_REAL_EMPTY_ENABLED ;;
+    BAD_ENABLED_TYPE) env_name=PASEO_FAKE_REAL_BAD_ENABLED_TYPE ;;
+  esac
+  env "$env_name=1" PASEO_CLI="$FAKE_PASEO" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+    >/dev/null 2>&1
+  assert_eq "$?" "1" "adapter: enabled の $invalid_enabled を discovery failure にする"
+done
 for invalid_real_shape in MISSING_MODES UNKNOWN_MODE DUPLICATE_MODE BAD_MODE_TYPE; do
   case "$invalid_real_shape" in
     MISSING_MODES) env_name=PASEO_FAKE_REAL_MISSING_MODES ;;
