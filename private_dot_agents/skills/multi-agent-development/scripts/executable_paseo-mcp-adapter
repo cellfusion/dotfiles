@@ -29,6 +29,90 @@ function opaqueStrings(value) {
     new Set(value).size === value.length
 }
 
+// JSON.parse silently overwrites duplicate object keys. Paseo's transport
+// response is a security boundary, so reject rather than normalize them.
+function parseJsonWithoutDuplicateKeys(text) {
+  let index = 0
+  const whitespace = () => { while (/\s/.test(text[index] || '')) index += 1 }
+  const error = () => { throw new Error('invalid JSON') }
+  const string = () => {
+    if (text[index] !== '"') error()
+    const start = index
+    index += 1
+    while (index < text.length) {
+      const character = text[index]
+      if (character === '"') {
+        index += 1
+        return JSON.parse(text.slice(start, index))
+      }
+      if (character === '\\') {
+        index += 1
+        const escaped = text[index]
+        if (!'"\\/bfnrtu'.includes(escaped || '')) error()
+        if (escaped === 'u') {
+          const hex = text.slice(index + 1, index + 5)
+          if (!/^[0-9A-Fa-f]{4}$/.test(hex)) error()
+          index += 4
+        }
+        index += 1
+        continue
+      }
+      if (character < ' ') error()
+      index += 1
+    }
+    error()
+  }
+  const value = () => {
+    whitespace()
+    if (text[index] === '{') {
+      index += 1
+      whitespace()
+      const object = {}
+      const keys = new Set()
+      if (text[index] === '}') { index += 1; return object }
+      while (true) {
+        whitespace()
+        const key = string()
+        if (keys.has(key)) error()
+        keys.add(key)
+        whitespace()
+        if (text[index] !== ':') error()
+        index += 1
+        object[key] = value()
+        whitespace()
+        if (text[index] === '}') { index += 1; return object }
+        if (text[index] !== ',') error()
+        index += 1
+      }
+    }
+    if (text[index] === '[') {
+      index += 1
+      whitespace()
+      const array = []
+      if (text[index] === ']') { index += 1; return array }
+      while (true) {
+        array.push(value())
+        whitespace()
+        if (text[index] === ']') { index += 1; return array }
+        if (text[index] !== ',') error()
+        index += 1
+      }
+    }
+    if (text[index] === '"') return string()
+    for (const [literal, parsed] of [['true', true], ['false', false], ['null', null]]) {
+      if (text.startsWith(literal, index)) { index += literal.length; return parsed }
+    }
+    const match = text.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)
+    if (!match) error()
+    index += match[0].length
+    return Number(match[0])
+  }
+  const result = value()
+  whitespace()
+  if (index !== text.length) error()
+  return result
+}
+
 const MODE_LABEL_TO_ID = Object.freeze({
   'Plan Mode': 'plan',
   'Always Ask': 'default',
@@ -195,7 +279,16 @@ function createAgent(requestPath) {
     createPayload.initialPrompt,
   ], { encoding: 'utf8' })
   if (result.error || result.status !== 0) fail('Paseo MCP create failed', 1)
-  process.stdout.write('{"status":"accepted"}\n')
+  let response
+  try { response = parseJsonWithoutDuplicateKeys(result.stdout || '') } catch { fail('Paseo MCP create response is invalid', 1) }
+  if (!exactKeys(response, ['agentId', 'status', 'provider', 'cwd', 'title']) ||
+      !safeId(response.agentId) || !['created', 'running'].includes(response.status) ||
+      typeof response.provider !== 'string' || response.provider.length === 0 ||
+      typeof response.cwd !== 'string' || !response.cwd.startsWith('/') ||
+      typeof response.title !== 'string' || response.title.length === 0) {
+    fail('Paseo MCP create response is invalid', 1)
+  }
+  process.stdout.write(JSON.stringify({ status: 'accepted', childRef: response.agentId }) + '\n')
 }
 
 const args = process.argv.slice(2)

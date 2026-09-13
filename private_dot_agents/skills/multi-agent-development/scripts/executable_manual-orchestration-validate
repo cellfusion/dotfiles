@@ -253,7 +253,14 @@ mad_persist_log() {
 
 mad_persist_state() {
   local state="$1"
-  write_private_text "$MAD_ATTEMPT_DIR/state.json" "$(jq -cn --arg state "$state" '{state:$state}')"
+  local child_ref="${2:-}"
+  local state_json
+  if [ -n "$child_ref" ]; then
+    state_json="$(jq -cn --arg state "$state" --arg childRef "$child_ref" '{state:$state,child_ref:$childRef}')" || return 1
+  else
+    state_json="$(jq -cn --arg state "$state" '{state:$state}')" || return 1
+  fi
+  write_private_text "$MAD_ATTEMPT_DIR/state.json" "$state_json"
 }
 
 mad_finish_failure() {
@@ -271,6 +278,17 @@ mad_finish_failure() {
 
 mad_single_document() {
   printf '%s' "$1" | jq -c -s 'if length == 1 and (.[0] | type == "object") then .[0] else error end' 2>/dev/null
+}
+
+mad_accepted_child_ref() {
+  local response
+  response="$(mad_single_document "$1")" || return 1
+  printf '%s' "$response" | jq -er '
+    if type == "object" and (keys | sort) == ["childRef", "status"] and
+       .status == "accepted" and (.childRef | type == "string") and
+       (.childRef | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+    then .childRef else error end
+  ' 2>/dev/null
 }
 
 normalize_list_providers() {
@@ -385,6 +403,7 @@ mad_exercise_create() {
   local request_path
   local response
   local adapter_status
+  local child_ref
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --snapshot|--launch|--adapter|--create-log|--share-dir)
@@ -448,10 +467,12 @@ NODE
   response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$request_path" 2>/dev/null)"
   adapter_status=$?
   rm -f "$request_path"
-  write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":1}' || return 2
-  if [ "$adapter_status" -ne 0 ] || ! printf '%s' "$response" | jq -e 'type == "object" and (keys | sort) == ["status"] and .status == "accepted"' >/dev/null 2>&1; then
+  child_ref="$(mad_accepted_child_ref "$response")"
+  if [ "$adapter_status" -ne 0 ] || [ -z "$child_ref" ]; then
+    write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":1}' || return 2
     return 1
   fi
+  write_private_text "$create_log" "$(jq -cn --arg childRef "$child_ref" '{version:1,type:"mad-create-log",createCalls:1,childRef:$childRef}')" || return 2
   return 0
 }
 
@@ -483,6 +504,7 @@ mad_exercise_success() {
   local request_meta
   local create_response
   local create_status
+  local child_ref
   local context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -649,13 +671,11 @@ mad_exercise_success() {
   mad_add_event "$(jq -cn --arg path "$attempt_dir/create-request.json" --argjson payload "$request_payload" \
     '{operation:"create_agent",callCount:1,requestPath:$path,payload:$payload}')" ||
     mad_finish_failure create_agent 1 failed "$create_calls"
-  create_response="$(mad_single_document "$create_response")" ||
-    mad_finish_failure create_agent 1 failed "$create_calls"
-  if [ "$create_status" -ne 0 ] || ! printf '%s' "$create_response" | jq -e \
-    'type == "object" and (keys | sort) == ["status"] and .status == "accepted"' >/dev/null 2>&1; then
+  child_ref="$(mad_accepted_child_ref "$create_response")"
+  if [ "$create_status" -ne 0 ] || [ -z "$child_ref" ]; then
     mad_finish_failure create_agent 1 failed "$create_calls"
   fi
-  mad_persist_state running || mad_finish_failure create_agent 1 failed "$create_calls"
+  mad_persist_state running "$child_ref" || mad_finish_failure create_agent 1 failed "$create_calls"
   mad_persist_log || mad_finish_failure create_agent 1 failed "$create_calls"
   return 0
 }

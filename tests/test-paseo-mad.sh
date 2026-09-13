@@ -337,7 +337,7 @@ case "${1:-}" in
     printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
     chmod 600 "$state_path.tmp"
     mv "$state_path.tmp" "$state_path"
-    printf '%s\n' '{"status":"accepted"}'
+    printf '%s\n' '{"status":"accepted","childRef":"22222222-2222-4222-8222-222222222222"}'
     ;;
   *) exit 2 ;;
 esac
@@ -562,6 +562,8 @@ assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | .payload
 assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$attempt/call-log.json")" "1" \
   "MAD 成功: create_agent は一回だけ"
 assert_eq "$(jq -r '.state' "$attempt/state.json")" "running" "MAD 成功: state は running"
+assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111-111111111111" \
+  "MAD 成功: create の childRef を attempt state に保存する"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
 
 broken_share="$TMP/broken-share"
@@ -726,6 +728,7 @@ if [ "${1:-}" = "provider" ] && [ "${2:-}" = "models" ]; then
 fi
 if [ "${1:-}" = "run" ]; then
   printf '%s\n' "$@" > "$PASEO_FAKE_ARGS"
+  printf '%s\n' "${PASEO_FAKE_RUN_RESPONSE:-{\"agentId\":\"33333333-3333-4333-8333-333333333333\",\"status\":\"running\",\"provider\":\"codex/model\",\"cwd\":\"/private/tmp/paseo\",\"title\":\"fixture title\"}}"
   exit 0
 fi
 exit 2
@@ -838,8 +841,31 @@ adapter_create="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAK
   "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
   create-agent --request "$opaque_request")"
 assert_eq "$?" "0" "adapter: create-agent は検証済み request を受理する"
-assert_eq "$adapter_create" '{"status":"accepted"}' "adapter: create-agent の stdout discriminator"
+assert_eq "$adapter_create" '{"status":"accepted","childRef":"33333333-3333-4333-8333-333333333333"}' \
+  "adapter: create-agent は Paseo agentId を childRef として返す"
 assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=false' "adapter: notifyOnFinish を create payload に渡す"
+notify_true_request="$TMP/notify-true-create-request.json"
+jq '.notifyOnFinish = true' "$opaque_request" > "$notify_true_request"
+chmod 600 "$notify_true_request"
+PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+  create-agent --request "$notify_true_request" >/dev/null
+assert_eq "$?" "0" "adapter: notifyOnFinish=true の request を受理する"
+assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=true' \
+  "adapter: notifyOnFinish=true を metadata label に一対一で転送する"
+for invalid_create_response in \
+  '{"status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
+  '{"agentId":"33333333-3333-4333-8333-333333333333","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title","extra":true}' \
+  '{"agentId":"33333333-3333-4333-8333-333333333333","agentId":"44444444-4444-4444-8444-444444444444","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
+  '{"agentId":"not/a-safe-agent-id","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
+  '{"agentId":"33333333-3333-4333-8333-333333333333","status":false,"provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}'; do
+  invalid_create_out="$(PASEO_FAKE_RUN_RESPONSE="$invalid_create_response" PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+    create-agent --request "$opaque_request" 2>/dev/null)"
+  assert_eq "$?" "1" "adapter: malformed Paseo create response を transport failure にする"
+  assert_eq "$invalid_create_out" '{"status":"error","reasonCode":"transport_failure"}' \
+    "adapter: malformed Paseo create response は sanitized failure だけを返す"
+done
 
 opaque_attempt="$TMP/mad-opaque-mode"
 mkdir -p "$opaque_attempt"
@@ -884,6 +910,16 @@ for invalid_launch in exhausted invalid-extra-field invalid-non-auto-mode invali
   assert_eq "$out" "" "exercise-create: $invalid_launch は stdout を出さない"
   assert_eq "$(jq -r '.createCalls' "$create_log")" "0" "exercise-create: $invalid_launch は create 0 回"
 done
+
+create_log="$TMP/exercise-create-success.json"
+out="$(bash "$MAD_RUNNER" --exercise-create \
+  --share-dir "$SHARE" --snapshot "$FIXTURES/snapshots/all-available.json" \
+  --launch "$FIXTURES/launch/success.json" --adapter "$SUCCESS_ADAPTER" \
+  --create-log "$create_log" 2>/dev/null)"
+assert_eq "$?" "0" "exercise-create: accepted childRef で成功する"
+assert_eq "$out" "" "exercise-create: stdout を出さない"
+assert_eq "$(jq -r '.childRef' "$create_log")" "11111111-1111-4111-8111-111111111111" \
+  "exercise-create: accepted response の childRef を検証して記録する"
 
 assert_contains "$(cat "$CHEZMOI_SOURCE/tests/test-distribution.sh")" \
   '.local/share/agent-config/mad-contract.js' "distribution: MAD の契約 module を配る"

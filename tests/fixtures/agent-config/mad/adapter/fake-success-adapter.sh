@@ -25,7 +25,7 @@ case "${1:-}" in
   create-agent)
     [ "${2:-}" = "--request" ] || exit 2
     [ -f "${3:-}" ] && [ ! -L "${3:-}" ] || exit 2
-    printf '%s\n' '{"status":"accepted"}'
+    printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111"}'
     ;;
   *) exit 2 ;;
 esac

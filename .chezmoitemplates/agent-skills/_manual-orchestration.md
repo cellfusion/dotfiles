@@ -37,7 +37,9 @@ title, workspaceId, initialPrompt, notifyOnFinish, provider, settings
 settings: modeId, thinkingOptionId, features
 ```
 
-`provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto` である。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、mode 0600 の regular file とする。親は adapter の `create-agent --request <absolute-0600-json-file>` を一回だけ呼び、`{"status":"accepted"}` のときだけ run を `running` にする。拒否または transport failure は `failed` とし、retry を行わない。
+`provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto` である。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、mode 0600 の regular file とする。親は adapter の `create-agent --request <absolute-0600-json-file>` を一回だけ呼ぶ。adapter は Paseo CLI の `run --background --json` が返す厳密な `{agentId,status,provider,cwd,title}` response を検証し、basename-safe opaque `agentId` だけを `childRef` として `{"status":"accepted","childRef":"<safe-id>"}` に縮約する。親は key set が厳密な accepted response の `childRef` を受け取ったときだけ run を `running` にし、attempt state の `child_ref` にその値を保存する。欠損、未知 key、重複 key、型不正、不安全な ID、拒否、transport failure は `failed` とし、retry を行わない。
+
+Paseo CLI に `notifyOnFinish` 専用 option はないため、adapter は request の boolean を metadata label `notifyOnFinish=true` または `notifyOnFinish=false` に一対一で転送する。この label は notification の配送保証ではない。完了検知は常に accepted `childRef` を使う polling であり、`paseo wait <childRef> --timeout <seconds> --json` を child ごとに一つだけ実行する。親が停止するときは同じ ID に `paseo stop <childRef> --json` を使う。wait/stop の status 以外の活動履歴・本文・raw response を state/log へ保存しない。
 
 成功 run の call log は `mad-call-log` として discovery から create までの順序、回数、検証済み artifact path を記録する。failure の終端 event は stage、exit code、create 回数、state だけを記録する。実運用の state と log に prompt、request payload、raw adapter response、credential、auth/history、URL を入れない。fixture の匿名 call log だけが検証済み request payload を持てる。
 
@@ -87,7 +89,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 ## child の起動と完了検知
 
-child の role、prompt、schema、workspace を決めた後、親は `paseo-mcp-adapter` の `create-agent --request` を呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`notifyOnFinish` は launch と create request の検証済み値を使う。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
+child の role、prompt、schema、workspace を決めた後、親は `paseo-mcp-adapter` の `create-agent --request` を呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`notifyOnFinish` は launch と create request の検証済み値を使う。`notifyOnFinish` は専用 CLI option ではなく metadata label に一対一で写す。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
 
 起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は `paseo wait <agent-id> --timeout <seconds> --json` または対応する MCP の status を使う。返ってきた status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。
 
