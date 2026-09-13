@@ -324,5 +324,20 @@ for f in paseo-providers paseo-routing paseo-project-routing; do
     "MAD: 設定アセットを配る: $f"
 done
 
+# removal manifest が参照する置換 test は、削除後も実行できる現行 test である。
+removal_manifest="$CHEZMOI_SOURCE/private_dot_config/docs/paseo-agent-config-removal-manifest.md"
+replacement_tests="$(awk -F'|' '$3 ~ /Delete|Keep/ {
+  path=$4
+  gsub(/^ +| +$/, "", path)
+  if (path ~ /^tests\/test-[^ ]+\.sh$/) print path
+}' "$removal_manifest" | sort -u)"
+while read -r replacement_test; do
+  [ -n "$replacement_test" ] || continue
+  assert_eq "$(test -f "$CHEZMOI_SOURCE/$replacement_test" && echo yes || echo no)" "yes" \
+    "removal manifest: 置換 test が実在する: $replacement_test"
+done <<EOF
+$replacement_tests
+EOF
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
