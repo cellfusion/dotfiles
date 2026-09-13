@@ -29,6 +29,51 @@ function opaqueStrings(value) {
     new Set(value).size === value.length
 }
 
+const MODE_LABEL_TO_ID = Object.freeze({
+  'Plan Mode': 'plan',
+  'Always Ask': 'default',
+  'Accept File Edits': 'acceptEdits',
+  'Auto mode': 'auto',
+  'Bypass': 'bypassPermissions',
+})
+
+function modeIdsFromLabels(value) {
+  if (typeof value !== 'string') fail('provider discovery response is invalid', 1)
+  if (value.length === 0) return []
+  const labels = value.split(',').map((label) => label.trim())
+  if (labels.some((label) => label.length === 0) ||
+      labels.some((label) => !Object.prototype.hasOwnProperty.call(MODE_LABEL_TO_ID, label)) ||
+      new Set(labels).size !== labels.length) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return labels.map((label) => MODE_LABEL_TO_ID[label])
+}
+
+function providerModeIds(row) {
+  const realCliShape = ['enabled', 'label', 'defaultMode', 'modes']
+    .some((field) => Object.prototype.hasOwnProperty.call(row, field))
+  if (realCliShape) {
+    if (!exactKeys(row, ['provider', 'status', 'enabled', 'label', 'defaultMode', 'modes']) ||
+        !safeId(row.provider) ||
+        !['available', 'unavailable'].includes(row.status) ||
+        !['enabled', 'disabled'].includes(row.enabled) ||
+        typeof row.label !== 'string' || row.label.length === 0 ||
+        typeof row.defaultMode !== 'string' || row.defaultMode.length === 0) {
+      fail('provider discovery response is invalid', 1)
+    }
+    return modeIdsFromLabels(row.modes)
+  }
+
+  // Existing fixture adapters use the already-normalized contract shape. Keep
+  // accepting it for tests while giving the real CLI shape precedence above.
+  if (!exactKeys(row, ['provider', 'status', 'modeIds']) ||
+      !safeId(row.provider) || !['available', 'unavailable'].includes(row.status) ||
+      !opaqueStrings(row.modeIds)) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return [...row.modeIds]
+}
+
 function paseo(args) {
   const result = spawnSync(process.env.PASEO_CLI || 'paseo', args, { encoding: 'utf8' })
   if (result.error || result.status !== 0) fail('Paseo MCP transport failed', 1)
@@ -42,23 +87,16 @@ function listProviders() {
   const providers = []
   const seen = new Set()
   for (const row of rows) {
-    if (!row || typeof row !== 'object' || !safeId(row.provider) || seen.has(row.provider)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || seen.has(row.provider)) {
       fail('provider discovery response is invalid', 1)
     }
-    const available = typeof row.available === 'boolean'
-      ? row.available
-      : row.status === 'available'
-        ? true
-        : row.status === 'unavailable'
-          ? false
-          : null
-    if (available === null) fail('provider discovery response is invalid', 1)
-    if (!Object.prototype.hasOwnProperty.call(row, 'modeIds') || !opaqueStrings(row.modeIds)) {
+    const rawStatus = row.status
+    if (!['available', 'unavailable'].includes(rawStatus)) {
       fail('provider discovery response is invalid', 1)
     }
-    const modeIds = row.modeIds
+    const modeIds = providerModeIds(row)
     seen.add(row.provider)
-    providers.push({ id: row.provider, available, modeIds: [...modeIds] })
+    providers.push({ id: row.provider, available: rawStatus === 'available', modeIds })
   }
   process.stdout.write(JSON.stringify({ providers }) + '\n')
 }
