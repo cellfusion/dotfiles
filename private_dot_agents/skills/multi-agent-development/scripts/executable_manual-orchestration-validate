@@ -282,13 +282,12 @@ mad_single_document() {
 
 mad_accepted_child_ref() {
   local response
-  response="$(mad_single_document "$1")" || return 1
-  printf '%s' "$response" | jq -er '
-    if type == "object" and (keys | sort) == ["childRef", "status"] and
-       .status == "accepted" and (.childRef | type == "string") and
-       (.childRef | test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
-    then .childRef else error end
-  ' 2>/dev/null
+  response="$1"
+  printf '%s' "$response" | node -e '
+    const fs = require("node:fs")
+    const contract = require(process.argv[1])
+    process.stdout.write(contract.assertMadCreateAcceptedResponseV1(fs.readFileSync(0, "utf8")).childRef)
+  ' "$2" 2>/dev/null
 }
 
 normalize_list_providers() {
@@ -467,7 +466,7 @@ NODE
   response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$request_path" 2>/dev/null)"
   adapter_status=$?
   rm -f "$request_path"
-  child_ref="$(mad_accepted_child_ref "$response")"
+  child_ref="$(mad_accepted_child_ref "$response" "$contract")"
   if [ "$adapter_status" -ne 0 ] || [ -z "$child_ref" ]; then
     write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":1}' || return 2
     return 1
@@ -671,7 +670,7 @@ mad_exercise_success() {
   mad_add_event "$(jq -cn --arg path "$attempt_dir/create-request.json" --argjson payload "$request_payload" \
     '{operation:"create_agent",callCount:1,requestPath:$path,payload:$payload}')" ||
     mad_finish_failure create_agent 1 failed "$create_calls"
-  child_ref="$(mad_accepted_child_ref "$create_response")"
+  child_ref="$(mad_accepted_child_ref "$create_response" "$contract")"
   if [ "$create_status" -ne 0 ] || [ -z "$child_ref" ]; then
     mad_finish_failure create_agent 1 failed "$create_calls"
   fi

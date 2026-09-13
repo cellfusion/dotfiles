@@ -25,7 +25,13 @@ case "${1:-}" in
   create-agent)
     [ "${2:-}" = "--request" ] || exit 2
     [ -f "${3:-}" ] && [ ! -L "${3:-}" ] || exit 2
-    printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111"}'
+    if [ "${PASEO_FAKE_DUPLICATE_ACCEPTED_CHILD_REF:-0}" = "1" ]; then
+      printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111","childRef":"22222222-2222-4222-8222-222222222222"}'
+    elif [ "${PASEO_FAKE_DOT_CHILD_REF:-0}" = "1" ]; then
+      printf '%s\n' '{"status":"accepted","childRef":"."}'
+    else
+      printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111"}'
+    fi
     ;;
   *) exit 2 ;;
 esac

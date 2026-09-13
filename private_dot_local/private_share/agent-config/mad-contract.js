@@ -18,6 +18,7 @@ const MAD_LAUNCH_KEYS = [
 ]
 const MAD_REQUEST_KEYS = ['title', 'workspaceId', 'initialPrompt', 'notifyOnFinish', 'provider', 'settings']
 const MAD_SETTINGS_KEYS = ['modeId', 'thinkingOptionId', 'features']
+const MAD_ACCEPTED_RESPONSE_KEYS = ['status', 'childRef']
 const SNAPSHOT_KEYS = ['version', 'type', 'providers', 'models']
 
 class MadContractError extends Error {
@@ -52,7 +53,96 @@ function nonEmptyString(value, code, label) {
 
 function safeIdentifier(value, code, label) {
   nonEmptyString(value, code, label)
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) fail(code, `${label}: identifier が不正である`)
+  if (value === '.' || value === '..' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    fail(code, `${label}: identifier が不正である`)
+  }
+}
+
+function parseJsonWithoutDuplicateKeys(raw, code, label) {
+  if (typeof raw !== 'string') fail(code, `${label}: JSON が不正である`)
+  let index = 0
+  const whitespace = () => { while (/\s/.test(raw[index] || '')) index += 1 }
+  const invalid = () => { throw new Error('invalid JSON') }
+  const parseString = () => {
+    if (raw[index] !== '"') invalid()
+    const start = index
+    index += 1
+    while (index < raw.length) {
+      const character = raw[index]
+      if (character === '"') {
+        index += 1
+        return JSON.parse(raw.slice(start, index))
+      }
+      if (character === '\\') {
+        index += 1
+        const escaped = raw[index]
+        if (!'"\\/bfnrtu'.includes(escaped || '')) invalid()
+        if (escaped === 'u') {
+          const hex = raw.slice(index + 1, index + 5)
+          if (!/^[0-9A-Fa-f]{4}$/.test(hex)) invalid()
+          index += 4
+        }
+        index += 1
+        continue
+      }
+      if (character < ' ') invalid()
+      index += 1
+    }
+    invalid()
+  }
+  const parseValue = () => {
+    whitespace()
+    if (raw[index] === '{') {
+      index += 1
+      whitespace()
+      const object = {}
+      const keys = new Set()
+      if (raw[index] === '}') { index += 1; return object }
+      while (true) {
+        whitespace()
+        const key = parseString()
+        if (keys.has(key)) invalid()
+        keys.add(key)
+        whitespace()
+        if (raw[index] !== ':') invalid()
+        index += 1
+        object[key] = parseValue()
+        whitespace()
+        if (raw[index] === '}') { index += 1; return object }
+        if (raw[index] !== ',') invalid()
+        index += 1
+      }
+    }
+    if (raw[index] === '[') {
+      index += 1
+      whitespace()
+      const array = []
+      if (raw[index] === ']') { index += 1; return array }
+      while (true) {
+        array.push(parseValue())
+        whitespace()
+        if (raw[index] === ']') { index += 1; return array }
+        if (raw[index] !== ',') invalid()
+        index += 1
+      }
+    }
+    if (raw[index] === '"') return parseString()
+    for (const [literal, parsed] of [['true', true], ['false', false], ['null', null]]) {
+      if (raw.startsWith(literal, index)) { index += literal.length; return parsed }
+    }
+    const match = raw.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)
+    if (!match) invalid()
+    index += match[0].length
+    return Number(match[0])
+  }
+  try {
+    const value = parseValue()
+    whitespace()
+    if (index !== raw.length) invalid()
+    return value
+  } catch {
+    fail(code, `${label}: JSON が不正である`)
+  }
 }
 
 function absolutePath(value, code, label) {
@@ -129,6 +219,15 @@ function assertMadCreateRequestV1(value, featureAllowlist) {
   nonEmptyString(value.settings.thinkingOptionId, code, 'mad create request thinkingOptionId')
   assertFeatureValues(value.settings.features, featureAllowlist, code, 'mad create request features')
   return value
+}
+
+function assertMadCreateAcceptedResponseV1(raw) {
+  const code = 'invalid_mad_create_response'
+  const value = parseJsonWithoutDuplicateKeys(raw, code, 'mad create accepted response')
+  exactKeys(value, MAD_ACCEPTED_RESPONSE_KEYS, code, 'mad create accepted response')
+  if (value.status !== 'accepted') fail(code, 'mad create accepted response: status が不正である')
+  safeIdentifier(value.childRef, code, 'mad create accepted response childRef')
+  return { status: 'accepted', childRef: value.childRef }
 }
 
 function assertCreateContext(value) {
@@ -385,6 +484,8 @@ module.exports = {
   MadContractError,
   assertMadLaunchSpecV1,
   assertMadCreateRequestV1,
+  assertMadCreateAcceptedResponseV1,
+  parseJsonWithoutDuplicateKeys,
   buildMadCreateRequestV1,
   writeMadCreateRequest0600,
   writeAvailabilitySnapshot0600,

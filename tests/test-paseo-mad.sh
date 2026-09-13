@@ -566,6 +566,26 @@ assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111
   "MAD 成功: create の childRef を attempt state に保存する"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
 
+for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF DOT_CHILD_REF; do
+  invalid_child_ref_attempt="$TMP/mad-invalid-child-ref-$invalid_child_ref_case"
+  mkdir -p "$invalid_child_ref_attempt"
+  case "$invalid_child_ref_case" in
+    DUPLICATE_ACCEPTED_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DUPLICATE_ACCEPTED_CHILD_REF ;;
+    DOT_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DOT_CHILD_REF ;;
+  esac
+  out="$(env "$invalid_child_ref_env=1" bash "$MAD_RUNNER" --exercise-success \
+    --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+    --attempt-dir "$invalid_child_ref_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+    --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+    --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$invalid_child_ref_attempt/call-log.json" 2>/dev/null)"
+  assert_eq "$?" "1" "MAD childRef: $invalid_child_ref_case を create failure にする"
+  assert_eq "$out" "" "MAD childRef: $invalid_child_ref_case は stdout を出さない"
+  assert_eq "$(jq -r '.state' "$invalid_child_ref_attempt/state.json")" "failed" \
+    "MAD childRef: $invalid_child_ref_case は failed state にする"
+  assert_eq "$(jq -r 'has("child_ref")' "$invalid_child_ref_attempt/state.json")" "false" \
+    "MAD childRef: $invalid_child_ref_case を state に保存しない"
+done
+
 broken_share="$TMP/broken-share"
 mkdir -p "$broken_share"
 printf '%s\n' "module.exports = require('./missing-module.js')" > "$broken_share/mad-contract.js"
