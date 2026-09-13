@@ -323,7 +323,6 @@ normalize_launch_failure() {
     elif (.candidates | type != "array") then error
     elif (any(.candidates[]; (type != "object" or (keys | sort) != ["model","provider","reasonCode","thinkingOptionId"]))) then error
     elif (any(.candidates[]; any([.provider,.model,.thinkingOptionId][]; type != "string" or length == 0))) then error
-    elif ((.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason)) == null) then error
     elif (any(.candidates[]; (.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason)) == null)) then error
     else . end
   ' 2>/dev/null

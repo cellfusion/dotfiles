@@ -603,6 +603,21 @@ fail_case discovery "$MAD_FIXTURES/adapter/fake-discovery-failure-adapter.sh" ta
 fail_case list_models "$MAD_FIXTURES/adapter/fake-list-models-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
 fail_case resolve "$SUCCESS_ADAPTER" task-reviewer "$FIXTURES/exhausted-v1.json" 4 waiting_for_user
 
+exhausted_attempt="$TMP/mad-fail-resolve"
+assert_eq "$(test -f "$exhausted_attempt/launch.json" && echo yes || echo no)" "yes" \
+  "MAD exhausted resolve: launch failure を保存する"
+assert_eq "$(jq -c 'keys | sort' "$exhausted_attempt/launch.json")" \
+  '["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"]' \
+  "MAD exhausted resolve: launch failure の key set"
+assert_eq "$(jq -r '.type' "$exhausted_attempt/launch.json")" "mad-launch-failure" \
+  "MAD exhausted resolve: launch failure の discriminator"
+assert_eq "$(jq -r '.reasonCode' "$exhausted_attempt/launch.json")" "candidates_exhausted" \
+  "MAD exhausted resolve: launch failure の reasonCode"
+assert_eq "$(jq -r '.candidates | type' "$exhausted_attempt/launch.json")" "array" \
+  "MAD exhausted resolve: launch failure の candidates"
+assert_eq "$(jq -r '[.candidates[] | (.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason) != null)] | all' "$exhausted_attempt/launch.json")" "true" \
+  "MAD exhausted resolve: candidate reasonCode は許可した5値のいずれか"
+
 create_dir="$TMP/mad-fail-create"
 mkdir -p "$create_dir"
 bash "$MAD_RUNNER" --exercise-success \
