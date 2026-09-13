@@ -32,6 +32,12 @@ if [ "$CLEAN_APPLY" -eq 1 ]; then
     *) printf 'plan: 絶対 path が必要である\n' >&2; exit 2 ;;
   esac
   test -f "$PLAN_FILE" || { printf 'plan: file が無い\n' >&2; exit 2; }
+  clean_request_path="${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}"
+  if test -e "$clean_request_path" || test -L "$clean_request_path"; then
+    test -f "$clean_request_path" && test ! -L "$clean_request_path" &&
+      test "$(stat -f '%Lp' "$clean_request_path" 2>/dev/null)" = 600 || exit 1
+    rm -f "$clean_request_path" || exit 1
+  fi
   rm -f "$EVIDENCE/clean-apply-result.txt" || exit 1
 
   clean_home="$TMP/clean-home"

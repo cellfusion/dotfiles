@@ -94,6 +94,13 @@ assert_eq "$(test -e "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt" && echo yes
     "clean apply: 成功 evidence を書く"
   assert_eq "$(stat -f '%HT:%Lp' "$CLEAN_APPROVED_EVIDENCE/clean-apply-result.txt" 2>/dev/null)" \
     "Regular File:600" "clean apply: success evidence は 0600 regular file"
+  CLEAN_STALE_REQUEST="$CLEAN_APPROVED_EVIDENCE/clean-apply-decision-request.md"
+  ( umask 077; printf 'pending clean apply\n' > "$CLEAN_STALE_REQUEST"; chmod 600 "$CLEAN_STALE_REQUEST" )
+  PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_APPROVED_EVIDENCE" \
+    bash "$DISTRIBUTION" --clean-apply --plan "$CLEAN_PLAN" >/dev/null 2>&1
+  assert_eq "$?" "0" "clean apply: stale request があっても approved apply は成功する"
+  assert_eq "$(test -e "$CLEAN_STALE_REQUEST" && echo yes || echo no)" "no" \
+    "clean apply: approved success は stale request を残さない"
 fi
 
 # Unit 3 は八つの前提を個別に集約する。内部 suite は専用 wrapper で成功・失敗を制御し、
@@ -160,12 +167,12 @@ write_unit_decision "$UNIT3_NO_PLAN/unit2-decision.txt" continue
 write_unit_decision "$UNIT3_NO_PLAN/representative-decision.txt" approved-success
 write_unit_decision "$UNIT3_NO_PLAN/clean-apply-result.txt" approved-success
 PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_NO_PLAN" \
-  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH -u PASEO_UNIT3_PLAN_FIXTURE \
+  PASEO_PLAN_PATH="$TMP/missing-canonical-plan.md" env -u DECISION_REQUEST_PATH -u PASEO_UNIT3_PLAN_FIXTURE \
   /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
 unit3_no_plan_status=$?
 assert_eq "$([ "$unit3_no_plan_status" -ne 0 ] && printf yes || printf no)" "yes" \
   "unit3: 外側 plan が無ければ continue を拒否する"
-assert_contains "$(cat "$UNIT3_NO_PLAN/unit3-failure.txt" 2>/dev/null)" "plan-dependency(exit 2)" \
+assert_contains "$(cat "$UNIT3_NO_PLAN/unit3-failure.txt" 2>/dev/null)" "plan-dependency(exit 1)" \
   "unit3: 外側 plan 不在の name と exit code を記録する"
 
 UNIT3_UNFLAGGED_FIXTURE="$TMP/unit3-unflagged-fixture"
@@ -251,6 +258,26 @@ assert_eq "$([ "$unit3_default_request_status" -ne 0 ] && printf yes || printf n
 assert_eq "$(cat "$UNIT3_DEFAULT_REQUEST/unit3-decision.txt" 2>/dev/null)" "decision_request" \
   "unit3: default request を decision_request として記録する"
 
+UNIT3_REPRESENTATIVE_REQUEST="$TMP/unit3-representative-request"
+write_unit_decision "$UNIT3_REPRESENTATIVE_REQUEST/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_REPRESENTATIVE_REQUEST/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_REPRESENTATIVE_REQUEST/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_REPRESENTATIVE_REQUEST/clean-apply-result.txt" approved-success
+mkdir -p "$UNIT3_REPRESENTATIVE_REQUEST/representative"
+printf 'pending representative approval\n' > "$UNIT3_REPRESENTATIVE_REQUEST/representative/representative-decision-request.md"
+chmod 600 "$UNIT3_REPRESENTATIVE_REQUEST/representative/representative-decision-request.md"
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_REPRESENTATIVE_REQUEST" \
+  PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_representative_request_status=$?
+assert_eq "$([ "$unit3_representative_request_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: representative の decision request があれば continue を拒否する"
+assert_eq "$(cat "$UNIT3_REPRESENTATIVE_REQUEST/unit3-decision.txt" 2>/dev/null)" "decision_request" \
+  "unit3: representative の pending request を decision_request として記録する"
+assert_contains "$(cat "$UNIT3_REPRESENTATIVE_REQUEST/unit3-failure.txt" 2>/dev/null)" "representative-decision-request(exit 1)" \
+  "unit3: representative request も failure evidence に記録する"
+
 env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
   bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
 status=$?
@@ -272,11 +299,16 @@ assert_eq "$(jq -c '.runStates' "$FIXTURE_EVIDENCE/state-transition.json")" '["r
 assert_eq "$(jq -c '.phaseStates' "$FIXTURE_EVIDENCE/state-transition.json")" \
   '["plan:ok","implement:ok","review:ok","fix:ok"]' "representative: 各 phase が完了した"
 assert_eq "$(jq -c '[.events[].operation]' "$FIXTURE_EVIDENCE/call-log.json")" \
-  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent"]' \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent","wait_agent"]' \
   "representative: call log の並び"
 assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$FIXTURE_EVIDENCE/call-log.json")" "1" \
   "representative: create_agent はちょうど一回"
-for evidence in snapshot.json launch.json create-call.json call-log.json state-transition.json \
+assert_eq "$(jq -c '[.events[] | select(.operation == "wait_agent") | {callCount,timeoutSeconds,status}]' "$FIXTURE_EVIDENCE/call-log.json")" \
+  '[{"callCount":1,"timeoutSeconds":1200,"status":"idle"}]' \
+  "representative: accepted childRef の wait を一回だけ記録する"
+assert_eq "$(jq -c . "$FIXTURE_EVIDENCE/wait-evidence.json")" '{"status":"idle"}' \
+  "representative: wait evidence は安全な status だけを持つ"
+for evidence in snapshot.json launch.json create-call.json call-log.json state-transition.json wait-evidence.json \
   plan/result.json plan/handoff.json implement/result.json implement/handoff.json \
   review/result.json review/handoff.json fix/result.json fix/handoff.json; do
   assert_eq "$(stat -f '%HT:%Lp' "$FIXTURE_EVIDENCE/$evidence")" "Regular File:600" "representative: $evidence は 0600 の regular file"
@@ -338,6 +370,11 @@ case "${1:-}" in
     chmod 600 "$state_path.tmp"
     mv "$state_path.tmp" "$state_path"
     printf '%s\n' '{"status":"accepted","childRef":"22222222-2222-4222-8222-222222222222"}'
+    ;;
+  wait-agent)
+    [ "${2:-}" = "--child-ref" ] && [ "${3:-}" = "22222222-2222-4222-8222-222222222222" ] && \
+      [ "${4:-}" = "--timeout" ] && [ "${5:-}" = "1200" ] || exit 2
+    printf '%s\n' '{"status":"idle"}'
     ;;
   *) exit 2 ;;
 esac
@@ -436,6 +473,9 @@ case "${1:-}" in
     chmod 600 "$state_path.tmp"
     mv "$state_path.tmp" "$state_path"
     ;;
+  wait-agent)
+    exec "$success_adapter" "$@"
+    ;;
   *)
     exit 2
     ;;
@@ -462,6 +502,74 @@ EOF
     assert_eq "$(stat -f '%Lp' "$APPROVED_ROOT/representative/$phase/handoff.json")" "600" \
       "representative: $phase の実 handoff は 0600"
   done
+  printf 'stale child artifact\n' > "$APPROVED_ROOT/representative/plan/plan.md"
+  chmod 600 "$APPROVED_ROOT/representative/plan/plan.md"
+  PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_MIGRATION_EVIDENCE_DIR="$APPROVED_ROOT" \
+    MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
+    bash "$REPRESENTATIVE" --run --evidence-dir "$APPROVED_ROOT/representative" >/dev/null 2>&1
+  stale_rerun_status=$?
+  assert_eq "$stale_rerun_status" "0" "representative: approved rerun は managed stale evidence を無効化する"
+  assert_eq "$(test -e "$APPROVED_ROOT/representative/plan/plan.md" && echo yes || echo no)" "no" \
+    "representative: approved rerun は stale child evidence を残さない"
+
+  WAIT_FAILURE_ROOT="$TMP/wait-failure-root"
+  mkdir -p "$WAIT_FAILURE_ROOT"
+  write_unit_decision "$WAIT_FAILURE_ROOT/representative-decision.txt" approved-success
+  PASEO_FAKE_WAIT_STATUS=timeout PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_MIGRATION_EVIDENCE_DIR="$WAIT_FAILURE_ROOT" \
+    MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
+    bash "$REPRESENTATIVE" --run --evidence-dir "$WAIT_FAILURE_ROOT/representative" >/dev/null 2>&1
+  wait_failure_status=$?
+  assert_eq "$([ "$wait_failure_status" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: timeout wait は非ゼロで停止する"
+  assert_eq "$(test -e "$WAIT_FAILURE_ROOT/representative-decision.txt" && echo yes || echo no)" "no" \
+    "representative: timeout wait 後に stale success decision を残さない"
+  assert_eq "$(test -f "$WAIT_FAILURE_ROOT/representative/representative-decision-request.md" && echo yes || echo no)" "yes" \
+    "representative: timeout wait は default decision request を残す"
+
+  UNSAFE_STALE_ROOT="$TMP/unsafe-stale-root"
+  UNSAFE_STALE_VICTIM="$TMP/unsafe-stale-victim.txt"
+  mkdir -p "$UNSAFE_STALE_ROOT/representative"
+  printf 'retain unsafe target\n' > "$UNSAFE_STALE_VICTIM"
+  ln -s "$UNSAFE_STALE_VICTIM" "$UNSAFE_STALE_ROOT/representative/snapshot.json"
+  write_unit_decision "$UNSAFE_STALE_ROOT/representative-decision.txt" approved-success
+  PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_MIGRATION_EVIDENCE_DIR="$UNSAFE_STALE_ROOT" \
+    MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
+    bash "$REPRESENTATIVE" --run --evidence-dir "$UNSAFE_STALE_ROOT/representative" >/dev/null 2>&1
+  unsafe_stale_status=$?
+  assert_eq "$([ "$unsafe_stale_status" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: symlink の stale evidence を拒否する"
+  assert_eq "$(cat "$UNSAFE_STALE_VICTIM")" "retain unsafe target" \
+    "representative: symlink の参照先を変更しない"
+  assert_eq "$(test -f "$UNSAFE_STALE_ROOT/representative/representative-decision-request.md" && echo yes || echo no)" "yes" \
+    "representative: unsafe evidence では pending decision request を残す"
+  bash "$REPRESENTATIVE" --verify-only --evidence-dir "$UNSAFE_STALE_ROOT/representative" >/dev/null 2>&1
+  assert_eq "$([ "$?" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: symlink stale evidence は verify-only でも拒否する"
+
+  UNKNOWN_STALE_ROOT="$TMP/unknown-stale-root"
+  mkdir -p "$UNKNOWN_STALE_ROOT/representative"
+  printf 'unknown stale evidence\n' > "$UNKNOWN_STALE_ROOT/representative/unexpected.json"
+  chmod 600 "$UNKNOWN_STALE_ROOT/representative/unexpected.json"
+  write_unit_decision "$UNKNOWN_STALE_ROOT/representative-decision.txt" approved-success
+  PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_MIGRATION_EVIDENCE_DIR="$UNKNOWN_STALE_ROOT" \
+    MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
+    bash "$REPRESENTATIVE" --run --evidence-dir "$UNKNOWN_STALE_ROOT/representative" >/dev/null 2>&1
+  unknown_stale_status=$?
+  assert_eq "$([ "$unknown_stale_status" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: unknown stale evidence を拒否する"
+  assert_eq "$(test -f "$UNKNOWN_STALE_ROOT/representative/representative-decision-request.md" && echo yes || echo no)" "yes" \
+    "representative: unknown stale evidence でも pending request を残す"
+  bash "$REPRESENTATIVE" --verify-only --evidence-dir "$UNKNOWN_STALE_ROOT/representative" >/dev/null 2>&1
+  assert_eq "$([ "$?" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: unknown stale evidence は verify-only でも拒否する"
 
   TIMEOUT_ROOT="$TMP/timeout-root"
   TIMEOUT_REQUEST="$TMP/timeout-request.md"
@@ -526,7 +634,7 @@ out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-succe
 assert_eq "$?" "0" "MAD 成功: adapter を通した完全な run が成功する"
 assert_eq "$out" "" "MAD 成功: runner は stdout を出さない"
 assert_eq "$(jq -c '[.events[].operation]' "$attempt/call-log.json")" \
-  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent"]' \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent","wait_agent"]' \
   "MAD 成功: 呼び出しの順序"
 assert_eq "$(jq -c '.events[0].providerIds' "$attempt/call-log.json")" \
   '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "MAD 成功: provider ID を全件列挙する"
@@ -556,14 +664,18 @@ assert_eq "$(jq -c '.events[] | select(.operation == "build_create_request") | [
   '[["title","workspaceId","initialPrompt","notifyOnFinish","provider","settings"],["modeId","thinkingOptionId","features"],600,true,true]' \
   "MAD 成功: request は検証してから 0600 で書く"
 assert_eq "$(stat -f '%HT:%Lp' "$attempt/create-request.json")" "Regular File:600" "MAD 成功: create-request は 0600 の regular file"
-assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | .payload]' "$attempt/call-log.json")" \
-  '[{"title":"fixture title","workspaceId":"fixture-workspace","initialPrompt":"fixture prompt","notifyOnFinish":true,"provider":"codex/sample-work","settings":{"modeId":"auto","thinkingOptionId":"high","features":{}}}]' \
-  "MAD 成功: create_agent は完全な payload を受け取る"
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | has("payload")]' "$attempt/call-log.json")" \
+  '[false]' "MAD 成功: create_agent の runtime log は payload を持たない"
 assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$attempt/call-log.json")" "1" \
   "MAD 成功: create_agent は一回だけ"
 assert_eq "$(jq -r '.state' "$attempt/state.json")" "running" "MAD 成功: state は running"
 assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111-111111111111" \
   "MAD 成功: create の childRef を attempt state に保存する"
+assert_eq "$(jq -r '.create_accepted' "$attempt/state.json")" "true" \
+  "MAD 成功: accepted create を attempt state に保存する"
+assert_eq "$(jq -c . "$attempt/wait-evidence.json")" '{"status":"idle"}' \
+  "MAD 成功: accepted create の後に sanitized wait を記録する"
+assert_not_contains "$(cat "$attempt/call-log.json")" 'fixture prompt' "MAD 成功: prompt を runtime log に残さない"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
 
 for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_CHILD_REF; do
@@ -585,6 +697,8 @@ for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_C
     "MAD childRef: $invalid_child_ref_case は failed state にする"
   assert_eq "$(jq -r 'has("child_ref")' "$invalid_child_ref_attempt/state.json")" "false" \
     "MAD childRef: $invalid_child_ref_case を state に保存しない"
+  assert_eq "$(jq -r '.create_accepted' "$invalid_child_ref_attempt/state.json")" "false" \
+    "MAD childRef: $invalid_child_ref_case は create 未受理を記録する"
 done
 
 broken_share="$TMP/broken-share"
@@ -621,6 +735,8 @@ fail_case() {
     "failure $stage 0 $expected_state" "MAD 失敗 $stage: 終端 event が no-call を記録する"
   assert_eq "$(test -e "$dir/create-request.json" && echo yes || echo no)" "no" "MAD 失敗 $stage: request を作らない"
   assert_eq "$(jq -r '.state' "$dir/state.json")" "$expected_state" "MAD 失敗 $stage: state は $expected_state"
+  assert_eq "$(jq -r '.create_accepted' "$dir/state.json")" "false" \
+    "MAD 失敗 $stage: create 未受理を記録する"
 }
 fail_case discovery "$MAD_FIXTURES/adapter/fake-discovery-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
 fail_case list_models "$MAD_FIXTURES/adapter/fake-list-models-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
@@ -752,6 +868,11 @@ if [ "${1:-}" = "run" ]; then
   printf '%s\n' "${PASEO_FAKE_RUN_RESPONSE:-{\"agentId\":\"33333333-3333-4333-8333-333333333333\",\"status\":\"running\",\"provider\":\"codex/model\",\"cwd\":\"/private/tmp/paseo\",\"title\":\"fixture title\"}}"
   exit 0
 fi
+if [ "${1:-}" = "wait" ]; then
+  printf '%s\n' "$*" > "$PASEO_FAKE_ARGS"
+  printf '%s\n' "${PASEO_FAKE_WAIT_RESPONSE:-{\"agentId\":\"33333333-3333-4333-8333-333333333333\",\"status\":\"idle\",\"message\":\"private activity history\"}}"
+  exit 0
+fi
 exit 2
 EOF
 chmod +x "$FAKE_PASEO"
@@ -874,6 +995,28 @@ PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASE
 assert_eq "$?" "0" "adapter: notifyOnFinish=true の request を受理する"
 assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=true' \
   "adapter: notifyOnFinish=true を metadata label に一対一で転送する"
+adapter_wait="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+  wait-agent --child-ref 33333333-3333-4333-8333-333333333333 --timeout 30)"
+assert_eq "$?" "0" "adapter: accepted childRef を paseo wait へ渡す"
+assert_eq "$adapter_wait" '{"status":"idle"}' "adapter: wait response を status だけに縮約する"
+assert_eq "$(cat "$FAKE_PASEO_ARGS")" \
+  'wait 33333333-3333-4333-8333-333333333333 --timeout 30 --json' \
+  "adapter: paseo wait の CLI 契約を使う"
+assert_not_contains "$adapter_wait" 'private activity history' "adapter: raw wait response を返さない"
+for invalid_wait_response in \
+  '{"status":"idle"}' \
+  '{"status":"unknown"}' \
+  '{"agentId":"other-agent","status":"idle"}' \
+  '{"agentId":"33333333-3333-4333-8333-333333333333","status":"idle","extra":true}' \
+  '{"status":"idle","status":"timeout"}' \
+  '{"message":"missing status"}'; do
+  invalid_wait_out="$(PASEO_FAKE_WAIT_RESPONSE="$invalid_wait_response" PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+    wait-agent --child-ref 33333333-3333-4333-8333-333333333333 --timeout 30 2>/dev/null)"
+  assert_eq "$?" "1" "adapter: 不正な wait status を拒否する"
+  assert_eq "$invalid_wait_out" "" "adapter: 不正な wait response を返さない"
+done
 for invalid_create_response in \
   '{"status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
   '{"agentId":"33333333-3333-4333-8333-333333333333","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title","extra":true}' \
@@ -903,8 +1046,8 @@ assert_eq "$(jq -c '.providers.claude.modeIds' "$opaque_attempt/snapshot.json")"
   '["auto","mode: observed"]' "MAD opaque mode: provider ごとの modeIds を保持する"
 assert_eq "$(jq -r '.modeId' "$opaque_attempt/launch.json")" "auto" \
   "MAD opaque mode: launch の modeId は auto を維持する"
-assert_eq "$(jq -r '[.events[] | select(.operation == "create_agent") | .payload.settings.modeId][0]' "$opaque_attempt/call-log.json")" \
-  "auto" "MAD opaque mode: create payload の modeId は auto を維持する"
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | has("payload")]' "$opaque_attempt/call-log.json")" \
+  '[false]' "MAD opaque mode: runtime log は create payload を残さない"
 
 # 既存の exercise-create 経路も、snapshot または launch の検証前に create を呼ばない。
 for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set-mismatch \

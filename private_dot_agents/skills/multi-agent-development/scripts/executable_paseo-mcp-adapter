@@ -214,6 +214,33 @@ function createAgent(requestPath) {
   process.stdout.write(JSON.stringify({ status: 'accepted', childRef: response.agentId }) + '\n')
 }
 
+function waitAgent(childRef, timeout) {
+  if (!safeId(childRef) || !/^[1-9][0-9]*$/.test(timeout) || Number(timeout) > 3600) {
+    fail('wait arguments are invalid')
+  }
+  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+  let contract
+  try { contract = require(path.join(shareDir, 'mad-contract.js')) } catch { fail('Paseo wait contract is unavailable', 1) }
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
+    'wait', childRef, '--timeout', timeout, '--json',
+  ], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP wait failed', 1)
+  let status
+  try {
+    const response = contract.parseJsonWithoutDuplicateKeys(
+      result.stdout || '', 'invalid_mad_wait_response', 'Paseo MCP wait response')
+    if (response === null || typeof response !== 'object' || Array.isArray(response) ||
+        Object.keys(response).some((key) => !['agentId', 'status', 'message'].includes(key)) ||
+        !['idle', 'timeout', 'error'].includes(response.status) ||
+        !Object.prototype.hasOwnProperty.call(response, 'agentId') || response.agentId !== childRef ||
+        (Object.prototype.hasOwnProperty.call(response, 'message') && typeof response.message !== 'string')) {
+      throw new Error('invalid response')
+    }
+    status = response.status
+  } catch { fail('Paseo MCP wait response is invalid', 1) }
+  process.stdout.write(JSON.stringify({ status }) + '\n')
+}
+
 const args = process.argv.slice(2)
 switch (args[0]) {
   case 'list-providers':
@@ -227,6 +254,10 @@ switch (args[0]) {
   case 'create-agent':
     if (args.length !== 3 || args[1] !== '--request') fail('create-agent arguments are invalid')
     createAgent(args[2])
+    break
+  case 'wait-agent':
+    if (args.length !== 5 || args[1] !== '--child-ref' || args[3] !== '--timeout') fail('wait-agent arguments are invalid')
+    waitAgent(args[2], args[4])
     break
   default:
     fail('command is invalid')

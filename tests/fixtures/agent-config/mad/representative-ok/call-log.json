@@ -45,6 +45,13 @@
       "operation": "create_agent",
       "callCount": 1,
       "requestPath": "/fixture/create-request.json"
+    },
+    {
+      "seq": 8,
+      "operation": "wait_agent",
+      "callCount": 1,
+      "timeoutSeconds": 1200,
+      "status": "idle"
     }
   ]
 }

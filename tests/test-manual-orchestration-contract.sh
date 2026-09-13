@@ -67,6 +67,7 @@ write_attempt_in() {
   \"backend\": \"paseo-mcp\",
   \"backend_reason\": \"Paseo MCP available\",
   \"child_ref\": \"child-$node_id-$attempt_id\",
+  \"create_accepted\": true,
   \"parent_decision\": \"accepted\"
 }" > "$attempt_dir/state.json"
 }
@@ -368,6 +369,7 @@ write_recipe_run() {
     run_id: $run, node: $node, attempt: "attempt-001", round: 0,
     state: "ok", phase: "child_work", phase_state: "ok",
     next_action: "await parent decision",
+    create_accepted: true,
     child_ref: "child-\($node)-attempt-001",
     backend: "paseo-mcp", backend_reason: "Paseo MCP available",
     parent_decision: "accepted"
@@ -499,10 +501,60 @@ assert_contains "$out" "child_ref must be a non-empty string" \
   "validator: 欠けた child_ref を示す"
 
 # pending は子をまだ起動していないので、child_ref も started_at も要求しない。
-edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | del(.started_at)'
+edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | .create_accepted = false | del(.started_at) | del(.child_ref)'
 out="$(validate_run "$OD")"
 status=$?
 assert_eq "$status" "0" "validator: pending の attempt には child_ref を要求しない"
+
+# create 前の discovery / resolve / create failure は childRef を得ていないので、
+# waiting_for_user または failed でも child_ref を要求してはならない。
+for precreate_state in waiting_for_user failed; do
+  edit_json "$OD_ATTEMPT" --arg state "$precreate_state" \
+    '.state = $state | .phase_state = $state | .parent_decision = "create failed before acceptance" | .create_accepted = false | del(.child_ref) | del(.started_at)'
+  edit_json "$OD/state.json" --arg state "$precreate_state" \
+    '.state = $state | .phase_state = $state'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "0" "validator: accepted 前の $precreate_state に child_ref を要求しない"
+done
+
+# accepted create の後は、終了状態にかかわらず child_ref を残す。これが欠けると
+# timeout/error や親判断後に、親が作成済み child を追跡・停止できない。
+for postcreate_state in failed waiting_for_user unresolved stopped ok; do
+  edit_json "$OD_ATTEMPT" --arg state "$postcreate_state" \
+    '.state = $state | .phase_state = $state | .parent_decision = "create accepted" | .create_accepted = true | del(.child_ref) | del(.started_at)'
+  edit_json "$OD/state.json" '.state = "running" | .phase_state = "running"'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "1" "validator: accepted 後の $postcreate_state で child_ref 欠落を拒否する"
+  assert_contains "$out" "child_ref must be a non-empty string" \
+    "validator: accepted 後の $postcreate_state の child_ref 欠落を示す"
+done
+
+edit_json "$OD_ATTEMPT" '.state = "running" | .phase_state = "running" | .create_accepted = true | .child_ref = "child-planner-a1" | .started_at = "2020-01-01T00:00:00Z"'
+edit_json "$OD/state.json" '.state = "running" | .phase_state = "running"'
+
+# running は accepted create が済んだ child だけに許す。false のままにすると、親が
+# 未作成 child を待機対象として扱ってしまう。
+edit_json "$OD_ATTEMPT" '.create_accepted = false | del(.child_ref)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: create 未受理の running を拒否する"
+assert_contains "$out" "running requires create_accepted true" \
+  "validator: running の create 受理要件を示す"
+
+# accepted childRef は path traversal や special directory を含まず、stop/wait に安全に
+# 渡せる basename-safe ID でなければならない。
+for unsafe_child_ref in ../outside .; do
+  edit_json "$OD_ATTEMPT" --arg child_ref "$unsafe_child_ref" \
+    '.create_accepted = true | .child_ref = $child_ref'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "1" "validator: unsafe accepted child_ref $unsafe_child_ref を拒否する"
+  assert_contains "$out" "child_ref must be basename-safe" \
+    "validator: unsafe child_ref の安全性要件を示す"
+done
+edit_json "$OD_ATTEMPT" '.child_ref = "child-planner-a1"'
 
 # implement と spike は子が同時にファイルを書くので、node ごとに worktree を作る。
 # 台帳が無いと、どの run がどの workspace を作ったかが追えなくなる。
@@ -800,3 +852,4 @@ assert_not_contains "$out" "decision_request の実体" \
 
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

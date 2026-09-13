@@ -123,6 +123,33 @@ if [ "${PASEO_LEGACY_SELF_TEST:-0}" -eq 0 ] && [ -f "$MANIFEST" ]; then
   assert_eq "$fixture_status" "1" "fixtures: 欠落した必須 fixture を拒否する"
   assert_contains "$fixture_output" "regular file" \
     "fixtures: 欠落 fixture の失敗理由を示す"
+
+  invalid_plan_output="$(PASEO_LEGACY_SELF_TEST=1 PASEO_PLAN_PATH="$TMP/missing-plan.md" \
+    bash "$0" "$MANIFEST" 2>&1)"
+  invalid_plan_status=$?
+  assert_eq "$invalid_plan_status" "1" "plan validator: 明示された不正 plan を拒否する"
+  assert_contains "$invalid_plan_output" "PASEO_PLAN_PATH" \
+    "plan validator: 明示された不正 plan の失敗理由を示す"
+
+  standalone_plan_output="$(PASEO_LEGACY_SELF_TEST=1 env -u PASEO_PLAN_PATH -u PASEO_LEGACY_PLAN_FIXTURE \
+    bash "$0" "$MANIFEST" 2>&1)"
+  standalone_plan_status=$?
+  assert_eq "$standalone_plan_status" "0" "plan validator: plan 指定無しの単体実行は fixture で検証する"
+  assert_contains "$standalone_plan_output" "SUMMARY" \
+    "plan validator: plan 指定無しの単体実行は summary を出す"
+
+  explicit_plan_output="$(PASEO_LEGACY_SELF_TEST=1 \
+    PASEO_PLAN_PATH="$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md" \
+    bash "$0" "$MANIFEST" 2>&1)"
+  explicit_plan_status=$?
+  assert_eq "$explicit_plan_status" "0" "plan validator: PASEO_PLAN_PATH の valid plan を検証する"
+
+  unverified_plan_output="$(PASEO_LEGACY_SELF_TEST=1 \
+    env -u PASEO_PLAN_PATH PASEO_LEGACY_PLAN_FIXTURE=0 bash "$0" "$MANIFEST" 2>&1)"
+  unverified_plan_status=$?
+  assert_eq "$unverified_plan_status" "1" "plan validator: 明示 opt-out 時に plan 無しの検証を拒否する"
+  assert_contains "$unverified_plan_output" "PASEO_PLAN_PATH" \
+    "plan validator: opt-out 時に明示 path を案内する"
 fi
 fi
 
@@ -173,11 +200,26 @@ EOF
 
   plan_validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
   plan_path="${PASEO_PLAN_PATH:-}"
-  if [ "${plan_path#/}" = "$plan_path" ] || [ ! -f "$plan_path" ]; then
+  if [ -n "$plan_path" ]; then
+    plan_status=no
+    case "$plan_path" in
+      /*)
+        if test -f "$plan_path" && test ! -L "$plan_path"; then
+          plan_status=yes
+        fi
+        ;;
+    esac
+    assert_eq "$plan_status" "yes" "plan validator: PASEO_PLAN_PATH は絶対 path の regular file"
+  elif [ "${PASEO_LEGACY_PLAN_FIXTURE:-1}" = 1 ]; then
     plan_path="$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
+  else
+    assert_eq "" "PASEO_PLAN_PATH or PASEO_LEGACY_PLAN_FIXTURE=1" \
+      "plan validator: PASEO_PLAN_PATH または PASEO_LEGACY_PLAN_FIXTURE=1 が必要である"
   fi
-  node "$plan_validate" "$plan_path"
-  assert_eq "$?" "0" "plan validator: 削除後もこの plan を検証できる"
+  if [ -n "$plan_path" ] && [ "${plan_path#/}" != "$plan_path" ] && test -f "$plan_path" && test ! -L "$plan_path"; then
+    node "$plan_validate" "$plan_path"
+    assert_eq "$?" "0" "plan validator: 削除後もこの plan を検証できる"
+  fi
   assert_contains "$(cat "$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh")" \
     'generate-paseo-config resolve' "smoke: exporter の launch を使う"
   assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_workflow-table.md")" \

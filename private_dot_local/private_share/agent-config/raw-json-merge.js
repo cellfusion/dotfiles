@@ -364,10 +364,6 @@ function mergeManagedPaseo(raw, materialized) {
     if (marker !== undefined) throw new ConfigError(`target provider ${entry.key}: managed marker が不正である`)
     if (!materializedProviderById.has(entry.key)) continue
     if (!hasExpectedLegacyProvider(entry.value.value, materializedProviderById.get(entry.key))) {
-      if (materializedProviderById.get(entry.key).extends !== undefined) {
-        warnings.push(`legacy provider preserved: ${entry.key}; remove manually`)
-        continue
-      }
       throw new ConfigError(`target provider ${entry.key}: ownership が衝突する`)
     }
     mergeProvider(raw, entry.value, materializedProviderById.get(entry.key), edits, insertions)

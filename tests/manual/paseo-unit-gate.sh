@@ -109,7 +109,11 @@ observe_paseo_shape() {
 }
 
 resolve_unit3_plan() {
-  printf '%s\n' "${PASEO_PLAN_PATH:-}"
+  if [ -n "${PASEO_PLAN_PATH:-}" ]; then
+    printf '%s\n' "$PASEO_PLAN_PATH"
+  else
+    printf '/Users/%s/docs/cellfusion/dotfiles/plans/2026-09-12-paseo-agent-config.md\n' cellfusion
+  fi
 }
 
 validate_unit3_plan() {
@@ -136,11 +140,13 @@ write_unit3_failure() {
 }
 
 record_unit3() {
-  local plan_file validate request_path failures="" status
-  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/paseo-agent-config-migration/evidence}"
+  local plan_file validate request_path representative_request_paths representative_request_pending=0 failures="" status
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)}"
   plan_file="$(resolve_unit3_plan)"
   validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
   request_path="${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}"
+  representative_request_paths="$EVIDENCE/representative-decision-request.md
+$EVIDENCE/representative/representative-decision-request.md"
 
   check() {
     local name="$1"
@@ -163,8 +169,16 @@ record_unit3() {
   if test -s "$request_path"; then
     failures="$failures"'decision-request(exit 1) '
   fi
+  while IFS= read -r representative_request_path; do
+    if test -s "$representative_request_path"; then
+      failures="$failures"'representative-decision-request(exit 1) '
+      representative_request_pending=1
+    fi
+  done <<EOF
+$representative_request_paths
+EOF
 
-  if test -s "$request_path"; then
+  if test -s "$request_path" || test "$representative_request_pending" -eq 1; then
     write_unit_decision "$EVIDENCE/unit3-decision.txt" decision_request || return 2
   elif test -z "$failures"; then
     write_unit_decision "$EVIDENCE/unit3-decision.txt" continue || return 2

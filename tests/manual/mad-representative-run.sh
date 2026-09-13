@@ -165,6 +165,7 @@ verify_core_evidence() {
   local create_call="$evidence_dir/create-call.json"
   local call_log="$evidence_dir/call-log.json"
   local state_transition="$evidence_dir/state-transition.json"
+  local wait_evidence="$evidence_dir/wait-evidence.json"
 
   node - "$MAD_CONTRACT" "$MAD_EXPORTER" "$snapshot" "$launch" "$create_call" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
@@ -201,12 +202,17 @@ NODE
       ($operations | length >= 7) and
       $operations[0] == "enumerate_materialized_provider_ids" and
       $operations[1] == "list_providers" and
-      ($operations[2:-4] | length > 0 and all(.[]; . == "list_models")) and
-      $operations[-4:] == ["write_snapshot", "resolve", "build_create_request", "create_agent"]
+      ($operations[2:-5] | length > 0 and all(.[]; . == "list_models")) and
+      $operations[-5:] == ["write_snapshot", "resolve", "build_create_request", "create_agent", "wait_agent"]
     ) and
     ([.events[] | select(.operation == "create_agent") | .callCount] == [1]) and
+    ([.events[] | select(.operation == "wait_agent") |
+      select(.callCount == 1 and (.timeoutSeconds | type == "number" and . > 0) and .status == "idle")] | length == 1) and
     (tostring | contains("://") | not)
   ' "$call_log" >/dev/null 2>&1 || return 1
+
+  jq -e 'type == "object" and (keys | sort) == ["status"] and .status == "idle"' \
+    "$wait_evidence" >/dev/null 2>&1 || return 1
 
   jq -e '
     type == "object" and
@@ -260,10 +266,26 @@ verify_phase_evidence() {
 verify_evidence() {
   local evidence_dir="$1"
   local evidence
+  local phase
+  local entry
 
   require_absolute --evidence-dir "$evidence_dir" || return 1
   [ -d "$evidence_dir" ] && [ ! -L "$evidence_dir" ] || return 1
-  for evidence in snapshot.json launch.json create-call.json call-log.json state-transition.json \
+  while IFS= read -r entry; do
+    case "$(basename "$entry")" in
+      snapshot.json|launch.json|create-call.json|call-log.json|state-transition.json|wait-evidence.json) ;;
+      plan|implement|review|fix) [ -d "$entry" ] && [ ! -L "$entry" ] || return 1 ;;
+      *) return 1 ;;
+    esac
+  done < <(find "$evidence_dir" -mindepth 1 -maxdepth 1 -print)
+  for phase in plan implement review fix; do
+    [ -d "$evidence_dir/$phase" ] && [ ! -L "$evidence_dir/$phase" ] || return 1
+    while IFS= read -r entry; do
+      [ -f "$entry" ] && [ ! -L "$entry" ] &&
+        [ "$(stat -f '%Lp' "$entry" 2>/dev/null)" = 600 ] || return 1
+    done < <(find "$evidence_dir/$phase" -mindepth 1 -maxdepth 1 -print)
+  done
+  for evidence in snapshot.json launch.json create-call.json call-log.json state-transition.json wait-evidence.json \
     plan/result.json plan/handoff.json implement/result.json implement/handoff.json \
     review/result.json review/handoff.json fix/result.json fix/handoff.json; do
     require_private_regular_file "$evidence_dir/$evidence" || return 1
@@ -316,6 +338,7 @@ write_run_evidence() {
   local phase
   local evidence
   local phase_prompt
+  local wait_timeout="${MAD_REPRESENTATIVE_WAIT_TIMEOUT_SECONDS:-1200}"
 
   [ -f "$generator" ] || return 1
   [ -f "$adapter" ] && [ -x "$adapter" ] || return 1
@@ -323,6 +346,10 @@ write_run_evidence() {
   [ -f "$MAD_CONTRACT" ] || return 1
   [ -f "$FIXTURES/valid-v1.json" ] || return 1
   [ -d "$share_dir" ] || return 1
+  case "$wait_timeout" in
+    *[!0-9]*|'') return 1 ;;
+  esac
+  [ "$wait_timeout" -gt 0 ] && [ "$wait_timeout" -le 3600 ] || return 1
   [ -L "$evidence_dir" ] && return 1
   mkdir -p "$evidence_dir" || return 1
   [ -z "$(find "$evidence_dir" -mindepth 1 -print -quit)" ] || return 1
@@ -359,9 +386,10 @@ write_run_evidence() {
     --role implementer --provenance mad-representative \
     --title 'representative title' --workspace-id "$RUN_WORKSPACE_ID" \
     --initial-prompt "$phase_prompt" --notify-on-finish true \
+    --wait-timeout "$wait_timeout" \
     --call-log "$attempt_dir/call-log.json" >/dev/null 2>&1 || return 1
 
-  for evidence in snapshot.json launch.json; do
+  for evidence in snapshot.json launch.json wait-evidence.json; do
     write_private_file "$evidence_dir/$evidence" "$(jq -c . "$attempt_dir/$evidence" 2>/dev/null)" || return 1
   done
   request_raw="$(jq -c . "$attempt_dir/create-request.json" 2>/dev/null)" || return 1
@@ -383,6 +411,61 @@ write_failure_request() {
     "Paseo の代表 run が ${stage} で失敗した。後続の phase と削除を停止する" \
     '原因を確認して代表 run を再実行する' \
     '承認せず旧 asset を残す' || true
+}
+
+invalidate_stale_representative_run() {
+  local evidence_dir="$1"
+  local decision_file="$2"
+  local request_file="$3"
+  local phase
+  local evidence
+  local entry
+
+  require_absolute --evidence-dir "$evidence_dir" || return 1
+  [ "$evidence_dir" != / ] || return 1
+  [ ! -L "$evidence_dir" ] || return 1
+  mkdir -p "$evidence_dir" || return 1
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    case "$entry" in
+      snapshot.json|launch.json|wait-evidence.json|create-call.json|call-log.json|state-transition.json|representative-decision-request.md|plan|implement|review|fix) ;;
+      *) return 1 ;;
+    esac
+  done < <(find "$evidence_dir" -mindepth 1 -maxdepth 1 -exec basename {} \;)
+  for evidence in snapshot.json launch.json wait-evidence.json create-call.json call-log.json state-transition.json representative-decision-request.md; do
+    if [ -e "$evidence_dir/$evidence" ] || [ -L "$evidence_dir/$evidence" ]; then
+      [ -f "$evidence_dir/$evidence" ] && [ ! -L "$evidence_dir/$evidence" ] &&
+        [ "$(stat -f '%Lp' "$evidence_dir/$evidence" 2>/dev/null)" = 600 ] || return 1
+    fi
+  done
+  for phase in plan implement review fix; do
+    if [ -e "$evidence_dir/$phase" ] || [ -L "$evidence_dir/$phase" ]; then
+      [ -d "$evidence_dir/$phase" ] && [ ! -L "$evidence_dir/$phase" ] || return 1
+      while IFS= read -r entry; do
+        [ -f "$evidence_dir/$phase/$entry" ] && [ ! -L "$evidence_dir/$phase/$entry" ] &&
+          [ "$(stat -f '%Lp' "$evidence_dir/$phase/$entry" 2>/dev/null)" = 600 ] || return 1
+      done < <(find "$evidence_dir/$phase" -mindepth 1 -maxdepth 1 -exec basename {} \;)
+    fi
+  done
+  for evidence in snapshot.json launch.json wait-evidence.json create-call.json call-log.json state-transition.json representative-decision-request.md; do
+    if [ -e "$evidence_dir/$evidence" ] || [ -L "$evidence_dir/$evidence" ]; then
+      rm -f "$evidence_dir/$evidence" || return 1
+    fi
+  done
+  for phase in plan implement review fix; do
+    if [ -d "$evidence_dir/$phase" ] && [ ! -L "$evidence_dir/$phase" ]; then
+      while IFS= read -r entry; do
+        rm -f "$evidence_dir/$phase/$entry" || return 1
+      done < <(find "$evidence_dir/$phase" -mindepth 1 -maxdepth 1 -exec basename {} \;)
+      rmdir "$evidence_dir/$phase" || return 1
+    fi
+  done
+  for file in "$decision_file" "$request_file"; do
+    if [ -e "$file" ] || [ -L "$file" ]; then
+      [ -f "$file" ] && [ ! -L "$file" ] && [ "$(stat -f '%Lp' "$file" 2>/dev/null)" = 600 ] || return 1
+      rm -f "$file" || return 1
+    fi
+  done
 }
 
 if [ "$#" -ne 3 ] || { [ "${1:-}" != "--run" ] && [ "${1:-}" != "--verify-only" ]; } ||
@@ -414,6 +497,13 @@ require_absolute PASEO_MIGRATION_EVIDENCE_DIR "$DECISION_ROOT" || {
   exit 1
 }
 DECISION_FILE="$DECISION_ROOT/representative-decision.txt"
+
+invalidate_stale_representative_run "$EVIDENCE_DIR" "$DECISION_FILE" "$DECISION_REQUEST_PATH" || {
+  if [ -d "$EVIDENCE_DIR" ] && [ ! -L "$EVIDENCE_DIR" ]; then
+    write_failure_request "$EVIDENCE_DIR/representative-decision-request.md" '既存の代表証跡の無効化' || true
+  fi
+  exit 1
+}
 
 if write_run_evidence "$EVIDENCE_DIR"; then
   if write_unit_decision "$DECISION_FILE" approved-success; then

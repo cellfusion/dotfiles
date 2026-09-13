@@ -286,13 +286,17 @@ run を開始せず、利用者へ状況を報告する。開始済みの子が�
 
 Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
 `paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
-出し、`paseo wait <agent-id>` が idle になるまで待つ。止めるときは `paseo stop <agent-id>`
-が実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
+出す。MAD 親は raw activity を受け取らず、adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>`
+だけを通じて `paseo wait <agent-id> --timeout <seconds> --json` を一回実行し、検証済みの
+`idle`、`timeout`、`error` status だけを受け取る。止めるときは `paseo stop <agent-id>` が
+実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
 
 実行は `paseo-mcp-adapter` の `list-providers`、provider ごとの `list-models`、0600 の
-availability snapshot、`generate-paseo-config resolve`、0600 の create request、Paseo MCP の
-create の順に進める。各 JSON 成果物は run の attempt directory にだけ置く。snapshot と launch と
-create request が検証できない場合、create を呼ばない。
+availability snapshot、`generate-paseo-config resolve`、0600 の create request、`create-agent` 一回、
+accepted childRef に対する `wait-agent` 一回の順に進める。wait の raw response は adapter が
+`{status}` へ縮約し、attempt には 0600 の `wait-evidence.json` と sanitized call log だけを残す。
+各 JSON 成果物は run の attempt directory にだけ置く。snapshot と launch と create request が
+検証できない場合、create を呼ばない。
 
 `--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
@@ -311,10 +315,11 @@ snapshot を破棄し、create 後なら Paseo の子を archive して run の 
 
 旧 asset の削除へ進む前に、`tests/manual/mad-representative-run.sh` で Paseo の代表
 MAD run を 1 回通す。`--run` は外側から `MAD_REPRESENTATIVE_RUN_APPROVED=1` を
-明示したときだけ discovery、launch、create、plan、implement、review、fix を実行し、
+明示したときだけ discovery、launch、create、accepted childRef の wait、plan、implement、review、fix を実行し、
 成功時に `$PASEO_MIGRATION_EVIDENCE_DIR/representative-decision.txt` へ
 `approved-success` を atomic に記録する。未承認または途中失敗なら `DECISION_REQUEST_PATH`
-へ decision request を残し、後続 phase と削除を行わない。create 後は child が書く
+へ decision request を残し、後続 phase と削除を行わない。create 後の wait が `idle` 以外なら
+success decision を残さず、child が書く
 phase artifact を取得し、`MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS`（既定 600 秒）の
 上限内に全 phase の検証が終わらなければ成功扱いにしない。
 
@@ -342,7 +347,8 @@ create の前に decision request を残して停止する。override は `--run
 
 fixture の handoff は `/fixture/*.json` という匿名 placeholder を使い、verify-only が
 一時 directory に 0600 の regular file として解決する。`--run` の child artifact は
-実在する 0600 regular file でなければ受け付けない。fixture の mode は Git が保存しない
+実在する 0600 regular file でなければ受け付けない。`wait-evidence.json` は `{status}` だけを持ち、
+raw wait response や activity history は証跡に入れない。fixture の mode は Git が保存しない
 ため、単体で別の証跡を検査するときは `find` で列挙した証跡を `chmod 600` にしてから
 実行する。証跡には credential、auth/history、raw response、remote URL を入れない。
 

@@ -12,9 +12,21 @@ class ConfigError extends Error {
   }
 }
 
-const KNOWN_SETUP_FAMILIES = ['claude', 'codex']
+const SETUP_TABLE = {
+  claude: {
+    configDirectoryEnv: { CLAUDE_CONFIG_DIR: 'claude' },
+    symlinks: ['agents', 'commands', 'skills', 'hooks', 'CLAUDE.md', 'settings.json'],
+    preservedMutable: ['.claude.json'],
+  },
+  codex: {
+    configDirectoryEnv: { CODEX_HOME: 'codex' },
+    symlinks: ['agents', 'AGENTS.md'],
+    preservedMutable: ['config.toml'],
+  },
+}
+const KNOWN_SETUP_FAMILIES = Object.keys(SETUP_TABLE)
 const SECRET_SUBSTRINGS = ['credential', 'token', 'key', 'password', 'secret', 'auth', 'session', 'cookie', 'history']
-const RESERVED_ENV_NAMES = ['agent_env', 'chezmoi_agent_config_managed', 'paseo_managed', 'xdg_config_home']
+const RESERVED_ENV_NAMES = ['agent_env', 'chezmoi_agent_config_managed', 'paseo_managed', 'xdg_config_home', 'home']
 const SCHEMA_PATH = path.join(__dirname, 'agent-config.schema.json')
 
 function isObject(value) {
@@ -132,8 +144,19 @@ function validateAgainstSchema(schema, data, pointer) {
 }
 
 function assertFamilyRegistry(family, definition) {
+  if (KNOWN_SETUP_FAMILIES.includes(family) && definition.setup === null) {
+    throw new ConfigError(`provider family ${family}: setup table が必要である`)
+  }
   if (definition.setup !== null && !KNOWN_SETUP_FAMILIES.includes(family)) {
     throw new ConfigError(`provider family ${family}: setup を持てるのは ${KNOWN_SETUP_FAMILIES.join(', ')} だけである`)
+  }
+  if (definition.setup !== null) {
+    const expected = SETUP_TABLE[family]
+    if (JSON.stringify(definition.setup.configDirectoryEnv) !== JSON.stringify(expected.configDirectoryEnv) ||
+        JSON.stringify(definition.setup.symlinks) !== JSON.stringify(expected.symlinks) ||
+        JSON.stringify(definition.setup.preservedMutable) !== JSON.stringify(expected.preservedMutable)) {
+      throw new ConfigError(`provider family ${family}: setup table と一致しない`)
+    }
   }
   if (Object.keys(definition.featureAllowlist).length !== 0) {
     throw new ConfigError(`provider family ${family}: v1 の featureAllowlist は空でなければならない`)
@@ -286,8 +309,6 @@ function assertSemantics(config) {
     assertSetupPaths(family, setup)
   }
 
-  for (const [family, definition] of Object.entries(config.providers)) assertFamilyRegistry(family, definition)
-
   const environments = Object.keys(config.environments)
   const firstEnvironment = config.defaults.environment
   const generatedIds = new Map()
@@ -329,22 +350,26 @@ function assertSemantics(config) {
     }
   }
 
-  for (const [family, definition] of Object.entries(config.providers)) {
-    if (definition.setup === null) continue
-    for (const environment of environments) {
-      if (environment.startsWith(`${family}-`)) {
-        throw new ConfigError(`generated provider id ${environment}: ${family} の provenance と衝突する`)
-      }
-    }
-  }
+  for (const [family, definition] of Object.entries(config.providers)) assertFamilyRegistry(family, definition)
 
   for (const rule of config.projectRouting.rules) {
     if (!Object.prototype.hasOwnProperty.call(config.environments, rule.environment)) {
       throw new ConfigError(`projectRouting rule: 未知の environment である`)
     }
     const fields = Object.keys(rule.match)
-    if (fields.some((field) => !['remote', 'path'].includes(field))) {
+    if (fields.length === 0 || fields.some((field) => !['remote', 'path'].includes(field))) {
       throw new ConfigError('projectRouting rule: match field が不正である')
+    }
+    if (typeof rule.match.path === 'string') {
+      if (!path.isAbsolute(rule.match.path)) throw new ConfigError('projectRouting rule: path は絶対 path である')
+      let canonicalPath
+      try {
+        if (!fs.statSync(rule.match.path).isDirectory()) throw new Error('not a directory')
+        canonicalPath = fs.realpathSync.native(rule.match.path)
+      } catch {
+        throw new ConfigError('projectRouting rule: path が存在しない')
+      }
+      if (canonicalPath !== rule.match.path) throw new ConfigError('projectRouting rule: path は canonical path である')
     }
     if (typeof rule.match.remote === 'string') {
       const remoteParts = rule.match.remote.split('/').slice(1)

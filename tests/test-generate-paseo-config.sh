@@ -9,6 +9,7 @@ SCHEMA="$SHARE/agent-config.schema.json"
 SAMPLE="$SHARE/agent-config.sample.json"
 TYPES="$SHARE/config-types.js"
 VALID="$FIXTURES/valid-v1.json"
+PREFIX_NAMED_ENVIRONMENT="$FIXTURES/valid-provider-prefix-environment.json"
 VALIDATOR="$SHARE/config-validator.js"
 RESOLVER="$SHARE/resolver.js"
 TMP="$(mktemp -d)"
@@ -100,13 +101,30 @@ assert_eq "$?" "0" "types: defaultEnvironment と scope と Paseo field を検�
 TARGET="$TMP/paseo-config.json"
 printf '{"daemon":{"agentProfiles":[]},"agents":{"providers":{}}}' > "$TARGET"
 before="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
-invalids=(malformed unknown-field cross-reference-unknown-environment cross-reference-unknown-provider cross-reference-unknown-role-tier candidate-duplicate-provider environment-candidate-not-eligible tier-missing tier-fast-present feature-allowlist-unknown-key feature-allowlist-object-value feature-allowlist-wrong-scalar feature-allowlist-non-empty secret-feature secret-allowlist-key unknown-family-with-setup reserved-env-agent-env reserved-env-managed reserved-env-case-variant shared-config-env setup-path-collision setup-path-absolute setup-path-parent setup-path-parent-child-overlap setup-directory-pattern-mismatch generated-id-collision generated-physical-path-collision generated-root-id-collision generated-root-physical-path-collision default-environment-unknown remote-rule-scheme remote-rule-auth remote-rule-port remote-rule-query remote-rule-dot-segment remote-rule-dot-git routing-rule-tier-field)
+invalids=(malformed unknown-field cross-reference-unknown-environment cross-reference-unknown-provider cross-reference-unknown-role-tier candidate-duplicate-provider environment-candidate-not-eligible tier-missing tier-fast-present empty-common-candidates empty-environment-candidates empty-environment-providers feature-allowlist-unknown-key feature-allowlist-object-value feature-allowlist-wrong-scalar feature-allowlist-non-empty secret-feature secret-allowlist-key unknown-family-with-setup reserved-env-agent-env reserved-env-managed reserved-env-case-variant config-env-home shared-config-env setup-path-collision setup-path-absolute setup-path-parent setup-path-parent-child-overlap setup-directory-pattern-mismatch setup-claude-null setup-claude-table setup-codex-table generated-id-collision generated-physical-path-collision generated-root-id-collision generated-root-physical-path-collision default-environment-unknown remote-rule-scheme remote-rule-auth remote-rule-port remote-rule-query remote-rule-dot-segment remote-rule-dot-git routing-rule-tier-field routing-rule-empty-match routing-rule-relative-path routing-rule-missing-path)
 for invalid in "${invalids[@]}"; do
   out="$(node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' "$VALIDATOR" "$FIXTURES/invalid/$invalid.json" 2>"$TMP/$invalid.stderr")"
   status=$?
   assert_eq "$status" "2" "validator: $invalid は exit 2"
   assert_eq "$out" "" "validator: $invalid は stdout を出さない"
   assert_eq "$(shasum -a 256 "$TARGET" | cut -d' ' -f1)" "$before" "validator: $invalid は target を変えない"
+done
+node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' \
+  "$VALIDATOR" "$PREFIX_NAMED_ENVIRONMENT" >/dev/null 2>&1
+assert_eq "$?" "0" "validator: provider 名を接頭辞に持つ environment を受理する"
+collision_error() {
+  node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.stderr.write(String(error.message)); process.exit(error.exitCode || 1) }' \
+    "$VALIDATOR" "$FIXTURES/invalid/$1.json" 2>&1 >/dev/null
+}
+for collision in generated-id-collision generated-root-id-collision; do
+  error="$(collision_error "$collision")"
+  assert_eq "$?" "2" "validator: $collision は exit 2"
+  assert_contains "$error" "generated provider id" "validator: $collision は ID collision に到達する"
+done
+for collision in generated-physical-path-collision generated-root-physical-path-collision; do
+  error="$(collision_error "$collision")"
+  assert_eq "$?" "2" "validator: $collision は exit 2"
+  assert_contains "$error" "generated physical path" "validator: $collision は path collision に到達する"
 done
 
 export_json="$(node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveExport}=require(process.argv[2]); console.log(JSON.stringify(resolveExport(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config)))' "$VALIDATOR" "$RESOLVER" "$VALID")"
@@ -178,12 +196,18 @@ out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-exact.json")
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "lab" "path: realpath の完全一致で environment を選ぶ"
 out="$(dispatch "$CANONICAL_ROOT/child" reviewer mad-fix "" "" "$TMP/path-exact.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: 部分 path は一致しない"
+ln -s "$CANONICAL_ROOT" "$TMP/path-symlink"
+node -e 'const fs=require("node:fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); value.projectRouting.rules[0].match={path:process.argv[2]}; fs.writeFileSync(file,JSON.stringify(value))' \
+  "$TMP/path-exact.json" "$TMP/path-symlink"
+node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' \
+  "$VALIDATOR" "$TMP/path-exact.json" >/dev/null 2>&1
+assert_eq "$?" "2" "path: rule path は canonical realpath でなければならない"
 path_config prefix "$TMP/path-prefix.json"
 out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-prefix.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: prefix では一致しない"
 path_config glob "$TMP/path-glob.json"
-out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-glob.json")"
-assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: glob では一致しない"
+dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-glob.json" >/dev/null 2>&1
+assert_eq "$?" "2" "path: glob の非 canonical path rule を拒否する"
 path_config remote-and-path "$TMP/path-and.json"
 out="$(dispatch "$CANONICAL_ROOT" reviewer mad-fix "" "" "$TMP/path-and.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.environment')" "primary" "path: remote と path の両方がある rule は AND で判定する"
@@ -433,10 +457,12 @@ assert_eq "$(jq -r '.agents.providers.claude.env.CHEZMOI_AGENT_CONFIG_MANAGED' "
 cp "$FIXTURES/targets/legacy-adoption.json" "$TMP/legacy-mismatch.json"
 node -e 'const fs=require("node:fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); value.agents.providers["claude-lab"].env.AGENT_ENV="mismatch"; fs.writeFileSync(file, JSON.stringify(value))' \
   "$TMP/legacy-mismatch.json"
-legacy_mismatch_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-mismatch.json" 2>&1 >/dev/null)"
-assert_eq "$?" "0" "merge: 不一致の legacy non-primary は既存 record を保つ"
-assert_contains "$legacy_mismatch_warning" 'legacy provider preserved: claude-lab' \
-  "merge: 不一致の legacy non-primary は warning を返す"
+before="$(shasum -a 256 "$TMP/legacy-mismatch.json" | cut -d' ' -f1)"
+legacy_mismatch_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-mismatch.json" 2>/dev/null)"
+assert_eq "$?" "2" "merge: 不一致の legacy non-primary は ownership collision として拒否する"
+assert_eq "$legacy_mismatch_warning" "" "merge: 不一致の legacy non-primary は warning で受け入れない"
+assert_eq "$(shasum -a 256 "$TMP/legacy-mismatch.json" | cut -d' ' -f1)" "$before" \
+  "merge: AGENT_ENV ownership collision は target を変えない"
 assert_eq "$(jq -c '.agents.providers["claude-lab"]' "$TMP/legacy-mismatch.json")" \
   '{"extends":"claude","label":"Claude (lab)","env":{"AGENT_ENV":"mismatch"}}' \
   "merge: 不一致の legacy non-primary は record を更新しない"
@@ -446,10 +472,12 @@ assert_eq "$(jq -r '.agents.providers["claude-lab"].env.CHEZMOI_AGENT_CONFIG_MAN
 cp "$FIXTURES/targets/legacy-adoption.json" "$TMP/legacy-extends-mismatch.json"
 node -e 'const fs=require("node:fs"); const file=process.argv[1]; const value=JSON.parse(fs.readFileSync(file,"utf8")); value.agents.providers["claude-lab"].extends="other"; fs.writeFileSync(file, JSON.stringify(value))' \
   "$TMP/legacy-extends-mismatch.json"
-legacy_extends_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-extends-mismatch.json" 2>&1 >/dev/null)"
-assert_eq "$?" "0" "merge: extends 不一致の legacy non-primary は既存 record を保つ"
-assert_contains "$legacy_extends_warning" 'legacy provider preserved: claude-lab' \
-  "merge: extends 不一致の legacy non-primary は warning を返す"
+before="$(shasum -a 256 "$TMP/legacy-extends-mismatch.json" | cut -d' ' -f1)"
+legacy_extends_warning="$(generate --input "$VALID" --paseo-config "$TMP/legacy-extends-mismatch.json" 2>/dev/null)"
+assert_eq "$?" "2" "merge: extends 不一致の legacy non-primary は ownership collision として拒否する"
+assert_eq "$legacy_extends_warning" "" "merge: extends 不一致の legacy non-primary は warning で受け入れない"
+assert_eq "$(shasum -a 256 "$TMP/legacy-extends-mismatch.json" | cut -d' ' -f1)" "$before" \
+  "merge: extends ownership collision は target を変えない"
 assert_eq "$(jq -c '.agents.providers["claude-lab"]' "$TMP/legacy-extends-mismatch.json")" \
   '{"extends":"other","label":"Claude (lab)","env":{"AGENT_ENV":"lab"}}' \
   "merge: extends 不一致の legacy non-primary は record を更新しない"

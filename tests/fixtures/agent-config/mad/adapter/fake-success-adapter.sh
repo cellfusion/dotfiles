@@ -35,5 +35,13 @@ case "${1:-}" in
       printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111"}'
     fi
     ;;
+  wait-agent)
+    [ "${2:-}" = "--child-ref" ] && [ "${4:-}" = "--timeout" ] || exit 2
+    [ -n "${3:-}" ] && [ -n "${5:-}" ] || exit 2
+    if [ -n "${PASEO_FAKE_WAIT_LOG:-}" ]; then
+      printf '%s\n' "$*" >> "$PASEO_FAKE_WAIT_LOG"
+    fi
+    printf '%s\n' "{\"status\":\"${PASEO_FAKE_WAIT_STATUS:-idle}\"}"
+    ;;
   *) exit 2 ;;
 esac
