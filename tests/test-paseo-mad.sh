@@ -566,11 +566,12 @@ assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111
   "MAD 成功: create の childRef を attempt state に保存する"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
 
-for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF DOT_CHILD_REF; do
+for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_CHILD_REF; do
   invalid_child_ref_attempt="$TMP/mad-invalid-child-ref-$invalid_child_ref_case"
   mkdir -p "$invalid_child_ref_attempt"
   case "$invalid_child_ref_case" in
     DUPLICATE_ACCEPTED_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DUPLICATE_ACCEPTED_CHILD_REF ;;
+    PROTO_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_PROTO_CHILD_REF ;;
     DOT_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DOT_CHILD_REF ;;
   esac
   out="$(env "$invalid_child_ref_env=1" bash "$MAD_RUNNER" --exercise-success \

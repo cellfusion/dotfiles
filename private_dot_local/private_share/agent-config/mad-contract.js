@@ -95,7 +95,10 @@ function parseJsonWithoutDuplicateKeys(raw, code, label) {
     if (raw[index] === '{') {
       index += 1
       whitespace()
-      const object = {}
+      // A null prototype makes every parsed JSON key an own data property.
+      // In particular, `__proto__` must remain visible to exactKeys instead of
+      // mutating this parser's object prototype.
+      const object = Object.create(null)
       const keys = new Set()
       if (raw[index] === '}') { index += 1; return object }
       while (true) {
