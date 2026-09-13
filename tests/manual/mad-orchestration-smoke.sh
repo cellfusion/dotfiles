@@ -8,8 +8,8 @@
 #   bash tests/manual/mad-orchestration-smoke.sh --report DIR 実行済み run を検証して結果を出す
 #
 # fixture test は state と成果物の形しか見ない。実 backend で子が 1 つも起動しない
-# まま全部緑になる穴が残る。子の起動は MCP ツールの呼び出しであり、シェルからは
-# 叩けない。そのため、このスクリプトはシェルで確かめられる部分だけを実行し、
+# まま全部緑になる穴が残る。child の create、wait、stop は adapter が MCP transport
+# の境界を担う。そのため、このスクリプトはシェルで確かめられる部分だけを実行し、
 # 親エージェントが行う手順は出力として示す。
 set -u
 
@@ -110,24 +110,23 @@ print_procedure() {
   note '  research-3: 代替案'
   note '3 つは依存しないので同時に起動する。役割はいずれも researcher である。'
   note ''
-  note '親は子ごとに mcp__paseo__create_agent を呼ぶ。'
-  note '3 回の呼び出しを 1 つの応答にまとめて並列に起動する。prompt には'
+  note 'create、wait、stop の境界はすべて paseo-mcp-adapter に限定する。'
+  note '親は子ごとに paseo-mcp-adapter create-agent --request を一回だけ呼ぶ。'
+  note '3 回の adapter 呼び出しを 1 つの応答にまとめて並列に起動する。prompt には'
   note '$RUN_DIR/nodes/<node-id>/attempts/<attempt-id>/ へ prompt.md、result.json、'
   note 'state.json、handoff.json、log.md を書くことを含める。'
   note ''
   say "4. 子の実行を観測する"
-  note '次で状態とログを見る。'
-  note '  paseo ls --json                 起動した子の一覧と状態を出す'
-  note '  paseo inspect <agent-id> --json 1 つの子の詳細を出す'
-  note '  paseo logs <agent-id>           1 つの子の活動履歴を出す'
-  note '  paseo wait <agent-id>           1 つの子が idle になるまで待つ'
-  note 'MCP からは mcp__paseo__list_agents、mcp__paseo__get_agent_status、'
-  note 'mcp__paseo__get_agent_activity が同じ情報を返す。'
+  note '親は各 childRef に対して adapter の wait-agent を一回だけ呼ぶ。'
+  note '  paseo-mcp-adapter wait-agent --child-ref <safe-id> --timeout <seconds>'
+  note 'adapter は Paseo の応答を検証し、親へ sanitized response の status だけを返す。'
+  note '親は raw の agent status、詳細、activity、ログを取得しない。'
   note ''
   note '正本は run ディレクトリの以下 2 つである。'
   note '  $RUN_DIR/state.json'
   note '  $RUN_DIR/nodes/<node-id>/attempts/<attempt-id>/state.json'
-  note '子の本文を親の会話へ転記しない。親が読むのは state.json と handoff.json だけである。'
+  note '子の本文を親の会話へ転記しない。親が読むのは adapter の sanitized response と'
+  note 'mode 0600 の state/evidence だけである。state/attempt の設計と handoff は維持する。'
 
   say "5. 親が gate を置く"
   note 'research-1、research-2、research-3 の採用 attempt が 3 件すべてが ok に'
@@ -153,11 +152,11 @@ print_procedure() {
   note '  bash tests/manual/mad-orchestration-smoke.sh --report "$RUN_DIR"'
 
   say "8. 途中で止める"
-  note '実行中の子は次で止める。'
-  note '  paseo stop <agent-id>    実行中の子に割り込む（idle には何もしない）'
-  note '  paseo delete <agent-id>  割り込んでから子を消す'
-  note 'MCP からは mcp__paseo__cancel_agent が割り込み、mcp__paseo__kill_agent が'
-  note '強制終了し、mcp__paseo__archive_agent が一覧から外す。'
+  note '実行中の子は adapter の stop-agent だけで止める。'
+  note '  paseo-mcp-adapter stop-agent --child-ref <safe-id>'
+  note 'adapter は stop response の agent ID が childRef と一致することを検証し、'
+  note '親へ sanitized response の {"status":"stopped"} または {"status":"error"} だけを返す。'
+  note '親は raw の停止 response を保存・転記せず、0600 の state/evidence に結果を記録する。'
   note ''
   note '止めた事実を run state に残す。'
   note '  "state": "stopped"'
@@ -330,8 +329,8 @@ case "$MODE" in
     print_procedure
 
     say "ここから先は親エージェントが行う"
-    note '子の起動は MCP ツールの呼び出しであり、シェルからは叩けない。'
-    note '上の 3 番以降を親エージェントが実行し、終わったら次で結果を確かめる。'
+    note 'child の create、wait、stop は paseo-mcp-adapter 経由で親エージェントが実行する。'
+    note 'raw MCP/CLI の create、wait、stop は親から直接呼ばない。終わったら次で結果を確かめる。'
     printf '  bash tests/manual/mad-orchestration-smoke.sh --report %s\n' "$RUN_DIR" >&2
     exit 0
     ;;

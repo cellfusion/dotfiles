@@ -10,6 +10,8 @@ function fail(message, status = 2) {
   if (process.argv[2] === 'create-agent') {
     const reasonCode = status === 1 ? 'transport_failure' : 'invalid_request'
     process.stdout.write(JSON.stringify({ status: 'error', reasonCode }) + '\n')
+  } else if (process.argv[2] === 'stop-agent' && status === 1) {
+    process.stdout.write(JSON.stringify({ status: 'error' }) + '\n')
   }
   process.stderr.write(`paseo-mcp-adapter: ${message}\n`)
   process.exit(status)
@@ -241,6 +243,30 @@ function waitAgent(childRef, timeout) {
   process.stdout.write(JSON.stringify({ status }) + '\n')
 }
 
+function stopAgent(childRef) {
+  if (!safeId(childRef)) fail('stop arguments are invalid')
+  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+  let contract
+  try { contract = require(path.join(shareDir, 'mad-contract.js')) } catch { fail('Paseo stop contract is unavailable', 1) }
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
+    'stop', childRef, '--json',
+  ], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP stop failed', 1)
+  try {
+    const response = contract.parseJsonWithoutDuplicateKeys(
+      result.stdout || '', 'invalid_mad_stop_response', 'Paseo MCP stop response')
+    // Paseo's stop --json response is {stoppedCount, agentIds}. For one
+    // requested child, require exactly one stopped ID and an exact match.
+    if (!exactKeys(response, ['stoppedCount', 'agentIds']) ||
+        !Number.isInteger(response.stoppedCount) || response.stoppedCount !== 1 ||
+        !opaqueStrings(response.agentIds) || response.agentIds.length !== 1 ||
+        !safeId(response.agentIds[0]) || response.agentIds[0] !== childRef) {
+      throw new Error('invalid response')
+    }
+  } catch { fail('Paseo MCP stop response is invalid', 1) }
+  process.stdout.write(JSON.stringify({ status: 'stopped' }) + '\n')
+}
+
 const args = process.argv.slice(2)
 switch (args[0]) {
   case 'list-providers':
@@ -258,6 +284,10 @@ switch (args[0]) {
   case 'wait-agent':
     if (args.length !== 5 || args[1] !== '--child-ref' || args[3] !== '--timeout') fail('wait-agent arguments are invalid')
     waitAgent(args[2], args[4])
+    break
+  case 'stop-agent':
+    if (args.length !== 3 || args[1] !== '--child-ref') fail('stop-agent arguments are invalid')
+    stopAgent(args[2])
     break
   default:
     fail('command is invalid')

@@ -604,8 +604,15 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
-assert_not_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")" \
+manual_doc="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+assert_not_contains "$manual_doc" \
   'mcp__paseo__create_agent' "create: manual doc は adapter だけを使う"
+assert_contains "$manual_doc" 'stop-agent --child-ref <safe-id>' \
+  "stop: manual doc は adapter stop だけを使う"
+assert_contains "$manual_doc" 'stoppedCount' \
+  "stop: manual doc は Paseo stop response shape を明記する"
+assert_not_contains "$manual_doc" '親が停止するときは同じ ID に `paseo stop' \
+  "stop: manual doc は親の raw stop 直書きを残さない"
 
 export_json="$TMP/resolved-export.json"
 enumeration_json="$TMP/provider-enumeration.json"
@@ -873,6 +880,11 @@ if [ "${1:-}" = "wait" ]; then
   printf '%s\n' "${PASEO_FAKE_WAIT_RESPONSE:-{\"agentId\":\"33333333-3333-4333-8333-333333333333\",\"status\":\"idle\",\"message\":\"private activity history\"}}"
   exit 0
 fi
+if [ "${1:-}" = "stop" ]; then
+  printf '%s\n' "$*" > "$PASEO_FAKE_ARGS"
+  printf '%s\n' "${PASEO_FAKE_STOP_RESPONSE:-{\"stoppedCount\":1,\"agentIds\":[\"33333333-3333-4333-8333-333333333333\"]}}"
+  exit 0
+fi
 exit 2
 EOF
 chmod +x "$FAKE_PASEO"
@@ -1004,6 +1016,41 @@ assert_eq "$(cat "$FAKE_PASEO_ARGS")" \
   'wait 33333333-3333-4333-8333-333333333333 --timeout 30 --json' \
   "adapter: paseo wait の CLI 契約を使う"
 assert_not_contains "$adapter_wait" 'private activity history' "adapter: raw wait response を返さない"
+adapter_stop="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+  stop-agent --child-ref 33333333-3333-4333-8333-333333333333)"
+assert_eq "$?" "0" "adapter: stop-agent は検証済み stop response を受理する"
+assert_eq "$adapter_stop" '{"status":"stopped"}' "adapter: stop response を status だけに縮約する"
+assert_eq "$(cat "$FAKE_PASEO_ARGS")" \
+  'stop 33333333-3333-4333-8333-333333333333 --json' \
+  "adapter: paseo stop の CLI 契約を使う"
+assert_not_contains "$adapter_stop" 'agentIds' "adapter: raw stop response を返さない"
+for invalid_stop_id in \
+  '' \
+  '../33333333-3333-4333-8333-333333333333' \
+  '/private/tmp/agent' \
+  '--all' \
+  'has whitespace'; do
+  invalid_stop_out="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+    stop-agent --child-ref "$invalid_stop_id" 2>/dev/null)"
+  assert_eq "$?" "2" "adapter: 不正な stop childRef を拒否する"
+  assert_eq "$invalid_stop_out" "" "adapter: 不正な stop childRef は response を返さない"
+done
+for invalid_stop_response in \
+  '{}' \
+  '{"stoppedCount":0,"agentIds":[]}' \
+  '{"stoppedCount":1,"agentIds":["other-agent"]}' \
+  '{"stoppedCount":1,"agentIds":["33333333-3333-4333-8333-333333333333"],"extra":true}' \
+  '{"stoppedCount":1,"agentIds":["33333333-3333-4333-8333-333333333333","33333333-3333-4333-8333-333333333333"]}' \
+  '{"stoppedCount":1,"agentIds":["33333333-3333-4333-8333-333333333333"],"stoppedCount":2}'; do
+  invalid_stop_out="$(PASEO_FAKE_STOP_RESPONSE="$invalid_stop_response" PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
+    stop-agent --child-ref 33333333-3333-4333-8333-333333333333 2>/dev/null)"
+  assert_eq "$?" "1" "adapter: 不正な stop response を拒否する"
+  assert_eq "$invalid_stop_out" '{"status":"error"}' "adapter: 不正な stop response は sanitized error だけを返す"
+  assert_not_contains "$invalid_stop_out" 'other-agent' "adapter: 不正な stop response の raw 値を漏らさない"
+done
 for invalid_wait_response in \
   '{"status":"idle"}' \
   '{"status":"unknown"}' \

@@ -31,6 +31,14 @@ assert_contains "$mad_source" "chmod 700" "mad smoke: run directory を 0700 に
 assert_contains "$mad_source" "chmod 600" "mad smoke: state artifact を 0600 に固定する"
 assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR\"" "mad smoke: run directory の mode を検証する"
 assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR/state.json\"" "mad smoke: state artifact の mode を検証する"
+for forbidden in \
+  "mcp__paseo__create_agent" \
+  "paseo inspect" \
+  "paseo logs" \
+  "paseo wait" \
+  "paseo stop"; do
+  assert_not_contains "$mad_source" "$forbidden" "mad smoke: source に直接経路 $forbidden を残さない"
+done
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +55,11 @@ mad="$(bash "$mad_smoke" --dry-run 2>&1)"
 assert_contains "$mad" "manual-orchestration-validate --select-backend" \
   "mad smoke: backend selector を叩く"
 assert_contains "$mad" "paseo-mcp" "mad smoke: Paseo MCP を優先する"
-assert_contains "$mad" "mcp__paseo__create_agent" "mad smoke: Paseo MCP での起動方法を出す"
+assert_contains "$mad" "paseo-mcp-adapter create-agent" "mad smoke: adapter で起動する"
+assert_contains "$mad" "create、wait、stop の境界はすべて paseo-mcp-adapter に限定する" \
+  "mad smoke: create/wait/stop の唯一経路を示す"
+assert_not_contains "$mad" "mcp__paseo__create_agent" \
+  "mad smoke: 親から直接 create MCP を呼ばない"
 assert_contains "$mad" "自動で切り替えない" "mad smoke: 実行開始後に backend を替えない"
 assert_not_contains "$mad" "herdr" "mad smoke: Herdr を backend にしない"
 
@@ -69,14 +81,19 @@ assert_contains "$mad" "synthesis" "mad smoke: 統合 node を作る"
 assert_contains "$mad" "artifact_paths" "mad smoke: 統合役へ絶対パスだけを渡す"
 
 # --- 観測方法 ---
-assert_contains "$mad" "paseo ls" "mad smoke: 実行中の子の一覧方法を出す"
-assert_contains "$mad" "paseo logs" "mad smoke: 子のログの見方を出す"
-assert_contains "$mad" "mcp__paseo__get_agent_status" "mad smoke: MCP での状態確認方法を出す"
+assert_contains "$mad" "paseo-mcp-adapter wait-agent" "mad smoke: adapter で完了を待つ"
+assert_not_contains "$mad" "paseo inspect" "mad smoke: raw inspect を呼ばない"
+assert_not_contains "$mad" "paseo logs" "mad smoke: raw logs を呼ばない"
+assert_not_contains "$mad" "paseo wait" "mad smoke: raw wait を呼ばない"
+assert_not_contains "$mad" "mcp__paseo__get_agent_status" "mad smoke: 親から直接 status MCP を呼ばない"
 assert_contains "$mad" "attempts/" "mad smoke: attempt の記録場所を出す"
+assert_contains "$mad" "sanitized response" "mad smoke: adapter response を縮約して読む"
+assert_contains "$mad" "0600 の state/evidence" "mad smoke: state/evidence だけを読む"
 
 # --- 停止方法 ---
-assert_contains "$mad" "paseo stop" "mad smoke: 実行中の子の止め方を出す"
-assert_contains "$mad" "mcp__paseo__cancel_agent" "mad smoke: MCP での止め方を出す"
+assert_contains "$mad" "paseo-mcp-adapter stop-agent" "mad smoke: adapter で実行中の子を止める"
+assert_not_contains "$mad" "paseo stop" "mad smoke: raw stop を呼ばない"
+assert_not_contains "$mad" "mcp__paseo__cancel_agent" "mad smoke: 親から直接 cancel MCP を呼ばない"
 assert_contains "$mad" '"state": "stopped"' "mad smoke: 停止を run state に残す"
 
 # --- 実行結果として出す情報 ---
