@@ -6,7 +6,9 @@ set -u
 FIXTURES="${PASEO_LEGACY_FIXTURES:-$CHEZMOI_SOURCE/tests/fixtures/agent-config}"
 LEGACY="$FIXTURES/legacy"
 MANIFEST="${1:-$CHEZMOI_SOURCE/private_dot_config/docs/paseo-agent-config-removal-manifest.md}"
+MANIFEST_ONLY=0
 if [ "${1:-}" = "--manifest-only" ]; then
+  MANIFEST_ONLY=1
   MANIFEST="${2:-}"
 fi
 
@@ -17,7 +19,8 @@ delete_rows=""
 keep_rows=""
 fixtures_ready=1
 for fixture in required-delete-leaves.txt required-delete-paths.txt \
-    required-keep-paths.txt retained-roles.txt chezmoiremove-required-paths.txt; do
+    required-keep-paths.txt retained-roles.txt chezmoiremove-required-paths.txt \
+    absence-patterns.txt; do
   fixture_path="$LEGACY/$fixture"
   fixture_status="$(test -f "$fixture_path" && test ! -L "$fixture_path" &&
     test -r "$fixture_path" && echo yes || echo no)"
@@ -49,30 +52,6 @@ if [ -f "$MANIFEST" ]; then
   assert_eq "$(printf '%s\n' "$delete_rows" | grep -c .)" "102" "manifest: Delete 行は 102 件"
   assert_eq "$(printf '%s\n' "$keep_rows" | grep -c .)" "61" "manifest: Keep 行は 61 件"
 
-  for rows in delete keep; do
-    case "$rows" in delete) selected="$delete_rows" ;; keep) selected="$keep_rows" ;; esac
-    missing_leaf=""
-    while IFS='|' read -r _ source_path _ _; do
-      path_value="$(printf '%s' "$source_path" | sed 's/^ *//; s/ *$//')"
-      [ -n "$path_value" ] || continue
-      if [ ! -f "$CHEZMOI_SOURCE/$path_value" ]; then
-        missing_leaf="$missing_leaf$path_value "
-      fi
-    done <<EOF
-$selected
-EOF
-    assert_eq "$missing_leaf" "" "manifest: $rows 行の source path がすべて実在する leaf"
-  done
-
-  missing=""
-  while IFS='|' read -r _ source_path _ _; do
-    path_value="$(printf '%s' "$source_path" | sed 's/^ *//; s/ *$//')"
-    [ -n "$path_value" ] || continue
-    test -e "$CHEZMOI_SOURCE/$path_value" || missing="$missing$path_value "
-  done <<EOF
-$delete_rows
-EOF
-  assert_eq "$missing" "" "manifest: Delete 行の source path がすべて実在する"
 fi
 
 if [ "$fixtures_ready" -eq 1 ]; then
@@ -83,14 +62,10 @@ done < "$LEGACY/required-delete-leaves.txt"
 while read -r source_path; do
   [ -n "$source_path" ] || continue
   assert_contains "$delete_rows" "| $source_path | Delete |" "manifest: $source_path を Delete にする"
-  assert_eq "$(test -e "$CHEZMOI_SOURCE/$source_path" && echo yes || echo no)" "yes" \
-    "manifest: $source_path は現在の作業ツリーに実在する"
 done < "$LEGACY/required-delete-paths.txt"
 while read -r keep_path; do
   [ -n "$keep_path" ] || continue
   assert_contains "$keep_rows" "| $keep_path | Keep |" "manifest: $keep_path を Keep にする"
-  assert_eq "$(test -e "$CHEZMOI_SOURCE/$keep_path" && echo yes || echo no)" "yes" \
-    "manifest: $keep_path は現在の作業ツリーに実在する"
 done < "$LEGACY/required-keep-paths.txt"
 while read -r role; do
   [ -n "$role" ] || continue
@@ -137,7 +112,8 @@ if [ "${PASEO_LEGACY_SELF_TEST:-0}" -eq 0 ] && [ -f "$MANIFEST" ]; then
   fixture_copy="$TMP/fixture-copy"
   mkdir -p "$fixture_copy/legacy"
   for fixture in required-delete-leaves.txt required-delete-paths.txt \
-      required-keep-paths.txt retained-roles.txt chezmoiremove-required-paths.txt; do
+      required-keep-paths.txt retained-roles.txt chezmoiremove-required-paths.txt \
+      absence-patterns.txt; do
     cp "$LEGACY/$fixture" "$fixture_copy/legacy/$fixture"
   done
   rm "$fixture_copy/legacy/required-keep-paths.txt"
@@ -148,6 +124,62 @@ if [ "${PASEO_LEGACY_SELF_TEST:-0}" -eq 0 ] && [ -f "$MANIFEST" ]; then
   assert_contains "$fixture_output" "regular file" \
     "fixtures: 欠落 fixture の失敗理由を示す"
 fi
+fi
+
+if [ "$MANIFEST_ONLY" -eq 0 ] && [ "$fixtures_ready" -eq 1 ]; then
+  managed="$(chezmoi managed --source "$CHEZMOI_SOURCE" --include=files,symlinks)"
+  while read -r leaf; do
+    [ -n "$leaf" ] || continue
+    assert_not_contains "$managed" "${leaf#executable_}" "distribution: ${leaf#executable_} を配らない"
+  done < "$LEGACY/required-delete-leaves.txt"
+  for kept in "multi-agent-development/scripts/paseo-mcp-adapter" \
+    "multi-agent-development/scripts/paseo-plan-dependency-validate" \
+    "agent-defs/prompts/task-reviewer.md" "agent-defs/schemas/final-reviewer.json" \
+    ".local/share/agent-config/mad-contract.js"; do
+    assert_contains "$managed" "$kept" "distribution: $kept を配る"
+  done
+
+  EXCLUDES=(':!tests/fixtures/agent-config'
+    ':!private_dot_config/docs/paseo-agent-config-removal-manifest.md'
+    ':!.chezmoiremove'
+    ':!tests/test-paseo-legacy-removal.sh')
+  legacy_pattern="$(tr '\n' '|' < "$LEGACY/absence-patterns.txt" | sed 's/|$//')"
+  matches="$(cd "$CHEZMOI_SOURCE" && git grep -nEi "$legacy_pattern" -- "${EXCLUDES[@]}" || true)"
+  assert_eq "$matches" "" "source: native と direct と SDD の参照が残らない"
+
+  FAST_EXCLUDES=("${EXCLUDES[@]}"
+    ':!private_dot_local/private_share/agent-config/resolver.js'
+    ':!tests/test-generate-paseo-config.sh'
+    ':!private_dot_config/docs/tools.md')
+  fast_matches="$(cd "$CHEZMOI_SOURCE" && git grep -nE '\bfast\b' -- "${FAST_EXCLUDES[@]}" || true)"
+  assert_eq "$fast_matches" "" "source: fast は互換入力のコードと test と docs にしか残らない"
+
+  present=""
+  while IFS='|' read -r _ source_path _ _; do
+    path_value="$(printf '%s' "$source_path" | sed 's/^ *//; s/ *$//')"
+    [ -n "$path_value" ] || continue
+    test ! -e "$CHEZMOI_SOURCE/$path_value" || present="$present$path_value "
+  done <<EOF
+$delete_rows
+EOF
+  assert_eq "$present" "" "removal: Delete 行の source path がすべて不在である"
+
+  removed="$(cat "$CHEZMOI_SOURCE/.chezmoiremove")"
+  while read -r destination; do
+    [ -n "$destination" ] || continue
+    assert_contains "$removed" "$destination" "chezmoiremove: $destination を回収する"
+  done < "$LEGACY/chezmoiremove-required-paths.txt"
+  assert_not_contains "$removed" '.paseo' "chezmoiremove: Paseo の root を入れない"
+
+  plan_validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
+  node "$plan_validate" "/Users/cellfusion/docs/cellfusion/dotfiles/plans/2026-09-12-paseo-agent-config.md"
+  assert_eq "$?" "0" "plan validator: 削除後もこの plan を検証できる"
+  assert_contains "$(cat "$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh")" \
+    'generate-paseo-config resolve' "smoke: exporter の launch を使う"
+  assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_workflow-table.md")" \
+    'multi-agent-development' "workflow table: MAD を指す"
+  hook_source="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/hooks/executable_dev-workflow-inject.sh")"
+  assert_eq "$(printf '%s' "$hook_source" | grep -cEi "$legacy_pattern" || true)" "0" "hook: 旧 skill を指さない"
 fi
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

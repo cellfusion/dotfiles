@@ -33,7 +33,7 @@
 # [機能名] 実装プラン
 
 > **実装エージェント向け**: このプランは自作スキルで実行する。
-> subagent-driven-development（推奨）または executing-plans を使ってタスク単位で進める。
+> multi-agent-development（推奨）または executing-plans を使ってタスク単位で進める。
 > ステップはチェックボックス（`- [ ]`）で追跡する。
 
 **ゴール**: [何を作るかを 1 文で]
@@ -114,7 +114,7 @@ git commit -m "feat: add specific feature"
 
 `Depends on` を書かないタスクは、それより前の全タスク全部に依存するものとして扱われる（＝直列）。安全側には倒れるが、並行の余地は失われる。
 
-波の計算と検証は `~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` が行う。循環、存在しないタスク参照、同じ波でのファイル重複を検出する。
+依存の検証は `~/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate PLAN_FILE` が行う。循環、存在しないタスク参照、同じ wave でのファイル重複を検出する。
 
 ### placeholder を書かない
 
@@ -135,6 +135,6 @@ git commit -m "feat: add specific feature"
 2. **placeholder 走査** — 上の「placeholder を書かない」に挙げたパターンを探して直す
 3. **型の整合** — 後のタスクで使った型・シグネチャ・プロパティ名が、前のタスクで定義したものと一致するか。Task 3 で `clearLayers()`、Task 7 で `clearFullLayers()` になっていればバグ
 
-4. **依存の整合** — `~/.agents/skills/subagent-driven-development/scripts/task-waves PLAN_FILE` を実行する。エラーが出たら直す。あわせて、Consumes に他タスクの Produces が出てくるのに Depends on に書いていないタスクが無いかを目視で確かめる
+4. **依存の整合** — `~/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate PLAN_FILE` を実行する。エラーが出たら直す。あわせて、Consumes に他タスクの Produces が出てくるのに Depends on に書いていないタスクが無いかを目視で確かめる
 
 見つけたその場で直す。再レビューは不要。タスクの無い spec 要件が見つかったらタスクを足す。

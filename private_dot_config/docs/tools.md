@@ -281,27 +281,23 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
 
-`multi-agent-development` スキルの backend は Paseo MCP と native subagent の 2 つである。
-親エージェントは run の開始時に Paseo MCP へ届くかを確かめ、届くときは Paseo MCP で子を
-起動する。届かないときだけ native subagent へ fallback する。開始済みの子が失敗しても
-別 backend へ自動で切り替えない。
+`multi-agent-development` の backend は Paseo MCP だけである。Paseo MCP が利用できないときは
+run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
 Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
 `paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
 出し、`paseo wait <agent-id>` が idle になるまで待つ。止めるときは `paseo stop <agent-id>`
 が実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
-native subagent で起動した子は Paseo の一覧に現れないので、親は run ディレクトリの
-`state.json` だけで状態を判断する。
 
-`~/.agents/skills/subagent-driven-development/scripts/` のうち、MAD の `implement` recipe で
-親が呼ぶのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package` である。
-`run-registry` と `agent-backend` は、親が起動した子が呼ぶ。どのスクリプトを誰が呼ぶかと、
-実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+実行は `paseo-mcp-adapter` の `list-providers`、provider ごとの `list-models`、0600 の
+availability snapshot、`generate-paseo-config resolve`、0600 の create request、Paseo MCP の
+create の順に進める。各 JSON 成果物は run の attempt directory にだけ置く。snapshot と launch と
+create request が検証できない場合、create を呼ばない。
 
-`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。worktree を作るのは親であり、
-波の進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を
-headless で回すときの入口であり、`implement` の子は使わない。この 3 つと Workflow の定義は、
-MAD を通さない経路のために残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
+`--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
+実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
+snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
+はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。
 
 `implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
 直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では

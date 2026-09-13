@@ -3,7 +3,7 @@ set -u
 . "$(dirname "$0")/lib/assert.sh"
 
 table="$(render_template "agent-skills/_workflow-table.md" "codex")"
-for skill in brainstorming systematic-debugging subagent-driven-development \
+for skill in brainstorming systematic-debugging multi-agent-development \
              finishing-a-development-branch verification-before-completion \
              receiving-code-review; do
   assert_contains "$table" "$skill" "起動表に $skill がある"

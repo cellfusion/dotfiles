@@ -4,9 +4,9 @@
 
 | 依頼 | 最初に起動するスキル |
 |---|---|
-| 新機能・変更・「作りたい」「追加したい」 | `brainstorming` → `writing-plans` → `subagent-driven-development` |
+| 新機能・変更・「作りたい」「追加したい」 | `brainstorming` → `writing-plans` → `multi-agent-development` |
 | バグ・不具合・「動かない」「直らない」 | `systematic-debugging` |
-| 実装プランが既にある | `subagent-driven-development`（実装が小さく MAD が要らないときだけ `executing-plans`） |
+| 実装プランが既にある | `multi-agent-development`（実装が小さく MAD が要らないときだけ `executing-plans`） |
 | 実装が終わった・マージしたい | `finishing-a-development-branch` |
 | 完了・テスト通過を主張する直前 | `verification-before-completion` |
 | コードレビューの指摘を受け取った | `receiving-code-review` |

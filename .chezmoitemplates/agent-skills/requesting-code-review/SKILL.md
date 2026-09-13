@@ -9,9 +9,8 @@ description: >-
 
 # コードレビューを依頼する
 
-レビュアー subagent を dispatch するか、SDD の外なら MAD の `review` recipe を使って、問題が
-波及する前に捕まえる。どちらの経路でも、レビュー側には**評価のために精密に組み立てた文脈**を
-渡す。あなたのセッション履歴は渡さない。
+MAD の `review` recipe を使って、問題が波及する前に捕まえる。レビュー側には**評価のために
+精密に組み立てた文脈**を渡す。あなたのセッション履歴は渡さない。
 
 **中核**: 早く、こまめにレビューする。
 
@@ -19,7 +18,7 @@ description: >-
 
 **必須**:
 
-- subagent-driven-development の各タスクの後（そちらのスキルが自動で行う）
+- multi-agent-development の各 task の後
 - 大きめの機能を完了した後
 - main へ merge する前
 
@@ -33,18 +32,14 @@ description: >-
 
 **1. diff をファイルにまとめる**
 
-レビュアーの context に diff を 1 回の Read で載せる。SDD の中では従来経路を維持し、SDD の
-workspace のスクリプトを使う。
-
-`~/.agents/skills/subagent-driven-development/scripts/review-package PLAN_FILE BASE HEAD OUTFILE`
-が使えるならそれを使う。使えない環境では下の手順で同じ形の package を作る。
+レビュアーの context に diff を 1 回の Read で載せる。review package は次の手順で作る。
 
 ```bash
 BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-SDD の外で単発に依頼する場合は、`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。
+`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。
 
 ```bash
 REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
@@ -60,7 +55,6 @@ echo "$OUT"
 
 **2. レビューを依頼する**
 
-SDD の中では `sdd-final-reviewer` を [dispatch-subagent] する。SDD の外で単発に依頼する場合は
 MAD の `review` recipe を使う。呼び方は `multi-agent-development` スキルが持つ。
 
 どちらの経路でも、渡すのは次の 4 つだけである。セッション履歴を渡さない。

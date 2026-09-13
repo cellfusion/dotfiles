@@ -251,10 +251,6 @@ fi
 out="$(MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=0 bash "$MAD_RUNNER" --select-backend 2>&1)"
 assert_eq "$?" "1" "backend: MCP が無ければ Paseo-only run を開始しない"
 assert_contains "$out" 'paseo-mcp' "backend: 必要な backend を述べる"
-runner_source="$(cat "$MAD_RUNNER")"
-for legacy in claude-headless codex-headless --resolve-candidates --check-usage; do
-  assert_not_contains "$runner_source" "$legacy" "backend: $legacy の経路を持たない"
-done
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_eq "$(test -f "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/$role.md" && echo yes || echo no)" "yes" \
@@ -266,25 +262,6 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
   node "$GENERATOR" --input "$VALID" resolve --project "$NON_GIT_DIR" --role "$role" \
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
-done
-manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/manifests.json" . }}')"
-routing="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/routing.json" . }}')"
-paseo_routing="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" '{{ includeTemplate "agent-defs/paseo-routing.json" . }}')"
-for role in implementer task-reviewer re-reviewer final-reviewer; do
-  assert_eq "$(printf '%s' "$manifest" | jq -r --arg role "$role" 'has($role)')" "true" \
-    "role map: manifest に $role がある"
-  assert_eq "$(printf '%s' "$routing" | jq -r --arg role "$role" 'has($role)')" "true" \
-    "role map: routing に $role がある"
-  assert_eq "$(printf '%s' "$paseo_routing" | jq -r --arg role "$role" 'has($role)')" "true" \
-    "role map: Paseo routing に $role がある"
-done
-for legacy_role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
-  assert_eq "$(printf '%s' "$manifest" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
-    "role map: manifest に旧 role $legacy_role がない"
-  assert_eq "$(printf '%s' "$routing" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
-    "role map: routing に旧 role $legacy_role がない"
-  assert_eq "$(printf '%s' "$paseo_routing" | jq -r --arg role "$legacy_role" 'has($role)')" "false" \
-    "role map: Paseo routing に旧 role $legacy_role がない"
 done
 assert_not_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")" \
   'mcp__paseo__create_agent' "create: manual doc は adapter だけを使う"
@@ -388,7 +365,6 @@ fail_case() {
     "failure $stage 0 $expected_state" "MAD 失敗 $stage: 終端 event が no-call を記録する"
   assert_eq "$(test -e "$dir/create-request.json" && echo yes || echo no)" "no" "MAD 失敗 $stage: request を作らない"
   assert_eq "$(jq -r '.state' "$dir/state.json")" "$expected_state" "MAD 失敗 $stage: state は $expected_state"
-  assert_not_contains "$(cat "$dir/call-log.json")" 'claude-headless' "MAD 失敗 $stage: native へ落ちない"
 }
 fail_case discovery "$MAD_FIXTURES/adapter/fake-discovery-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
 fail_case list_models "$MAD_FIXTURES/adapter/fake-list-models-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user

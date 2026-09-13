@@ -44,13 +44,10 @@ assert_contains "$managed" ".config/git/ignore" "global gitignore を配る"
 assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/git/ignore")" "_cellfusion/" \
   "global gitignore が _cellfusion/ を無視する"
 
-# SDD のスクリプトは ~/.agents/skills 側にだけ配られる。
-for s in review-package sdd-workspace task-brief task-waves \
-         task-worktree run-registry agent-backend sdd-run sdd-task; do
-  assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/$s" \
-    "スクリプトを共有パスへ配る: $s"
-  assert_not_contains "$managed" ".config/claude/skills/subagent-driven-development/scripts/$s" \
-    "旧パスへは配らない: $s"
+# MAD の Paseo-only adapter と plan validator を配る。
+for s in paseo-mcp-adapter paseo-plan-dependency-validate; do
+  assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
+    "MAD: $s を共有パスへ配る"
 done
 
 # SKILL.md は 3 ツールすべてに配られる。
@@ -66,8 +63,6 @@ done
 # codex の設定は実運用の CODEX_HOME（~/.config/codex）へ配る。
 assert_contains "$managed" ".config/codex/AGENTS.md" \
   "codex: AGENTS.md を ~/.config/codex へ配る"
-assert_contains "$managed" ".config/codex/agents/sdd-implementer.toml" \
-  "codex: agent 定義を ~/.config/codex へ配る"
 assert_contains "$managed" ".config/codex/config.toml" \
   "codex: config.toml を ~/.config/codex へ配る"
 
@@ -120,32 +115,7 @@ done
 assert_eq "$(printf '%s\n' "$managed" | grep -c run_onchange)" "0" \
   "run_onchange スクリプトをホームへ配らない"
 
-# 実行時アセットは ~/.agents/agent-defs/ にだけ配る。
-for f in routing.json tiers.json manifests.json; do
-  assert_contains "$managed" ".agents/agent-defs/$f" \
-    "agent-defs: $f を ~/.agents へ配る"
-done
-
-# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP が
-# prompt/schema と artifact contract の唯一の dispatch 経路であることを保証する。
-delivery_manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/manifests.json" . }}')"
-for role in implementer task-reviewer re-reviewer final-reviewer; do
-  assert_eq "$(printf '%s' "$delivery_manifest" | jq -r --arg role "$role" 'has($role)')" "true" \
-    "MAD manifest: $role がある"
-done
-for role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
-  assert_eq "$(printf '%s' "$delivery_manifest" | jq -r --arg role "$role" 'has($role)')" "false" \
-    "MAD manifest: 旧 role $role がない"
-done
-for a in $(printf '%s' "$delivery_manifest" | jq -r \
-  'to_entries[] | select(.value.delivery_duties | length > 0) | .key'); do
-  assert_contains "$managed" ".agents/agent-defs/prompts/$a.md" \
-    "MAD delivery: prompts/$a.md を ~/.agents へ配る"
-  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
-    "MAD delivery: schemas/$a.json を ~/.agents へ配る"
-done
-
+# MAD の現行 role は prompt と schema を一緒に ~/.agents へ配る。
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
     "MAD role: prompts/$role.md を ~/.agents へ配る"
@@ -156,7 +126,7 @@ done
 mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
 mad_manual="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
 for forbidden in paseo-routing.json paseo-providers.json paseo-project-routing.json manifests.json \
-  --resolve-candidates --check-usage subagent-driven-development; do
+  --resolve-candidates --check-usage; do
   assert_not_contains "$mad_skill$mad_manual" "$forbidden" \
     "MAD docs: legacy routing reference $forbidden がない"
 done
@@ -168,40 +138,11 @@ assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \
 assert_contains "$managed" ".agents/agent-defs/schemas/review-synthesizer.json" \
   "MAD delivery: review-synthesizer schema を ~/.agents へ配る"
 
-# 配る routing.json はテンプレートと同じ内容になる。
-rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/routing.json" . }}')"
-assert_contains "$rendered" '"implementer"' "routing: implementer の項がある"
-assert_contains "$rendered" '"engine": "codex"' "routing: 既定で codex を使う役割がある"
-for role in sdd-implementer sdd-implementer-think sdd-task-reviewer sdd-re-reviewer sdd-final-reviewer; do
-  assert_not_contains "$rendered" "\"$role\"" "routing: 旧 role $role がない"
-done
-
-# routing の engine は claude と codex だけ。
-assert_not_contains "$rendered" "opencode" "routing: opencode は対象外"
-
-# routing の役割は manifests の役割と一致する。
-keys='const d="";let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(Object.keys(JSON.parse(s)).sort().join(" ")))'
-roles_r="$(printf '%s' "$rendered" | node -e "$keys")"
-roles_m="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/manifests.json" . }}' | node -e "$keys")"
-assert_eq "$roles_r" "$roles_m" "routing: 役割の集合が manifests と一致する"
-
-assert_contains "$managed" ".agents/skills/_shared/scripts/agent-route" \
-  "agent-route を共有パスへ配る"
-
-assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/sdd-task" \
-  "sdd-task を共有パスへ配る"
-
 # agent 専用の worktrunk config を配る。人の config とは別ファイルである。
 assert_contains "$managed" ".config/worktrunk/agent.toml" "worktrunk: agent 専用 config を配る"
 assert_contains "$managed" ".config/worktrunk/config.toml" "worktrunk: 人用 config も配る"
 
-# herdr-dispatch は畳んだ。配布先にも残さない。
-assert_not_contains "$managed_files" "subagent-driven-development/scripts/herdr-dispatch" \
-  "herdr-dispatch を配らない"
-
-for s in agent-route agent-docs-dir json-schema; do
+for s in agent-docs-dir json-schema; do
   assert_contains "$managed" ".agents/skills/_shared/scripts/$s" \
     "_shared のスクリプトを配る: $s"
 done
