@@ -338,6 +338,16 @@ set -u
 if [ "${1:-}" = "provider" ] && [ "${2:-}" = "ls" ]; then
   if [ "${PASEO_FAKE_REAL_PROVIDER_SHAPE_CAPITALIZED:-0}" = "1" ]; then
     printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":"Plan Mode, Always Ask, Accept File Edits, Auto mode, Bypass"},{"provider":"codex-lab","status":"unavailable","enabled":"Disabled","label":"Codex Lab","defaultMode":"none","modes":""}]'
+  elif [ "${PASEO_FAKE_REAL_CODEX_MODE_LABELS:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"claude","status":"available","enabled":"Enabled","label":"Claude","defaultMode":"auto","modes":"Plan Mode, Always Ask, Accept File Edits, Auto mode, Bypass"},{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":"Default Permissions, Auto-review, Full Access"}]'
+  elif [ "${PASEO_FAKE_REAL_CODEX_UNKNOWN_MODE:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":"Default Permissions, Unknown Mode, Full Access"}]'
+  elif [ "${PASEO_FAKE_REAL_CODEX_MISSING_MODES:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto"}]'
+  elif [ "${PASEO_FAKE_REAL_CODEX_DUPLICATE_MODE:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":"Default Permissions, Default Permissions"}]'
+  elif [ "${PASEO_FAKE_REAL_CODEX_BAD_MODE_TYPE:-0}" = "1" ]; then
+    printf '%s\n' '[{"provider":"codex","status":"available","enabled":"Enabled","label":"Codex","defaultMode":"auto","modes":["Default Permissions"]}]'
   elif [ "${PASEO_FAKE_REAL_UNKNOWN_ENABLED:-0}" = "1" ]; then
     printf '%s\n' '[{"provider":"codex","status":"available","enabled":"unknown","label":"Codex","defaultMode":"auto","modes":"Auto mode"}]'
   elif [ "${PASEO_FAKE_REAL_EMPTY_ENABLED:-0}" = "1" ]; then
@@ -402,6 +412,24 @@ assert_eq "$?" "0" "adapter: 実 CLI の Enabled/Disabled shape を受理する"
 assert_eq "$(printf '%s' "$capitalized_real_shape_providers" | jq -c '.providers')" \
   '[{"id":"codex","available":true,"modeIds":["plan","default","acceptEdits","auto","bypassPermissions"]},{"id":"codex-lab","available":false,"modeIds":[]}]' \
   "adapter: Enabled/Disabled を eligibility に正規化する"
+codex_mode_label_providers="$(PASEO_FAKE_REAL_CODEX_MODE_LABELS=1 PASEO_CLI="$FAKE_PASEO" \
+  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers)"
+assert_eq "$?" "0" "adapter: Codex の実 CLI mode labels を受理する"
+assert_eq "$(printf '%s' "$codex_mode_label_providers" | jq -c '.providers')" \
+  '[{"id":"claude","available":true,"modeIds":["plan","default","acceptEdits","auto","bypassPermissions"]},{"id":"codex","available":true,"modeIds":["auto","auto-review","full-access"]}]' \
+  "adapter: Claude と Codex の mode labels を共存して正規化する"
+for invalid_codex_mode in UNKNOWN_MODE MISSING_MODES DUPLICATE_MODE BAD_MODE_TYPE; do
+  case "$invalid_codex_mode" in
+    UNKNOWN_MODE) env_name=PASEO_FAKE_REAL_CODEX_UNKNOWN_MODE ;;
+    MISSING_MODES) env_name=PASEO_FAKE_REAL_CODEX_MISSING_MODES ;;
+    DUPLICATE_MODE) env_name=PASEO_FAKE_REAL_CODEX_DUPLICATE_MODE ;;
+    BAD_MODE_TYPE) env_name=PASEO_FAKE_REAL_CODEX_BAD_MODE_TYPE ;;
+  esac
+  env "$env_name=1" PASEO_CLI="$FAKE_PASEO" \
+    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-providers \
+    >/dev/null 2>&1
+  assert_eq "$?" "1" "adapter: Codex mode labels の $invalid_codex_mode を discovery failure にする"
+done
 for invalid_enabled in UNKNOWN_ENABLED EMPTY_ENABLED BAD_ENABLED_TYPE; do
   case "$invalid_enabled" in
     UNKNOWN_ENABLED) env_name=PASEO_FAKE_REAL_UNKNOWN_ENABLED ;;

@@ -35,6 +35,9 @@ const MODE_LABEL_TO_ID = Object.freeze({
   'Accept File Edits': 'acceptEdits',
   'Auto mode': 'auto',
   'Bypass': 'bypassPermissions',
+  'Default Permissions': 'auto',
+  'Auto-review': 'auto-review',
+  'Full Access': 'full-access',
 })
 
 function modeIdsFromLabels(value) {
