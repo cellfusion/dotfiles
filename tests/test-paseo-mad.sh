@@ -18,6 +18,129 @@ umask 077
 
 REPRESENTATIVE="$CHEZMOI_SOURCE/tests/manual/mad-representative-run.sh"
 FIXTURE_EVIDENCE="$FIXTURES/mad/representative-ok"
+
+# Unit 3 の clean apply は通常の配布検査から独立した明示承認の経路である。未承認時は
+# chezmoi 自体を起動せず、decision request だけを残す。
+DISTRIBUTION="$CHEZMOI_SOURCE/tests/test-distribution.sh"
+CLEAN_PLAN="$MAD_FIXTURES/plans/valid-plan.md"
+CLEAN_BIN="$TMP/clean-bin"
+mkdir -p "$CLEAN_BIN"
+cat > "$CLEAN_BIN/chezmoi" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PASEO_CHEZMOI_LOG"
+exit "${PASEO_CHEZMOI_STATUS:-0}"
+EOF
+chmod 700 "$CLEAN_BIN/chezmoi"
+
+CLEAN_EVIDENCE="$TMP/clean-evidence"
+CLEAN_REQUEST="$TMP/clean-decision-request.md"
+CLEAN_LOG="$TMP/clean-chezmoi.log"
+env -u PASEO_CLEAN_APPLY_APPROVED \
+  PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_LOG" \
+  PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_EVIDENCE" DECISION_REQUEST_PATH="$CLEAN_REQUEST" \
+  bash "$DISTRIBUTION" --clean-apply --plan "$CLEAN_PLAN" >/dev/null 2>&1
+clean_status=$?
+assert_eq "$([ "$clean_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "clean apply: 未承認なら非ゼロで停止する"
+assert_eq "$(test -f "$CLEAN_REQUEST" && echo yes || echo no)" "yes" \
+  "clean apply: 未承認なら decision request を書く"
+assert_eq "$(test -e "$CLEAN_EVIDENCE/clean-apply-result.txt" && echo yes || echo no)" "no" \
+  "clean apply: 未承認なら success evidence を書かない"
+assert_eq "$(test -f "$CLEAN_LOG" && cat "$CLEAN_LOG" || true)" "" \
+  "clean apply: 未承認なら chezmoi を一度も起動しない"
+
+# 通常の distribution test は clean apply mode へ入らず、chezmoi apply を呼ばない。
+: > "$CLEAN_LOG"
+PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_LOG" bash "$DISTRIBUTION" >/dev/null 2>&1 || true
+assert_eq "$(grep -c '^apply\b' "$CLEAN_LOG" || true)" "0" \
+  "distribution: no-arg は chezmoi apply を呼ばない"
+
+# 承認済みの apply は外側から承認変数を渡したときだけ実行する。test 自身は承認しない。
+if [ "${PASEO_CLEAN_APPLY_APPROVED:-0}" = 1 ]; then
+  CLEAN_FAILED_EVIDENCE="$TMP/clean-failed-evidence"
+  CLEAN_FAILED_LOG="$TMP/clean-failed-chezmoi.log"
+  PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_FAILED_LOG" PASEO_CHEZMOI_STATUS=7 \
+    PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_FAILED_EVIDENCE" \
+    bash "$DISTRIBUTION" --clean-apply --plan "$CLEAN_PLAN" >/dev/null 2>&1
+  clean_failed_status=$?
+  assert_eq "$([ "$clean_failed_status" -ne 0 ] && printf yes || printf no)" "yes" \
+    "clean apply: apply が失敗したら非ゼロで停止する"
+  assert_eq "$(test -e "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt" && echo yes || echo no)" "no" \
+    "clean apply: apply 失敗後に success evidence を書かない"
+
+  CLEAN_APPROVED_EVIDENCE="$TMP/clean-approved-evidence"
+  PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_APPROVED_EVIDENCE" \
+    bash "$DISTRIBUTION" --clean-apply --plan "$CLEAN_PLAN" >/dev/null 2>&1
+  approved_status=$?
+  assert_eq "$approved_status" "0" "clean apply: 外側の承認で temporary apply が成功する"
+  assert_eq "$(cat "$CLEAN_APPROVED_EVIDENCE/clean-apply-result.txt" 2>/dev/null)" "approved-success" \
+    "clean apply: 成功 evidence を書く"
+  assert_eq "$(stat -f '%HT:%Lp' "$CLEAN_APPROVED_EVIDENCE/clean-apply-result.txt" 2>/dev/null)" \
+    "Regular File:600" "clean apply: success evidence は 0600 regular file"
+fi
+
+# Unit 3 は八つの前提を個別に集約する。内部 suite は専用 wrapper で成功・失敗を制御し、
+# gate 自身の判定と evidence file を実際に検査する。
+UNIT_GATE="$CHEZMOI_SOURCE/tests/manual/paseo-unit-gate.sh"
+UNIT3_BIN="$TMP/unit3-bin"
+mkdir -p "$UNIT3_BIN"
+cat > "$UNIT3_BIN/bash" <<'EOF'
+#!/bin/bash
+case "${1:-}" in
+  tests/run-tests.sh|tests/test-paseo-legacy-removal.sh|tests/manual/mad-representative-run.sh) exit "${PASEO_UNIT3_CHECK_STATUS:-0}" ;;
+  *) exec /bin/bash "$@" ;;
+esac
+EOF
+chmod 700 "$UNIT3_BIN/bash"
+. "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
+
+UNIT3_MISSING="$TMP/unit3-missing"
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_MISSING" \
+  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_missing_status=$?
+assert_eq "$([ "$unit3_missing_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: 前提が無ければ continue を拒否する"
+assert_eq "$(cat "$UNIT3_MISSING/unit3-decision.txt" 2>/dev/null)" "rollback" \
+  "unit3: 前提不足では rollback を記録する"
+assert_contains "$(cat "$UNIT3_MISSING/unit3-failure.txt" 2>/dev/null)" "unit1-decision(exit 1)" \
+  "unit3: 失敗した前提と exit code を記録する"
+assert_contains "$(cat "$UNIT3_MISSING/unit3-failure.txt" 2>/dev/null)" "Task 8 through Task 11" \
+  "unit3: rollback 対象を記録する"
+assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_MISSING/unit3-failure.txt" 2>/dev/null)" "Regular File:600" \
+  "unit3: failure evidence は 0600 regular file"
+
+UNIT3_OK="$TMP/unit3-ok"
+write_unit_decision "$UNIT3_OK/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_OK/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_OK/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_OK/clean-apply-result.txt" approved-success
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_OK" \
+  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_ok_status=$?
+assert_eq "$unit3_ok_status" "0" "unit3: 八つの前提が通ると continue を記録する"
+assert_eq "$(cat "$UNIT3_OK/unit3-decision.txt" 2>/dev/null)" "continue" \
+  "unit3: all-pass は continue decision を書く"
+assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_OK/unit3-decision.txt" 2>/dev/null)" "Regular File:600" \
+  "unit3: continue decision は 0600 regular file"
+
+UNIT3_REQUEST="$TMP/unit3-request"
+write_unit_decision "$UNIT3_REQUEST/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_REQUEST/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_REQUEST/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_REQUEST/clean-apply-result.txt" approved-success
+printf 'pending approval\n' > "$UNIT3_REQUEST/decision-request.md"
+chmod 600 "$UNIT3_REQUEST/decision-request.md"
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_REQUEST" \
+  DECISION_REQUEST_PATH="$UNIT3_REQUEST/decision-request.md" \
+  env -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_request_status=$?
+assert_eq "$([ "$unit3_request_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: decision request があれば continue を拒否する"
+assert_eq "$(cat "$UNIT3_REQUEST/unit3-decision.txt" 2>/dev/null)" "decision_request" \
+  "unit3: pending request を decision_request として記録する"
+assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_REQUEST/unit3-decision.txt" 2>/dev/null)" "Regular File:600" \
+  "unit3: decision request は 0600 regular file"
+
 env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
   bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
 status=$?

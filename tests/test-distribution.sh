@@ -4,6 +4,57 @@
 set -u
 . "$(dirname "$0")/lib/assert.sh"
 
+CLEAN_APPLY=0
+PLAN_FILE=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --clean-apply) CLEAN_APPLY=1; shift ;;
+    --plan) PLAN_FILE="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+if [ "$CLEAN_APPLY" -eq 1 ]; then
+  . "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-/Users/cellfusion/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence}"
+
+  case "$PLAN_FILE" in
+    /*) : ;;
+    *) printf 'plan: 絶対 path が必要である\n' >&2; exit 2 ;;
+  esac
+  test -f "$PLAN_FILE" || { printf 'plan: file が無い\n' >&2; exit 2; }
+
+  if ! test "${PASEO_CLEAN_APPLY_APPROVED:-0}" = 1; then
+    write_decision_request "${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}" \
+      '最終の配布 gate のために temporary な clean chezmoi apply を実行してよいか' \
+      'temporary な apply を承認する' 'apply せず Unit 3 を rollback する'
+    exit 1
+  fi
+
+  clean_home="$TMP/clean-home"
+  clean_source="$TMP/clean-source"
+  mkdir -p "$clean_home" "$clean_source" || exit 1
+  cp -R "$CHEZMOI_SOURCE/." "$clean_source/" || exit 1
+
+  # 事前に退役 leaf を置き、.chezmoiremove が実際に回収したことを確認する。
+  retired_skill="$(printf '%s-%s-%s' subagent driven development)"
+  retired_leaf="$(printf '%s-%s' task waves)"
+  retired="$clean_home/.agents/skills/$retired_skill/scripts/$retired_leaf"
+  mkdir -p "$(dirname "$retired")" || exit 1
+  printf '#!/usr/bin/env bash\n' > "$retired" || exit 1
+  HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" \
+    chezmoi apply --exclude=scripts --source "$clean_source" --destination "$clean_home" || exit 1
+
+  installed="$clean_home/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate"
+  test -x "$installed" || exit 1
+  test ! -e "$retired" || exit 1
+  node "$installed" "$PLAN_FILE" || exit 1
+  write_unit_decision "$EVIDENCE/clean-apply-result.txt" approved-success
+  exit $?
+fi
+
 managed="$(chezmoi managed --source "$CHEZMOI_SOURCE" 2>&1)"
 # .chezmoiremove の削除対象は managed にも列挙されるため、配布ファイルだけを別に見る。
 managed_files="$(chezmoi managed --source "$CHEZMOI_SOURCE" --include=files,symlinks 2>&1)"

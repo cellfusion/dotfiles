@@ -110,6 +110,62 @@ observe_paseo_shape() {
     "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json"
 }
 
+resolve_unit3_plan() {
+  local candidate="${PASEO_PLAN_PATH:-}"
+  if [ -n "$candidate" ] && [ "${candidate#/}" != "$candidate" ] && test -f "$candidate"; then
+    printf '%s\n' "$candidate"
+  else
+    printf '%s\n' "$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
+  fi
+}
+
+write_unit3_failure() {
+  local failure_path="$1" failure_text="$2"
+  ( umask 077; printf '%s\n' "$failure_text" > "$failure_path.tmp" ) || return 2
+  chmod 600 "$failure_path.tmp" || return 2
+  mv "$failure_path.tmp" "$failure_path"
+}
+
+record_unit3() {
+  local plan_file validate failures="" status
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)}"
+  plan_file="$(resolve_unit3_plan)"
+  validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
+
+  check() {
+    local name="$1"
+    shift
+    "$@" >/dev/null 2>&1
+    status=$?
+    test "$status" -eq 0 || failures="$failures$name(exit $status) "
+  }
+
+  check unit1-decision require_unit_decision "$EVIDENCE/unit1-decision.txt" continue
+  check unit2-decision require_unit_decision "$EVIDENCE/unit2-decision.txt" continue
+  check representative-decision require_unit_decision "$EVIDENCE/representative-decision.txt" approved-success
+  check clean-apply-result require_unit_decision "$EVIDENCE/clean-apply-result.txt" approved-success
+  check full-suite bash tests/run-tests.sh
+  check absence bash tests/test-paseo-legacy-removal.sh
+  check representative-verify bash tests/manual/mad-representative-run.sh \
+    --verify-only --evidence-dir "$EVIDENCE/representative"
+  check plan-dependency node "$validate" "$plan_file"
+
+  if test -s "${DECISION_REQUEST_PATH:-/nonexistent}"; then
+    write_unit_decision "$EVIDENCE/unit3-decision.txt" decision_request || return 2
+  elif test -z "$failures"; then
+    write_unit_decision "$EVIDENCE/unit3-decision.txt" continue || return 2
+  else
+    write_unit_decision "$EVIDENCE/unit3-decision.txt" rollback || return 2
+  fi
+
+  if test -n "$failures"; then
+    write_unit3_failure "$EVIDENCE/unit3-failure.txt" \
+      "failed preconditions: $failures
+rollback target: Task 8 through Task 11" || return 2
+  fi
+  require_unit_decision "$EVIDENCE/unit3-decision.txt" continue
+}
+
 case "${1:-}" in
   record-unit1) record unit1-decision.txt run_unit1 ;;
   require)
@@ -121,6 +177,6 @@ case "${1:-}" in
     && bash tests/test-agent-env-script.sh \
     && bash tests/test-distribution.sh \
     && bash tests/test-no-private-identifiers.sh' ;;
-  record-unit3) printf '%s is not implemented yet\n' "${1:-}" >&2; exit 2 ;;
+  record-unit3) record_unit3 ;;
   *) printf 'usage: paseo-unit-gate.sh {record-unit1|observe|record-unit2|record-unit3|require <file> <value>}\n' >&2; exit 2 ;;
 esac
