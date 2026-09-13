@@ -292,25 +292,40 @@ function assertSemantics(config) {
   const firstEnvironment = config.defaults.environment
   const generatedIds = new Map()
   const physicalPaths = new Map()
+  const addGeneratedId = (providerId, provenance) => {
+    const previousId = generatedIds.get(providerId)
+    if (previousId && previousId !== provenance) {
+      throw new ConfigError(`generated provider id ${providerId}: provenance が衝突する`)
+    }
+    generatedIds.set(providerId, provenance)
+  }
+  const addPhysicalPath = (physicalPath, provenance) => {
+    const previousPath = physicalPaths.get(physicalPath)
+    if (previousPath && previousPath !== provenance) {
+      throw new ConfigError(`generated physical path ${physicalPath}: provenance が衝突する`)
+    }
+    physicalPaths.set(physicalPath, provenance)
+  }
+
+  for (const [family, definition] of Object.entries(config.providers)) {
+    const provenance = `${family}/${firstEnvironment}`
+    addGeneratedId(family, provenance)
+    if (definition.setup !== null) {
+      const stem = Object.values(definition.setup.configDirectoryEnv)[0]
+      addPhysicalPath(`$XDG_CONFIG_HOME/${stem}`, provenance)
+    }
+  }
+
   for (const environment of environments) {
+    if (environment === firstEnvironment) continue
     for (const family of config.environments[environment].providers) {
+      const provenance = `${family}/${environment}`
+      addGeneratedId(`${family}-${environment}`, provenance)
       const setup = config.providers[family].setup
-      const providerId = environment === firstEnvironment ? family : `${family}-${environment}`
-      const previousId = generatedIds.get(providerId)
-      if (previousId && previousId !== `${family}/${environment}`) {
-        throw new ConfigError(`generated provider id ${providerId}: provenance が衝突する`)
+      if (setup !== null) {
+        const stem = Object.values(setup.configDirectoryEnv)[0]
+        addPhysicalPath(`$XDG_CONFIG_HOME/${stem}_${environment}`, provenance)
       }
-      generatedIds.set(providerId, `${family}/${environment}`)
-      if (setup === null) continue
-      const stem = Object.values(setup.configDirectoryEnv)[0]
-      const physicalPath = environment === firstEnvironment
-        ? `$XDG_CONFIG_HOME/${stem}`
-        : `$XDG_CONFIG_HOME/${stem}_${environment}`
-      const previousPath = physicalPaths.get(physicalPath)
-      if (previousPath && previousPath !== `${family}/${environment}`) {
-        throw new ConfigError(`generated physical path ${physicalPath}: provenance が衝突する`)
-      }
-      physicalPaths.set(physicalPath, `${family}/${environment}`)
     }
   }
 
