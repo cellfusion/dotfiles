@@ -132,9 +132,9 @@ validate_unit3_plan() {
 
 write_unit3_failure() {
   local failure_path="$1" failure_text="$2"
-  ( umask 077; printf '%s\n' "$failure_text" > "$failure_path.tmp" ) || return 2
-  chmod 600 "$failure_path.tmp" || return 2
-  mv "$failure_path.tmp" "$failure_path"
+  local failure_contents
+  printf -v failure_contents '%s\n' "$failure_text"
+  _write_unit_gate_private_file "$failure_path" "$failure_contents"
 }
 
 record_unit3() {

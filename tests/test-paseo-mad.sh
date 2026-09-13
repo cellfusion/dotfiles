@@ -112,6 +112,10 @@ chmod 700 "$UNIT3_BIN/bash"
 . "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
 
 UNIT3_MISSING="$TMP/unit3-missing"
+UNIT3_FAILURE_TMP_VICTIM="$TMP/unit3-failure-tmp-victim.txt"
+printf 'keep-unit3-failure-tmp-victim\n' > "$UNIT3_FAILURE_TMP_VICTIM"
+mkdir -p "$UNIT3_MISSING"
+ln -s "$UNIT3_FAILURE_TMP_VICTIM" "$UNIT3_MISSING/unit3-failure.txt.tmp"
 PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_MISSING" \
   PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
   env -u DECISION_REQUEST_PATH \
@@ -127,6 +131,8 @@ assert_contains "$(cat "$UNIT3_MISSING/unit3-failure.txt" 2>/dev/null)" "Task 8 
   "unit3: rollback 対象を記録する"
 assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_MISSING/unit3-failure.txt" 2>/dev/null)" "Regular File:600" \
   "unit3: failure evidence は 0600 regular file"
+assert_eq "$(cat "$UNIT3_FAILURE_TMP_VICTIM")" "keep-unit3-failure-tmp-victim" \
+  "unit3: failure evidence の tmp symlink 参照先を変更しない"
 
 UNIT3_OK="$TMP/unit3-ok"
 write_unit_decision "$UNIT3_OK/unit1-decision.txt" continue
