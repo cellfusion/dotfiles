@@ -123,14 +123,6 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
     "MAD role: schemas/$role.json を ~/.agents へ配る"
 done
 
-mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
-mad_manual="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
-for forbidden in paseo-routing.json paseo-providers.json paseo-project-routing.json manifests.json \
-  --resolve-candidates --check-usage; do
-  assert_not_contains "$mad_skill$mad_manual" "$forbidden" \
-    "MAD docs: legacy routing reference $forbidden がない"
-done
-
 # review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
 # 契約が runtime ごとに欠けると、review recipe が統合結果を判定できなくなる。
 assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \
@@ -260,13 +252,15 @@ assert_contains "$managed" ".config/opencode/skills/multi-agent-development/SKIL
   "MAD: opencode へ配られる"
 assert_contains "$managed" ".agents/skills/multi-agent-development/SKILL.md" \
   "MAD: ~/.agents へ配られる"
-for f in paseo-providers paseo-routing paseo-project-routing; do
-  assert_contains "$managed" ".agents/agent-defs/$f.json" \
-    "MAD: 設定アセットを配る: $f"
-done
+# この suite が置換先になっている retired distribution source は source tree に残さない。
+removal_manifest="$CHEZMOI_SOURCE/private_dot_config/docs/paseo-agent-config-removal-manifest.md"
+while read -r source_path; do
+  [ -n "$source_path" ] || continue
+  assert_eq "$(test -e "$CHEZMOI_SOURCE/$source_path" && echo yes || echo no)" "no" \
+    "MAD: retired distribution source を残さない"
+done < <(awk -F'|' '$3 ~ /Delete/ && $4 ~ /test-distribution/ { path=$2; gsub(/^ +| +$/, "", path); print path }' "$removal_manifest")
 
 # removal manifest が参照する置換 test は、削除後も実行できる現行 test である。
-removal_manifest="$CHEZMOI_SOURCE/private_dot_config/docs/paseo-agent-config-removal-manifest.md"
 replacement_tests="$(awk -F'|' '$3 ~ /Delete|Keep/ {
   path=$4
   gsub(/^ +| +$/, "", path)

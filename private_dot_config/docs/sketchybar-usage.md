@@ -104,13 +104,11 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchyba
 
 ## MAD の残量確認も読む
 
-`usage.sh` の 9 列の出力は、SketchyBar のウィジェットだけでなく MAD の validator
-`~/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate` も読む。MAD の親
-エージェントは子を起動する前に `manual-orchestration-validate --check-usage <provider>...` を呼ぶ。
-validator は `usage.sh` を引数なしで 1 回実行し、`~/.agents/agent-defs/paseo-providers.json` の
-`usage.environment` と `usage.agent` に一致する行を選び、第 7 列の 5 時間の使用率から `ok`、`low`、
-`exhausted`、`unknown` を判定する。親はこの判定で候補の provider を並べ直し、すべてが `exhausted` なら
-子を起動せずにユーザーへ渡す。列の並びを変えると、状態バーの表示と MAD の残量確認が同時に壊れる。
+`usage.sh` の 9 列の出力は SketchyBar の表示専用である。Paseo の子を作る前に、親は
+adapter の `list-providers` と provider ごとの `list-models` で discovery を行い、選んだ agent profile
+の provider/model/mode を availability snapshot と create request に記録する。profile の prompt/schema
+境界は MAD の現行 role asset が担い、残量の推測で provider の優先順位を変更しない。列の並びを変えると
+状態バーの表示が壊れるため、widget の互換性を保つ。
 
 ## 色の決め方
 

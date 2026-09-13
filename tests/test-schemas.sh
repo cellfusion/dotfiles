@@ -22,20 +22,34 @@ for field in baseHead changedFiles summary decisionRequestPath; do
   assert_contains "$impl" "\"$field\"" "implementer: $field を持つ"
 done
 req="$(printf '%s' "$impl" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).required.join(",")))')"
-assert_contains "$req" "baseHead" "implementer: baseHead は required"
+for field in baseHead changedFiles summary decisionRequestPath; do
+  assert_contains "$req" "$field" "implementer: $field は required"
+done
 
 rev="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/schemas/task-reviewer.json" . }}')"
 assert_contains "$rev" '"specVerdict"' "task-reviewer: spec verdict を持つ"
 assert_contains "$rev" '"qualityVerdict"' "task-reviewer: quality verdict を持つ"
+rev_req="$(printf '%s' "$rev" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).required.join(",")))')"
+for field in specVerdict qualityVerdict findings round head packageBase packageHead cannotVerify strengths; do
+  assert_contains "$rev_req" "$field" "task-reviewer: $field は required"
+done
 
 rere="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/schemas/re-reviewer.json" . }}')"
 assert_contains "$rere" '"verdicts"' "re-reviewer: 指摘ごとの verdict を持つ"
+rere_req="$(printf '%s' "$rere" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).required.join(",")))')"
+for field in verdicts newBreakage outOfScope round head packageBase packageHead; do
+  assert_contains "$rere_req" "$field" "re-reviewer: $field は required"
+done
 
 fin="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/schemas/final-reviewer.json" . }}')"
 assert_contains "$fin" '"mustFixBeforeMerge"' "final-reviewer: triage を持つ"
+fin_req="$(printf '%s' "$fin" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).required.join(",")))')"
+for field in status readyToMerge findings round head packageBase packageHead triage strengths reasoning; do
+  assert_contains "$fin_req" "$field" "final-reviewer: $field は required"
+done
 
 for a in implementer task-reviewer re-reviewer final-reviewer; do
   out="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \

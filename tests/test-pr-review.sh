@@ -104,7 +104,12 @@ assert_contains "$skill" "git worktree" "pr-review: git worktree の経路があ
 assert_contains "$skill" "一次レビュー" "pr-review: 一次レビューを行う"
 assert_contains "$skill" "差分リスク" "pr-review: 差分リスクを評価する"
 assert_contains "$skill" "専門レビュー" "pr-review: リスクに応じて専門レビューを追加する"
-assert_contains "$skill" "routing.json" "pr-review: 専門レビューの routing を参照する"
+assert_contains "$skill" "profile" "pr-review: 専門レビューの Paseo profile を参照する"
+assert_contains "$skill" "prompt/schema" "pr-review: 専門レビューの prompt/schema 境界を参照する"
+while read -r forbidden; do
+  [ -n "$forbidden" ] || continue
+  assert_not_contains "$skill" "$forbidden" "pr-review: legacy reference を残さない"
+done < "$CHEZMOI_SOURCE/tests/fixtures/agent-config/legacy/absence-patterns.txt"
 assert_contains "$skill" "生成ファイル" "pr-review: 依存追加が lockfile と CI に追随しているかを見る"
 assert_contains "$skill" "Markdown" "pr-review: Markdown 成果物を保存する"
 assert_contains "$skill" "JSON" "pr-review: JSON 成果物を保存する"

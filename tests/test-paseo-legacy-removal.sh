@@ -172,7 +172,11 @@ EOF
   assert_not_contains "$removed" '.paseo' "chezmoiremove: Paseo の root を入れない"
 
   plan_validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
-  node "$plan_validate" "/Users/cellfusion/docs/cellfusion/dotfiles/plans/2026-09-12-paseo-agent-config.md"
+  plan_path="${PASEO_PLAN_PATH:-/Users/cellfusion/docs/cellfusion/dotfiles/plans/2026-09-12-paseo-agent-config.md}"
+  if [ "${plan_path#/}" = "$plan_path" ] || [ ! -f "$plan_path" ]; then
+    plan_path="$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
+  fi
+  node "$plan_validate" "$plan_path"
   assert_eq "$?" "0" "plan validator: 削除後もこの plan を検証できる"
   assert_contains "$(cat "$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh")" \
     'generate-paseo-config resolve' "smoke: exporter の launch を使う"
@@ -180,6 +184,22 @@ EOF
     'multi-agent-development' "workflow table: MAD を指す"
   hook_source="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/hooks/executable_dev-workflow-inject.sh")"
   assert_eq "$(printf '%s' "$hook_source" | grep -cEi "$legacy_pattern" || true)" "0" "hook: 旧 skill を指さない"
+
+  if [ "${PASEO_MIGRATION_GATE_REQUIRED:-0}" = 1 ]; then
+    evidence_dir="${PASEO_MIGRATION_EVIDENCE_DIR:-}"
+    assert_eq "$(test -n "$evidence_dir" && echo yes || echo no)" "yes" \
+      "migration gate: evidence directory を外側から受け取る"
+    gate="$CHEZMOI_SOURCE/tests/manual/paseo-unit-gate.sh"
+    gate_status=1
+    if [ -n "$evidence_dir" ]; then
+      PASEO_MIGRATION_EVIDENCE_DIR="$evidence_dir" bash "$gate" require representative-decision.txt approved-success >/dev/null 2>&1
+      gate_status=$?
+    fi
+    assert_eq "$gate_status" "0" "migration gate: representative approval を検査する"
+    manifest_status=1
+    bash "$0" --manifest-only "$MANIFEST" >/dev/null 2>&1 && manifest_status=0
+    assert_eq "$manifest_status" "0" "migration gate: manifest-only を検査する"
+  fi
 fi
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

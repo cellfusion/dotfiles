@@ -2,6 +2,14 @@
 set -u
 . "$(dirname "$0")/lib/assert.sh"
 
+usage_doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/sketchybar-usage.md")"
+assert_contains "$usage_doc" "list-providers" "usage docs: Paseo adapter の discovery を案内する"
+assert_contains "$usage_doc" "agent profile" "usage docs: profile 境界を案内する"
+while read -r forbidden; do
+  [ -n "$forbidden" ] || continue
+  assert_not_contains "$usage_doc" "$forbidden" "usage docs: legacy reference を残さない"
+done < "$CHEZMOI_SOURCE/tests/fixtures/agent-config/legacy/absence-patterns.txt"
+
 # 環境定義は clone した人のマシンによって違うので、fixture を与えて描画する。
 cfg="$(mktemp)"
 cat > "$cfg" <<'EOF'

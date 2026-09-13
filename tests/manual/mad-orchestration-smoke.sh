@@ -281,7 +281,12 @@ case "$MODE" in
     RUN_ID="mad-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     RUN_DIR="$(bash "$HOME/.agents/skills/_shared/scripts/agent-docs-dir" \
       "orchestration/$RUN_ID")" || exit 1
-    mkdir -p "$RUN_DIR/nodes"
+    ( umask 077; mkdir -p "$RUN_DIR/nodes" ) || exit 1
+    chmod 700 "$RUN_DIR" "$RUN_DIR/nodes" || exit 1
+    [ "$(stat -f '%Lp' "$RUN_DIR")" = 700 ] || {
+      printf 'mad-orchestration-smoke: run directory が 0700 でない\n' >&2
+      exit 1
+    }
 
     jq -n \
       --arg run_id "$RUN_ID" \
@@ -305,6 +310,11 @@ case "$MODE" in
         adopted_attempts: {},
         artifact_paths: []
       }' > "$RUN_DIR/state.json"
+    chmod 600 "$RUN_DIR/state.json" || exit 1
+    [ "$(stat -f '%Lp' "$RUN_DIR/state.json")" = 600 ] || {
+      printf 'mad-orchestration-smoke: state.json が 0600 でない\n' >&2
+      exit 1
+    }
 
     printf 'run ID:   %s\n' "$RUN_ID" >&2
     printf 'backend:  %s (%s)\n' "$BACKEND" "$BACKEND_REASON" >&2

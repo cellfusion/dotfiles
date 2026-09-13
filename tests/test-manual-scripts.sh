@@ -5,6 +5,11 @@ set -u
 
 out="$(bash "$CHEZMOI_SOURCE/tests/manual/herdr-smoke.sh" --dry-run 2>&1)"
 
+for script in tests/manual/herdr-smoke.sh tests/test-schemas.sh; do
+  assert_eq "$(stat -f '%Lp' "$CHEZMOI_SOURCE/$script")" "755" \
+    "mode: $script は executable"
+done
+
 # Paseo catalog、launch、承認 gate を順に出す。
 for step in "list-providers" "list-models" "generate-paseo-config" "mcp__paseo__create_agent"; do
   assert_contains "$out" "$step" "smoke: $step を案内する"
@@ -19,6 +24,13 @@ assert_contains "$out" "chezmoi apply も実行しない" "smoke: dry-run で ap
 assert_contains "$out" "bash tests/run-tests.sh" "gate: 全テストを名指しする"
 assert_contains "$out" "bash tests/manual/herdr-smoke.sh --dry-run" "gate: dry-run を名指しする"
 assert_contains "$out" "利用者の明示承認後" "gate: 実機 create の承認を求める"
+
+mad_source="$(cat "$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh")"
+assert_contains "$mad_source" "umask 077" "mad smoke: artifact write を private umask にする"
+assert_contains "$mad_source" "chmod 700" "mad smoke: run directory を 0700 に固定する"
+assert_contains "$mad_source" "chmod 600" "mad smoke: state artifact を 0600 に固定する"
+assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR\"" "mad smoke: run directory の mode を検証する"
+assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR/state.json\"" "mad smoke: state artifact の mode を検証する"
 
 
 # ---------------------------------------------------------------------------
