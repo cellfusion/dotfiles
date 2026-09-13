@@ -102,12 +102,10 @@ observe_paseo_shape() {
       return $?
     fi
   fi
-  mkdir -p "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets" || return 2
-  ( umask 077
-    printf '%s\n' '{"daemon":{"type":"object"},"daemonAgentProfiles":{"type":"array","nonEmpty":true},"profile":{"requiredKeys":["id","model","name","provider","thinkingOptionId"],"optionalKeys":["modeId","featureValues"],"optionalKeyTypes":{"modeId":"string","featureValues":"object"},"additionalProperties":false},"providers":{"type":"object","hasBaseRecord":true,"hasNonPrimaryRecord":true,"allowUnmanagedRecords":true,"base":{"env":"object","extendsAbsent":true},"nonPrimary":{"extends":"string","label":"string","env":"object"}}}' > "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json.tmp"
-  ) || return 2
-  mv "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json.tmp" \
-    "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json"
+  local observed_shape_path observed_shape
+  observed_shape_path="$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json"
+  printf -v observed_shape '%s\n' '{"daemon":{"type":"object"},"daemonAgentProfiles":{"type":"array","nonEmpty":true},"profile":{"requiredKeys":["id","model","name","provider","thinkingOptionId"],"optionalKeys":["modeId","featureValues"],"optionalKeyTypes":{"modeId":"string","featureValues":"object"},"additionalProperties":false},"providers":{"type":"object","hasBaseRecord":true,"hasNonPrimaryRecord":true,"allowUnmanagedRecords":true,"base":{"env":"object","extendsAbsent":true},"nonPrimary":{"extends":"string","label":"string","env":"object"}}}'
+  _write_unit_gate_private_file "$observed_shape_path" "$observed_shape"
 }
 
 resolve_unit3_plan() {
