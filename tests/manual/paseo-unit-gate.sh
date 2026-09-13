@@ -111,12 +111,23 @@ observe_paseo_shape() {
 }
 
 resolve_unit3_plan() {
-  local candidate="${PASEO_PLAN_PATH:-}"
-  if [ -n "$candidate" ] && [ "${candidate#/}" != "$candidate" ] && test -f "$candidate"; then
-    printf '%s\n' "$candidate"
-  else
-    printf '%s\n' "$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
+  printf '%s\n' "${PASEO_PLAN_PATH:-}"
+}
+
+validate_unit3_plan() {
+  local validator="$1" plan_file="$2"
+  local fixture_plan="$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
+  case "$plan_file" in
+    /*) : ;;
+    *) return 2 ;;
+  esac
+  test -f "$plan_file" || return 1
+  if [ "$plan_file" = "$fixture_plan" ]; then
+    test "${PASEO_UNIT3_PLAN_FIXTURE:-0}" = 1 || return 2
+  elif test "${PASEO_UNIT3_PLAN_FIXTURE:-0}" = 1; then
+    return 2
   fi
+  node "$validator" "$plan_file"
 }
 
 write_unit3_failure() {
@@ -127,10 +138,11 @@ write_unit3_failure() {
 }
 
 record_unit3() {
-  local plan_file validate failures="" status
-  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)}"
+  local plan_file validate request_path failures="" status
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/paseo-agent-config-migration/evidence}"
   plan_file="$(resolve_unit3_plan)"
   validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
+  request_path="${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}"
 
   check() {
     local name="$1"
@@ -148,9 +160,13 @@ record_unit3() {
   check absence bash tests/test-paseo-legacy-removal.sh
   check representative-verify bash tests/manual/mad-representative-run.sh \
     --verify-only --evidence-dir "$EVIDENCE/representative"
-  check plan-dependency node "$validate" "$plan_file"
+  check plan-dependency validate_unit3_plan "$validate" "$plan_file"
 
-  if test -s "${DECISION_REQUEST_PATH:-/nonexistent}"; then
+  if test -s "$request_path"; then
+    failures="$failures"'decision-request(exit 1) '
+  fi
+
+  if test -s "$request_path"; then
     write_unit_decision "$EVIDENCE/unit3-decision.txt" decision_request || return 2
   elif test -z "$failures"; then
     write_unit_decision "$EVIDENCE/unit3-decision.txt" continue || return 2
@@ -162,6 +178,8 @@ record_unit3() {
     write_unit3_failure "$EVIDENCE/unit3-failure.txt" \
       "failed preconditions: $failures
 rollback target: Task 8 through Task 11" || return 2
+  else
+    rm -f "$EVIDENCE/unit3-failure.txt" || return 2
   fi
   require_unit_decision "$EVIDENCE/unit3-decision.txt" continue
 }

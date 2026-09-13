@@ -18,13 +18,7 @@ if [ "$CLEAN_APPLY" -eq 1 ]; then
   . "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
-  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-/Users/cellfusion/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence}"
-
-  case "$PLAN_FILE" in
-    /*) : ;;
-    *) printf 'plan: 絶対 path が必要である\n' >&2; exit 2 ;;
-  esac
-  test -f "$PLAN_FILE" || { printf 'plan: file が無い\n' >&2; exit 2; }
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/paseo-agent-config-migration/evidence}"
 
   if ! test "${PASEO_CLEAN_APPLY_APPROVED:-0}" = 1; then
     write_decision_request "${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}" \
@@ -32,6 +26,13 @@ if [ "$CLEAN_APPLY" -eq 1 ]; then
       'temporary な apply を承認する' 'apply せず Unit 3 を rollback する'
     exit 1
   fi
+
+  case "$PLAN_FILE" in
+    /*) : ;;
+    *) printf 'plan: 絶対 path が必要である\n' >&2; exit 2 ;;
+  esac
+  test -f "$PLAN_FILE" || { printf 'plan: file が無い\n' >&2; exit 2; }
+  rm -f "$EVIDENCE/clean-apply-result.txt" || exit 1
 
   clean_home="$TMP/clean-home"
   clean_source="$TMP/clean-source"

@@ -172,7 +172,7 @@ EOF
   assert_not_contains "$removed" '.paseo' "chezmoiremove: Paseo の root を入れない"
 
   plan_validate="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
-  plan_path="${PASEO_PLAN_PATH:-/Users/cellfusion/docs/cellfusion/dotfiles/plans/2026-09-12-paseo-agent-config.md}"
+  plan_path="${PASEO_PLAN_PATH:-}"
   if [ "${plan_path#/}" = "$plan_path" ] || [ ! -f "$plan_path" ]; then
     plan_path="$CHEZMOI_SOURCE/tests/fixtures/agent-config/mad/plans/valid-plan.md"
   fi

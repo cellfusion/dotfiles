@@ -49,6 +49,20 @@ assert_eq "$(test -e "$CLEAN_EVIDENCE/clean-apply-result.txt" && echo yes || ech
 assert_eq "$(test -f "$CLEAN_LOG" && cat "$CLEAN_LOG" || true)" "" \
   "clean apply: 未承認なら chezmoi を一度も起動しない"
 
+CLEAN_INVALID_REQUEST="$TMP/clean-invalid-decision-request.md"
+CLEAN_INVALID_LOG="$TMP/clean-invalid-chezmoi.log"
+env -u PASEO_CLEAN_APPLY_APPROVED \
+  PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_INVALID_LOG" \
+  PASEO_MIGRATION_EVIDENCE_DIR="$TMP/clean-invalid-evidence" DECISION_REQUEST_PATH="$CLEAN_INVALID_REQUEST" \
+  bash "$DISTRIBUTION" --clean-apply --plan "$TMP/missing-plan.md" >/dev/null 2>&1
+clean_invalid_status=$?
+assert_eq "$([ "$clean_invalid_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "clean apply: 未承認なら invalid plan でも非ゼロで停止する"
+assert_eq "$(test -f "$CLEAN_INVALID_REQUEST" && echo yes || echo no)" "yes" \
+  "clean apply: 未承認なら invalid plan でも decision request を書く"
+assert_eq "$(test -f "$CLEAN_INVALID_LOG" && cat "$CLEAN_INVALID_LOG" || true)" "" \
+  "clean apply: 未承認なら invalid plan でも chezmoi を起動しない"
+
 # 通常の distribution test は clean apply mode へ入らず、chezmoi apply を呼ばない。
 : > "$CLEAN_LOG"
 PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_LOG" bash "$DISTRIBUTION" >/dev/null 2>&1 || true
@@ -59,14 +73,17 @@ assert_eq "$(grep -c '^apply\b' "$CLEAN_LOG" || true)" "0" \
 if [ "${PASEO_CLEAN_APPLY_APPROVED:-0}" = 1 ]; then
   CLEAN_FAILED_EVIDENCE="$TMP/clean-failed-evidence"
   CLEAN_FAILED_LOG="$TMP/clean-failed-chezmoi.log"
+  mkdir -p "$CLEAN_FAILED_EVIDENCE"
+  ( umask 077; printf 'approved-success\n' > "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt" )
+  chmod 600 "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt"
   PATH="$CLEAN_BIN:$PATH" PASEO_CHEZMOI_LOG="$CLEAN_FAILED_LOG" PASEO_CHEZMOI_STATUS=7 \
     PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_FAILED_EVIDENCE" \
     bash "$DISTRIBUTION" --clean-apply --plan "$CLEAN_PLAN" >/dev/null 2>&1
   clean_failed_status=$?
   assert_eq "$([ "$clean_failed_status" -ne 0 ] && printf yes || printf no)" "yes" \
     "clean apply: apply が失敗したら非ゼロで停止する"
-  assert_eq "$(test -e "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt" && echo yes || echo no)" "no" \
-    "clean apply: apply 失敗後に success evidence を書かない"
+assert_eq "$(test -e "$CLEAN_FAILED_EVIDENCE/clean-apply-result.txt" && echo yes || echo no)" "no" \
+    "clean apply: apply 失敗後に stale success evidence を残さない"
 
   CLEAN_APPROVED_EVIDENCE="$TMP/clean-approved-evidence"
   PASEO_MIGRATION_EVIDENCE_DIR="$CLEAN_APPROVED_EVIDENCE" \
@@ -96,7 +113,9 @@ chmod 700 "$UNIT3_BIN/bash"
 
 UNIT3_MISSING="$TMP/unit3-missing"
 PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_MISSING" \
-  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+  PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
 unit3_missing_status=$?
 assert_eq "$([ "$unit3_missing_status" -ne 0 ] && printf yes || printf no)" "yes" \
   "unit3: 前提が無ければ continue を拒否する"
@@ -114,14 +133,77 @@ write_unit_decision "$UNIT3_OK/unit1-decision.txt" continue
 write_unit_decision "$UNIT3_OK/unit2-decision.txt" continue
 write_unit_decision "$UNIT3_OK/representative-decision.txt" approved-success
 write_unit_decision "$UNIT3_OK/clean-apply-result.txt" approved-success
+printf 'stale failure\n' > "$UNIT3_OK/unit3-failure.txt"
+chmod 600 "$UNIT3_OK/unit3-failure.txt"
 PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_OK" \
-  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+  PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
 unit3_ok_status=$?
 assert_eq "$unit3_ok_status" "0" "unit3: 八つの前提が通ると continue を記録する"
 assert_eq "$(cat "$UNIT3_OK/unit3-decision.txt" 2>/dev/null)" "continue" \
   "unit3: all-pass は continue decision を書く"
 assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_OK/unit3-decision.txt" 2>/dev/null)" "Regular File:600" \
   "unit3: continue decision は 0600 regular file"
+assert_eq "$(test -e "$UNIT3_OK/unit3-failure.txt" && echo yes || echo no)" "no" \
+  "unit3: all-pass は stale failure evidence を残さない"
+
+UNIT3_NO_PLAN="$TMP/unit3-no-plan"
+write_unit_decision "$UNIT3_NO_PLAN/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_NO_PLAN/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_NO_PLAN/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_NO_PLAN/clean-apply-result.txt" approved-success
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_NO_PLAN" \
+  env -u DECISION_REQUEST_PATH -u PASEO_PLAN_PATH -u PASEO_UNIT3_PLAN_FIXTURE \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_no_plan_status=$?
+assert_eq "$([ "$unit3_no_plan_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: 外側 plan が無ければ continue を拒否する"
+assert_contains "$(cat "$UNIT3_NO_PLAN/unit3-failure.txt" 2>/dev/null)" "plan-dependency(exit 2)" \
+  "unit3: 外側 plan 不在の name と exit code を記録する"
+
+UNIT3_UNFLAGGED_FIXTURE="$TMP/unit3-unflagged-fixture"
+write_unit_decision "$UNIT3_UNFLAGGED_FIXTURE/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_UNFLAGGED_FIXTURE/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_UNFLAGGED_FIXTURE/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_UNFLAGGED_FIXTURE/clean-apply-result.txt" approved-success
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_UNFLAGGED_FIXTURE" \
+  PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH -u PASEO_UNIT3_PLAN_FIXTURE \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_unflagged_fixture_status=$?
+assert_eq "$([ "$unit3_unflagged_fixture_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: fixture opt-in 無しでは checkout plan を拒否する"
+assert_contains "$(cat "$UNIT3_UNFLAGGED_FIXTURE/unit3-failure.txt" 2>/dev/null)" "plan-dependency(exit 2)" \
+  "unit3: unflagged fixture の name と exit code を記録する"
+
+UNIT3_BAD_PLAN="$TMP/unit3-bad-plan"
+write_unit_decision "$UNIT3_BAD_PLAN/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_BAD_PLAN/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_BAD_PLAN/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_BAD_PLAN/clean-apply-result.txt" approved-success
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_BAD_PLAN" \
+  PASEO_PLAN_PATH='relative-plan.md' PASEO_UNIT3_PLAN_FIXTURE=1 \
+  env -u DECISION_REQUEST_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_bad_plan_status=$?
+assert_eq "$([ "$unit3_bad_plan_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: relative plan override では continue を拒否する"
+assert_contains "$(cat "$UNIT3_BAD_PLAN/unit3-failure.txt" 2>/dev/null)" "plan-dependency(exit 2)" \
+  "unit3: invalid plan の failure name と exit code を記録する"
+
+UNIT3_MIDDLE="$TMP/unit3-middle"
+write_unit_decision "$UNIT3_MIDDLE/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_MIDDLE/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_MIDDLE/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_MIDDLE/clean-apply-result.txt" approved-success
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_MIDDLE" \
+  PASEO_UNIT3_CHECK_STATUS=9 PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_middle_status=$?
+assert_eq "$([ "$unit3_middle_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: 中間 precondition の失敗で continue を拒否する"
+assert_contains "$(cat "$UNIT3_MIDDLE/unit3-failure.txt" 2>/dev/null)" "full-suite(exit 9)" \
+  "unit3: 中間 failure の name と exit code を記録する"
 
 UNIT3_REQUEST="$TMP/unit3-request"
 write_unit_decision "$UNIT3_REQUEST/unit1-decision.txt" continue
@@ -132,7 +214,8 @@ printf 'pending approval\n' > "$UNIT3_REQUEST/decision-request.md"
 chmod 600 "$UNIT3_REQUEST/decision-request.md"
 PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_REQUEST" \
   DECISION_REQUEST_PATH="$UNIT3_REQUEST/decision-request.md" \
-  env -u PASEO_PLAN_PATH /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+  PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
 unit3_request_status=$?
 assert_eq "$([ "$unit3_request_status" -ne 0 ] && printf yes || printf no)" "yes" \
   "unit3: decision request があれば continue を拒否する"
@@ -140,6 +223,27 @@ assert_eq "$(cat "$UNIT3_REQUEST/unit3-decision.txt" 2>/dev/null)" "decision_req
   "unit3: pending request を decision_request として記録する"
 assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_REQUEST/unit3-decision.txt" 2>/dev/null)" "Regular File:600" \
   "unit3: decision request は 0600 regular file"
+assert_contains "$(cat "$UNIT3_REQUEST/unit3-failure.txt" 2>/dev/null)" "decision-request(exit 1)" \
+  "unit3: decision request も failure evidence に記録する"
+assert_eq "$(stat -f '%HT:%Lp' "$UNIT3_REQUEST/unit3-failure.txt" 2>/dev/null)" "Regular File:600" \
+  "unit3: decision request failure evidence は 0600 regular file"
+
+UNIT3_DEFAULT_REQUEST="$TMP/unit3-default-request"
+write_unit_decision "$UNIT3_DEFAULT_REQUEST/unit1-decision.txt" continue
+write_unit_decision "$UNIT3_DEFAULT_REQUEST/unit2-decision.txt" continue
+write_unit_decision "$UNIT3_DEFAULT_REQUEST/representative-decision.txt" approved-success
+write_unit_decision "$UNIT3_DEFAULT_REQUEST/clean-apply-result.txt" approved-success
+printf 'pending default request\n' > "$UNIT3_DEFAULT_REQUEST/clean-apply-decision-request.md"
+chmod 600 "$UNIT3_DEFAULT_REQUEST/clean-apply-decision-request.md"
+PATH="$UNIT3_BIN:$PATH" PASEO_MIGRATION_EVIDENCE_DIR="$UNIT3_DEFAULT_REQUEST" \
+  PASEO_UNIT3_PLAN_FIXTURE=1 PASEO_PLAN_PATH="$CLEAN_PLAN" \
+  env -u DECISION_REQUEST_PATH \
+  /bin/bash "$UNIT_GATE" record-unit3 >/dev/null 2>&1
+unit3_default_request_status=$?
+assert_eq "$([ "$unit3_default_request_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "unit3: default clean apply request があれば continue を拒否する"
+assert_eq "$(cat "$UNIT3_DEFAULT_REQUEST/unit3-decision.txt" 2>/dev/null)" "decision_request" \
+  "unit3: default request を decision_request として記録する"
 
 env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
   bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
