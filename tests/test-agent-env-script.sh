@@ -33,8 +33,10 @@ cp "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/directory-setup
 cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/valid-v1.json" "$xdg/chezmoi/agent-config.json"
 mkdir -p "$fake_home/.paseo"
 cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/base.json" "$fake_home/.paseo/config.json"
-for name in agents commands skills hooks CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
-for name in agents AGENTS.md; do : > "$xdg/codex/$name"; done
+mkdir -p "$xdg/claude/agents" "$xdg/claude/commands" "$xdg/claude/skills" \
+  "$xdg/claude/hooks" "$xdg/codex/agents"
+for name in CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
+: > "$xdg/codex/AGENTS.md"
 
 cat > "$fake_bin/generate-paseo-config" <<'EOF'
 #!/usr/bin/env bash

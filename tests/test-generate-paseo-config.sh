@@ -281,8 +281,10 @@ assert_eq "$?" "0" "skip: target が無ければ exit 0"
 assert_eq "$(test -e "$NO_TARGET_HOME/.paseo/config.json" && echo yes || echo no)" "no" "skip: config を新しく作らない"
 
 SETUP_XDG="$TMP/setup-xdg"; mkdir -p "$SETUP_XDG/claude" "$SETUP_XDG/codex"
-for name in agents commands skills hooks CLAUDE.md settings.json; do : > "$SETUP_XDG/claude/$name"; done
-for name in agents AGENTS.md; do : > "$SETUP_XDG/codex/$name"; done
+mkdir -p "$SETUP_XDG/claude/agents" "$SETUP_XDG/claude/commands" \
+  "$SETUP_XDG/claude/skills" "$SETUP_XDG/claude/hooks" "$SETUP_XDG/codex/agents"
+for name in CLAUDE.md settings.json; do : > "$SETUP_XDG/claude/$name"; done
+: > "$SETUP_XDG/codex/AGENTS.md"
 SETUP_MODULE="$SHARE/directory-setup.js"
 run_setup_with_xdg() {
   node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {setupDirectories}=require(process.argv[2]); try { setupDirectories(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config,{xdgConfigHome:process.argv[4],defaultEnvironment:"primary"}); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' \
@@ -300,13 +302,27 @@ assert_eq "$(test -e "$SETUP_XDG/opencode_lab" && echo yes || echo no)" "no" "se
 run_setup
 assert_eq "$?" "0" "setup: 同じ内容の再実行は成功する"
 
-DIRECTORY_SOURCE_XDG="$TMP/directory-source-xdg"; mkdir -p "$DIRECTORY_SOURCE_XDG/claude/agents" "$DIRECTORY_SOURCE_XDG/codex"
-for name in commands skills hooks CLAUDE.md settings.json; do : > "$DIRECTORY_SOURCE_XDG/claude/$name"; done
-for name in agents AGENTS.md; do : > "$DIRECTORY_SOURCE_XDG/codex/$name"; done
-run_setup_with_xdg "$DIRECTORY_SOURCE_XDG"
-assert_eq "$?" "2" "setup: symlink source の directory entry は拒否する"
-assert_eq "$(test -e "$DIRECTORY_SOURCE_XDG/claude_lab" && echo yes || echo no)" "no" \
-  "setup: directory source の拒否時に root を作らない"
+SYMLINK_SOURCE_XDG="$TMP/symlink-source-xdg"; mkdir -p "$SYMLINK_SOURCE_XDG/claude" "$SYMLINK_SOURCE_XDG/codex"
+mkdir -p "$SYMLINK_SOURCE_XDG/claude/commands" "$SYMLINK_SOURCE_XDG/claude/skills" \
+  "$SYMLINK_SOURCE_XDG/claude/hooks" "$SYMLINK_SOURCE_XDG/codex/agents"
+ln -s commands "$SYMLINK_SOURCE_XDG/claude/agents"
+for name in CLAUDE.md settings.json; do : > "$SYMLINK_SOURCE_XDG/claude/$name"; done
+: > "$SYMLINK_SOURCE_XDG/codex/AGENTS.md"
+run_setup_with_xdg "$SYMLINK_SOURCE_XDG"
+assert_eq "$?" "2" "setup: symlink source は拒否する"
+assert_eq "$(test -e "$SYMLINK_SOURCE_XDG/claude_lab" && echo yes || echo no)" "no" \
+  "setup: symlink source の拒否時に root を作らない"
+
+SPECIAL_SOURCE_XDG="$TMP/special-source-xdg"; mkdir -p "$SPECIAL_SOURCE_XDG/claude" "$SPECIAL_SOURCE_XDG/codex"
+mkdir -p "$SPECIAL_SOURCE_XDG/claude/agents" "$SPECIAL_SOURCE_XDG/claude/commands" \
+  "$SPECIAL_SOURCE_XDG/claude/skills" "$SPECIAL_SOURCE_XDG/codex/agents"
+mkfifo "$SPECIAL_SOURCE_XDG/claude/hooks"
+for name in CLAUDE.md settings.json; do : > "$SPECIAL_SOURCE_XDG/claude/$name"; done
+: > "$SPECIAL_SOURCE_XDG/codex/AGENTS.md"
+run_setup_with_xdg "$SPECIAL_SOURCE_XDG"
+assert_eq "$?" "2" "setup: special source は拒否する"
+assert_eq "$(test -e "$SPECIAL_SOURCE_XDG/claude_lab" && echo yes || echo no)" "no" \
+  "setup: special source の拒否時に root を作らない"
 
 rm -f "$SETUP_XDG/codex_lab/AGENTS.md"
 printf 'real file\n' > "$SETUP_XDG/codex_lab/AGENTS.md"
