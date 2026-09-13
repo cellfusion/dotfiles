@@ -322,6 +322,21 @@ MAD run を 1 回通す。`--run` は外側から `MAD_REPRESENTATIVE_RUN_APPROV
 phase artifact を取得し、`MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS`（既定 600 秒）の
 上限内に全 phase の検証が終わらなければ成功扱いにしない。
 
+実環境で fixture の candidate が discovery 結果に無い場合は、次の 4 つを**全て**外側から
+渡す。provider は `codex` だけを受け付け、model、thinking option、workspace ID は空白と
+制御文字を含まない実在値でなければならない。不完全または不正な override は discovery と
+create の前に decision request を残して停止する。override は `--run` だけに効き、
+`--verify-only` と保存済み fixture は変更しない。
+
+    MAD_REPRESENTATIVE_RUN_APPROVED=1 \
+      PASEO_MAD_REPRESENTATIVE_PROVIDER=codex \
+      PASEO_MAD_REPRESENTATIVE_MODEL='<discovered-model>' \
+      PASEO_MAD_REPRESENTATIVE_THINKING_OPTION='<discovered-thinking-option>' \
+      PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID='<current-workspace-id>' \
+      DECISION_REQUEST_PATH="$DECISION_REQUEST_PATH" \
+      bash tests/manual/mad-representative-run.sh --run \
+        --evidence-dir "${PASEO_MIGRATION_EVIDENCE_DIR}/representative"
+
 実機を使わず保存済み証跡を検査する場合は、次の verify-only 経路を使う。これは
 承認変数を読まず、adapter を呼ばない。
 

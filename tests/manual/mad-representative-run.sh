@@ -14,6 +14,7 @@ DEFAULT_ADAPTER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-developme
 DEFAULT_DECISION_ROOT="$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)"
 VERIFY_ONLY_MODE=0
 VERIFY_PLACEHOLDER_DIR=""
+RUN_WORKSPACE_ID="representative-workspace"
 
 usage() {
   printf '%s\n' \
@@ -26,6 +27,69 @@ require_absolute() {
     /*) return 0 ;;
     *) printf 'mad-representative-run: %s must be an absolute path\n' "$1" >&2; return 1 ;;
   esac
+}
+
+require_live_override_value() {
+  local name="$1"
+  local value="$2"
+
+  case "$value" in
+    ''|*[[:space:]]*|*[[:cntrl:]]*)
+      printf 'mad-representative-run: %s must be a non-empty opaque token\n' "$name" >&2
+      return 1
+      ;;
+  esac
+  [ "${#value}" -le 200 ] || {
+    printf 'mad-representative-run: %s is too long\n' "$name" >&2
+    return 1
+  }
+}
+
+prepare_run_input() {
+  local input="$1"
+  local configured=0
+  local provider="${PASEO_MAD_REPRESENTATIVE_PROVIDER:-}"
+  local model="${PASEO_MAD_REPRESENTATIVE_MODEL:-}"
+  local thinking_option="${PASEO_MAD_REPRESENTATIVE_THINKING_OPTION:-}"
+  local workspace_id="${PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID:-}"
+  local config
+
+  [ "${PASEO_MAD_REPRESENTATIVE_PROVIDER+x}" = x ] && configured=$((configured + 1))
+  [ "${PASEO_MAD_REPRESENTATIVE_MODEL+x}" = x ] && configured=$((configured + 1))
+  [ "${PASEO_MAD_REPRESENTATIVE_THINKING_OPTION+x}" = x ] && configured=$((configured + 1))
+  [ "${PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID+x}" = x ] && configured=$((configured + 1))
+  if [ "$configured" -eq 0 ]; then
+    install -m 600 "$FIXTURES/valid-v1.json" "$input"
+    return
+  fi
+  [ "$configured" -eq 4 ] || {
+    printf '%s\n' 'mad-representative-run: live override requires provider, model, thinking option, and workspace ID' >&2
+    return 1
+  }
+  [ "$provider" = 'codex' ] || {
+    printf '%s\n' 'mad-representative-run: live override provider must be codex' >&2
+    return 1
+  }
+  require_live_override_value PASEO_MAD_REPRESENTATIVE_MODEL "$model" || return 1
+  require_live_override_value PASEO_MAD_REPRESENTATIVE_THINKING_OPTION "$thinking_option" || return 1
+  require_live_override_value PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID "$workspace_id" || return 1
+
+  config="$(jq -c --arg model "$model" --arg thinkingOption "$thinking_option" '
+    .providers = {codex: .providers.codex} |
+    .tiers |= with_entries(
+      .value.candidates = [{
+        provider: "codex",
+        model: $model,
+        thinkingOptionId: $thinkingOption,
+        featureValues: {}
+      }]
+    ) |
+    .environments = {primary: {providers: ["codex"], tiers: {}}} |
+    .defaults = {environment: "primary", tier: "work"} |
+    .projectRouting = {rules: []}
+  ' "$FIXTURES/valid-v1.json" 2>/dev/null)" || return 1
+  write_private_file "$input" "$config" || return 1
+  RUN_WORKSPACE_ID="$workspace_id"
 }
 
 write_private_file() {
@@ -133,16 +197,13 @@ NODE
     (keys | sort) == ["events", "type", "version"] and
     .version == 1 and .type == "mad-call-log" and
     (.events | type == "array" and length > 0) and
-    ([.events[].operation] == [
-      "enumerate_materialized_provider_ids",
-      "list_providers",
-      "list_models",
-      "list_models",
-      "write_snapshot",
-      "resolve",
-      "build_create_request",
-      "create_agent"
-    ]) and
+    ([.events[].operation] as $operations |
+      ($operations | length >= 7) and
+      $operations[0] == "enumerate_materialized_provider_ids" and
+      $operations[1] == "list_providers" and
+      ($operations[2:-4] | length > 0 and all(.[]; . == "list_models")) and
+      $operations[-4:] == ["write_snapshot", "resolve", "build_create_request", "create_agent"]
+    ) and
     ([.events[] | select(.operation == "create_agent") | .callCount] == [1]) and
     (tostring | contains("://") | not)
   ' "$call_log" >/dev/null 2>&1 || return 1
@@ -271,7 +332,7 @@ write_run_evidence() {
   input="$RUN_TMP_DIR/input.json"
   project="$RUN_TMP_DIR/project"
   attempt_dir="$RUN_TMP_DIR/attempt"
-  install -m 600 "$FIXTURES/valid-v1.json" "$input" || return 1
+  prepare_run_input "$input" || return 1
   mkdir -p "$project" "$attempt_dir" || return 1
   for phase in plan implement review fix; do
     mkdir -p "$evidence_dir/$phase" || return 1
@@ -296,7 +357,7 @@ write_run_evidence() {
     --generator "$generator" --share-dir "$share_dir" --input "$input" \
     --adapter "$adapter" --attempt-dir "$attempt_dir" --project "$project" \
     --role implementer --provenance mad-representative \
-    --title 'representative title' --workspace-id representative-workspace \
+    --title 'representative title' --workspace-id "$RUN_WORKSPACE_ID" \
     --initial-prompt "$phase_prompt" --notify-on-finish true \
     --call-log "$attempt_dir/call-log.json" >/dev/null 2>&1 || return 1
 

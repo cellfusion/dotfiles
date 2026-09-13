@@ -58,6 +58,111 @@ for phase in plan implement review fix; do
 done
 
 if [ "${MAD_REPRESENTATIVE_RUN_APPROVED:-0}" = 1 ]; then
+LIVE_PHASE_ADAPTER="$TMP/fake-live-representative-phase-adapter.sh"
+cat > "$LIVE_PHASE_ADAPTER" <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+write_phase() {
+  local phase="$1"
+  local result_path="$2"
+  local handoff_path="$3"
+  printf '{"status":"ok","phase":"%s"}\n' "$phase" > "$result_path.tmp"
+  chmod 600 "$result_path.tmp"
+  mv "$result_path.tmp" "$result_path"
+  jq -cn --arg phase "$phase" --arg artifact "$result_path" \
+    '{run_id:"live-run",node:$phase,attempt:"live",artifact_paths:[$artifact]}' > "$handoff_path.tmp"
+  chmod 600 "$handoff_path.tmp"
+  mv "$handoff_path.tmp" "$handoff_path"
+}
+
+case "${1:-}" in
+  list-providers)
+    printf '%s\n' '{"providers":[{"id":"codex","available":true,"modeIds":["auto"]}]}'
+    ;;
+  list-models)
+    [ "${2:-}" = "--provider" ] && [ "${3:-}" = "codex" ] || exit 2
+    printf '%s\n' '{"provider":"codex","models":[{"id":"live-model","thinkingOptionIds":["live-thinking"]}]}'
+    ;;
+  create-agent)
+    [ "${2:-}" = "--request" ] || exit 2
+    request_path="${3:-}"
+    jq -e '
+      .provider == "codex/live-model" and
+      .workspaceId == "live-workspace" and
+      .settings.thinkingOptionId == "live-thinking"
+    ' "$request_path" >/dev/null || exit 2
+    prompt="$(jq -r '.initialPrompt' "$request_path")"
+    for phase in plan implement review fix; do
+      result_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase result: //p")"
+      handoff_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase handoff: //p")"
+      [ -n "$result_path" ] && [ -n "$handoff_path" ] || exit 2
+      write_phase "$phase" "$result_path" "$handoff_path"
+    done
+    state_path="$(printf '%s\n' "$prompt" | sed -n 's/^state transition: //p')"
+    [ -n "$state_path" ] || exit 2
+    printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
+    chmod 600 "$state_path.tmp"
+    mv "$state_path.tmp" "$state_path"
+    printf '%s\n' '{"status":"accepted"}'
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$LIVE_PHASE_ADAPTER"
+
+LIVE_ROOT="$TMP/live-root"
+mkdir -p "$LIVE_ROOT"
+PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$LIVE_PHASE_ADAPTER" \
+  PASEO_MAD_REPRESENTATIVE_PROVIDER=codex \
+  PASEO_MAD_REPRESENTATIVE_MODEL=live-model \
+  PASEO_MAD_REPRESENTATIVE_THINKING_OPTION=live-thinking \
+  PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID=live-workspace \
+  PASEO_MIGRATION_EVIDENCE_DIR="$LIVE_ROOT" \
+  MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
+  bash "$REPRESENTATIVE" --run --evidence-dir "$LIVE_ROOT/representative" >/dev/null 2>&1
+live_status=$?
+assert_eq "$live_status" "0" "representative: live override は Codex の実在 candidate と workspace を create へ渡す"
+assert_eq "$(jq -r '.request.provider' "$LIVE_ROOT/representative/create-call.json")" "codex/live-model" \
+  "representative: live override は provider/model を保持する"
+assert_eq "$(jq -r '.request.workspaceId' "$LIVE_ROOT/representative/create-call.json")" "live-workspace" \
+  "representative: live override は workspace ID を保持する"
+assert_eq "$(jq -r '.request.settings.thinkingOptionId' "$LIVE_ROOT/representative/create-call.json")" "live-thinking" \
+  "representative: live override は thinking option を保持する"
+
+INVALID_OVERRIDE_ROOT="$TMP/invalid-override-root"
+INVALID_OVERRIDE_REQUEST="$TMP/invalid-override-request.md"
+mkdir -p "$INVALID_OVERRIDE_ROOT"
+PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$SUCCESS_ADAPTER" \
+  PASEO_MAD_REPRESENTATIVE_MODEL=live-model \
+  PASEO_MIGRATION_EVIDENCE_DIR="$INVALID_OVERRIDE_ROOT" \
+  MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=0 DECISION_REQUEST_PATH="$INVALID_OVERRIDE_REQUEST" \
+  bash "$REPRESENTATIVE" --run --evidence-dir "$INVALID_OVERRIDE_ROOT/representative" >/dev/null 2>&1
+invalid_override_status=$?
+assert_eq "$([ "$invalid_override_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "representative: 不完全な live override は非ゼロで停止する"
+assert_eq "$(test -f "$INVALID_OVERRIDE_REQUEST" && echo yes || echo no)" "yes" \
+  "representative: 不完全な live override は decision request を書く"
+assert_eq "$(test -e "$INVALID_OVERRIDE_ROOT/representative/create-call.json" && echo yes || echo no)" "no" \
+  "representative: 不完全な live override は create を試さない"
+
+EMPTY_OVERRIDE_ROOT="$TMP/empty-override-root"
+EMPTY_OVERRIDE_REQUEST="$TMP/empty-override-request.md"
+mkdir -p "$EMPTY_OVERRIDE_ROOT"
+PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$SUCCESS_ADAPTER" \
+  PASEO_MAD_REPRESENTATIVE_PROVIDER='' \
+  PASEO_MAD_REPRESENTATIVE_MODEL='' \
+  PASEO_MAD_REPRESENTATIVE_THINKING_OPTION='' \
+  PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID='' \
+  PASEO_MIGRATION_EVIDENCE_DIR="$EMPTY_OVERRIDE_ROOT" \
+  MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=0 DECISION_REQUEST_PATH="$EMPTY_OVERRIDE_REQUEST" \
+  bash "$REPRESENTATIVE" --run --evidence-dir "$EMPTY_OVERRIDE_ROOT/representative" >/dev/null 2>&1
+empty_override_status=$?
+assert_eq "$([ "$empty_override_status" -ne 0 ] && printf yes || printf no)" "yes" \
+  "representative: 空の live override は非ゼロで停止する"
+assert_eq "$(test -e "$EMPTY_OVERRIDE_ROOT/representative/create-call.json" && echo yes || echo no)" "no" \
+  "representative: 空の live override は create を試さない"
+
   PHASE_ADAPTER="$TMP/fake-representative-phase-adapter.sh"
   cat > "$PHASE_ADAPTER" <<'EOF'
 #!/usr/bin/env bash
