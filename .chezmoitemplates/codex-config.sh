@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # $CODEX_HOME/config.toml（~/.config/codex と ~/.config/codex_secondary）の model、
-# automode の承認設定、sandbox 設定だけを chezmoi が保証する。
+# Default Permissions の承認設定、sandbox 設定だけを chezmoi が保証する。
 #
 # 全体を管理しない理由: [projects] の trust_level は Codex が対話中に
 # 「このディレクトリを信頼するか」と聞くたびに自動追記する。全体を管理すると
@@ -14,7 +14,7 @@ set -eu
 MODEL='gpt-5.6-terra'
 EFFORT='medium'
 APPROVAL_POLICY='on-request'
-APPROVALS_REVIEWER='auto_review'
+APPROVALS_REVIEWER='user'
 SANDBOX_MODE='workspace-write'
 NETWORK_ACCESS='true'
 MODEL_CONTEXT_WINDOW='1000000'

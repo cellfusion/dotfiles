@@ -80,9 +80,9 @@ assert_contains "$out" 'model_reasoning_effort = "medium"' "effort を medium �
 assert_contains "$out" 'model_context_window = 1000000' "コンテキストウィンドウを 1000000 にする"
 assert_contains "$out" 'model_auto_compact_token_limit = 900000' "自動圧縮閾値を 900000 にする"
 
-# 3. automode の推奨設定に置換される。
+# 3. Default Permissions の推奨設定に置換される。
 assert_contains "$out" 'approval_policy = "on-request"' "承認ポリシーを on-request にする"
-assert_contains "$out" 'approvals_reviewer = "auto_review"' "承認判定を auto reviewer に委任する"
+assert_contains "$out" 'approvals_reviewer = "user"' "承認判定をユーザーに戻す"
 assert_contains "$out" 'sandbox_mode = "workspace-write"' "sandbox を workspace-write にする"
 assert_contains "$out" '[sandbox_workspace_write]' "sandbox_workspace_write セクションを作る"
 assert_contains "$out" 'network_access = true' "sandbox 内ネットワークを有効にする"
@@ -163,7 +163,7 @@ assert_contains "$nokey_out" 'model_reasoning_effort = "medium"' "effort 行が�
 assert_contains "$nokey_out" 'model_context_window = 1000000' "model_context_window 行が無ければ追加する"
 assert_contains "$nokey_out" 'model_auto_compact_token_limit = 900000' "model_auto_compact_token_limit 行が無ければ追加する"
 assert_contains "$nokey_out" 'approval_policy = "on-request"' "approval_policy 行が無ければ追加する"
-assert_contains "$nokey_out" 'approvals_reviewer = "auto_review"' "approvals_reviewer 行が無ければ追加する"
+assert_contains "$nokey_out" 'approvals_reviewer = "user"' "approvals_reviewer 行が無ければ追加する"
 assert_contains "$nokey_out" 'sandbox_mode = "workspace-write"' "sandbox_mode 行が無ければ追加する"
 assert_contains "$nokey_out" 'network_access = true' "network_access 行が無ければ追加する"
 assert_contains "$nokey_out" 'web_search = true' "追加しても既存の内容は壊さない"
@@ -175,7 +175,7 @@ assert_contains "$empty_out" 'model_reasoning_effort = "medium"' "空入力で e
 assert_contains "$empty_out" 'model_context_window = 1000000' "空入力で model_context_window を出す"
 assert_contains "$empty_out" 'model_auto_compact_token_limit = 900000' "空入力で model_auto_compact_token_limit を出す"
 assert_contains "$empty_out" 'approval_policy = "on-request"' "空入力で approval_policy を出す"
-assert_contains "$empty_out" 'approvals_reviewer = "auto_review"' "空入力で approvals_reviewer を出す"
+assert_contains "$empty_out" 'approvals_reviewer = "user"' "空入力で approvals_reviewer を出す"
 assert_contains "$empty_out" 'sandbox_mode = "workspace-write"' "空入力で sandbox_mode を出す"
 assert_contains "$empty_out" 'network_access = true' "空入力で network_access を出す"
 
@@ -245,7 +245,7 @@ d = tomllib.load(open('$tmp_toml','rb'))
 print(d['model'], d['model_reasoning_effort'], d['model_context_window'], d['model_auto_compact_token_limit'], d['approval_policy'], d['approvals_reviewer'], d['sandbox_mode'], d['sandbox_workspace_write']['network_access'], len(d['projects']), len(d['mcp_servers']))
 " 2>&1)"
 rm -f "$tmp_toml"
-assert_eq "$parsed" "gpt-5.6-terra medium 1000000 900000 on-request auto_review workspace-write True 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
+assert_eq "$parsed" "gpt-5.6-terra medium 1000000 900000 on-request user workspace-write True 2 2" "出力が TOML としてパースでき、他のセクションが保たれる"
 
 # 9. CODEX_HOME は herdr セッションごとに切り替える。
 zshrc="$(cat "$CHEZMOI_SOURCE/private_dot_config/zsh/dot_zshrc")"
