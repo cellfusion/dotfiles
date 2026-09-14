@@ -9,9 +9,9 @@ fi
 case "${1:-}" in
   list-providers)
     if [ "${PASEO_FAKE_OPAQUE_MODE_IDS:-0}" = "1" ]; then
-      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto","mode: observed"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto","mode: observed"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pie","available":false,"modeIds":[]}]}'
+      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto","mode: observed"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto","mode: observed"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pi","available":false,"modeIds":[]}]}'
     else
-      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pie","available":false,"modeIds":[]}]}'
+      printf '%s\n' '{"providers":[{"id":"claude","available":true,"modeIds":["auto"]},{"id":"claude-lab","available":false,"modeIds":[]},{"id":"codex","available":true,"modeIds":["auto"]},{"id":"codex-lab","available":false,"modeIds":[]},{"id":"opencode","available":false,"modeIds":[]},{"id":"pi","available":false,"modeIds":[]}]}'
     fi
     ;;
   list-models)
@@ -21,19 +21,6 @@ case "${1:-}" in
       codex) printf '%s\n' '{"provider":"codex","models":[{"id":"sample-light","thinkingOptionIds":["medium"]},{"id":"sample-work","thinkingOptionIds":["high"]}]}' ;;
       *) exit 2 ;;
     esac
-    ;;
-  create-agent)
-    [ "${2:-}" = "--request" ] || exit 2
-    [ -f "${3:-}" ] && [ ! -L "${3:-}" ] || exit 2
-    if [ "${PASEO_FAKE_DUPLICATE_ACCEPTED_CHILD_REF:-0}" = "1" ]; then
-      printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111","childRef":"22222222-2222-4222-8222-222222222222"}'
-    elif [ "${PASEO_FAKE_PROTO_CHILD_REF:-0}" = "1" ]; then
-      printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111","__proto__":{"unexpected":true}}'
-    elif [ "${PASEO_FAKE_DOT_CHILD_REF:-0}" = "1" ]; then
-      printf '%s\n' '{"status":"accepted","childRef":"."}'
-    else
-      printf '%s\n' '{"status":"accepted","childRef":"11111111-1111-4111-8111-111111111111"}'
-    fi
     ;;
   wait-agent)
     [ "${2:-}" = "--child-ref" ] && [ "${4:-}" = "--timeout" ] || exit 2

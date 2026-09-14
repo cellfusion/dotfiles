@@ -25,7 +25,7 @@
       "featureAllowlist": {}
     },
     "opencode": { "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
-    "pie": { "displayName": "Pie", "setup": null, "featureAllowlist": {} }
+    "pi": { "displayName": "Pi", "setup": null, "featureAllowlist": {} }
   },
   "tiers": {
     "light": { "candidates": [{ "provider": "codex", "model": "sample-light-absent", "thinkingOptionId": "medium", "featureValues": {} }] },
@@ -34,7 +34,7 @@
     "deep": { "candidates": [{ "provider": "claude", "model": "sample-deep-absent", "thinkingOptionId": "max", "featureValues": {} }] }
   },
   "environments": {
-    "primary": { "providers": ["claude", "codex", "opencode", "pie"], "tiers": {} },
+    "primary": { "providers": ["claude", "codex", "opencode", "pi"], "tiers": {} },
     "lab": {
       "providers": ["claude", "codex"],
       "tiers": {

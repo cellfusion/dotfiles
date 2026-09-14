@@ -25,6 +25,12 @@ const SETUP_TABLE = {
   },
 }
 const KNOWN_SETUP_FAMILIES = Object.keys(SETUP_TABLE)
+// v1 で宣言してよい feature key と scalar 型を family ごとに固定する。
+// 表にない family は空の allowlist だけを持てる。
+const FEATURE_ALLOWLIST_TABLE = {
+  claude: { fast_mode: 'boolean' },
+  codex: { fast_mode: 'boolean' },
+}
 const SECRET_SUBSTRINGS = ['credential', 'token', 'key', 'password', 'secret', 'auth', 'session', 'cookie', 'history']
 const RESERVED_ENV_NAMES = ['agent_env', 'chezmoi_agent_config_managed', 'paseo_managed', 'xdg_config_home', 'home']
 const SCHEMA_PATH = path.join(__dirname, 'agent-config.schema.json')
@@ -158,8 +164,17 @@ function assertFamilyRegistry(family, definition) {
       throw new ConfigError(`provider family ${family}: setup table と一致しない`)
     }
   }
-  if (Object.keys(definition.featureAllowlist).length !== 0) {
-    throw new ConfigError(`provider family ${family}: v1 の featureAllowlist は空でなければならない`)
+  const allowed = Object.prototype.hasOwnProperty.call(FEATURE_ALLOWLIST_TABLE, family)
+    ? FEATURE_ALLOWLIST_TABLE[family]
+    : {}
+  for (const [key, scalar] of Object.entries(definition.featureAllowlist)) {
+    assertFeatureKey(key)
+    if (!Object.prototype.hasOwnProperty.call(allowed, key)) {
+      throw new ConfigError(`provider family ${family}: featureAllowlist の key ${key} は v1 で許可されない`)
+    }
+    if (allowed[key] !== scalar) {
+      throw new ConfigError(`provider family ${family}: featureAllowlist の ${key} は ${allowed[key]} でなければならない`)
+    }
   }
 }
 

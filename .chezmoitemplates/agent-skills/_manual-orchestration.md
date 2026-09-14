@@ -14,7 +14,7 @@ node -e 'const c=require(process.argv[1]); c.writeProviderEnumeration0600(proces
   "$MAD_SHARE/mad-contract.js" "$RUN_DIR/resolved-export.json" "$RUN_DIR/provider-enumeration.json"
 ```
 
-`provider-enumeration.json` の provider ID 集合だけを discovery の入力にする。親は adapter の `list-providers` を一回呼び、列挙集合と `available: true` の集合の積集合に対して `list-models --provider <id>` を一回ずつ呼ぶ。未選択の provider に model discovery を行わない。adapter は MCP transport と応答の strict な形の境界であり、親は raw response、account metadata、credential、URL を保存しない。
+`provider-enumeration.json` の provider ID 集合だけを discovery の入力にする。親は adapter の `list-providers` を一回呼び、列挙集合と `available: true` の集合の積集合に対して `list-models --provider <id>` を一回ずつ呼ぶ。未選択の provider に model discovery を行わない。adapter は discovery と wait/stop の transport と応答の strict な形の境界であり、親は raw response、account metadata、credential、URL を保存しない。adapter は create の subcommand を持たない。
 
 各 response を検査してから、mode 0600 の regular file として保存する。`mad-contract.js` の `writeAvailabilitySnapshot0600` は列挙集合を snapshot の入力集合にし、available でない provider の models を空配列にする。snapshot が不正、欠落、書き込み失敗のときは create を行わず、run の `state` と `phase_state` を `waiting_for_user` にする。
 
@@ -30,18 +30,63 @@ generate-paseo-config --input "$AGENT_CONFIG" resolve \
 
 ## create request と state
 
-launch の検証後、親は `buildMadCreateRequestV1` を使って次の 6 つの top-level key だけを持つ request を作る。
+create の順序は `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
+
+launch の検証後、親は `buildMadCreateRequestV1` を使って次の 6 つの top-level key だけを持つ request を作る。key は公式 MCP tool の引数と一対一に対応する。
 
 ```text
 title, workspaceId, initialPrompt, notifyOnFinish, provider, settings
 settings: modeId, thinkingOptionId, features
 ```
 
-`provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto` である。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、mode 0600 の regular file とする。親は adapter の `create-agent --request <absolute-0600-json-file>` を一回だけ呼ぶ。adapter は Paseo CLI の `run --background --json` が返す厳密な `{agentId,status,provider,cwd,title}` response を検証し、basename-safe opaque `agentId` だけを `childRef` として `{"status":"accepted","childRef":"<safe-id>"}` に縮約する。attempt state は create 前に `create_accepted: false` を保存し、親は key set が厳密な accepted response の `childRef` を受け取ったときだけ `create_accepted: true`、`state: running`、`child_ref` を同時に保存する。この true は wait timeout/error、親の decision、`failed`、`waiting_for_user`、`unresolved`、`stopped`、`ok` を含む以後の全 state で保持し、child_ref を必須にする。受理前の discovery、resolve、request build、create の失敗は `create_accepted: false` かつ child_ref を持たない。欠損、未知 key、重複 key、型不正、不安全な ID、拒否、transport failure は `failed` とし、retry を行わない。
+`provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto`、`settings.features` は launch の `featureValues` そのものである。`claude` と `codex` は `fast_mode` の `true`/`false` をここに載せられる。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、`mcp-create.json` という mode 0600 の regular file とする。runner はここで停止し、create の transport を実行しない。
 
-Paseo CLI に `notifyOnFinish` 専用 option はないため、adapter は request の boolean を metadata label `notifyOnFinish=true` または `notifyOnFinish=false` に一対一で転送する。この label は notification の配送保証ではない。完了検知は常に accepted `childRef` を使う polling であり、親は adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>` を child ごとに一つだけ呼ぶ。adapter は内部で wait の raw response の allowed key (`agentId`、`status`、`message`) と必須の `agentId` が childRef に一致することを検証してから `{"status":"idle"|"timeout"|"error"}` に縮約する。停止も親が直接 CLI/MCP を呼ばず、adapter の `stop-agent --child-ref <safe-id>` を使う。adapter は停止 response の allowed key (`stoppedCount`、`agentIds`)、`stoppedCount: 1`、`agentIds` の一件、および childRef との完全一致を検証してから `{"status":"stopped"}` に縮約し、transport または不正 response は `{"status":"error"}` だけを返す。wait/stop の status 以外の活動履歴・本文・raw response を state/log へ保存しない。
+親は `mcp-create.json` を読み、`assertMadCreateRequestV1` で再検証してから、その 6 key をそのまま `mcp__paseo__create_agent` の引数に渡す。検証を通していない request で create を呼ばない。Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create の経路に使わない。
 
-成功 run の call log は `mad-call-log` として discovery、create、wait、必要な stop の順序、回数、検証済み artifact path と縮約済み wait/stop status だけを記録する。failure の終端 event は stage、exit code、create 回数、state だけを記録する。実運用の state と log に prompt、request payload、raw adapter response、credential、auth/history、URL を入れない。fixture の匿名 call log だけが検証済み request payload を持てる。
+create の直前の検証は次で行う。state、call log、消費 marker のいずれも変更しない。
+
+```bash
+manual-orchestration-validate --assert-create-request \
+  --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
+```
+
+この assertion は `mcp-create.json` が mode 0600 の regular file であること、重複 key が無いこと、`MadCreateRequestV1` の exact key set であること、`settings.modeId` が `auto` であること、`settings.features` が launch の provider の allowlist に収まり `featureValues` と一致すること、`provider` が `<launch.provider>/<launch.model>` であることを確認する。exit 2 のときは create を呼ばない。
+
+`--assert-create-request` は検証だけを行い、marker を作らない。検証を通ったことは、create を呼ぶ権利にはならない。同じ attempt を見る 2 つの親が同時にこの assertion を通れば、`mcp__paseo__create_agent` を 2 回呼べてしまう。そのため、create を呼ぶ直前には次の `--prepare-create` を必ず通す。
+
+```bash
+manual-orchestration-validate --prepare-create \
+  --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
+```
+
+create は attempt ごとに一回だけである。`--prepare-create` は `--assert-create-request` と同じ request の strict 検証に加えて、attempt state が厳密に `{"state":"pending","create_accepted":false}` の 0600 regular file であること、call log が `MadCallLogV1` を満たし `create_agent`、`wait_agent`、`stop_agent`、`failure` の event を持たないことを確認する。全て成功した後にだけ、mode 0600 の `mcp-create.prepared` を `O_EXCL` で作る。`--prepare-create` が成功した呼び出しだけが `mcp__paseo__create_agent` を呼べる。exit 2 のときは create を呼ばない。
+
+検証に落ちた呼び出しは marker を残さず、state と call log も書き換えない。request が契約を満たさないときは marker が存在しないままである。marker を既に取られている二回目と同時実行の敗者も、marker、state、call log のどれも書き換えずに exit 2 で止まる。
+
+`--exercise-accepted` は marker を作らない。`mcp-create.prepared` が 0600 の regular file で `{"version":1,"type":"mad-create-prepare","consumed":true}` の exact key set であることを確認し、attempt state と call log の受理前検査を通してから response を処理する。marker が無い、mode が違う、schema が違う、又は既に受理済みの attempt は、state と call log を一切書き換えずに exit 2 で拒否する。
+
+create は child ごとに一回だけである。親は返ってきた response を `{"status":"accepted","childRef":"<safe-id>"}` の exact key set に縮約し、basename-safe opaque な `childRef` だけを保存する。raw response、activity、log、`inspect` 出力を state にも log にも残さない。attempt state は create 前に `create_accepted: false` を保存し、親は key set が厳密な accepted response の `childRef` を受け取ったときだけ `create_accepted: true`、`state: running`、`child_ref` を同時に保存する。この true は wait timeout/error、親の decision、`failed`、`waiting_for_user`、`unresolved`、`stopped`、`ok` を含む以後の全 state で保持し、child_ref を必須にする。受理前の discovery、resolve、request build、create の失敗は `create_accepted: false` かつ child_ref を持たない。欠損、未知 key、重複 key、型不正、不安全な ID、拒否、transport failure は `failed` とし、retry を行わない。
+
+`notifyOnFinish` は `mcp__paseo__create_agent` が持つ引数なので、request の boolean をそのまま渡す。完了検知は accepted `childRef` を使う polling であり、親は adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>` を child ごとに一つだけ呼ぶ。adapter は内部で wait の raw response の allowed key (`agentId`、`status`、`message`) と必須の `agentId` が childRef に一致することを検証してから `{"status":"idle"|"timeout"|"error"}` に縮約する。停止も親が直接 CLI/MCP を呼ばず、adapter の `stop-agent --child-ref <safe-id>` を使う。adapter は停止 response の allowed key (`stoppedCount`、`agentIds`)、`stoppedCount: 1`、`agentIds` の一件、および childRef との完全一致を検証してから `{"status":"stopped"}` に縮約し、transport または不正 response は `{"status":"error"}` だけを返す。wait/stop の status 以外の活動履歴・本文・raw response を state/log へ保存しない。
+
+成功 run の call log は `mad-call-log` として discovery、create、wait、必要な stop の順序、回数、検証済み artifact path と縮約済み wait/stop status だけを記録する。実運用の state と log に prompt、request payload、raw adapter response、credential、auth/history、URL を入れない。fixture の匿名 call log だけが検証済み request payload を持てる。
+
+`MadCallLogV1` は `{version:1,type:"mad-call-log",events:[...]}` である。event は `seq` と `operation` に加えて、次の表の key だけを持つ。`seq` は 0 から連続する整数であり、配列の index と一致する。宣言に無い key、宣言に無い `operation`、飛んだ `seq`、URL を含む値は exit 2 である。runner は書き込む前にこの検査を通す。
+
+| operation | 追加 key |
+|---|---|
+| `enumerate_materialized_provider_ids` | `providerIds` |
+| `list_providers` | `callCount`、`materializedProviderIds`、`availableProviderIds` |
+| `list_models` | `callCount`、`provider` |
+| `write_snapshot` | `path`、`mode`、`regularFile` |
+| `resolve` | `exitCode`、`outputType`、`stdoutDocuments` |
+| `build_create_request` | `path`、`mode`、`regularFile`、`topLevelKeys`、`settingsKeys`、`validatedBeforeWrite` |
+| `create_agent` | `callCount`、`requestPath`、`transport` |
+| `wait_agent` | `callCount`、`timeoutSeconds`、`status` |
+| `stop_agent` | `callCount`、`status` |
+| `failure` | `stage`、`exitCode`、`createCalls`、`state` |
+
+`create_agent.transport` は `mcp__paseo__create_agent` の一語に固定する。create の経路が公式 MCP tool だけであることを、この値が証跡として示す。
 
 run の対応は次で固定する。
 
@@ -50,7 +95,10 @@ run の対応は次で固定する。
 | discovery / model discovery / snapshot の失敗 | `waiting_for_user` | 0 回 |
 | launch exit 4 | `waiting_for_user` | 0 回 |
 | launch exit 2 / launch validation / request build の失敗 | `failed` | 0 回 |
-| create の拒否 / transport failure | `failed` | 1 回 |
+| prepare の失敗（request 不正、state が pending でない、log に create 以後の event、marker 済み） | 変更しない | 0 回 |
+| 受理前検査の失敗（prepare marker が無い、mode 不正、schema 不正、既に受理済み） | 変更しない | 0 回 |
+| `mcp-create.json` の検証失敗 | `failed` | 0 回 |
+| create の拒否 / accepted response の契約違反 | `failed` | 1 回 |
 | create 受理 | `running` | 1 回 |
 | 子の decision request | `unresolved` | 親が停止 |
 
@@ -89,7 +137,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 ## child の起動と完了検知
 
-child の role、prompt、schema、workspace を決めた後、親は `paseo-mcp-adapter` の `create-agent --request` を呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`notifyOnFinish` は launch と create request の検証済み値を使う。`notifyOnFinish` は専用 CLI option ではなく metadata label に一対一で写す。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
+child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
 
 起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は adapter の `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは adapter の `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
 

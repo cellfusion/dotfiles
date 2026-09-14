@@ -245,9 +245,27 @@ mad_add_event() {
   return 0
 }
 
+# contract module を読めるかは一度だけ判定して使い回す。読めない run は terminal
+# failure event しか書かないので、その一件だけ検証を通さずに記録する。
+mad_contract_loaded() {
+  if [ -z "${MAD_CONTRACT_LOADED:-}" ]; then
+    if [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1; then
+      MAD_CONTRACT_LOADED=1
+    else
+      MAD_CONTRACT_LOADED=0
+    fi
+  fi
+  [ "$MAD_CONTRACT_LOADED" = 1 ]
+}
+
 mad_persist_log() {
   local value
   value="$(jq -cn --argjson events "$MAD_EVENTS" '{version:1,type:"mad-call-log",events:$events}' 2>/dev/null)" || return 1
+  if mad_contract_loaded; then
+    MAD_CALL_LOG_JSON="$value" node -e '
+      require(process.argv[1]).assertMadCallLogV1(JSON.parse(process.env.MAD_CALL_LOG_JSON))
+    ' "$MAD_CONTRACT" >/dev/null 2>&1 || return 1
+  fi
   write_private_text "$MAD_CALL_LOG" "$value"
 }
 
@@ -370,7 +388,7 @@ NODE
 mad_build_request() {
   local context_json="$1"
   MAD_CONTEXT_JSON="$context_json" node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" \
-    "$MAD_ATTEMPT_DIR/launch.json" "$MAD_ATTEMPT_DIR/create-request.json" <<'NODE' 2>/dev/null
+    "$MAD_ATTEMPT_DIR/launch.json" "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' 2>/dev/null
 const fs = require('node:fs')
 const contract = require(process.argv[2])
 const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
@@ -390,6 +408,74 @@ process.stdout.write(JSON.stringify({
 NODE
 }
 
+# 親が公式 MCP create を呼んだ後に runner が読む request を、mode と allowlist まで
+# 含めて検証する。launch と食い違う request で state を進めないための境界である。
+mad_assert_request_file() {
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" \
+    "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+const requestPath = process.argv[5]
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
+contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
+NODE
+}
+
+# create は attempt ごとに一回だけである。request が契約を満たし、state が厳密に
+# pending で、call log に create 以後の event が無く、まだ marker が無いときだけ
+# marker を作る。marker を作れた呼び出しだけが公式 MCP create を呼べる。失敗しても
+# marker、state、call log のどれも変えない。
+mad_prepare_create_marker() {
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const attemptDir = process.argv[3]
+const resolved = JSON.parse(fs.readFileSync(`${attemptDir}/resolved-export.json`, 'utf8'))
+const launch = JSON.parse(fs.readFileSync(`${attemptDir}/launch.json`, 'utf8'))
+const requestPath = `${attemptDir}/mcp-create.json`
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
+contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
+contract.prepareMadCreate0600(
+  `${attemptDir}/${contract.MAD_CREATE_PREPARE_MARKER_NAME}`,
+  requestPath,
+  `${attemptDir}/call-log.json`,
+  `${attemptDir}/state.json`,
+  allowlist,
+)
+NODE
+}
+
+# 受理の境界は marker を作らない。prepare が残した marker の mode と schema を見て、
+# state が厳密に pending で call log に create 以後の event が無いことを確かめる。
+mad_assert_prepared() {
+  node -e '
+    const contract = require(process.argv[1])
+    contract.assertMadCreatePrepared0600(
+      `${process.argv[2]}/${contract.MAD_CREATE_PREPARE_MARKER_NAME}`, process.argv[3], process.argv[4])
+  ' "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR" "$MAD_CALL_LOG" \
+    "$MAD_ATTEMPT_DIR/state.json" >/dev/null 2>&1
+}
+
+# create と wait は attempt をまたぐので、既存の call log を読み直して seq を続ける。
+mad_load_log() {
+  local events
+  [ -f "$MAD_CALL_LOG" ] && [ ! -L "$MAD_CALL_LOG" ] || return 1
+  events="$(jq -c '
+    if type == "object" and (keys | sort) == ["events","type","version"] and
+       .version == 1 and .type == "mad-call-log" and (.events | type == "array")
+    then .events else error end
+  ' "$MAD_CALL_LOG" 2>/dev/null)" || return 1
+  MAD_EVENTS="$events"
+  MAD_SEQUENCE="$(printf '%s' "$events" | jq '[.[].seq] | if length == 0 then 0 else (max + 1) end' 2>/dev/null)" || return 1
+  return 0
+}
+
 mad_require_non_empty() {
   [ -n "$2" ] || { printf 'manual-orchestration-validate: %s is required\n' "$1" >&2; return 1; }
 }
@@ -404,25 +490,23 @@ mad_require_absolute() {
 mad_exercise_create() {
   local snapshot=""
   local launch=""
-  local adapter=""
+  local request_out=""
   local create_log=""
   local share_dir=""
+  local feature_allowlist='{}'
   local contract
-  local validation
-  local request_path
-  local response
-  local adapter_status
-  local child_ref
+  local validation_status
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --snapshot|--launch|--adapter|--create-log|--share-dir)
+      --snapshot|--launch|--request-out|--create-log|--share-dir|--feature-allowlist)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --snapshot) snapshot="$2" ;;
           --launch) launch="$2" ;;
-          --adapter) adapter="$2" ;;
+          --request-out) request_out="$2" ;;
           --create-log) create_log="$2" ;;
           --share-dir) share_dir="$2" ;;
+          --feature-allowlist) feature_allowlist="$2" ;;
         esac
         shift 2
         ;;
@@ -431,57 +515,48 @@ mad_exercise_create() {
   done
   mad_require_non_empty --snapshot "$snapshot" || return 2
   mad_require_non_empty --launch "$launch" || return 2
-  mad_require_non_empty --adapter "$adapter" || return 2
+  mad_require_non_empty --request-out "$request_out" || return 2
   mad_require_non_empty --create-log "$create_log" || return 2
   if [ -z "$share_dir" ]; then
     share_dir="$(mad_default_share_dir)" || return 2
   fi
   mad_require_absolute --snapshot "$snapshot" || return 2
   mad_require_absolute --launch "$launch" || return 2
-  mad_require_absolute --adapter "$adapter" || return 2
+  mad_require_absolute --request-out "$request_out" || return 2
   mad_require_absolute --create-log "$create_log" || return 2
   mad_require_absolute --share-dir "$share_dir" || return 2
-  [ -f "$adapter" ] && [ -x "$adapter" ] || { printf 'manual-orchestration-validate: adapter is unavailable\n' >&2; return 2; }
   contract="$share_dir/mad-contract.js"
   [ -f "$contract" ] || { printf 'manual-orchestration-validate: Paseo contract is unavailable\n' >&2; return 2; }
   node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 || {
     printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
     return 2
   }
+  # runner は create の transport を持たない。create 回数は常に 0 である。
   write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":0}' || return 2
-  validation="$(node - "$contract" "$snapshot" "$launch" <<'NODE' 2>/dev/null
+  MAD_FEATURE_ALLOWLIST_JSON="$feature_allowlist" node - "$contract" "$snapshot" "$launch" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
 const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
 const snapshot = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
 exporter.assertAvailabilitySnapshot(snapshot)
-contract.assertMadLaunchSpecV1(launch, {})
+contract.assertMadLaunchSpecV1(launch, JSON.parse(process.env.MAD_FEATURE_ALLOWLIST_JSON))
 NODE
-  )"
   validation_status=$?
   [ "$validation_status" -eq 0 ] || return 2
-  request_path="${create_log}.request"
-  if ! node - "$contract" "$launch" "$request_path" <<'NODE' 2>/dev/null; then
+  if ! MAD_FEATURE_ALLOWLIST_JSON="$feature_allowlist" node - "$contract" "$launch" "$request_out" <<'NODE' 2>/dev/null; then
 const fs = require('node:fs')
 const contract = require(process.argv[2])
 const launch = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const context = { title: 'exercise-create', workspaceId: 'exercise-create', initialPrompt: 'exercise-create', notifyOnFinish: true }
-const request = contract.buildMadCreateRequestV1(launch, {}, context)
+const request = contract.buildMadCreateRequestV1(launch, JSON.parse(process.env.MAD_FEATURE_ALLOWLIST_JSON), context)
 contract.writeMadCreateRequest0600(request, process.argv[4])
 NODE
-    rm -f "$request_path"
+    rm -f "$request_out"
     return 2
   fi
-  response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$request_path" 2>/dev/null)"
-  adapter_status=$?
-  rm -f "$request_path"
-  child_ref="$(mad_accepted_child_ref "$response" "$contract")"
-  if [ "$adapter_status" -ne 0 ] || [ -z "$child_ref" ]; then
-    write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":1}' || return 2
-    return 1
-  fi
-  write_private_text "$create_log" "$(jq -cn --arg childRef "$child_ref" '{version:1,type:"mad-create-log",createCalls:1,childRef:$childRef}')" || return 2
+  write_private_text "$create_log" \
+    "$(jq -cn --arg requestPath "$request_out" '{version:1,type:"mad-create-log",createCalls:0,requestPath:$requestPath}')" || return 2
   return 0
 }
 
@@ -499,7 +574,6 @@ mad_exercise_success() {
   local workspace_id=""
   local initial_prompt=""
   local notify_raw=""
-  local wait_timeout="1200"
   local notify_json
   local contract
   local launch_raw
@@ -512,16 +586,10 @@ mad_exercise_success() {
   local resolve_status
   local resolve_output
   local request_meta
-  local create_response
-  local create_status
-  local child_ref
-  local wait_response
-  local wait_status
-  local wait_evidence
   local context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--title|--workspace-id|--initial-prompt|--notify-on-finish|--wait-timeout|--call-log)
+      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --generator) generator="$2" ;;
@@ -536,7 +604,6 @@ mad_exercise_success() {
           --workspace-id) workspace_id="$2" ;;
           --initial-prompt) initial_prompt="$2" ;;
           --notify-on-finish) notify_raw="$2" ;;
-          --wait-timeout) wait_timeout="$2" ;;
           --call-log) MAD_CALL_LOG="$2" ;;
         esac
         shift 2
@@ -571,15 +638,6 @@ mad_exercise_success() {
     false) notify_json=false ;;
     *) printf 'manual-orchestration-validate: notify-on-finish must be true or false\n' >&2; return 2 ;;
   esac
-  if [ -n "$wait_timeout" ]; then
-    case "$wait_timeout" in
-      *[!0-9]*|'') printf 'manual-orchestration-validate: wait-timeout must be a positive integer\n' >&2; return 2 ;;
-    esac
-    [ "$wait_timeout" -gt 0 ] && [ "$wait_timeout" -le 3600 ] || {
-      printf 'manual-orchestration-validate: wait-timeout must be between 1 and 3600\n' >&2
-      return 2
-    }
-  fi
   [ -f "$generator" ] || { printf 'manual-orchestration-validate: generator is unavailable\n' >&2; return 2; }
   [ -f "$input" ] || { printf 'manual-orchestration-validate: input is unavailable\n' >&2; return 2; }
   [ -f "$adapter" ] && [ -x "$adapter" ] || { printf 'manual-orchestration-validate: adapter is unavailable\n' >&2; return 2; }
@@ -588,6 +646,7 @@ mad_exercise_success() {
   contract="$share_dir/mad-contract.js"
   MAD_ATTEMPT_DIR="$attempt_dir"
   MAD_CONTRACT="$contract"
+  MAD_CONTRACT_LOADED=""
   MAD_EVENTS='[]'
   MAD_SEQUENCE=0
   mad_persist_state pending || return 2
@@ -682,21 +741,109 @@ mad_exercise_success() {
   [ -n "$request_meta" ] || mad_finish_failure request_build 2 failed 0
   request_meta="$(printf '%s' "$request_meta" | jq -c . 2>/dev/null)" ||
     mad_finish_failure request_build 2 failed 0
-  mad_add_event "$(printf '%s' "$request_meta" | jq -c --arg path "$attempt_dir/create-request.json" \
+  mad_add_event "$(printf '%s' "$request_meta" | jq -c --arg path "$attempt_dir/mcp-create.json" \
     '. + {operation:"build_create_request",path:$path}')" ||
     mad_finish_failure request_build 2 failed 0
 
-  create_response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" create-agent --request "$attempt_dir/create-request.json" 2>/dev/null)"
-  create_status=$?
-  create_calls=1
-  mad_add_event "$(jq -cn --arg path "$attempt_dir/create-request.json" \
-    '{operation:"create_agent",callCount:1,requestPath:$path}')" ||
-    mad_finish_failure create_agent 1 failed "$create_calls"
-  child_ref="$(mad_accepted_child_ref "$create_response" "$contract")"
-  if [ "$create_status" -ne 0 ] || [ -z "$child_ref" ]; then
-    mad_finish_failure create_agent 1 failed "$create_calls"
+  # runner はここで止まる。create の transport は親の mcp__paseo__create_agent だけが行う。
+  mad_persist_log || mad_finish_failure request_build 2 failed 0
+  return 0
+}
+
+# 親が公式 MCP create を呼んだ後の境界。書いた request と返ってきた accepted
+# response の両方が契約を満たしたときだけ、attempt state を running へ進める。
+mad_exercise_accepted() {
+  MAD_CALL_LOG=""
+  local share_dir=""
+  local attempt_dir=""
+  local adapter=""
+  local response=""
+  local wait_timeout="1200"
+  local contract
+  local response_raw
+  local child_ref
+  local create_calls
+  local wait_response
+  local wait_status
+  local wait_evidence
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir|--adapter|--response|--wait-timeout|--call-log)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+          --adapter) adapter="$2" ;;
+          --response) response="$2" ;;
+          --wait-timeout) wait_timeout="$2" ;;
+          --call-log) MAD_CALL_LOG="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown exercise option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
   fi
-  mad_persist_state running "$child_ref" true || mad_finish_failure create_agent 1 failed "$create_calls" "$child_ref" true
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_non_empty --adapter "$adapter" || return 2
+  mad_require_non_empty --response "$response" || return 2
+  mad_require_non_empty --call-log "${MAD_CALL_LOG:-}" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --adapter "$adapter" || return 2
+  mad_require_absolute --response "$response" || return 2
+  mad_require_absolute --call-log "$MAD_CALL_LOG" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  [ -f "$adapter" ] && [ -x "$adapter" ] || {
+    printf 'manual-orchestration-validate: adapter is unavailable\n' >&2
+    return 2
+  }
+  if [ -n "$wait_timeout" ]; then
+    case "$wait_timeout" in
+      *[!0-9]*|'') printf 'manual-orchestration-validate: wait-timeout must be a positive integer\n' >&2; return 2 ;;
+    esac
+    [ "$wait_timeout" -gt 0 ] && [ "$wait_timeout" -le 3600 ] || {
+      printf 'manual-orchestration-validate: wait-timeout must be between 1 and 3600\n' >&2
+      return 2
+    }
+  fi
+  contract="$share_dir/mad-contract.js"
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$contract"
+  MAD_CONTRACT_LOADED=""
+  MAD_EVENTS='[]'
+  MAD_SEQUENCE=0
+  # contract を読めないと受理済みかどうかを判定できない。state と log を触らずに止める。
+  [ -f "$contract" ] && node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_assert_prepared || {
+    printf 'manual-orchestration-validate: create prepare marker is missing or create is already accepted\n' >&2
+    return 2
+  }
+  mad_load_log || return 2
+
+  # 未検証の request で create を受理しない。ここで落ちたら create は 0 回である。
+  mad_assert_request_file || mad_finish_failure create_agent 2 failed 0
+
+  [ -f "$response" ] && [ ! -L "$response" ] || mad_finish_failure create_agent 2 failed 0
+  response_raw="$(cat "$response" 2>/dev/null)" || mad_finish_failure create_agent 2 failed 0
+
+  create_calls=1
+  mad_add_event "$(jq -cn --arg path "$attempt_dir/mcp-create.json" \
+    '{operation:"create_agent",callCount:1,requestPath:$path,transport:"mcp__paseo__create_agent"}')" ||
+    mad_finish_failure create_agent 1 failed "$create_calls"
+  child_ref="$(mad_accepted_child_ref "$response_raw" "$contract")"
+  [ -n "$child_ref" ] || mad_finish_failure create_agent 1 failed "$create_calls"
+  mad_persist_state running "$child_ref" true ||
+    mad_finish_failure create_agent 1 failed "$create_calls" "$child_ref" true
+
   if [ -n "$wait_timeout" ]; then
     wait_response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" wait-agent --child-ref "$child_ref" --timeout "$wait_timeout" 2>/dev/null)"
     wait_status=$?
@@ -738,6 +885,106 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-success" ]; then
   exit $?
 fi
 
+# 親の MCP 境界が create の直前に呼ぶ。state も log も marker も触らない。
+mad_assert_create_request() {
+  local share_dir=""
+  local attempt_dir=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown assert option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$share_dir/mad-contract.js"
+  [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_assert_request_file || {
+    printf 'manual-orchestration-validate: mcp-create.json does not satisfy the create contract\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--assert-create-request" ]; then
+  shift
+  mad_assert_create_request "$@"
+  exit $?
+fi
+
+# 親の MCP 境界が create の前に呼ぶ。request/state/call log の strict 検証が全て
+# 成功したときだけ一回性 marker を作る。marker を取れた呼び出しだけが
+# mcp__paseo__create_agent へ進める。state と call log は書き換えない。
+mad_prepare_create() {
+  local share_dir=""
+  local attempt_dir=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown prepare option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$share_dir/mad-contract.js"
+  [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_prepare_create_marker || {
+    printf 'manual-orchestration-validate: create prepare failed or is already claimed\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--prepare-create" ]; then
+  shift
+  mad_prepare_create "$@"
+  exit $?
+fi
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-accepted" ]; then
+  shift
+  mad_exercise_accepted "$@"
+  exit $?
+fi
+
 if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
   shift
   mad_exercise_create "$@"
@@ -745,7 +992,7 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
 fi
 
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --exercise-success ... | --exercise-create ...'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"

@@ -77,6 +77,27 @@ assert_contains "$managed" ".local/share/agent-config/mad-contract.js" "distribu
 assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.sample.json" "distribution: 匿名 sample を配る"
 assert_not_contains "$managed" ".config/chezmoi/agent-config.json" "distribution: 正本を配らない"
+
+# 配布する sample は実測 provider ID を使い、Claude と Codex だけが fast_mode を
+# 宣言する。test fixture は配布しない。
+sample="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.sample.json"
+assert_eq "$(jq -r 'has("pi") and (has("pie") | not)' <<<"$(jq -c '.providers' "$sample")")" "true" \
+  "distribution: sample の provider ID は実測値の pi"
+assert_eq "$(jq -c '.providers.claude.featureAllowlist, .providers.codex.featureAllowlist' "$sample" | tr '\n' ' ')" \
+  '{"fast_mode":"boolean"} {"fast_mode":"boolean"} ' \
+  "distribution: sample は Claude と Codex に fast_mode を宣言する"
+assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$sample" | tr '\n' ' ')" \
+  "{} {} " "distribution: sample は OpenCode と Pi を空 allowlist にする"
+assert_eq "$(jq -c '[.tiers[].candidates[0].featureValues | if has("fast_mode") then .fast_mode else "absent" end] | sort' "$sample")" \
+  '[false,true,true,"absent"]' "distribution: sample は fast_mode の true と false を両方示す"
+assert_not_contains "$managed" "tests/fixtures" "distribution: test fixture を配らない"
+
+# 配布する adapter は create の境界を持たない。create は公式 MCP tool だけが行う。
+adapter_distributed="$(cat "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter")"
+assert_not_contains "$adapter_distributed" "create-agent" \
+  "distribution: adapter は create-agent subcommand を持たない"
+assert_not_contains "$adapter_distributed" "'run', '--background'" \
+  "distribution: adapter は paseo run による create 経路を持たない"
 hook_source="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
 for legacy in private-data.toml setup_paseo_provider list_providers; do
   assert_not_contains "$hook_source" "$legacy" "hook: $legacy を持たない"

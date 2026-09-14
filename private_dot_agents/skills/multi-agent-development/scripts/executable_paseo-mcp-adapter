@@ -1,16 +1,12 @@
 #!/usr/bin/env node
 'use strict'
 
-const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 function fail(message, status = 2) {
-  if (process.argv[2] === 'create-agent') {
-    const reasonCode = status === 1 ? 'transport_failure' : 'invalid_request'
-    process.stdout.write(JSON.stringify({ status: 'error', reasonCode }) + '\n')
-  } else if (process.argv[2] === 'stop-agent' && status === 1) {
+  if (process.argv[2] === 'stop-agent' && status === 1) {
     process.stdout.write(JSON.stringify({ status: 'error' }) + '\n')
   }
   process.stderr.write(`paseo-mcp-adapter: ${message}\n`)
@@ -141,81 +137,6 @@ function listModels(provider) {
   process.stdout.write(JSON.stringify({ provider, models }) + '\n')
 }
 
-function readCreateRequest(requestPath) {
-  if (typeof requestPath !== 'string' || !requestPath.startsWith('/')) fail('request path must be absolute')
-  let stats
-  try { stats = fs.lstatSync(requestPath) } catch { fail('request file is unavailable') }
-  if (!stats.isFile() || stats.isSymbolicLink() || (stats.mode & 0o777) !== 0o600) fail('request file must be a 0600 regular file')
-  let request
-  try { request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) } catch { fail('request JSON is invalid') }
-  if (!exactKeys(request, ['title', 'workspaceId', 'initialPrompt', 'notifyOnFinish', 'provider', 'settings'])) fail('request shape is invalid')
-  for (const field of ['title', 'workspaceId', 'initialPrompt', 'provider']) {
-    if (typeof request[field] !== 'string' || request[field].length === 0) fail('request shape is invalid')
-  }
-  if (typeof request.notifyOnFinish !== 'boolean' || !exactKeys(request.settings, ['modeId', 'thinkingOptionId', 'features']) ||
-      request.settings.modeId !== 'auto' || typeof request.settings.thinkingOptionId !== 'string' ||
-      request.settings.thinkingOptionId.length === 0 || request.settings.features === null ||
-      typeof request.settings.features !== 'object' || Array.isArray(request.settings.features) ||
-      Object.values(request.settings.features).some((value) =>
-        !(typeof value === 'boolean' || typeof value === 'string' ||
-          (typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value))))) {
-    fail('request shape is invalid')
-  }
-  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
-  let contract
-  try {
-    contract = require(path.join(shareDir, 'mad-contract.js'))
-    contract.assertMadCreateRequestV1(request, {})
-  } catch { fail('request shape is invalid') }
-  return { request, contract }
-}
-
-function createAgent(requestPath) {
-  const { request, contract } = readCreateRequest(requestPath)
-  const separator = request.provider.indexOf('/')
-  if (separator <= 0 || separator === request.provider.length - 1) fail('request provider is invalid')
-  const provider = request.provider.slice(0, separator)
-  const model = request.provider.slice(separator + 1)
-  if (!safeId(provider) || model.length === 0 || Object.keys(request.settings.features).length !== 0) {
-    fail('request provider is invalid')
-  }
-  const createPayload = {
-    title: request.title,
-    workspaceId: request.workspaceId,
-    initialPrompt: request.initialPrompt,
-    notifyOnFinish: request.notifyOnFinish,
-    provider: request.provider,
-    settings: {
-      modeId: request.settings.modeId,
-      thinkingOptionId: request.settings.thinkingOptionId,
-      features: { ...request.settings.features },
-    },
-  }
-  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
-    'run', '--background', '--json', '--title', createPayload.title,
-    '--provider', createPayload.provider,
-    '--thinking', createPayload.settings.thinkingOptionId,
-    '--mode', createPayload.settings.modeId,
-    '--workspace', createPayload.workspaceId,
-    '--label', `notifyOnFinish=${createPayload.notifyOnFinish}`,
-    createPayload.initialPrompt,
-  ], { encoding: 'utf8' })
-  if (result.error || result.status !== 0) fail('Paseo MCP create failed', 1)
-  let response
-  try {
-    const raw = contract.parseJsonWithoutDuplicateKeys(result.stdout || '', 'invalid_mad_create_response', 'Paseo MCP create response')
-    if (!exactKeys(raw, ['agentId', 'status', 'provider', 'cwd', 'title']) ||
-        !safeId(raw.agentId) || !['created', 'running'].includes(raw.status) ||
-        typeof raw.provider !== 'string' || raw.provider.length === 0 ||
-        typeof raw.cwd !== 'string' || !raw.cwd.startsWith('/') ||
-        typeof raw.title !== 'string' || raw.title.length === 0) {
-      throw new Error('invalid response')
-    }
-    response = raw
-  } catch { fail('Paseo MCP create response is invalid', 1) }
-  process.stdout.write(JSON.stringify({ status: 'accepted', childRef: response.agentId }) + '\n')
-}
-
 function waitAgent(childRef, timeout) {
   if (!safeId(childRef) || !/^[1-9][0-9]*$/.test(timeout) || Number(timeout) > 3600) {
     fail('wait arguments are invalid')
@@ -276,10 +197,6 @@ switch (args[0]) {
   case 'list-models':
     if (args.length !== 3 || args[1] !== '--provider') fail('list-models arguments are invalid')
     listModels(args[2])
-    break
-  case 'create-agent':
-    if (args.length !== 3 || args[1] !== '--request') fail('create-agent arguments are invalid')
-    createAgent(args[2])
     break
   case 'wait-agent':
     if (args.length !== 5 || args[1] !== '--child-ref' || args[3] !== '--timeout') fail('wait-agent arguments are invalid')

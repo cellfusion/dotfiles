@@ -32,7 +32,6 @@ assert_contains "$mad_source" "chmod 600" "mad smoke: state artifact を 0600 �
 assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR\"" "mad smoke: run directory の mode を検証する"
 assert_contains "$mad_source" "stat -f '%Lp' \"\$RUN_DIR/state.json\"" "mad smoke: state artifact の mode を検証する"
 for forbidden in \
-  "mcp__paseo__create_agent" \
   "paseo inspect" \
   "paseo logs" \
   "paseo wait" \
@@ -55,11 +54,23 @@ mad="$(bash "$mad_smoke" --dry-run 2>&1)"
 assert_contains "$mad" "manual-orchestration-validate --select-backend" \
   "mad smoke: backend selector を叩く"
 assert_contains "$mad" "paseo-mcp" "mad smoke: Paseo MCP を優先する"
-assert_contains "$mad" "paseo-mcp-adapter create-agent" "mad smoke: adapter で起動する"
-assert_contains "$mad" "create、wait、stop の境界はすべて paseo-mcp-adapter に限定する" \
-  "mad smoke: create/wait/stop の唯一経路を示す"
-assert_not_contains "$mad" "mcp__paseo__create_agent" \
-  "mad smoke: 親から直接 create MCP を呼ばない"
+assert_not_contains "$mad" "paseo-mcp-adapter create-agent" \
+  "mad smoke: adapter に create の境界を残さない"
+assert_contains "$mad" "wait と stop の境界はすべて paseo-mcp-adapter に限定する" \
+  "mad smoke: wait/stop の唯一経路を示す"
+assert_contains "$mad" "mcp__paseo__create_agent" \
+  "mad smoke: create は公式 MCP tool で行う"
+# create の順序を smoke が明示する。request を検証せずに create を呼ばせない。
+for create_step in \
+  "manual-orchestration-validate --exercise-success" \
+  "mcp-create.json" \
+  "assertMadCreateRequestV1" \
+  "manual-orchestration-validate --prepare-create" \
+  "manual-orchestration-validate --exercise-accepted"; do
+  assert_contains "$mad" "$create_step" "mad smoke: create の手順に $create_step を出す"
+done
+assert_contains "$mad" "request を検証してから create を呼ぶ" \
+  "mad smoke: 未検証 request で create しないと明示する"
 assert_contains "$mad" "自動で切り替えない" "mad smoke: 実行開始後に backend を替えない"
 assert_not_contains "$mad" "herdr" "mad smoke: Herdr を backend にしない"
 

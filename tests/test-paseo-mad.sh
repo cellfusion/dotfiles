@@ -11,6 +11,9 @@ MAD_CONTRACT="$SHARE/mad-contract.js"
 GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
 VALID="$FIXTURES/valid-v1.json"
 SUCCESS_ADAPTER="$MAD_FIXTURES/adapter/fake-success-adapter.sh"
+CREATE_BOUNDARY="$MAD_FIXTURES/boundary/fake-mcp-create-boundary.sh"
+# 境界 fixture は create 直前に runner の --prepare-create で一回性 marker を取る。
+export PASEO_MAD_VALIDATOR="$MAD_RUNNER"
 NON_GIT_DIR="$(mktemp -d)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$NON_GIT_DIR" "$TMP"' EXIT
@@ -278,11 +281,12 @@ assert_eq "$(cat "$UNIT3_REPRESENTATIVE_REQUEST/unit3-decision.txt" 2>/dev/null)
 assert_contains "$(cat "$UNIT3_REPRESENTATIVE_REQUEST/unit3-failure.txt" 2>/dev/null)" "representative-decision-request(exit 1)" \
   "unit3: representative request も failure evidence に記録する"
 
-env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
-  bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" >/dev/null 2>&1
+out="$(env -u MAD_REPRESENTATIVE_RUN_APPROVED DECISION_REQUEST_PATH="$TMP/decision.md" \
+  bash "$REPRESENTATIVE" --run --evidence-dir "$TMP/evidence" 2>&1)"
 status=$?
-assert_eq "$([ "$status" -ne 0 ] && printf yes || printf no)" "yes" "representative: 承認は外側の前提条件である"
-assert_eq "$(test -f "$TMP/decision.md" && echo yes || echo no)" "yes" "representative: 未承認なら decision request を書く"
+assert_eq "$status" "2" "representative: live --run は無効化されている"
+assert_contains "$out" "disabled" "representative: live --run は無効理由を示す"
+assert_eq "$(test -e "$TMP/decision.md" && echo yes || echo no)" "no" "representative: 無効化時に decision request を書かない"
 assert_eq "$(test -e "$TMP/evidence/create-call.json" && echo yes || echo no)" "no" "representative: 未承認なら create を試さない"
 assert_not_contains "$(cat "$REPRESENTATIVE" 2>/dev/null)" 'MAD_REPRESENTATIVE_RUN_APPROVED=1' "representative: runner は承認変数へ代入しない"
 
@@ -322,7 +326,7 @@ for phase in plan implement review fix; do
     "representative: $phase の fixture artifact は環境非依存 placeholder"
 done
 
-if [ "${MAD_REPRESENTATIVE_RUN_APPROVED:-0}" = 1 ]; then
+if [ "${PASEO_MAD_OFFLINE_FIXTURE_TESTS:-0}" = 1 ]; then
 LIVE_PHASE_ADAPTER="$TMP/fake-live-representative-phase-adapter.sh"
 cat > "$LIVE_PHASE_ADAPTER" <<'EOF'
 #!/usr/bin/env bash
@@ -349,28 +353,6 @@ case "${1:-}" in
     [ "${2:-}" = "--provider" ] && [ "${3:-}" = "codex" ] || exit 2
     printf '%s\n' '{"provider":"codex","models":[{"id":"live-model","thinkingOptionIds":["live-thinking"]}]}'
     ;;
-  create-agent)
-    [ "${2:-}" = "--request" ] || exit 2
-    request_path="${3:-}"
-    jq -e '
-      .provider == "codex/live-model" and
-      .workspaceId == "live-workspace" and
-      .settings.thinkingOptionId == "live-thinking"
-    ' "$request_path" >/dev/null || exit 2
-    prompt="$(jq -r '.initialPrompt' "$request_path")"
-    for phase in plan implement review fix; do
-      result_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase result: //p")"
-      handoff_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase handoff: //p")"
-      [ -n "$result_path" ] && [ -n "$handoff_path" ] || exit 2
-      write_phase "$phase" "$result_path" "$handoff_path"
-    done
-    state_path="$(printf '%s\n' "$prompt" | sed -n 's/^state transition: //p')"
-    [ -n "$state_path" ] || exit 2
-    printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
-    chmod 600 "$state_path.tmp"
-    mv "$state_path.tmp" "$state_path"
-    printf '%s\n' '{"status":"accepted","childRef":"22222222-2222-4222-8222-222222222222"}'
-    ;;
   wait-agent)
     [ "${2:-}" = "--child-ref" ] && [ "${3:-}" = "22222222-2222-4222-8222-222222222222" ] && \
       [ "${4:-}" = "--timeout" ] && [ "${5:-}" = "1200" ] || exit 2
@@ -381,9 +363,69 @@ esac
 EOF
 chmod +x "$LIVE_PHASE_ADAPTER"
 
+# 親の mcp__paseo__create_agent に相当する境界。検証済み request を読み、
+# 子が書くはずの phase artifact を用意してから accepted response を返す。
+LIVE_PHASE_BOUNDARY="$TMP/fake-live-representative-phase-boundary.sh"
+cat > "$LIVE_PHASE_BOUNDARY" <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+write_phase() {
+  local phase="$1"
+  local result_path="$2"
+  local handoff_path="$3"
+  printf '{"status":"ok","phase":"%s"}\n' "$phase" > "$result_path.tmp"
+  chmod 600 "$result_path.tmp"
+  mv "$result_path.tmp" "$result_path"
+  jq -cn --arg phase "$phase" --arg artifact "$result_path" \
+    '{run_id:"live-run",node:$phase,attempt:"live",artifact_paths:[$artifact]}' > "$handoff_path.tmp"
+  chmod 600 "$handoff_path.tmp"
+  mv "$handoff_path.tmp" "$handoff_path"
+}
+
+request=""
+response_out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --request) request="${2:-}"; shift 2 ;;
+    --response-out) response_out="${2:-}"; shift 2 ;;
+    *) exit 2 ;;
+  esac
+done
+[ -n "$request" ] && [ -n "$response_out" ] || exit 2
+jq -e '
+  .provider == "codex/live-model" and
+  .workspaceId == "live-workspace" and
+  .settings.thinkingOptionId == "live-thinking"
+' "$request" >/dev/null || exit 2
+
+# create の前に一回性 marker を取る。取れなければ create を呼ばない。
+attempt_dir="$(cd "$(dirname "$request")" && pwd -P)" || exit 2
+bash "${PASEO_MAD_VALIDATOR:?}" --prepare-create --share-dir "${PASEO_MAD_SHARE_DIR:?}" \
+  --attempt-dir "$attempt_dir" >/dev/null 2>&1 || exit 2
+
+prompt="$(jq -r '.initialPrompt' "$request")"
+for phase in plan implement review fix; do
+  result_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase result: //p")"
+  handoff_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase handoff: //p")"
+  [ -n "$result_path" ] && [ -n "$handoff_path" ] || exit 2
+  write_phase "$phase" "$result_path" "$handoff_path"
+done
+state_path="$(printf '%s\n' "$prompt" | sed -n 's/^state transition: //p')"
+[ -n "$state_path" ] || exit 2
+printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
+chmod 600 "$state_path.tmp"
+mv "$state_path.tmp" "$state_path"
+printf '%s' '{"status":"accepted","childRef":"22222222-2222-4222-8222-222222222222"}' > "$response_out.tmp"
+chmod 600 "$response_out.tmp"
+mv "$response_out.tmp" "$response_out"
+EOF
+chmod +x "$LIVE_PHASE_BOUNDARY"
+
 LIVE_ROOT="$TMP/live-root"
 mkdir -p "$LIVE_ROOT"
 PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$LIVE_PHASE_ADAPTER" \
+  PASEO_MAD_CREATE_BOUNDARY="$LIVE_PHASE_BOUNDARY" \
   PASEO_MAD_REPRESENTATIVE_PROVIDER=codex \
   PASEO_MAD_REPRESENTATIVE_MODEL=live-model \
   PASEO_MAD_REPRESENTATIVE_THINKING_OPTION=live-thinking \
@@ -404,6 +446,7 @@ INVALID_OVERRIDE_ROOT="$TMP/invalid-override-root"
 INVALID_OVERRIDE_REQUEST="$TMP/invalid-override-request.md"
 mkdir -p "$INVALID_OVERRIDE_ROOT"
 PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$SUCCESS_ADAPTER" \
+  PASEO_MAD_CREATE_BOUNDARY="$CREATE_BOUNDARY" \
   PASEO_MAD_REPRESENTATIVE_MODEL=live-model \
   PASEO_MIGRATION_EVIDENCE_DIR="$INVALID_OVERRIDE_ROOT" \
   MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=0 DECISION_REQUEST_PATH="$INVALID_OVERRIDE_REQUEST" \
@@ -420,6 +463,7 @@ EMPTY_OVERRIDE_ROOT="$TMP/empty-override-root"
 EMPTY_OVERRIDE_REQUEST="$TMP/empty-override-request.md"
 mkdir -p "$EMPTY_OVERRIDE_ROOT"
 PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$SUCCESS_ADAPTER" \
+  PASEO_MAD_CREATE_BOUNDARY="$CREATE_BOUNDARY" \
   PASEO_MAD_REPRESENTATIVE_PROVIDER='' \
   PASEO_MAD_REPRESENTATIVE_MODEL='' \
   PASEO_MAD_REPRESENTATIVE_THINKING_OPTION='' \
@@ -457,22 +501,6 @@ case "${1:-}" in
   list-providers|list-models)
     exec "$success_adapter" "$@"
     ;;
-  create-agent)
-    "$success_adapter" "$@" || exit 1
-    request_path="${3:-}"
-    prompt="$(jq -r '.initialPrompt' "$request_path")"
-    for phase in plan implement review fix; do
-      result_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase result: //p")"
-      handoff_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase handoff: //p")"
-      [ -n "$result_path" ] && [ -n "$handoff_path" ] || exit 1
-      write_phase "$phase" "$result_path" "$handoff_path"
-    done
-    state_path="$(printf '%s\n' "$prompt" | sed -n 's/^state transition: //p')"
-    [ -n "$state_path" ] || exit 1
-    printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
-    chmod 600 "$state_path.tmp"
-    mv "$state_path.tmp" "$state_path"
-    ;;
   wait-agent)
     exec "$success_adapter" "$@"
     ;;
@@ -483,10 +511,54 @@ esac
 EOF
   chmod +x "$PHASE_ADAPTER"
 
+  # 親が公式 MCP create を呼ぶ境界。phase artifact は create 後に子が書くものを模す。
+  PHASE_BOUNDARY="$TMP/fake-representative-phase-boundary.sh"
+  cat > "$PHASE_BOUNDARY" <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+boundary="${PASEO_FAKE_CREATE_BOUNDARY:?}"
+
+request=""
+response_out=""
+args=()
+while [ "$#" -gt 0 ]; do
+  args+=("$1")
+  case "$1" in
+    --request) request="${2:-}" ;;
+    --response-out) response_out="${2:-}" ;;
+  esac
+  shift
+done
+[ -n "$request" ] && [ -n "$response_out" ] || exit 2
+"$boundary" "${args[@]}" || exit 1
+
+prompt="$(jq -r '.initialPrompt' "$request")"
+for phase in plan implement review fix; do
+  result_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase result: //p")"
+  handoff_path="$(printf '%s\n' "$prompt" | sed -n "s/^$phase handoff: //p")"
+  [ -n "$result_path" ] && [ -n "$handoff_path" ] || exit 1
+  printf '{"status":"ok","phase":"%s"}\n' "$phase" > "$result_path.tmp"
+  chmod 600 "$result_path.tmp"
+  mv "$result_path.tmp" "$result_path"
+  jq -cn --arg phase "$phase" --arg artifact "$result_path" \
+    '{run_id:"fake-run",node:$phase,attempt:"fake",artifact_paths:[$artifact]}' > "$handoff_path.tmp"
+  chmod 600 "$handoff_path.tmp"
+  mv "$handoff_path.tmp" "$handoff_path"
+done
+state_path="$(printf '%s\n' "$prompt" | sed -n 's/^state transition: //p')"
+[ -n "$state_path" ] || exit 1
+printf '%s\n' '{"runStates":["running","ok"],"phaseStates":["plan:ok","implement:ok","review:ok","fix:ok"]}' > "$state_path.tmp"
+chmod 600 "$state_path.tmp"
+mv "$state_path.tmp" "$state_path"
+EOF
+  chmod +x "$PHASE_BOUNDARY"
+
   APPROVED_ROOT="$TMP/approved-root"
   mkdir -p "$APPROVED_ROOT"
   PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
     PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_FAKE_CREATE_BOUNDARY="$CREATE_BOUNDARY" PASEO_MAD_CREATE_BOUNDARY="$PHASE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$APPROVED_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
     bash "$REPRESENTATIVE" --run --evidence-dir "$APPROVED_ROOT/representative" >/dev/null 2>&1
@@ -506,6 +578,7 @@ EOF
   chmod 600 "$APPROVED_ROOT/representative/plan/plan.md"
   PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
     PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_FAKE_CREATE_BOUNDARY="$CREATE_BOUNDARY" PASEO_MAD_CREATE_BOUNDARY="$PHASE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$APPROVED_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
     bash "$REPRESENTATIVE" --run --evidence-dir "$APPROVED_ROOT/representative" >/dev/null 2>&1
@@ -514,11 +587,30 @@ EOF
   assert_eq "$(test -e "$APPROVED_ROOT/representative/plan/plan.md" && echo yes || echo no)" "no" \
     "representative: approved rerun は stale child evidence を残さない"
 
+  # create の transport は親だけが持つ。境界を渡さない run は成功扱いにしない。
+  MISSING_BOUNDARY_ROOT="$TMP/missing-boundary-root"
+  MISSING_BOUNDARY_REQUEST="$TMP/missing-boundary-request.md"
+  mkdir -p "$MISSING_BOUNDARY_ROOT"
+  env -u PASEO_MAD_CREATE_BOUNDARY \
+    PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_MIGRATION_EVIDENCE_DIR="$MISSING_BOUNDARY_ROOT" \
+    MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 DECISION_REQUEST_PATH="$MISSING_BOUNDARY_REQUEST" \
+    bash "$REPRESENTATIVE" --run --evidence-dir "$MISSING_BOUNDARY_ROOT/representative" >/dev/null 2>&1
+  missing_boundary_status=$?
+  assert_eq "$([ "$missing_boundary_status" -ne 0 ] && printf yes || printf no)" "yes" \
+    "representative: create 境界が無い run は非ゼロで停止する"
+  assert_eq "$(test -f "$MISSING_BOUNDARY_REQUEST" && echo yes || echo no)" "yes" \
+    "representative: create 境界が無い run は decision request を書く"
+  assert_eq "$(test -e "$MISSING_BOUNDARY_ROOT/representative/create-call.json" && echo yes || echo no)" "no" \
+    "representative: create 境界が無い run は create 証跡を残さない"
+
   WAIT_FAILURE_ROOT="$TMP/wait-failure-root"
   mkdir -p "$WAIT_FAILURE_ROOT"
   write_unit_decision "$WAIT_FAILURE_ROOT/representative-decision.txt" approved-success
   PASEO_FAKE_WAIT_STATUS=timeout PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
     PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_FAKE_CREATE_BOUNDARY="$CREATE_BOUNDARY" PASEO_MAD_CREATE_BOUNDARY="$PHASE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$WAIT_FAILURE_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
     bash "$REPRESENTATIVE" --run --evidence-dir "$WAIT_FAILURE_ROOT/representative" >/dev/null 2>&1
@@ -538,6 +630,7 @@ EOF
   write_unit_decision "$UNSAFE_STALE_ROOT/representative-decision.txt" approved-success
   PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
     PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_FAKE_CREATE_BOUNDARY="$CREATE_BOUNDARY" PASEO_MAD_CREATE_BOUNDARY="$PHASE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$UNSAFE_STALE_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
     bash "$REPRESENTATIVE" --run --evidence-dir "$UNSAFE_STALE_ROOT/representative" >/dev/null 2>&1
@@ -559,6 +652,7 @@ EOF
   write_unit_decision "$UNKNOWN_STALE_ROOT/representative-decision.txt" approved-success
   PASEO_FAKE_SUCCESS_ADAPTER="$SUCCESS_ADAPTER" \
     PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$PHASE_ADAPTER" \
+    PASEO_FAKE_CREATE_BOUNDARY="$CREATE_BOUNDARY" PASEO_MAD_CREATE_BOUNDARY="$PHASE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$UNKNOWN_STALE_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=3 \
     bash "$REPRESENTATIVE" --run --evidence-dir "$UNKNOWN_STALE_ROOT/representative" >/dev/null 2>&1
@@ -575,6 +669,7 @@ EOF
   TIMEOUT_REQUEST="$TMP/timeout-request.md"
   mkdir -p "$TIMEOUT_ROOT"
   PASEO_MAD_GENERATOR="$GENERATOR" PASEO_MAD_ADAPTER="$SUCCESS_ADAPTER" \
+    PASEO_MAD_CREATE_BOUNDARY="$CREATE_BOUNDARY" \
     PASEO_MIGRATION_EVIDENCE_DIR="$TIMEOUT_ROOT" \
     MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS=0 DECISION_REQUEST_PATH="$TIMEOUT_REQUEST" \
     bash "$REPRESENTATIVE" --run --evidence-dir "$TIMEOUT_ROOT/representative" >/dev/null 2>&1
@@ -605,8 +700,32 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
 manual_doc="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
-assert_not_contains "$manual_doc" \
-  'mcp__paseo__create_agent' "create: manual doc は adapter だけを使う"
+assert_contains "$manual_doc" \
+  'mcp__paseo__create_agent' "create: manual doc は公式 MCP tool を create の経路にする"
+assert_contains "$manual_doc" 'mcp-create.json' \
+  "create: manual doc は runner が書く request file を名指しする"
+assert_not_contains "$manual_doc" 'create-agent --request' \
+  "create: manual doc は adapter の create subcommand を残さない"
+assert_contains "$manual_doc" 'assertMadCreateRequestV1' \
+  "create: manual doc は create 前の request 再検証を求める"
+assert_contains "$manual_doc" 'manual-orchestration-validate --assert-create-request' \
+  "create: manual doc は create 直前の assertion コマンドを示す"
+assert_contains "$manual_doc" 'manual-orchestration-validate --prepare-create' \
+  "create: manual doc は create 前の prepare コマンドを示す"
+assert_contains "$manual_doc" 'mcp-create.prepared' \
+  "create: manual doc は一回だけ create を許す prepare marker を名指しする"
+assert_contains "$manual_doc" 'O_EXCL' "create: manual doc は marker の排他生成を示す"
+assert_contains "$manual_doc" '--prepare-create` が成功した呼び出しだけが `mcp__paseo__create_agent` を呼べる' \
+  "create: manual doc は prepare を create の前提にする"
+assert_contains "$manual_doc" '--exercise-accepted` は marker を作らない' \
+  "create: manual doc は accepted 境界が marker を作らないと明記する"
+for call_log_key in \
+  '`create_agent` | `callCount`、`requestPath`、`transport`' \
+  '`failure` | `stage`、`exitCode`、`createCalls`、`state`'; do
+  assert_contains "$manual_doc" "$call_log_key" "call log: manual doc が $call_log_key を宣言する"
+done
+assert_contains "$manual_doc" 'create_agent.transport` は `mcp__paseo__create_agent` の一語に固定' \
+  "call log: manual doc が transport の固定値を宣言する"
 assert_contains "$manual_doc" 'stop-agent --child-ref <safe-id>' \
   "stop: manual doc は adapter stop だけを使う"
 assert_contains "$manual_doc" 'stoppedCount' \
@@ -625,7 +744,7 @@ node -e 'require(process.argv[1]).writeProviderEnumeration0600(process.argv[2], 
 assert_eq "$(jq -c 'keys|sort' "$enumeration_json")" '["providerIds","type","version"]' "enumerate: key set"
 assert_eq "$(jq -r '.type' "$enumeration_json")" "paseo-provider-enumeration" "enumerate: discriminator"
 assert_eq "$(jq -c '.providerIds' "$enumeration_json")" \
-  '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "enumerate: materialized provider ID 全件列挙"
+  '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "enumerate: materialized provider ID 全件列挙"
 for forbidden_subcommand in export enumerate-providers; do
   node "$GENERATOR" --input "$VALID" "$forbidden_subcommand" >/dev/null 2>&1
   assert_eq "$?" "2" "CLI: spec の契約表に無い $forbidden_subcommand を受け付けない"
@@ -638,13 +757,13 @@ out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-succe
   --attempt-dir "$attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
   --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$attempt/call-log.json")"
-assert_eq "$?" "0" "MAD 成功: adapter を通した完全な run が成功する"
+assert_eq "$?" "0" "MAD 成功: discovery から request build までが成功する"
 assert_eq "$out" "" "MAD 成功: runner は stdout を出さない"
 assert_eq "$(jq -c '[.events[].operation]' "$attempt/call-log.json")" \
-  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent","wait_agent"]' \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request"]' \
   "MAD 成功: 呼び出しの順序"
 assert_eq "$(jq -c '.events[0].providerIds' "$attempt/call-log.json")" \
-  '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "MAD 成功: provider ID を全件列挙する"
+  '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "MAD 成功: provider ID を全件列挙する"
 assert_eq "$(jq '[.events[] | select(.operation == "list_providers")] | length' "$attempt/call-log.json")" "1" \
   "MAD 成功: list_providers の event は 1 件"
 assert_eq "$(jq '[.events[] | select(.operation == "list_providers") | .callCount] | add' "$attempt/call-log.json")" "1" \
@@ -670,34 +789,421 @@ assert_eq "$(jq -r '.events[] | select(.operation == "resolve") | "\(.exitCode) 
 assert_eq "$(jq -c '.events[] | select(.operation == "build_create_request") | [.topLevelKeys, .settingsKeys, .mode, .regularFile, .validatedBeforeWrite]' "$attempt/call-log.json")" \
   '[["title","workspaceId","initialPrompt","notifyOnFinish","provider","settings"],["modeId","thinkingOptionId","features"],600,true,true]' \
   "MAD 成功: request は検証してから 0600 で書く"
-assert_eq "$(stat -f '%HT:%Lp' "$attempt/create-request.json")" "Regular File:600" "MAD 成功: create-request は 0600 の regular file"
-assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | has("payload")]' "$attempt/call-log.json")" \
-  '[false]' "MAD 成功: create_agent の runtime log は payload を持たない"
-assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$attempt/call-log.json")" "1" \
-  "MAD 成功: create_agent は一回だけ"
-assert_eq "$(jq -r '.state' "$attempt/state.json")" "running" "MAD 成功: state は running"
-assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111-111111111111" \
-  "MAD 成功: create の childRef を attempt state に保存する"
-assert_eq "$(jq -r '.create_accepted' "$attempt/state.json")" "true" \
-  "MAD 成功: accepted create を attempt state に保存する"
-assert_eq "$(jq -c . "$attempt/wait-evidence.json")" '{"status":"idle"}' \
-  "MAD 成功: accepted create の後に sanitized wait を記録する"
+assert_eq "$(jq -r '.events[] | select(.operation == "build_create_request") | .path' "$attempt/call-log.json")" \
+  "$attempt/mcp-create.json" "MAD 成功: build event は mcp-create.json を指す"
+assert_eq "$(stat -f '%HT:%Lp' "$attempt/mcp-create.json")" "Regular File:600" \
+  "MAD 成功: mcp-create.json は 0600 の regular file"
+assert_eq "$(test -e "$attempt/create-request.json" && echo yes || echo no)" "no" \
+  "MAD 成功: 旧 create-request.json を残さない"
+
+# runner は create の transport を実行しない。attempt state は child を持たない。
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent")]' "$attempt/call-log.json")" '[]' \
+  "MAD 成功: runner は create を呼ばない"
+assert_eq "$(jq -c . "$attempt/state.json")" '{"state":"pending","create_accepted":false}' \
+  "MAD 成功: create 前の attempt state は pending かつ未受理"
+assert_eq "$(test -e "$attempt/wait-evidence.json" && echo yes || echo no)" "no" \
+  "MAD 成功: create 前に wait を呼ばない"
+
+# fast_mode は正本から launch spec を経て create request の settings.features へ届く。
+assert_eq "$(jq -c '.featureValues' "$attempt/launch.json")" '{"fast_mode":true}' \
+  "MAD 成功: launch spec が Codex の fast_mode true を持つ"
+assert_eq "$(jq -c '.settings.features' "$attempt/mcp-create.json")" '{"fast_mode":true}' \
+  "MAD 成功: mcp-create.json の settings.features に fast_mode true を写す"
+assert_eq "$(jq -c 'keys' "$attempt/mcp-create.json")" \
+  '["initialPrompt","notifyOnFinish","provider","settings","title","workspaceId"]' \
+  "MAD 成功: mcp-create.json は公式 MCP create の 6 引数だけを持つ"
+assert_eq "$(jq -r '.provider, .settings.modeId, .settings.thinkingOptionId' "$attempt/mcp-create.json" | tr '\n' ' ')" \
+  "codex/sample-work auto high " "MAD 成功: provider/model と modeId と thinking option を写す"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'fixture prompt' "MAD 成功: prompt を runtime log に残さない"
 assert_not_contains "$(cat "$attempt/call-log.json")" 'https://' "MAD 成功: raw な URL を残さない"
 
-for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_CHILD_REF; do
+# 親が公式 mcp__paseo__create_agent を呼ぶ境界。fake は受け取った payload を観測する。
+observed="$TMP/mcp-observed.json"
+accepted_response="$TMP/mcp-accepted.json"
+PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_MCP_OBSERVED="$observed" bash "$CREATE_BOUNDARY" \
+  --request "$attempt/mcp-create.json" --response-out "$accepted_response"
+assert_eq "$?" "0" "MCP 境界: 0600 の検証済み request を受理する"
+assert_eq "$(jq -c '.settings.features' "$observed")" '{"fast_mode":true}' \
+  "MCP 境界: create payload の settings.features に fast_mode true が届く"
+assert_eq "$(jq -r '.provider' "$observed")" "codex/sample-work" "MCP 境界: provider/model が届く"
+assert_eq "$(jq -r '.settings.modeId' "$observed")" "auto" "MCP 境界: modeId は auto"
+assert_eq "$(jq -r '.notifyOnFinish' "$observed")" "true" "MCP 境界: notifyOnFinish が届く"
+assert_eq "$(jq -c 'keys | sort' "$observed")" \
+  '["initialPrompt","notifyOnFinish","provider","settings","title","workspaceId"]' \
+  "MCP 境界: mcp-create.json の 6 key をそのまま渡す"
+assert_eq "$(stat -f '%HT:%Lp' "$attempt/mcp-create.prepared")" "Regular File:600" \
+  "MCP 境界: create の前に prepare marker を 0600 の regular file として残す"
+assert_eq "$(jq -c . "$attempt/mcp-create.prepared")" \
+  '{"version":1,"type":"mad-create-prepare","consumed":true}' \
+  "MCP 境界: prepare marker は mad-create-prepare の schema を持つ"
+
+out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" --attempt-dir "$attempt" \
+  --call-log "$attempt/call-log.json" --adapter "$SUCCESS_ADAPTER" --response "$accepted_response" \
+  --wait-timeout 1200)"
+assert_eq "$?" "0" "MAD accepted: accepted response を受けた後の境界が成功する"
+assert_eq "$out" "" "MAD accepted: runner は stdout を出さない"
+assert_eq "$(jq -c '[.events[].operation]' "$attempt/call-log.json")" \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent","wait_agent"]' \
+  "MAD accepted: create と wait を call log の末尾に足す"
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | has("payload")]' "$attempt/call-log.json")" \
+  '[false]' "MAD accepted: create_agent の runtime log は payload を持たない"
+assert_eq "$(jq '[.events[] | select(.operation == "create_agent") | .callCount] | add' "$attempt/call-log.json")" "1" \
+  "MAD accepted: create_agent は一回だけ"
+assert_eq "$(jq -r '.events[] | select(.operation == "create_agent") | .transport' "$attempt/call-log.json")" \
+  "mcp__paseo__create_agent" "MAD accepted: create の transport を公式 MCP tool として記録する"
+assert_eq "$(jq -r '.state' "$attempt/state.json")" "running" "MAD accepted: state は running"
+assert_eq "$(jq -r '.child_ref' "$attempt/state.json")" "11111111-1111-4111-8111-111111111111" \
+  "MAD accepted: create の childRef を attempt state に保存する"
+assert_eq "$(jq -r '.create_accepted' "$attempt/state.json")" "true" \
+  "MAD accepted: accepted create を attempt state に保存する"
+assert_eq "$(jq -c . "$attempt/wait-evidence.json")" '{"status":"idle"}' \
+  "MAD accepted: accepted create の後に sanitized wait を記録する"
+
+# fast_mode:false も同じ経路を通す。true だけを通して false を落とす実装を弾く。
+FALSE_INPUT="$TMP/valid-fast-mode-false.json"
+jq -c '.tiers.work.candidates = [{provider:"claude",model:"sample-think",thinkingOptionId:"high",featureValues:{fast_mode:false}}]' \
+  "$VALID" > "$FALSE_INPUT"
+false_attempt="$TMP/mad-fast-mode-false"
+mkdir -p "$false_attempt"
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-success \
+  --generator "$GENERATOR" --share-dir "$SHARE" --input "$FALSE_INPUT" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$false_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$false_attempt/call-log.json")"
+assert_eq "$?" "0" "fast_mode false: Claude の候補で request build まで成功する"
+assert_eq "$out" "" "fast_mode false: runner は stdout を出さない"
+assert_eq "$(jq -c '.provider, .featureValues' "$false_attempt/launch.json" | tr '\n' ' ')" \
+  '"claude" {"fast_mode":false} ' "fast_mode false: launch spec が false を持つ"
+assert_eq "$(jq -c '.settings.features' "$false_attempt/mcp-create.json")" '{"fast_mode":false}' \
+  "fast_mode false: mcp-create.json の settings.features が false を持つ"
+assert_eq "$(stat -f '%HT:%Lp' "$false_attempt/mcp-create.json")" "Regular File:600" \
+  "fast_mode false: mcp-create.json は 0600 の regular file"
+
+false_observed="$TMP/mcp-observed-false.json"
+false_response="$TMP/mcp-accepted-false.json"
+PASEO_MAD_VALIDATOR="$MAD_RUNNER" PASEO_MAD_SHARE_DIR="$SHARE" \
+  PASEO_FAKE_MCP_OBSERVED="$false_observed" bash "$CREATE_BOUNDARY" \
+  --request "$false_attempt/mcp-create.json" --response-out "$false_response"
+assert_eq "$?" "0" "fast_mode false: MCP 境界が検証済み request を受理する"
+assert_eq "$(jq -c '.settings.features' "$false_observed")" '{"fast_mode":false}' \
+  "fast_mode false: 公式 MCP payload の settings.features に false が届く"
+assert_eq "$(jq -r '.settings.features.fast_mode | type' "$false_observed")" "boolean" \
+  "fast_mode false: 観測した値は boolean のままである"
+assert_eq "$(jq -r '.provider' "$false_observed")" "claude/sample-think" \
+  "fast_mode false: Claude の provider/model が届く"
+
+out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" --attempt-dir "$false_attempt" \
+  --call-log "$false_attempt/call-log.json" --adapter "$SUCCESS_ADAPTER" --response "$false_response" \
+  --wait-timeout 1200)"
+assert_eq "$?" "0" "fast_mode false: accepted 境界が成功する"
+assert_eq "$out" "" "fast_mode false: runner は stdout を出さない"
+assert_eq "$(jq -r '.state, .create_accepted, .child_ref' "$false_attempt/state.json" | tr '\n' ' ')" \
+  "running true 11111111-1111-4111-8111-111111111111 " "fast_mode false: state を running へ進める"
+assert_eq "$(jq -c '.settings.features' "$false_attempt/mcp-create.json")" '{"fast_mode":false}' \
+  "fast_mode false: 受理後も request の false を書き換えない"
+assert_eq "$(jq -c '[.events[].operation]' "$false_attempt/call-log.json")" \
+  '["enumerate_materialized_provider_ids","list_providers","list_models","list_models","write_snapshot","resolve","build_create_request","create_agent","wait_agent"]' \
+  "fast_mode false: call log の並びは true の経路と同じである"
+
+# --exercise-accepted は create を一回だけ受理する。二回目は state と log を変えない。
+double_attempt="$TMP/mad-double-accept"
+cp -R "$attempt" "$double_attempt"
+double_state_before="$(cat "$double_attempt/state.json")"
+double_log_before="$(cat "$double_attempt/call-log.json")"
+out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" --attempt-dir "$double_attempt" \
+  --call-log "$double_attempt/call-log.json" --adapter "$SUCCESS_ADAPTER" --response "$accepted_response" \
+  --wait-timeout 1200 2>/dev/null)"
+assert_eq "$?" "2" "MAD 二重受理: 二回目は exit 2"
+assert_eq "$out" "" "MAD 二重受理: stdout を出さない"
+assert_eq "$(cat "$double_attempt/state.json")" "$double_state_before" \
+  "MAD 二重受理: attempt state を変更しない"
+assert_eq "$(cat "$double_attempt/call-log.json")" "$double_log_before" \
+  "MAD 二重受理: call log を変更しない"
+assert_eq "$(stat -f '%HT:%Lp' "$attempt/mcp-create.prepared")" "Regular File:600" \
+  "MAD 受理: prepare marker は受理後も 0600 の regular file"
+
+# create 前の attempt を再現する。state は pending、call log は create 前の event だけ、
+# prepare marker と wait evidence は無い状態にする。
+make_pre_create_attempt() {
+  local source_attempt="$1"
+  local destination="$2"
+  rm -rf "$destination"
+  cp -R "$source_attempt" "$destination" || return 1
+  rm -f "$destination/wait-evidence.json" "$destination/mcp-create.prepared"
+  printf '%s' '{"state":"pending","create_accepted":false}' > "$destination/state.json" || return 1
+  chmod 600 "$destination/state.json" || return 1
+  jq -c '[.events[] | select(.operation != "create_agent" and .operation != "wait_agent")] | {version:1,type:"mad-call-log",events:.}' \
+    "$source_attempt/call-log.json" > "$destination/call-log.json" || return 1
+  chmod 600 "$destination/call-log.json"
+}
+
+# prepare が成功した後の marker を書く。
+write_prepare_marker() {
+  printf '%s' '{"version":1,"type":"mad-create-prepare","consumed":true}' > "$1" || return 1
+  chmod 600 "$1"
+}
+
+# --prepare-create は create の直前に一回性 marker を取る。marker を取れた一者だけが
+# 公式 mcp__paseo__create_agent を呼べる。
+prepare_attempt="$TMP/mad-prepare-create"
+make_pre_create_attempt "$attempt" "$prepare_attempt"
+prepare_state_before="$(cat "$prepare_attempt/state.json")"
+prepare_log_before="$(cat "$prepare_attempt/call-log.json")"
+out="$(bash "$MAD_RUNNER" --prepare-create --share-dir "$SHARE" --attempt-dir "$prepare_attempt" 2>/dev/null)"
+assert_eq "$?" "0" "prepare: 検証済み request で marker を取れる"
+assert_eq "$out" "" "prepare: stdout を出さない"
+assert_eq "$(stat -f '%HT:%Lp' "$prepare_attempt/mcp-create.prepared")" "Regular File:600" \
+  "prepare: marker は 0600 の regular file"
+assert_eq "$(jq -c . "$prepare_attempt/mcp-create.prepared")" \
+  '{"version":1,"type":"mad-create-prepare","consumed":true}' "prepare: marker の schema を固定する"
+assert_eq "$(cat "$prepare_attempt/state.json")" "$prepare_state_before" "prepare: state を変更しない"
+assert_eq "$(cat "$prepare_attempt/call-log.json")" "$prepare_log_before" "prepare: call log を変更しない"
+
+# 二回目の prepare は marker 競合で止まる。marker も state も log も書き換えない。
+prepare_marker_before="$(cat "$prepare_attempt/mcp-create.prepared")"
+out="$(bash "$MAD_RUNNER" --prepare-create --share-dir "$SHARE" --attempt-dir "$prepare_attempt" 2>/dev/null)"
+assert_eq "$?" "2" "prepare 二回目: exit 2"
+assert_eq "$out" "" "prepare 二回目: stdout を出さない"
+assert_eq "$(cat "$prepare_attempt/mcp-create.prepared")" "$prepare_marker_before" \
+  "prepare 二回目: marker を書き換えない"
+assert_eq "$(cat "$prepare_attempt/state.json")" "$prepare_state_before" "prepare 二回目: state を変更しない"
+assert_eq "$(cat "$prepare_attempt/call-log.json")" "$prepare_log_before" "prepare 二回目: call log を変更しない"
+
+# 2 親が同時に prepare を通ると create を 2 回呼べる。marker は同時実行でも一者だけに渡る。
+race_attempt="$TMP/mad-prepare-race"
+make_pre_create_attempt "$attempt" "$race_attempt"
+race_state_before="$(cat "$race_attempt/state.json")"
+race_log_before="$(cat "$race_attempt/call-log.json")"
+race_status_dir="$TMP/mad-prepare-race-status"
+rm -rf "$race_status_dir"
+mkdir -p "$race_status_dir"
+for race_index in 1 2 3 4 5 6 7 8; do
+  (
+    bash "$MAD_RUNNER" --prepare-create --share-dir "$SHARE" --attempt-dir "$race_attempt" >/dev/null 2>&1
+    printf '%s' "$?" > "$race_status_dir/$race_index"
+  ) &
+done
+wait
+race_winners=0
+race_losers=0
+for race_index in 1 2 3 4 5 6 7 8; do
+  case "$(cat "$race_status_dir/$race_index")" in
+    0) race_winners=$((race_winners + 1)) ;;
+    2) race_losers=$((race_losers + 1)) ;;
+  esac
+done
+assert_eq "$race_winners" "1" "prepare race: marker を取れる呼び出しは一つだけである"
+assert_eq "$race_losers" "7" "prepare race: 敗者はすべて exit 2 で止まる"
+assert_eq "$(jq -c . "$race_attempt/mcp-create.prepared")" \
+  '{"version":1,"type":"mad-create-prepare","consumed":true}' "prepare race: marker は一件だけ残る"
+assert_eq "$(cat "$race_attempt/state.json")" "$race_state_before" "prepare race: state を変更しない"
+assert_eq "$(cat "$race_attempt/call-log.json")" "$race_log_before" "prepare race: call log を変更しない"
+
+# request が契約を満たさないとき、prepare は marker を残さない。
+for prepare_case in EXTRA_KEY NON_AUTO_MODE UNLISTED_FEATURE WORLD_READABLE; do
+  prepare_invalid_attempt="$TMP/mad-prepare-invalid-$prepare_case"
+  make_pre_create_attempt "$attempt" "$prepare_invalid_attempt"
+  case "$prepare_case" in
+    EXTRA_KEY) jq -c '. + {version:1}' "$attempt/mcp-create.json" > "$prepare_invalid_attempt/mcp-create.json" ;;
+    NON_AUTO_MODE) jq -c '.settings.modeId = "manual"' "$attempt/mcp-create.json" > "$prepare_invalid_attempt/mcp-create.json" ;;
+    UNLISTED_FEATURE) jq -c '.settings.features.verbose = true' "$attempt/mcp-create.json" > "$prepare_invalid_attempt/mcp-create.json" ;;
+    WORLD_READABLE) cp "$attempt/mcp-create.json" "$prepare_invalid_attempt/mcp-create.json" ;;
+  esac
+  if [ "$prepare_case" = WORLD_READABLE ]; then
+    chmod 644 "$prepare_invalid_attempt/mcp-create.json"
+  else
+    chmod 600 "$prepare_invalid_attempt/mcp-create.json"
+  fi
+  prepare_invalid_state_before="$(cat "$prepare_invalid_attempt/state.json")"
+  prepare_invalid_log_before="$(cat "$prepare_invalid_attempt/call-log.json")"
+  out="$(bash "$MAD_RUNNER" --prepare-create --share-dir "$SHARE" \
+    --attempt-dir "$prepare_invalid_attempt" 2>/dev/null)"
+  assert_eq "$?" "2" "prepare 不正 request: $prepare_case は exit 2"
+  assert_eq "$out" "" "prepare 不正 request: $prepare_case は stdout を出さない"
+  assert_eq "$(test -e "$prepare_invalid_attempt/mcp-create.prepared" && echo yes || echo no)" "no" \
+    "prepare 不正 request: $prepare_case は marker を作らない"
+  assert_eq "$(cat "$prepare_invalid_attempt/state.json")" "$prepare_invalid_state_before" \
+    "prepare 不正 request: $prepare_case は state を変更しない"
+  assert_eq "$(cat "$prepare_invalid_attempt/call-log.json")" "$prepare_invalid_log_before" \
+    "prepare 不正 request: $prepare_case は call log を変更しない"
+done
+
+# state が pending でない、または call log に create 以後の event がある attempt は
+# prepare を通さない。marker を作らずに止める。
+for prepare_reentry_case in RUNNING_STATE EXTRA_STATE_KEY WORLD_READABLE_STATE \
+  CREATE_EVENT_PRESENT NON_CONTIGUOUS_SEQ UNKNOWN_LOG_KEY; do
+  prepare_reentry_attempt="$TMP/mad-prepare-reentry-$prepare_reentry_case"
+  make_pre_create_attempt "$attempt" "$prepare_reentry_attempt"
+  case "$prepare_reentry_case" in
+    RUNNING_STATE)
+      printf '%s' '{"state":"running","child_ref":"11111111-1111-4111-8111-111111111111","create_accepted":true}' \
+        > "$prepare_reentry_attempt/state.json"; chmod 600 "$prepare_reentry_attempt/state.json" ;;
+    EXTRA_STATE_KEY)
+      printf '%s' '{"state":"pending","create_accepted":false,"note":"extra"}' > "$prepare_reentry_attempt/state.json"
+      chmod 600 "$prepare_reentry_attempt/state.json" ;;
+    WORLD_READABLE_STATE) chmod 644 "$prepare_reentry_attempt/state.json" ;;
+    CREATE_EVENT_PRESENT)
+      jq -c '.events += [{seq:(.events | length),operation:"create_agent",callCount:1,requestPath:"/fixture/mcp-create.json",transport:"mcp__paseo__create_agent"}]' \
+        "$prepare_reentry_attempt/call-log.json" > "$prepare_reentry_attempt/call-log.tmp"
+      mv "$prepare_reentry_attempt/call-log.tmp" "$prepare_reentry_attempt/call-log.json"
+      chmod 600 "$prepare_reentry_attempt/call-log.json" ;;
+    NON_CONTIGUOUS_SEQ)
+      jq -c '.events[-1].seq += 3' "$prepare_reentry_attempt/call-log.json" > "$prepare_reentry_attempt/call-log.tmp"
+      mv "$prepare_reentry_attempt/call-log.tmp" "$prepare_reentry_attempt/call-log.json"
+      chmod 600 "$prepare_reentry_attempt/call-log.json" ;;
+    UNKNOWN_LOG_KEY)
+      jq -c '.events[-1].unknown = true' "$prepare_reentry_attempt/call-log.json" > "$prepare_reentry_attempt/call-log.tmp"
+      mv "$prepare_reentry_attempt/call-log.tmp" "$prepare_reentry_attempt/call-log.json"
+      chmod 600 "$prepare_reentry_attempt/call-log.json" ;;
+  esac
+  prepare_reentry_state_before="$(cat "$prepare_reentry_attempt/state.json")"
+  prepare_reentry_log_before="$(cat "$prepare_reentry_attempt/call-log.json")"
+  out="$(bash "$MAD_RUNNER" --prepare-create --share-dir "$SHARE" \
+    --attempt-dir "$prepare_reentry_attempt" 2>/dev/null)"
+  assert_eq "$?" "2" "prepare 受理前検査: $prepare_reentry_case は exit 2"
+  assert_eq "$out" "" "prepare 受理前検査: $prepare_reentry_case は stdout を出さない"
+  assert_eq "$(test -e "$prepare_reentry_attempt/mcp-create.prepared" && echo yes || echo no)" "no" \
+    "prepare 受理前検査: $prepare_reentry_case は marker を作らない"
+  assert_eq "$(cat "$prepare_reentry_attempt/state.json")" "$prepare_reentry_state_before" \
+    "prepare 受理前検査: $prepare_reentry_case は state を変更しない"
+  assert_eq "$(cat "$prepare_reentry_attempt/call-log.json")" "$prepare_reentry_log_before" \
+    "prepare 受理前検査: $prepare_reentry_case は call log を変更しない"
+done
+
+# --exercise-accepted は prepare marker を確認するだけで、marker を作らない。
+# marker が無い、mode が違う、schema が違う attempt は state と log を変えずに拒否する。
+for reentry_case in MISSING_MARKER WORLD_READABLE_MARKER INVALID_MARKER_SCHEMA \
+  RUNNING_STATE EXTRA_STATE_KEY WORLD_READABLE_STATE \
+  CREATE_EVENT_PRESENT NON_CONTIGUOUS_SEQ UNKNOWN_LOG_KEY; do
+  reentry_attempt="$TMP/mad-reentry-$reentry_case"
+  make_pre_create_attempt "$attempt" "$reentry_attempt"
+  write_prepare_marker "$reentry_attempt/mcp-create.prepared"
+  case "$reentry_case" in
+    MISSING_MARKER) rm -f "$reentry_attempt/mcp-create.prepared" ;;
+    WORLD_READABLE_MARKER) chmod 644 "$reentry_attempt/mcp-create.prepared" ;;
+    INVALID_MARKER_SCHEMA)
+      printf '%s' '{"version":1,"type":"mad-create-prepare","consumed":true,"note":"extra"}' \
+        > "$reentry_attempt/mcp-create.prepared"
+      chmod 600 "$reentry_attempt/mcp-create.prepared" ;;
+    RUNNING_STATE)
+      printf '%s' '{"state":"running","child_ref":"11111111-1111-4111-8111-111111111111","create_accepted":true}' \
+        > "$reentry_attempt/state.json"; chmod 600 "$reentry_attempt/state.json" ;;
+    EXTRA_STATE_KEY)
+      printf '%s' '{"state":"pending","create_accepted":false,"note":"extra"}' > "$reentry_attempt/state.json"
+      chmod 600 "$reentry_attempt/state.json" ;;
+    WORLD_READABLE_STATE) chmod 644 "$reentry_attempt/state.json" ;;
+    CREATE_EVENT_PRESENT)
+      jq -c '.events += [{seq:(.events | length),operation:"create_agent",callCount:1,requestPath:"/fixture/mcp-create.json",transport:"mcp__paseo__create_agent"}]' \
+        "$reentry_attempt/call-log.json" > "$reentry_attempt/call-log.tmp"
+      mv "$reentry_attempt/call-log.tmp" "$reentry_attempt/call-log.json"
+      chmod 600 "$reentry_attempt/call-log.json" ;;
+    NON_CONTIGUOUS_SEQ)
+      jq -c '.events[-1].seq += 3' "$reentry_attempt/call-log.json" > "$reentry_attempt/call-log.tmp"
+      mv "$reentry_attempt/call-log.tmp" "$reentry_attempt/call-log.json"
+      chmod 600 "$reentry_attempt/call-log.json" ;;
+    UNKNOWN_LOG_KEY)
+      jq -c '.events[-1].unknown = true' "$reentry_attempt/call-log.json" > "$reentry_attempt/call-log.tmp"
+      mv "$reentry_attempt/call-log.tmp" "$reentry_attempt/call-log.json"
+      chmod 600 "$reentry_attempt/call-log.json" ;;
+  esac
+  reentry_state_before="$(cat "$reentry_attempt/state.json")"
+  reentry_log_before="$(cat "$reentry_attempt/call-log.json")"
+  out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" --attempt-dir "$reentry_attempt" \
+    --call-log "$reentry_attempt/call-log.json" --adapter "$SUCCESS_ADAPTER" --response "$accepted_response" \
+    --wait-timeout 1200 2>/dev/null)"
+  assert_eq "$?" "2" "MAD 受理前検査: $reentry_case は exit 2"
+  assert_eq "$out" "" "MAD 受理前検査: $reentry_case は stdout を出さない"
+  assert_eq "$(cat "$reentry_attempt/state.json")" "$reentry_state_before" \
+    "MAD 受理前検査: $reentry_case は state を変更しない"
+  assert_eq "$(cat "$reentry_attempt/call-log.json")" "$reentry_log_before" \
+    "MAD 受理前検査: $reentry_case は call log を変更しない"
+done
+
+# marker が無い attempt で --exercise-accepted は marker を作らない。
+assert_eq "$(test -e "$TMP/mad-reentry-MISSING_MARKER/mcp-create.prepared" && echo yes || echo no)" "no" \
+  "MAD 受理前検査: --exercise-accepted は prepare marker を新規作成しない"
+
+# 親の MCP 境界は create の直前に request を strict 検証する。runner がその assertion を公開する。
+bash "$MAD_RUNNER" --assert-create-request --share-dir "$SHARE" --attempt-dir "$attempt" >/dev/null 2>&1
+assert_eq "$?" "0" "pre-create assertion: 検証済み request を受理する"
+for pre_create_case in EXTRA_KEY NON_AUTO_MODE UNLISTED_FEATURE WORLD_READABLE; do
+  pre_create_attempt="$TMP/mad-pre-create-$pre_create_case"
+  make_pre_create_attempt "$attempt" "$pre_create_attempt"
+  case "$pre_create_case" in
+    EXTRA_KEY) jq -c '. + {version:1}' "$attempt/mcp-create.json" > "$pre_create_attempt/mcp-create.json" ;;
+    NON_AUTO_MODE) jq -c '.settings.modeId = "manual"' "$attempt/mcp-create.json" > "$pre_create_attempt/mcp-create.json" ;;
+    UNLISTED_FEATURE) jq -c '.settings.features.verbose = true' "$attempt/mcp-create.json" > "$pre_create_attempt/mcp-create.json" ;;
+    WORLD_READABLE) cp "$attempt/mcp-create.json" "$pre_create_attempt/mcp-create.json" ;;
+  esac
+  if [ "$pre_create_case" = WORLD_READABLE ]; then
+    chmod 644 "$pre_create_attempt/mcp-create.json"
+  else
+    chmod 600 "$pre_create_attempt/mcp-create.json"
+  fi
+  pre_create_state_before="$(cat "$pre_create_attempt/state.json")"
+  out="$(bash "$MAD_RUNNER" --assert-create-request --share-dir "$SHARE" \
+    --attempt-dir "$pre_create_attempt" 2>/dev/null)"
+  assert_eq "$?" "2" "pre-create assertion: $pre_create_case は exit 2"
+  assert_eq "$out" "" "pre-create assertion: $pre_create_case は stdout を出さない"
+  assert_eq "$(cat "$pre_create_attempt/state.json")" "$pre_create_state_before" \
+    "pre-create assertion: $pre_create_case は state を変更しない"
+
+  # 親の MCP 境界は assertion を通す前に create を観測しない。
+  pre_create_observed="$TMP/pre-create-observed-$pre_create_case.json"
+  pre_create_response="$TMP/pre-create-response-$pre_create_case.json"
+  PASEO_MAD_VALIDATOR="$MAD_RUNNER" PASEO_MAD_SHARE_DIR="$SHARE" \
+    PASEO_FAKE_MCP_OBSERVED="$pre_create_observed" bash "$CREATE_BOUNDARY" \
+    --request "$pre_create_attempt/mcp-create.json" --response-out "$pre_create_response" 2>/dev/null
+  assert_eq "$([ "$?" -ne 0 ] && printf yes || printf no)" "yes" \
+    "MCP 境界: $pre_create_case を accepted にしない"
+  assert_eq "$(test -e "$pre_create_observed" && echo yes || echo no)" "no" \
+    "MCP 境界: $pre_create_case の create 観測を残さない"
+  assert_eq "$(test -e "$pre_create_response" && echo yes || echo no)" "no" \
+    "MCP 境界: $pre_create_case の accepted response を書かない"
+  assert_eq "$(test -e "$pre_create_attempt/mcp-create.prepared" && echo yes || echo no)" "no" \
+    "MCP 境界: $pre_create_case は prepare marker を残さない"
+done
+
+# 検証を通らない request では state を進めない。
+for tampered_case in EXTRA_KEY NON_AUTO_MODE UNLISTED_FEATURE WORLD_READABLE; do
+  tampered_attempt="$TMP/mad-tampered-$tampered_case"
+  make_pre_create_attempt "$attempt" "$tampered_attempt"
+  write_prepare_marker "$tampered_attempt/mcp-create.prepared"
+  case "$tampered_case" in
+    EXTRA_KEY) jq -c '. + {version:1}' "$attempt/mcp-create.json" > "$tampered_attempt/mcp-create.json" ;;
+    NON_AUTO_MODE) jq -c '.settings.modeId = "manual"' "$attempt/mcp-create.json" > "$tampered_attempt/mcp-create.json" ;;
+    UNLISTED_FEATURE) jq -c '.settings.features.verbose = true' "$attempt/mcp-create.json" > "$tampered_attempt/mcp-create.json" ;;
+    WORLD_READABLE) cp "$attempt/mcp-create.json" "$tampered_attempt/mcp-create.json"; chmod 644 "$tampered_attempt/mcp-create.json" ;;
+  esac
+  [ "$tampered_case" = WORLD_READABLE ] || chmod 600 "$tampered_attempt/mcp-create.json"
+  out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" --attempt-dir "$tampered_attempt" \
+    --call-log "$tampered_attempt/call-log.json" --adapter "$SUCCESS_ADAPTER" --response "$accepted_response" \
+    --wait-timeout 1200 2>/dev/null)"
+  assert_eq "$?" "2" "MAD 未検証 request: $tampered_case は exit 2"
+  assert_eq "$out" "" "MAD 未検証 request: $tampered_case は stdout を出さない"
+  assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent")]' "$tampered_attempt/call-log.json")" '[]' \
+    "MAD 未検証 request: $tampered_case は create を記録しない"
+  assert_eq "$(jq -r '.state' "$tampered_attempt/state.json")" "failed" \
+    "MAD 未検証 request: $tampered_case は failed state にする"
+  assert_eq "$(jq -r '.create_accepted' "$tampered_attempt/state.json")" "false" \
+    "MAD 未検証 request: $tampered_case は create 未受理のままにする"
+done
+
+for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_CHILD_REF REJECT; do
   invalid_child_ref_attempt="$TMP/mad-invalid-child-ref-$invalid_child_ref_case"
-  mkdir -p "$invalid_child_ref_attempt"
+  make_pre_create_attempt "$attempt" "$invalid_child_ref_attempt"
   case "$invalid_child_ref_case" in
     DUPLICATE_ACCEPTED_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DUPLICATE_ACCEPTED_CHILD_REF ;;
     PROTO_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_PROTO_CHILD_REF ;;
     DOT_CHILD_REF) invalid_child_ref_env=PASEO_FAKE_DOT_CHILD_REF ;;
+    REJECT) invalid_child_ref_env=PASEO_FAKE_MCP_REJECT ;;
   esac
-  out="$(env "$invalid_child_ref_env=1" bash "$MAD_RUNNER" --exercise-success \
-    --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
-    --attempt-dir "$invalid_child_ref_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
-    --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
-    --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$invalid_child_ref_attempt/call-log.json" 2>/dev/null)"
+  invalid_child_ref_response="$TMP/mcp-response-$invalid_child_ref_case.json"
+  env "$invalid_child_ref_env=1" PASEO_MAD_SHARE_DIR="$SHARE" bash "$CREATE_BOUNDARY" \
+    --request "$invalid_child_ref_attempt/mcp-create.json" --response-out "$invalid_child_ref_response"
+  out="$(bash "$MAD_RUNNER" --exercise-accepted --share-dir "$SHARE" \
+    --attempt-dir "$invalid_child_ref_attempt" --call-log "$invalid_child_ref_attempt/call-log.json" \
+    --adapter "$SUCCESS_ADAPTER" --response "$invalid_child_ref_response" --wait-timeout 1200 2>/dev/null)"
   assert_eq "$?" "1" "MAD childRef: $invalid_child_ref_case を create failure にする"
   assert_eq "$out" "" "MAD childRef: $invalid_child_ref_case は stdout を出さない"
   assert_eq "$(jq -r '.state' "$invalid_child_ref_attempt/state.json")" "failed" \
@@ -706,6 +1212,12 @@ for invalid_child_ref_case in DUPLICATE_ACCEPTED_CHILD_REF PROTO_CHILD_REF DOT_C
     "MAD childRef: $invalid_child_ref_case を state に保存しない"
   assert_eq "$(jq -r '.create_accepted' "$invalid_child_ref_attempt/state.json")" "false" \
     "MAD childRef: $invalid_child_ref_case は create 未受理を記録する"
+  assert_eq "$(jq '[.events[] | select(.operation == "create_agent")] | length' "$invalid_child_ref_attempt/call-log.json")" "1" \
+    "MAD childRef: $invalid_child_ref_case は create を一回だけ記録して retry しない"
+  assert_eq "$(jq -r '.events[-1] | "\(.operation) \(.stage) \(.createCalls) \(.state)"' "$invalid_child_ref_attempt/call-log.json")" \
+    "failure create_agent 1 failed" "MAD childRef: $invalid_child_ref_case の終端 event"
+  assert_eq "$(test -e "$invalid_child_ref_attempt/wait-evidence.json" && echo yes || echo no)" "no" \
+    "MAD childRef: $invalid_child_ref_case は wait を呼ばない"
 done
 
 broken_share="$TMP/broken-share"
@@ -722,7 +1234,7 @@ assert_eq "$?" "2" "MAD contract load: 壊れた share-dir を拒否する"
 assert_eq "$out" "" "MAD contract load: stdout を出さない"
 assert_eq "$(jq -r '.events[-1] | [.operation,.stage,.createCalls,.state] | join(" ")' "$broken_attempt/call-log.json")" \
   "failure resolve 0 failed" "MAD contract load: adapter を呼ばずに failed にする"
-assert_eq "$(test -e "$broken_attempt/create-request.json" && echo yes || echo no)" "no" \
+assert_eq "$(test -e "$broken_attempt/mcp-create.json" && echo yes || echo no)" "no" \
   "MAD contract load: request を作らない"
 
 fail_case() {
@@ -740,10 +1252,15 @@ fail_case() {
   assert_eq "$(cat "$dir/stdout")" "" "MAD 失敗 $stage: stdout を出さない"
   assert_eq "$(jq -r '.events[-1] | "\(.operation) \(.stage) \(.createCalls) \(.state)"' "$dir/call-log.json")" \
     "failure $stage 0 $expected_state" "MAD 失敗 $stage: 終端 event が no-call を記録する"
-  assert_eq "$(test -e "$dir/create-request.json" && echo yes || echo no)" "no" "MAD 失敗 $stage: request を作らない"
+  assert_eq "$(test -e "$dir/mcp-create.json" && echo yes || echo no)" "no" "MAD 失敗 $stage: request を作らない"
   assert_eq "$(jq -r '.state' "$dir/state.json")" "$expected_state" "MAD 失敗 $stage: state は $expected_state"
   assert_eq "$(jq -r '.create_accepted' "$dir/state.json")" "false" \
     "MAD 失敗 $stage: create 未受理を記録する"
+  MAD_CONTRACT="$MAD_CONTRACT" CALL_LOG="$dir/call-log.json" node -e '
+    const fs = require("node:fs")
+    require(process.env.MAD_CONTRACT).assertMadCallLogV1(JSON.parse(fs.readFileSync(process.env.CALL_LOG, "utf8")))
+  ' >/dev/null 2>&1
+  assert_eq "$?" "0" "MAD 失敗 $stage: 終端 event も call log schema を満たす"
 }
 fail_case discovery "$MAD_FIXTURES/adapter/fake-discovery-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
 fail_case list_models "$MAD_FIXTURES/adapter/fake-list-models-failure-adapter.sh" task-reviewer "$VALID" 2 waiting_for_user
@@ -764,20 +1281,21 @@ assert_eq "$(jq -r '.candidates | type' "$exhausted_attempt/launch.json")" "arra
 assert_eq "$(jq -r '[.candidates[] | (.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason) != null)] | all' "$exhausted_attempt/launch.json")" "true" \
   "MAD exhausted resolve: candidate reasonCode は許可した5値のいずれか"
 
-create_dir="$TMP/mad-fail-create"
-mkdir -p "$create_dir"
+# runner 自身は create の transport を持たない。source に create の呼び出しを残さない。
+runner_source="$(cat "$MAD_RUNNER")"
+assert_not_contains "$runner_source" 'create-agent --request' \
+  "MAD runner: adapter の create subcommand を呼ばない"
+wait_timeout_dir="$TMP/mad-exercise-success-wait-timeout"
+mkdir -p "$wait_timeout_dir"
 bash "$MAD_RUNNER" --exercise-success \
-  --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" \
-  --adapter "$MAD_FIXTURES/adapter/fake-create-rejection-adapter.sh" \
-  --attempt-dir "$create_dir" --project "$NON_GIT_DIR" --role task-reviewer \
+  --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$wait_timeout_dir" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
-  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$create_dir/call-log.json" \
-  >/dev/null 2>&1
-assert_eq "$?" "1" "MAD 失敗 create_agent: exit 1"
-assert_eq "$(jq -r '.events[-1] | "\(.stage) \(.createCalls) \(.state)"' "$create_dir/call-log.json")" \
-  "create_agent 1 failed" "MAD 失敗 create_agent: 一回だけ試して failed にする"
-assert_eq "$(jq '[.events[] | select(.operation == "create_agent")] | length' "$create_dir/call-log.json")" "1" \
-  "MAD 失敗 create_agent: retry しない"
+  --initial-prompt 'fixture prompt' --notify-on-finish true --wait-timeout 1200 \
+  --call-log "$wait_timeout_dir/call-log.json" >/dev/null 2>&1
+assert_eq "$?" "2" "MAD runner: exercise-success は wait-timeout を受け付けない"
+assert_contains "$runner_source" 'mcp-create.json' \
+  "MAD runner: request file を mcp-create.json という名前で書く"
 
 MAD_CONTRACT="$MAD_CONTRACT" LAUNCH_DIR="$FIXTURES/launch" node - <<'NODE'
 const contract = require(process.env.MAD_CONTRACT)
@@ -987,26 +1505,26 @@ PASEO_FAKE_BAD_MODELS=1 PASEO_CLI="$FAKE_PASEO" \
   "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" list-models --provider codex \
   >/dev/null 2>&1
 assert_eq "$?" "1" "adapter: 異常な model 行を破棄せず拒否する"
+ADAPTER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter"
 opaque_request="$TMP/opaque-create-request.json"
 jq '.notifyOnFinish = false | .provider = "codex/model/opaque" | .settings.thinkingOptionId = "thinking option"' \
   "$MAD_FIXTURES/create-request-success.json" > "$opaque_request"
 chmod 600 "$opaque_request"
-adapter_create="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
-  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
-  create-agent --request "$opaque_request")"
-assert_eq "$?" "0" "adapter: create-agent は検証済み request を受理する"
-assert_eq "$adapter_create" '{"status":"accepted","childRef":"33333333-3333-4333-8333-333333333333"}' \
-  "adapter: create-agent は Paseo agentId を childRef として返す"
-assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=false' "adapter: notifyOnFinish を create payload に渡す"
-notify_true_request="$TMP/notify-true-create-request.json"
-jq '.notifyOnFinish = true' "$opaque_request" > "$notify_true_request"
-chmod 600 "$notify_true_request"
-PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
-  "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
-  create-agent --request "$notify_true_request" >/dev/null
-assert_eq "$?" "0" "adapter: notifyOnFinish=true の request を受理する"
-assert_contains "$(cat "$FAKE_PASEO_ARGS")" 'notifyOnFinish=true' \
-  "adapter: notifyOnFinish=true を metadata label に一対一で転送する"
+# Paseo CLI の run は settings.features を渡す option を持たない。CLI を create の
+# 経路にすると feature が黙って落ちるので、adapter から create を外した。
+adapter_create_out="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
+  "$ADAPTER" create-agent --request "$opaque_request" 2>/dev/null)"
+assert_eq "$?" "2" "adapter: create-agent subcommand を受け付けない"
+assert_eq "$adapter_create_out" "" "adapter: create-agent は response を返さない"
+adapter_source="$(cat "$ADAPTER")"
+assert_not_contains "$adapter_source" "'run', '--background'" \
+  "adapter: paseo run による create 経路を残さない"
+assert_not_contains "$adapter_source" 'createAgent' "adapter: create の実装を残さない"
+for adapter_command in list-providers list-models wait-agent stop-agent; do
+  assert_contains "$adapter_source" "case '$adapter_command':" \
+    "adapter: $adapter_command の境界は残す"
+done
+
 adapter_wait="$(PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
   "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
   wait-agent --child-ref 33333333-3333-4333-8333-333333333333 --timeout 30)"
@@ -1064,19 +1582,70 @@ for invalid_wait_response in \
   assert_eq "$?" "1" "adapter: 不正な wait status を拒否する"
   assert_eq "$invalid_wait_out" "" "adapter: 不正な wait response を返さない"
 done
-for invalid_create_response in \
-  '{"status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
-  '{"agentId":"33333333-3333-4333-8333-333333333333","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title","extra":true}' \
-  '{"agentId":"33333333-3333-4333-8333-333333333333","agentId":"44444444-4444-4444-8444-444444444444","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
-  '{"agentId":"not/a-safe-agent-id","status":"running","provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}' \
-  '{"agentId":"33333333-3333-4333-8333-333333333333","status":false,"provider":"codex/model","cwd":"/private/tmp/paseo","title":"fixture title"}'; do
-  invalid_create_out="$(PASEO_FAKE_RUN_RESPONSE="$invalid_create_response" PASEO_CLI="$FAKE_PASEO" PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_ARGS="$FAKE_PASEO_ARGS" \
-    "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter" \
-    create-agent --request "$opaque_request" 2>/dev/null)"
-  assert_eq "$?" "1" "adapter: malformed Paseo create response を transport failure にする"
-  assert_eq "$invalid_create_out" '{"status":"error","reasonCode":"transport_failure"}' \
-    "adapter: malformed Paseo create response は sanitized failure だけを返す"
-done
+# call log の event key set は contract module が持つ。transport は create_agent の必須 key である。
+MAD_CONTRACT="$MAD_CONTRACT" SUCCESS_LOG="$attempt/call-log.json" node - <<'NODE'
+const fs = require('node:fs')
+const contract = require(process.env.MAD_CONTRACT)
+const log = JSON.parse(fs.readFileSync(process.env.SUCCESS_LOG, 'utf8'))
+contract.assertMadCallLogV1(log)
+const createEvent = log.events.find((event) => event.operation === 'create_agent')
+if (createEvent.transport !== 'mcp__paseo__create_agent') process.exit(1)
+if (Object.keys(createEvent).sort().join(',') !== 'callCount,operation,requestPath,seq,transport') process.exit(1)
+const clone = () => JSON.parse(JSON.stringify(log))
+const invalid = []
+const unknownKey = clone()
+unknownKey.events[unknownKey.events.length - 1].unknown = true
+invalid.push(unknownKey)
+const missingTransport = clone()
+delete missingTransport.events.find((event) => event.operation === 'create_agent').transport
+invalid.push(missingTransport)
+const wrongTransport = clone()
+wrongTransport.events.find((event) => event.operation === 'create_agent').transport = 'paseo run'
+invalid.push(wrongTransport)
+const gapSeq = clone()
+gapSeq.events[gapSeq.events.length - 1].seq += 3
+invalid.push(gapSeq)
+const unknownOperation = clone()
+unknownOperation.events[0].operation = 'inspect_agent'
+invalid.push(unknownOperation)
+const rawUrl = clone()
+rawUrl.events.find((event) => event.operation === 'create_agent').requestPath = 'https://example.test/x'
+invalid.push(rawUrl)
+const extraTopLevel = clone()
+extraTopLevel.note = 'extra'
+invalid.push(extraTopLevel)
+for (const value of invalid) {
+  let code = null
+  try { contract.assertMadCallLogV1(value) } catch (error) { code = error.code }
+  if (code !== 'invalid_mad_call_log') process.exit(1)
+}
+process.exit(0)
+NODE
+assert_eq "$?" "0" "contract: call log は event ごとの exact key set と連続 seq を要求する"
+
+# accepted response の strict 検証は contract module が持つ。
+MAD_CONTRACT="$MAD_CONTRACT" node - <<'NODE'
+const contract = require(process.env.MAD_CONTRACT)
+const invalid = [
+  '{"status":"accepted"}',
+  '{"childRef":"33333333-3333-4333-8333-333333333333"}',
+  '{"status":"rejected","childRef":"33333333-3333-4333-8333-333333333333"}',
+  '{"status":"accepted","childRef":"33333333-3333-4333-8333-333333333333","extra":true}',
+  '{"status":"accepted","childRef":"33333333-3333-4333-8333-333333333333","childRef":"44444444-4444-4444-8444-444444444444"}',
+  '{"status":"accepted","childRef":"not/a-safe-agent-id"}',
+  '{"status":"accepted","childRef":".."}',
+]
+for (const raw of invalid) {
+  let code = null
+  try { contract.assertMadCreateAcceptedResponseV1(raw) } catch (error) { code = error.code }
+  if (code !== 'invalid_mad_create_response') process.exit(1)
+}
+const accepted = contract.assertMadCreateAcceptedResponseV1(
+  '{"status":"accepted","childRef":"33333333-3333-4333-8333-333333333333"}')
+if (Object.keys(accepted).sort().join(',') !== 'childRef,status') process.exit(1)
+process.exit(0)
+NODE
+assert_eq "$?" "0" "contract: accepted response は exact key set と safe childRef だけを受理する"
 
 opaque_attempt="$TMP/mad-opaque-mode"
 mkdir -p "$opaque_attempt"
@@ -1093,44 +1662,74 @@ assert_eq "$(jq -c '.providers.claude.modeIds' "$opaque_attempt/snapshot.json")"
   '["auto","mode: observed"]' "MAD opaque mode: provider ごとの modeIds を保持する"
 assert_eq "$(jq -r '.modeId' "$opaque_attempt/launch.json")" "auto" \
   "MAD opaque mode: launch の modeId は auto を維持する"
-assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent") | has("payload")]' "$opaque_attempt/call-log.json")" \
-  '[false]' "MAD opaque mode: runtime log は create payload を残さない"
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent")]' "$opaque_attempt/call-log.json")" \
+  '[]' "MAD opaque mode: runner は create を呼ばない"
+assert_eq "$(stat -f '%HT:%Lp' "$opaque_attempt/mcp-create.json")" "Regular File:600" \
+  "MAD opaque mode: mcp-create.json は 0600 の regular file"
 
-# 既存の exercise-create 経路も、snapshot または launch の検証前に create を呼ばない。
+# --exercise-create は create の transport を持たない。snapshot と launch を検証して
+# から 0600 の request を書くだけであり、create 回数は常に 0 である。
 for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set-mismatch \
   mode-ids-not-string-array model-entry-not-object; do
   create_log="$TMP/exercise-snapshot-$invalid_snapshot.json"
+  request_out="$TMP/exercise-snapshot-$invalid_snapshot-request.json"
   out="$(bash "$MAD_RUNNER" --exercise-create \
     --share-dir "$SHARE" \
     --snapshot "$FIXTURES/snapshots/$invalid_snapshot.json" \
-    --launch "$FIXTURES/launch/success.json" --adapter "$SUCCESS_ADAPTER" \
+    --launch "$FIXTURES/launch/success.json" --request-out "$request_out" \
     --create-log "$create_log" 2>/dev/null)"
   assert_eq "$?" "2" "exercise-create: $invalid_snapshot は exit 2"
   assert_eq "$out" "" "exercise-create: $invalid_snapshot は stdout を出さない"
   assert_eq "$(jq -r '.createCalls' "$create_log")" "0" "exercise-create: $invalid_snapshot は create 0 回"
+  assert_eq "$(test -e "$request_out" && echo yes || echo no)" "no" \
+    "exercise-create: $invalid_snapshot は request を書かない"
 done
 for invalid_launch in exhausted invalid-extra-field invalid-non-auto-mode invalid-unlisted-feature \
   invalid-non-integer-feature; do
   create_log="$TMP/exercise-launch-$invalid_launch.json"
+  request_out="$TMP/exercise-launch-$invalid_launch-request.json"
   out="$(bash "$MAD_RUNNER" --exercise-create \
     --share-dir "$SHARE" \
     --snapshot "$FIXTURES/snapshots/all-available.json" \
-    --launch "$FIXTURES/launch/$invalid_launch.json" --adapter "$SUCCESS_ADAPTER" \
+    --launch "$FIXTURES/launch/$invalid_launch.json" --request-out "$request_out" \
     --create-log "$create_log" 2>/dev/null)"
   assert_eq "$?" "2" "exercise-create: $invalid_launch は exit 2"
   assert_eq "$out" "" "exercise-create: $invalid_launch は stdout を出さない"
   assert_eq "$(jq -r '.createCalls' "$create_log")" "0" "exercise-create: $invalid_launch は create 0 回"
+  assert_eq "$(test -e "$request_out" && echo yes || echo no)" "no" \
+    "exercise-create: $invalid_launch は request を書かない"
 done
 
 create_log="$TMP/exercise-create-success.json"
+request_out="$TMP/exercise-create-success-request.json"
 out="$(bash "$MAD_RUNNER" --exercise-create \
   --share-dir "$SHARE" --snapshot "$FIXTURES/snapshots/all-available.json" \
-  --launch "$FIXTURES/launch/success.json" --adapter "$SUCCESS_ADAPTER" \
+  --launch "$FIXTURES/launch/success.json" --request-out "$request_out" \
   --create-log "$create_log" 2>/dev/null)"
-assert_eq "$?" "0" "exercise-create: accepted childRef で成功する"
+assert_eq "$?" "0" "exercise-create: 検証済み launch から request を書く"
 assert_eq "$out" "" "exercise-create: stdout を出さない"
-assert_eq "$(jq -r '.childRef' "$create_log")" "11111111-1111-4111-8111-111111111111" \
-  "exercise-create: accepted response の childRef を検証して記録する"
+assert_eq "$(jq -r '.createCalls' "$create_log")" "0" "exercise-create: 成功時も create 0 回"
+assert_eq "$(jq -r '.requestPath' "$create_log")" "$request_out" \
+  "exercise-create: 書いた request の path を記録する"
+assert_eq "$(stat -f '%HT:%Lp' "$request_out")" "Regular File:600" \
+  "exercise-create: request は 0600 の regular file"
+assert_eq "$(jq -c 'keys' "$request_out")" \
+  '["initialPrompt","notifyOnFinish","provider","settings","title","workspaceId"]' \
+  "exercise-create: request は公式 MCP create の 6 引数だけを持つ"
+
+# fast_mode を持つ launch でも、値を落とさずに request へ写す。
+fast_mode_launch_file="$TMP/launch-fast-mode.json"
+jq -c '.featureValues = {"fast_mode":true}' "$FIXTURES/launch/success.json" > "$fast_mode_launch_file"
+create_log="$TMP/exercise-create-fast-mode.json"
+request_out="$TMP/exercise-create-fast-mode-request.json"
+bash "$MAD_RUNNER" --exercise-create \
+  --share-dir "$SHARE" --snapshot "$FIXTURES/snapshots/all-available.json" \
+  --launch "$fast_mode_launch_file" --request-out "$request_out" \
+  --feature-allowlist '{"fast_mode":"boolean"}' \
+  --create-log "$create_log" >/dev/null 2>&1
+assert_eq "$?" "0" "exercise-create: fast_mode を持つ launch を受理する"
+assert_eq "$(jq -c '.settings.features' "$request_out")" '{"fast_mode":true}' \
+  "exercise-create: fast_mode を settings.features へ落とさずに写す"
 
 assert_contains "$(cat "$CHEZMOI_SOURCE/tests/test-distribution.sh")" \
   '.local/share/agent-config/mad-contract.js' "distribution: MAD の契約 module を配る"

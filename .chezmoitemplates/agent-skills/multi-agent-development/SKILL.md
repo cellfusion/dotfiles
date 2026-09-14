@@ -25,8 +25,9 @@ MAD は親が Paseo MCP の agent を起動・監視し、フェーズごとに�
 1. `tests/manual/paseo-unit-gate.sh require unit2-decision.txt continue` を通し、親が必要な run directory と state を用意する。
 2. 配布された `mad-contract.js` で resolved export と provider enumeration を mode 0600 で作る。
 3. `paseo-mcp-adapter` の `list-providers`、available provider ごとの `list-models`、snapshot、`generate-paseo-config resolve` の順に実行する。
-4. launch を検証して request を作り、adapter の `create-agent` を一回だけ呼ぶ。accepted childRef の後は `wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼び、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
-5. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
+4. launch を検証して request を作り、mode 0600 の `mcp-create.json` として書く。`assertMadCreateRequestV1` で再検証し、`manual-orchestration-validate --prepare-create` で一回性 marker を取ってから、その 6 key をそのまま `mcp__paseo__create_agent` へ渡して一回だけ create する。marker を取れなければ create しない。adapter に create の経路は無い。
+5. accepted response を `{"status":"accepted","childRef":"<safe-id>"}` へ縮約して 0600 の state に保存し、`wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼んで、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
+6. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
 
 詳細な request、failure、state、role、plan の契約は共通文書を参照する。
 

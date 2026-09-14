@@ -292,11 +292,17 @@ Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と
 実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
 
 実行は `paseo-mcp-adapter` の `list-providers`、provider ごとの `list-models`、0600 の
-availability snapshot、`generate-paseo-config resolve`、0600 の create request、`create-agent` 一回、
-accepted childRef に対する `wait-agent` 一回の順に進める。wait の raw response は adapter が
-`{status}` へ縮約し、attempt には 0600 の `wait-evidence.json` と sanitized call log だけを残す。
-各 JSON 成果物は run の attempt directory にだけ置く。snapshot と launch と create request が
-検証できない場合、create を呼ばない。
+availability snapshot、`generate-paseo-config resolve`、0600 の `mcp-create.json`、
+`manual-orchestration-validate --prepare-create`、親による `mcp__paseo__create_agent` 一回、
+accepted childRef に対する `wait-agent` 一回の順に進める。
+create の transport は公式 MCP tool だけであり、adapter は create の subcommand を持たない。
+Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create に使わない。
+`--prepare-create` は request と attempt state と call log を検証してから、0600 の
+`mcp-create.prepared` を `O_EXCL` で作る。marker を取れた呼び出しだけが create を呼べるので、
+2 つの親が同時に検証を通っても create は一回で止まる。
+wait の raw response は adapter が `{status}` へ縮約し、attempt には 0600 の `wait-evidence.json` と
+sanitized call log だけを残す。各 JSON 成果物は run の attempt directory にだけ置く。
+snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
 
 `--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
@@ -308,46 +314,18 @@ snapshot を破棄し、create 後なら Paseo の子を archive して run の 
 `paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
 ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
 
-実 backend で 1 度通す手順は `tests/manual/mad-orchestration-smoke.sh` にある。
-`research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
-実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
-`--dry-run` で手順だけを読める。
+実Paseoを起動する代表 MAD run は、待ち時間と API 課金を避けるため廃止している。
+`tests/manual/mad-representative-run.sh` は `--verify-only` だけを受け付け、保存済みの
+匿名 fixture を検査する。実Paseo、MCP、provider CLI、network、課金対象の child は起動しない。
 
-旧 asset の削除へ進む前に、`tests/manual/mad-representative-run.sh` で Paseo の代表
-MAD run を 1 回通す。`--run` は外側から `MAD_REPRESENTATIVE_RUN_APPROVED=1` を
-明示したときだけ discovery、launch、create、accepted childRef の wait、plan、implement、review、fix を実行し、
-成功時に `$PASEO_MIGRATION_EVIDENCE_DIR/representative-decision.txt` へ
-`approved-success` を atomic に記録する。未承認または途中失敗なら `DECISION_REQUEST_PATH`
-へ decision request を残し、後続 phase と削除を行わない。create 後の wait が `idle` 以外なら
-success decision を残さず、child が書く
-phase artifact を取得し、`MAD_REPRESENTATIVE_PHASE_TIMEOUT_SECONDS`（既定 600 秒）の
-上限内に全 phase の検証が終わらなければ成功扱いにしない。
-
-実環境で fixture の candidate が discovery 結果に無い場合は、次の 4 つを**全て**外側から
-渡す。provider は `codex` だけを受け付け、model、thinking option、workspace ID は空白と
-制御文字を含まない実在値でなければならない。不完全または不正な override は discovery と
-create の前に decision request を残して停止する。override は `--run` だけに効き、
-`--verify-only` と保存済み fixture は変更しない。
-
-    MAD_REPRESENTATIVE_RUN_APPROVED=1 \
-      PASEO_MAD_REPRESENTATIVE_PROVIDER=codex \
-      PASEO_MAD_REPRESENTATIVE_MODEL='<discovered-model>' \
-      PASEO_MAD_REPRESENTATIVE_THINKING_OPTION='<discovered-thinking-option>' \
-      PASEO_MAD_REPRESENTATIVE_WORKSPACE_ID='<current-workspace-id>' \
-      DECISION_REQUEST_PATH="$DECISION_REQUEST_PATH" \
-      bash tests/manual/mad-representative-run.sh --run \
-        --evidence-dir "${PASEO_MIGRATION_EVIDENCE_DIR}/representative"
-
-実機を使わず保存済み証跡を検査する場合は、次の verify-only 経路を使う。これは
-承認変数を読まず、adapter を呼ばない。
+保存済み証跡の検査は次の verify-only 経路を使う。これは承認変数を読まず、adapterを呼ばない。
 
     bash tests/test-paseo-mad.sh
     bash tests/manual/mad-representative-run.sh --verify-only \
       --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
 
 fixture の handoff は `/fixture/*.json` という匿名 placeholder を使い、verify-only が
-一時 directory に 0600 の regular file として解決する。`--run` の child artifact は
-実在する 0600 regular file でなければ受け付けない。`wait-evidence.json` は `{status}` だけを持ち、
+一時 directory に 0600 の regular file として解決する。`wait-evidence.json` は `{status}` だけを持ち、
 raw wait response や activity history は証跡に入れない。fixture の mode は Git が保存しない
 ため、単体で別の証跡を検査するときは `find` で列挙した証跡を `chmod 600` にしてから
 実行する。証跡には credential、auth/history、raw response、remote URL を入れない。

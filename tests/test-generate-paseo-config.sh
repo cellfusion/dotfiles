@@ -101,7 +101,7 @@ assert_eq "$?" "0" "types: defaultEnvironment と scope と Paseo field を検�
 TARGET="$TMP/paseo-config.json"
 printf '{"daemon":{"agentProfiles":[]},"agents":{"providers":{}}}' > "$TARGET"
 before="$(shasum -a 256 "$TARGET" | cut -d' ' -f1)"
-invalids=(malformed unknown-field cross-reference-unknown-environment cross-reference-unknown-provider cross-reference-unknown-role-tier candidate-duplicate-provider environment-candidate-not-eligible tier-missing tier-fast-present empty-common-candidates empty-environment-candidates empty-environment-providers feature-allowlist-unknown-key feature-allowlist-object-value feature-allowlist-wrong-scalar feature-allowlist-non-empty secret-feature secret-allowlist-key unknown-family-with-setup reserved-env-agent-env reserved-env-managed reserved-env-case-variant config-env-home shared-config-env setup-path-collision setup-path-absolute setup-path-parent setup-path-parent-child-overlap setup-directory-pattern-mismatch setup-claude-null setup-claude-table setup-codex-table generated-id-collision generated-physical-path-collision generated-root-id-collision generated-root-physical-path-collision default-environment-unknown remote-rule-scheme remote-rule-auth remote-rule-port remote-rule-query remote-rule-dot-segment remote-rule-dot-git routing-rule-tier-field routing-rule-empty-match routing-rule-relative-path routing-rule-missing-path)
+invalids=(malformed unknown-field cross-reference-unknown-environment cross-reference-unknown-provider cross-reference-unknown-role-tier candidate-duplicate-provider environment-candidate-not-eligible tier-missing tier-fast-present empty-common-candidates empty-environment-candidates empty-environment-providers feature-allowlist-unknown-key feature-allowlist-object-value feature-allowlist-wrong-scalar feature-allowlist-unlisted-key feature-allowlist-wrong-family feature-allowlist-fast-mode-wrong-type feature-value-fast-mode-wrong-type secret-feature secret-allowlist-key unknown-family-with-setup reserved-env-agent-env reserved-env-managed reserved-env-case-variant config-env-home shared-config-env setup-path-collision setup-path-absolute setup-path-parent setup-path-parent-child-overlap setup-directory-pattern-mismatch setup-claude-null setup-claude-table setup-codex-table generated-id-collision generated-physical-path-collision generated-root-id-collision generated-root-physical-path-collision default-environment-unknown remote-rule-scheme remote-rule-auth remote-rule-port remote-rule-query remote-rule-dot-segment remote-rule-dot-git routing-rule-tier-field routing-rule-empty-match routing-rule-relative-path routing-rule-missing-path)
 for invalid in "${invalids[@]}"; do
   out="$(node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); try { validateConfig(fs.readFileSync(process.argv[2],"utf8")); process.exit(0) } catch (error) { process.exit(error.exitCode || 1) }' "$VALIDATOR" "$FIXTURES/invalid/$invalid.json" 2>"$TMP/$invalid.stderr")"
   status=$?
@@ -121,6 +121,20 @@ for collision in generated-id-collision generated-root-id-collision; do
   assert_eq "$?" "2" "validator: $collision は exit 2"
   assert_contains "$error" "generated provider id" "validator: $collision は ID collision に到達する"
 done
+# 上の loop は exit code しか見ない。featureAllowlist の fixture は schema ではなく
+# 意味検証で止まる必要があるので、到達した理由まで固定する。
+for feature_case in \
+  'feature-allowlist-unlisted-key|provider family claude: featureAllowlist の key verbose は v1 で許可されない' \
+  'feature-allowlist-wrong-family|provider family opencode: featureAllowlist の key fast_mode は v1 で許可されない' \
+  'feature-allowlist-fast-mode-wrong-type|provider family claude: featureAllowlist の fast_mode は boolean でなければならない' \
+  'feature-value-fast-mode-wrong-type|tiers.think: featureValues の scalar 型が allowlist と違う'; do
+  feature_fixture="${feature_case%%|*}"
+  feature_message="${feature_case#*|}"
+  error="$(collision_error "$feature_fixture")"
+  assert_eq "$?" "2" "validator: $feature_fixture は exit 2"
+  assert_contains "$error" "$feature_message" "validator: $feature_fixture は allowlist 検査に到達する"
+done
+
 for collision in generated-physical-path-collision generated-root-physical-path-collision; do
   error="$(collision_error "$collision")"
   assert_eq "$?" "2" "validator: $collision は exit 2"
@@ -156,7 +170,8 @@ assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier')" "light" "dispatch: f
 assert_eq "$(printf '%s' "$out" | jq -r '.defaultEnvironment')" "primary" "dispatch: defaultEnvironment を持つ"
 assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(. == "compatibility: tier alias normalized to light")) | length')" "1" \
   "dispatch: tier alias の互換 warning は一回だけ"
-assert_not_contains "$out" "fast" "dispatch: resolved config に fast を含まない"
+assert_eq "$(printf '%s' "$out" | jq -c '[.. | strings] + [paths | .[] | strings] | map(select(. == "fast")) | length')" \
+  "0" "dispatch: resolved config の key と値に fast がない"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.tier, (.resolutions[].tier)' | sort -u | tr '\n' ' ')" "light " \
   "dispatch: 正規化後の tier に fast が残らない"
 
@@ -360,7 +375,7 @@ node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.arg
   "$VALIDATOR" "$RESOLVER" "$VALID" > "$export_json"
 materialized="$(node -e 'const fs=require("node:fs"); const {materializePaseo}=require(process.argv[1]); process.stdout.write(JSON.stringify(materializePaseo(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
 assert_eq "$(printf '%s' "$materialized" | jq -c '.providers | keys')" \
-  '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "exporter: base 全件と eligible な non-primary"
+  '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "exporter: base 全件と eligible な non-primary"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude | has("extends")')" "false" "exporter: base は extends を持たない"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].extends')" "claude" "exporter: non-primary は base を extends する"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].label')" "Claude (lab)" "exporter: non-primary の label"
@@ -372,9 +387,9 @@ assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].env.C
   '$XDG_CONFIG_HOME/claude_lab' "exporter: non-primary の設定 directory"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.CODEX_HOME // "absent"')" "absent" \
   "exporter: 他 family の設定 env を混ぜない"
-assert_eq "$(printf '%s' "$materialized" | jq -c '.providers.pie.env | keys')" \
+assert_eq "$(printf '%s' "$materialized" | jq -c '.providers.pi.env | keys')" \
   '["AGENT_ENV","CHEZMOI_AGENT_CONFIG_MANAGED"]' "exporter: setup:null は marker と AGENT_ENV だけ"
-assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.pie.env.CHEZMOI_AGENT_CONFIG_MANAGED')" "1" "exporter: managed marker"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.pi.env.CHEZMOI_AGENT_CONFIG_MANAGED')" "1" "exporter: managed marker"
 assert_eq "$(printf '%s' "$materialized" | jq -c '[.profiles[] | .id] | sort | .[0:2]')" \
   '["agent_profile_managed_deep_lab","agent_profile_managed_deep_primary"]' "exporter: profile ID の規則"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "agent_profile_managed_work_lab") | .name')" \
@@ -383,7 +398,37 @@ assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "a
   "codex-lab" "exporter: profile は materialized provider ID を指す"
 assert_eq "$(printf '%s' "$materialized" | jq -c '[.profiles[].modeId] | unique')" '["auto"]' "exporter: modeId は auto だけ"
 enumeration="$(node -e 'const fs=require("node:fs"); const {enumerateMaterializedProviderIds}=require(process.argv[1]); process.stdout.write(JSON.stringify(enumerateMaterializedProviderIds(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
-assert_eq "$enumeration" '["claude","claude-lab","codex","codex-lab","opencode","pie"]' "exporter: provider ID の列挙"
+assert_eq "$enumeration" '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "exporter: provider ID の列挙"
+
+# fast_mode は Claude と Codex の allowlist に載る唯一の feature である。正本の値が
+# resolved export、profile の featureValues、launch spec まで変換されずに届くか見る。
+assert_eq "$(jq -c '.providers.claude.featureAllowlist' "$VALID")" '{"fast_mode":"boolean"}' \
+  "allowlist: Claude は fast_mode を boolean で宣言する"
+assert_eq "$(jq -c '.providers.codex.featureAllowlist' "$VALID")" '{"fast_mode":"boolean"}' \
+  "allowlist: Codex は fast_mode を boolean で宣言する"
+assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$VALID" | tr '\n' ' ')" \
+  "{} {} " "allowlist: OpenCode と Pi は空 allowlist だけを持つ"
+assert_eq "$(jq -c '[.resolutions[] | select(.environment == "primary" and .tier == "work") | .candidates[0].featureValues]' "$export_json")" \
+  '[{"fast_mode":true}]' "allowlist: Codex の fast_mode true を resolved export へ渡す"
+assert_eq "$(jq -c '[.resolutions[] | select(.environment == "primary" and .tier == "think") | .candidates[0].featureValues]' "$export_json")" \
+  '[{"fast_mode":false}]' "allowlist: Claude の fast_mode false を resolved export へ渡す"
+assert_eq "$(printf '%s' "$materialized" | jq -c '.profiles[] | select(.id == "agent_profile_managed_work_primary") | .featureValues')" \
+  '{"fast_mode":true}' "allowlist: profile の featureValues に fast_mode true を写す"
+assert_eq "$(printf '%s' "$materialized" | jq -c '.profiles[] | select(.id == "agent_profile_managed_think_primary") | .featureValues')" \
+  '{"fast_mode":false}' "allowlist: profile の featureValues に fast_mode false を写す"
+assert_eq "$(printf '%s' "$materialized" | jq -c '.profiles[] | select(.id == "agent_profile_managed_light_primary") | .featureValues')" \
+  '{}' "allowlist: feature を書かない candidate は空のままにする"
+
+fast_mode_launch="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --snapshot "$SNAPSHOTS/all-available.json")"
+assert_eq "$?" "0" "launch: fast_mode true の candidate を解決できる"
+assert_eq "$(printf '%s' "$fast_mode_launch" | jq -c '.featureValues')" '{"fast_mode":true}' \
+  "launch: Codex の fast_mode true を launch spec へ渡す"
+fast_mode_launch_false="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer \
+  --provenance mad-escalation --tier think --snapshot "$SNAPSHOTS/all-available.json")"
+assert_eq "$?" "0" "launch: fast_mode false の candidate を解決できる"
+assert_eq "$(printf '%s' "$fast_mode_launch_false" | jq -c '.featureValues')" '{"fast_mode":false}' \
+  "launch: Claude の fast_mode false を launch spec へ渡す"
 
 launch="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role re-reviewer \
   --provenance mad-fix --tier fast --snapshot "$SNAPSHOTS/all-available.json")"

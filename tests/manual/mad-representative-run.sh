@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 承認済みの Paseo MAD 代表 run を一度だけ起動し、その証跡を検査する。
+# 保存済みの Paseo MAD 代表証跡を検査する。実Paseo/APIを起動する live run は廃止済み。
 set -u
 
 CHEZMOI_SOURCE="$(cd "$(dirname "$0")/../.." && pwd -P)"
@@ -18,7 +18,6 @@ RUN_WORKSPACE_ID="representative-workspace"
 
 usage() {
   printf '%s\n' \
-    'usage: mad-representative-run.sh --run --evidence-dir <absolute-directory>' \
     '       mad-representative-run.sh --verify-only --evidence-dir <absolute-directory>' >&2
 }
 
@@ -328,6 +327,9 @@ write_run_evidence() {
   local evidence_dir="$1"
   local generator="${PASEO_MAD_GENERATOR:-$DEFAULT_GENERATOR}"
   local adapter="${PASEO_MAD_ADAPTER:-$DEFAULT_ADAPTER}"
+  # create の transport は公式 MCP tool だけである。shell からは呼べないので、
+  # 呼び出し元が mcp__paseo__create_agent を実行する境界を渡す。
+  local create_boundary="${PASEO_MAD_CREATE_BOUNDARY:-}"
   local share_dir="${PASEO_MAD_SHARE_DIR:-$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config}"
   local input
   local project
@@ -342,6 +344,9 @@ write_run_evidence() {
 
   [ -f "$generator" ] || return 1
   [ -f "$adapter" ] && [ -x "$adapter" ] || return 1
+  [ -n "$create_boundary" ] || return 1
+  require_absolute PASEO_MAD_CREATE_BOUNDARY "$create_boundary" || return 1
+  [ -f "$create_boundary" ] && [ -x "$create_boundary" ] || return 1
   [ -f "$MAD_RUNNER" ] || return 1
   [ -f "$MAD_CONTRACT" ] || return 1
   [ -f "$FIXTURES/valid-v1.json" ] || return 1
@@ -378,21 +383,30 @@ write_run_evidence() {
     "fix handoff: $evidence_dir/fix/handoff.json" \
     "state transition: $evidence_dir/state-transition.json")" || return 1
 
-  # Task 8 の成功経路を adapter 経由で一度だけ実行する。phase artifact は
-  # create 後に child が実際に書いたものを取得し、runner は固定結果を生成しない。
+  # discovery、resolve、request build までを runner が一度だけ実行する。runner は
+  # create を呼ばず、mode 0600 の mcp-create.json を書いて停止する。
   bash "$MAD_RUNNER" --exercise-success \
     --generator "$generator" --share-dir "$share_dir" --input "$input" \
     --adapter "$adapter" --attempt-dir "$attempt_dir" --project "$project" \
     --role implementer --provenance mad-representative \
     --title 'representative title' --workspace-id "$RUN_WORKSPACE_ID" \
     --initial-prompt "$phase_prompt" --notify-on-finish true \
-    --wait-timeout "$wait_timeout" \
     --call-log "$attempt_dir/call-log.json" >/dev/null 2>&1 || return 1
+  require_private_regular_file "$attempt_dir/mcp-create.json" || return 1
+
+  # 親の mcp__paseo__create_agent に相当する境界を一回だけ呼ぶ。
+  PASEO_MAD_VALIDATOR="$MAD_RUNNER" PASEO_MAD_SHARE_DIR="$share_dir" \
+    "$create_boundary" --request "$attempt_dir/mcp-create.json" \
+    --response-out "$attempt_dir/mcp-accepted.json" >/dev/null 2>&1 || return 1
+  bash "$MAD_RUNNER" --exercise-accepted \
+    --share-dir "$share_dir" --attempt-dir "$attempt_dir" \
+    --call-log "$attempt_dir/call-log.json" --adapter "$adapter" \
+    --response "$attempt_dir/mcp-accepted.json" --wait-timeout "$wait_timeout" >/dev/null 2>&1 || return 1
 
   for evidence in snapshot.json launch.json wait-evidence.json; do
     write_private_file "$evidence_dir/$evidence" "$(jq -c . "$attempt_dir/$evidence" 2>/dev/null)" || return 1
   done
-  request_raw="$(jq -c . "$attempt_dir/create-request.json" 2>/dev/null)" || return 1
+  request_raw="$(jq -c . "$attempt_dir/mcp-create.json" 2>/dev/null)" || return 1
   [ -n "$request_raw" ] || return 1
   create_call="$(jq -cn --argjson request "$request_raw" '{create_calls:1,request:$request}')" || return 1
   write_private_file "$evidence_dir/create-call.json" "$create_call" || return 1
@@ -468,7 +482,12 @@ invalidate_stale_representative_run() {
   done
 }
 
-if [ "$#" -ne 3 ] || { [ "${1:-}" != "--run" ] && [ "${1:-}" != "--verify-only" ]; } ||
+if [ "${1:-}" = "--run" ]; then
+  printf '%s\n' 'mad-representative-run: live --run is disabled; no Paseo/API calls are permitted' >&2
+  exit 2
+fi
+
+if [ "$#" -ne 3 ] || [ "${1:-}" != "--verify-only" ] ||
    [ "${2:-}" != "--evidence-dir" ]; then
   usage
   exit 2
@@ -478,40 +497,7 @@ MODE="$1"
 EVIDENCE_DIR="$3"
 require_absolute --evidence-dir "$EVIDENCE_DIR" || exit 2
 
-if [ "$MODE" = "--verify-only" ]; then
-  VERIFY_ONLY_MODE=1
-  trap cleanup_verify_placeholders EXIT
-  verify_evidence "$EVIDENCE_DIR"
-  exit $?
-fi
-
-DECISION_REQUEST_PATH="${DECISION_REQUEST_PATH:-$EVIDENCE_DIR/representative-decision-request.md}"
-if ! test "${MAD_REPRESENTATIVE_RUN_APPROVED:-0}" = 1; then
-  write_failure_request "$DECISION_REQUEST_PATH" '承認されていない代表 run'
-  exit 1
-fi
-
-DECISION_ROOT="${PASEO_MIGRATION_EVIDENCE_DIR:-$DEFAULT_DECISION_ROOT}"
-require_absolute PASEO_MIGRATION_EVIDENCE_DIR "$DECISION_ROOT" || {
-  write_failure_request "$DECISION_REQUEST_PATH" '証跡 directory'
-  exit 1
-}
-DECISION_FILE="$DECISION_ROOT/representative-decision.txt"
-
-invalidate_stale_representative_run "$EVIDENCE_DIR" "$DECISION_FILE" "$DECISION_REQUEST_PATH" || {
-  if [ -d "$EVIDENCE_DIR" ] && [ ! -L "$EVIDENCE_DIR" ]; then
-    write_failure_request "$EVIDENCE_DIR/representative-decision-request.md" '既存の代表証跡の無効化' || true
-  fi
-  exit 1
-}
-
-if write_run_evidence "$EVIDENCE_DIR"; then
-  if write_unit_decision "$DECISION_FILE" approved-success; then
-    exit 0
-  fi
-  write_failure_request "$DECISION_REQUEST_PATH" '判定 file'
-  exit 1
-fi
-
-write_failure_request "$DECISION_REQUEST_PATH" 'Paseo adapter、launch、create、または phase'
-exit 1
+VERIFY_ONLY_MODE=1
+trap cleanup_verify_placeholders EXIT
+verify_evidence "$EVIDENCE_DIR"
+exit $?

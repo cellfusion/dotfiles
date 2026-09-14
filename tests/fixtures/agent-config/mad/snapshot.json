@@ -7,7 +7,7 @@
     "codex": { "available": true, "modeIds": ["auto"] },
     "codex-lab": { "available": false, "modeIds": [] },
     "opencode": { "available": false, "modeIds": [] },
-    "pie": { "available": false, "modeIds": [] }
+    "pi": { "available": false, "modeIds": [] }
   },
   "models": {
     "claude": [{ "id": "sample-think", "thinkingOptionIds": ["high"] }, { "id": "sample-deep", "thinkingOptionIds": ["max"] }],
@@ -15,6 +15,6 @@
     "codex": [{ "id": "sample-light", "thinkingOptionIds": ["medium"] }, { "id": "sample-work", "thinkingOptionIds": ["high"] }],
     "codex-lab": [],
     "opencode": [],
-    "pie": []
+    "pi": []
   }
 }

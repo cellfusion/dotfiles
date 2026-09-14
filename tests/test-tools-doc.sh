@@ -66,8 +66,16 @@ done
 # --- worktree を作るレシピは後片付けが要る。片付け方が docs に無いと workspace が残る ---
 assert_contains "$doc" "archive_workspace" \
   "docs: MAD の worktree を片付ける手段を書く"
+assert_contains "$doc" 'mcp-create.prepared' \
+  "docs: MAD は create の前に一回性 marker を取ると書く"
 assert_contains "$doc" "workspaces.json" \
   "docs: MAD の workspace 台帳の場所を書く"
+assert_contains "$doc" "--verify-only" \
+  "docs: 代表証跡は verify-only で検査する"
+assert_not_contains "$doc" "MAD_REPRESENTATIVE_RUN_APPROVED=1" \
+  "docs: API課金対象の代表 run 承認を案内しない"
+assert_not_contains "$doc" "mad-representative-run.sh --run" \
+  "docs: API課金対象の代表 run コマンドを案内しない"
 
 # --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
 # plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。

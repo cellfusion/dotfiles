@@ -5,7 +5,7 @@
     "claude": { "displayName": "Claude", "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} },
     "codex": { "displayName": "Codex", "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} },
     "opencode": { "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
-    "pie": { "displayName": "Pie", "setup": null, "featureAllowlist": {} }
+    "pi": { "displayName": "Pi", "setup": null, "featureAllowlist": {} }
   },
   "tiers": {
     "light": { "candidates": [{ "provider": "codex", "model": "sample-light", "thinkingOptionId": "medium", "featureValues": {} }] },
@@ -14,7 +14,7 @@
     "deep": { "candidates": [{ "provider": "claude", "model": "sample-deep", "thinkingOptionId": "max", "featureValues": {} }] }
   },
   "environments": {
-    "primary": { "providers": ["claude", "codex", "opencode", "pie"], "tiers": {} },
+    "primary": { "providers": ["claude", "codex", "opencode", "pi"], "tiers": {} },
     "lab": { "providers": ["claude", "codex"], "tiers": { "work": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "thinkingOptionId": "high", "featureValues": {} }] } } }
   },
   "agentRoles": {
