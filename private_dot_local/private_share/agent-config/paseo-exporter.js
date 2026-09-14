@@ -1,5 +1,7 @@
 'use strict'
 
+const os = require('node:os')
+const path = require('node:path')
 const { ConfigError } = require('./config-validator.js')
 const { assertResolvedConfig, TIERS } = require('./config-types.js')
 
@@ -74,6 +76,24 @@ function providerFamilyDefinition(resolvedExport, family) {
   return definition
 }
 
+function runtimeConfigHome() {
+  const configured = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+  if (!path.isAbsolute(configured)) throw new ConfigError('XDG_CONFIG_HOME: 絶対 path が必要である')
+  return path.normalize(configured)
+}
+
+function materializeDirectoryPattern(pattern, environment) {
+  nonEmptyString(pattern, 'provider directory pattern')
+  nonEmptyString(environment, 'provider environment')
+  const expanded = pattern
+    .replaceAll('$XDG_CONFIG_HOME', () => runtimeConfigHome())
+    .replaceAll('<environment>', () => environment)
+  if (!path.isAbsolute(expanded) || expanded.includes('$')) {
+    throw new ConfigError('provider directory pattern: physical path へ展開できない')
+  }
+  return path.normalize(expanded)
+}
+
 function providerPatch(resolvedExport, entry) {
   const family = providerFamilyDefinition(resolvedExport, entry.family)
   const environment = entry.environment
@@ -93,7 +113,7 @@ function providerPatch(resolvedExport, entry) {
       const pattern = environment === resolvedExport.defaultEnvironment
         ? family.setup.directoryPattern.primary
         : family.setup.directoryPattern.nonPrimary
-      patch.env[key] = pattern.replaceAll('<environment>', environment)
+      patch.env[key] = materializeDirectoryPattern(pattern, environment)
     }
   }
   return patch

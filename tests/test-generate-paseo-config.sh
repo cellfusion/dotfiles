@@ -373,7 +373,9 @@ assert_eq "$(cat "$SETUP_XDG/codex_lab/AGENTS.md")" "real file" "setup: 実体�
 export_json="$TMP/resolved-export.json"
 node -e 'const fs=require("node:fs"); const {validateConfig}=require(process.argv[1]); const {resolveExport}=require(process.argv[2]); process.stdout.write(JSON.stringify(resolveExport(validateConfig(fs.readFileSync(process.argv[3],"utf8")).config)))' \
   "$VALIDATOR" "$RESOLVER" "$VALID" > "$export_json"
-materialized="$(node -e 'const fs=require("node:fs"); const {materializePaseo}=require(process.argv[1]); process.stdout.write(JSON.stringify(materializePaseo(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
+paseo_xdg="$TMP/paseo-xdg"
+mkdir -p "$paseo_xdg"
+materialized="$(XDG_CONFIG_HOME="$paseo_xdg" node -e 'const fs=require("node:fs"); const {materializePaseo}=require(process.argv[1]); process.stdout.write(JSON.stringify(materializePaseo(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$EXPORTER" "$export_json")"
 assert_eq "$(printf '%s' "$materialized" | jq -c '.providers | keys')" \
   '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "exporter: base 全件と eligible な non-primary"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude | has("extends")')" "false" "exporter: base は extends を持たない"
@@ -382,9 +384,9 @@ assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].label
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.AGENT_ENV')" "primary" "exporter: base の AGENT_ENV は defaultEnvironment"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].env.AGENT_ENV')" "lab" "exporter: non-primary の AGENT_ENV"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.CLAUDE_CONFIG_DIR')" \
-  '$XDG_CONFIG_HOME/claude' "exporter: base の設定 directory"
+  "$paseo_xdg/claude" "exporter: base の設定 directory を絶対 path へ展開する"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers["claude-lab"].env.CLAUDE_CONFIG_DIR')" \
-  '$XDG_CONFIG_HOME/claude_lab' "exporter: non-primary の設定 directory"
+  "$paseo_xdg/claude_lab" "exporter: non-primary の設定 directory を絶対 path へ展開する"
 assert_eq "$(printf '%s' "$materialized" | jq -r '.providers.claude.env.CODEX_HOME // "absent"')" "absent" \
   "exporter: 他 family の設定 env を混ぜない"
 assert_eq "$(printf '%s' "$materialized" | jq -c '.providers.pi.env | keys')" \
