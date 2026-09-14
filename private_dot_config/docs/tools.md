@@ -304,6 +304,14 @@ wait の raw response は adapter が `{status}` へ縮約し、attempt には 0
 sanitized call log だけを残す。各 JSON 成果物は run の attempt directory にだけ置く。
 snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
 
+review/fix は task ごとに `max_rounds` を 2（初回 review、fix/re-review）へ固定する。
+review/fix child を create する前に `manual-orchestration-validate --prepare-review` を通し、
+同じ task の scope file と admission marker を使う。scope 外の重要事項は observations に保持し、
+review/fix 中に新しい fix/review や hotfix node を起動しない。最終 gate で一つの decision request に
+まとめてユーザーへ確認し、scope 拡張は新しい run として開始する。
+observations は `--write-review-observations` で atomic 0600 に保存し、
+`--check-review-observations` で最終 gate 前に検査する。
+
 `--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
 snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings

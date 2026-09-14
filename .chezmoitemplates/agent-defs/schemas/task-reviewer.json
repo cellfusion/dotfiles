@@ -5,7 +5,7 @@
   "properties": {
     "specVerdict": { "type": "string", "enum": ["compliant", "issues"] },
     "qualityVerdict": { "type": "string", "enum": ["approved", "needs_fixes"] },
-    "round": { "type": "integer" },
+    "round": { "type": "integer", "const": 0 },
     "head": { "type": "string" },
     "findings": {
       "type": "array",

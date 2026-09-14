@@ -68,6 +68,18 @@ assert_contains "$doc" "archive_workspace" \
   "docs: MAD の worktree を片付ける手段を書く"
 assert_contains "$doc" 'mcp-create.prepared' \
   "docs: MAD は create の前に一回性 marker を取ると書く"
+assert_contains "$doc" 'max_rounds` を 2' \
+  "docs: MAD review/fix の上限を2 roundに固定する"
+assert_contains "$doc" '--prepare-review' \
+  "docs: MAD review/fix の admission を通す"
+assert_contains "$doc" '--write-review-observations' \
+  "docs: scope外 observation を atomic 保存する"
+assert_contains "$doc" '--check-review-observations' \
+  "docs: scope外 observation を最終 gate 前に検査する"
+assert_contains "$doc" 'scope 外の重要事項' \
+  "docs: scope外の重要事項を observations に保留する"
+assert_contains "$doc" '新しい fix/review や hotfix node を起動しない' \
+  "docs: review/fix 中に loop を延長しない"
 assert_contains "$doc" "workspaces.json" \
   "docs: MAD の workspace 台帳の場所を書く"
 assert_contains "$doc" "--verify-only" \

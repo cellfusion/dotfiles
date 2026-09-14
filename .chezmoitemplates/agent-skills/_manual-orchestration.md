@@ -115,6 +115,39 @@ MAD の delivery role は次の 4 役である。各 role は同名の `agent-de
 
 親は role の prompt と schema の絶対 path を子の `initialPrompt` に含め、子の JSON を `result.json` と `handoff.json` の artifact path へ保存する。read role の `access` は prompt と artifact contract の情報だけを示し、Paseo mode を変更しない。
 
+## review/fix の上限と scope
+
+review/fix loop は task ごとに **max_rounds は 2** とする。round `0` は task-reviewer の初回 review、round `1` は同じ task scope の fix と re-review であり、これで解決しない finding、または新しい hotfix node はこの run で扱わない。上限到達時は `unresolved` として停止し、新しい fix/review を起動しない。
+
+親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 2`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。
+
+review/fix child を create する前に、必ず次を実行する。
+
+```bash
+manual-orchestration-validate --prepare-review \
+  --run-dir "$RUN_DIR" --task "$TASK_ID" --phase review \
+  --node "$TASK_ID-review" --attempt "$ATTEMPT_ID" --scope-file "$SCOPE_FILE"
+```
+
+fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review --node "$TASK_ID-re-review"` とし、同じ scope marker を使う。admission が失敗したら `mcp__paseo__create_agent` を呼ばない。親は fix 後に `--check-review-scope --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"` を実行し、scope 外なら fix を採用しない。
+
+spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad-review-observations` として `outOfScopePath` に 0600 で保持する。review/fix 中はそれを理由に新しい fix/review を起動しない。最終 gate で一度だけ decision request に列挙し、ユーザーが scope 拡張を承認した場合は元 run を再利用せず、新しい task/run として開始する。
+
+観測は次で atomic に保存する。
+
+```bash
+manual-orchestration-validate --write-review-observations \
+  --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE" \
+  --input "$OBSERVATION_INPUT"
+```
+
+観測ファイルは最終 gate 前に次で検査する。
+
+```bash
+manual-orchestration-validate --check-review-observations \
+  --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE"
+```
+
 ## plan dependency gate
 
 plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証する。
@@ -129,7 +162,7 @@ paseo-plan-dependency-validate "$PLAN_FILE"
 
 親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
 
-run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持つ。
+run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 2`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
 
 `state` は `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` のいずれかである。`state` が `running` の attempt は UTC ISO 8601 の `started_at` と `create_accepted: true` を必須にする。`create_accepted` は必須 boolean である。false なら child_ref を持たず、true なら state を問わず basename-safe な child_ref を必須にする。`adopted_attempts` は node ID から親が採用した attempt ID への map とし、run を `ok` にする前に採用結果を確認する。
 

@@ -129,6 +129,20 @@ for s in paseo-mcp-adapter paseo-plan-dependency-validate; do
     "MAD: $s を共有パスへ配る"
 done
 
+# review/fix の admission と scope contract を validator/module と一緒に配る。
+review_validator="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
+review_contract="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/mad-contract.js"
+assert_contains "$(cat "$review_validator")" "--prepare-review" \
+  "MAD review guard: prepare-review CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-scope" \
+  "MAD review guard: scope check CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-observations" \
+  "MAD review guard: observation check CLI を配る"
+assert_contains "$(cat "$review_validator")" "--write-review-observations" \
+  "MAD review guard: observation writer CLI を配る"
+assert_contains "$(cat "$review_contract")" "prepareMadReview0600" \
+  "MAD review guard: admission contract を配る"
+
 # SKILL.md は 3 ツールすべてに配られる。
 for skill in brainstorming writing-plans using-git-worktrees multi-agent-development; do
   assert_contains "$managed" ".config/claude/skills/$skill/SKILL.md" \

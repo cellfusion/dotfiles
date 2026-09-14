@@ -2,6 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 
 const { validateConfig } = require('./config-validator.js')
 const { resolveExport } = require('./resolver.js')
@@ -42,6 +43,13 @@ const MAD_CALL_LOG_EVENT_KEYS = {
 // create の transport は公式 MCP tool だけである。call log はその一語だけを許す。
 const MAD_CREATE_TRANSPORT = 'mcp__paseo__create_agent'
 const MAD_POST_CREATE_OPERATIONS = ['create_agent', 'wait_agent', 'stop_agent', 'failure']
+// review/fix は review 一回と fix/re-review 一回だけを許す。上限は protocol の値であり、
+// 親が任意の max_rounds を設定して回避できないようにする。
+const MAD_REVIEW_MAX_ROUNDS = 2
+const MAD_REVIEW_SCOPE_KEYS = ['version', 'type', 'task', 'allowedFiles', 'findingIds', 'outOfScopePath']
+const MAD_REVIEW_ADMISSION_KEYS = ['version', 'type', 'task', 'phase', 'node', 'attempt', 'round', 'scopeDigest']
+const MAD_REVIEW_OBSERVATION_KEYS = ['version', 'type', 'task', 'items']
+const MAD_REVIEW_PHASE_ROUNDS = { review: 0, fix: 1, 're-review': 1 }
 const SNAPSHOT_KEYS = ['version', 'type', 'providers', 'models']
 
 class MadContractError extends Error {
@@ -387,6 +395,232 @@ function assertMadCreateRequestFile0600(requestPath, featureAllowlist) {
   return assertMadCreateRequestV1(request, featureAllowlist)
 }
 
+function assertScopeRelativePath(value, code, label) {
+  nonEmptyString(value, code, label)
+  if (path.posix.isAbsolute(value) || value.includes('\\') || value.split('/').some((part) => part === '' || part === '.' || part === '..')) {
+    fail(code, `${label}: repository-relative path が必要である`)
+  }
+  return value
+}
+
+function assertUniqueNonEmptyStrings(value, code, label, validator = nonEmptyString) {
+  if (!Array.isArray(value) || value.length === 0) fail(code, `${label}: 非空 string 配列が必要である`)
+  const seen = new Set()
+  for (const entry of value) {
+    validator(entry, code, label)
+    if (seen.has(entry)) fail(code, `${label}: 重複している`)
+    seen.add(entry)
+  }
+  return value
+}
+
+function assertMadReviewScopeV1(value) {
+  const code = 'invalid_mad_review_scope'
+  exactKeys(value, MAD_REVIEW_SCOPE_KEYS, code, 'mad review scope')
+  if (value.version !== 1 || value.type !== 'mad-review-scope') {
+    fail(code, 'mad review scope: discriminator が不正である')
+  }
+  safeIdentifier(value.task, code, 'mad review scope task')
+  assertUniqueNonEmptyStrings(value.allowedFiles, code, 'mad review scope allowedFiles', assertScopeRelativePath)
+  if (!Array.isArray(value.findingIds)) fail(code, 'mad review scope findingIds: 配列が必要である')
+  const findingIds = new Set()
+  for (const findingId of value.findingIds) {
+    safeIdentifier(findingId, code, 'mad review scope findingId')
+    if (findingIds.has(findingId)) fail(code, 'mad review scope findingIds: 重複している')
+    findingIds.add(findingId)
+  }
+  absolutePath(value.outOfScopePath, code, 'mad review scope outOfScopePath')
+  return value
+}
+
+function readMadReviewScope0600(scopePath) {
+  const code = 'invalid_mad_review_scope'
+  assertModeIs0600(scopePath, code, 'mad review scope')
+  let raw
+  try { raw = fs.readFileSync(scopePath, 'utf8') } catch { fail(code, 'mad review scope: 読み込めない') }
+  return { raw, value: assertMadReviewScopeV1(parseJsonWithoutDuplicateKeys(raw, code, 'mad review scope')) }
+}
+
+function reviewScopeDigest(raw) {
+  return crypto.createHash('sha256').update(raw, 'utf8').digest('hex')
+}
+
+function assertMadReviewAdmissionV1(value) {
+  const code = 'invalid_mad_review_admission'
+  exactKeys(value, MAD_REVIEW_ADMISSION_KEYS, code, 'mad review admission')
+  if (value.version !== 1 || value.type !== 'mad-review-admission') {
+    fail(code, 'mad review admission: discriminator が不正である')
+  }
+  safeIdentifier(value.task, code, 'mad review admission task')
+  if (!Object.prototype.hasOwnProperty.call(MAD_REVIEW_PHASE_ROUNDS, value.phase)) {
+    fail(code, 'mad review admission phase が不正である')
+  }
+  safeIdentifier(value.node, code, 'mad review admission node')
+  safeIdentifier(value.attempt, code, 'mad review admission attempt')
+  if (!Number.isInteger(value.round) || value.round < 0 || value.round >= MAD_REVIEW_MAX_ROUNDS) {
+    fail(code, 'mad review admission round が不正である')
+  }
+  if (value.round !== MAD_REVIEW_PHASE_ROUNDS[value.phase]) {
+    fail(code, 'mad review admission phase と round が一致しない')
+  }
+  if (!/^[0-9a-f]{64}$/.test(value.scopeDigest)) fail(code, 'mad review admission scopeDigest が不正である')
+  return value
+}
+
+function assertMadReviewAdmissionFile0600(admissionPath) {
+  return assertMadReviewAdmissionV1(readStrictJson0600(admissionPath, 'invalid_mad_review_admission', 'mad review admission'))
+}
+
+function reviewAdmissionPath(runDir, task, phase) {
+  return path.join(runDir, 'review-admissions', `${task}-${phase}-round-${MAD_REVIEW_PHASE_ROUNDS[phase]}.json`)
+}
+
+function assertReviewRunPolicy(runState, scopePath, scope, code) {
+  if (!isObject(runState) || !isObject(runState.review_policy)) fail(code, 'mad review policy が必要である')
+  const policy = runState.review_policy
+  exactKeys(policy, ['max_rounds', 'scope_file', 'out_of_scope_path'], code, 'mad review policy')
+  if (policy.max_rounds !== MAD_REVIEW_MAX_ROUNDS) fail(code, `mad review policy: max_rounds は ${MAD_REVIEW_MAX_ROUNDS} でなければならない`)
+  if (runState.max_rounds !== MAD_REVIEW_MAX_ROUNDS) fail(code, `mad review: run max_rounds は ${MAD_REVIEW_MAX_ROUNDS} でなければならない`)
+  if (policy.scope_file !== scopePath) fail(code, 'mad review policy: scope_file が一致しない')
+  if (policy.out_of_scope_path !== scope.outOfScopePath) fail(code, 'mad review policy: out_of_scope_path が一致しない')
+  if (!Number.isInteger(runState.current_round) || runState.current_round < 0 || runState.current_round >= MAD_REVIEW_MAX_ROUNDS) {
+    fail(code, 'mad review policy: current_round が上限に達している')
+  }
+  if (!['implement', 'delivery', 'refine'].includes(runState.recipe)) fail(code, 'mad review policy: recipe が不正である')
+}
+
+function existingReviewAdmissions(runDir, task) {
+  const directory = path.join(runDir, 'review-admissions')
+  let entries
+  try { entries = fs.readdirSync(directory) } catch { fail('invalid_mad_review_admission', 'review admissions directory がない') }
+  const admissions = []
+  for (const name of entries) {
+    if (!name.endsWith('.json')) continue
+    const admissionPath = path.join(directory, name)
+    const admission = assertMadReviewAdmissionFile0600(admissionPath)
+    if (admission.task === task) admissions.push({ path: admissionPath, value: admission })
+  }
+  return admissions
+}
+
+// review/fix child の create 前に、task scope と固定 round 上限を確認して admission を一回だけ発行する。
+// marker の取得に失敗した呼び出しは公式 MCP create へ進めない。
+function prepareMadReview0600(runDir, scopePath, phase, node, attempt, taskOverride) {
+  const code = 'invalid_mad_review_admission'
+  absolutePath(runDir, code, 'mad review run directory')
+  absolutePath(scopePath, code, 'mad review scope')
+  safeIdentifier(phase, code, 'mad review phase')
+  if (!Object.prototype.hasOwnProperty.call(MAD_REVIEW_PHASE_ROUNDS, phase)) fail(code, 'mad review phase が不正である')
+  safeIdentifier(node, code, 'mad review node')
+  safeIdentifier(attempt, code, 'mad review attempt')
+  const scopeFile = readMadReviewScope0600(scopePath)
+  const scope = scopeFile.value
+  if (taskOverride !== undefined && taskOverride !== scope.task) fail(code, 'mad review task が scope と一致しない')
+  if (node !== `${scope.task}-${phase}`) fail(code, 'mad review node が scope task と一致しない')
+  const statePath = path.join(runDir, 'state.json')
+  const runState = readStrictJson0600(statePath, code, 'mad review run state')
+  assertReviewRunPolicy(runState, scopePath, scope, code)
+  const round = MAD_REVIEW_PHASE_ROUNDS[phase]
+  if (runState.current_round !== round) fail(code, 'mad review current_round と admission round が一致しない')
+  const admissions = existingReviewAdmissions(runDir, scope.task)
+  const digest = reviewScopeDigest(scopeFile.raw)
+  if (phase !== 'review') {
+    const previousPhase = phase === 'fix' ? 'review' : 'fix'
+    const previous = admissions.find(({ value }) => value.phase === previousPhase)
+    if (!previous || previous.value.scopeDigest !== digest) {
+      fail(code, 'mad review scope は loop 中に変更できない')
+    }
+  }
+  if (admissions.some(({ value }) => value.round >= MAD_REVIEW_MAX_ROUNDS)) {
+    fail(code, 'mad review round 上限に達している')
+  }
+  if (admissions.some(({ value }) => value.phase === phase)) {
+    fail(code, 'mad review admission は既に発行されている')
+  }
+  if (phase === 'fix' && !admissions.some(({ value }) => value.phase === 'review')) {
+    fail(code, 'fix は review admission の後でなければならない')
+  }
+  if (phase === 're-review' && !admissions.some(({ value }) => value.phase === 'fix')) {
+    fail(code, 're-review は fix admission の後でなければならない')
+  }
+  if ((phase === 'fix' || phase === 're-review') && scope.findingIds.length === 0) {
+    fail(code, 'fix/re-review には既存 finding が必要である')
+  }
+  const admissionPath = reviewAdmissionPath(runDir, scope.task, phase)
+  const admission = {
+    version: 1,
+    type: 'mad-review-admission',
+    task: scope.task,
+    phase,
+    node,
+    attempt,
+    round,
+    scopeDigest: digest,
+  }
+  assertMadReviewAdmissionV1(admission)
+  let descriptor
+  try { descriptor = fs.openSync(admissionPath, 'wx', 0o600) } catch { fail(code, 'mad review admission は既に発行されている') }
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify(admission) + '\n', 'utf8')
+    fs.fsyncSync(descriptor)
+    fs.closeSync(descriptor)
+  } catch (error) {
+    try { fs.closeSync(descriptor) } catch {}
+    try { fs.unlinkSync(admissionPath) } catch {}
+    fail(code, `mad review admission: 書き込みに失敗した (${error && error.code ? error.code : 'I/O'})`)
+  }
+  fs.chmodSync(admissionPath, 0o600)
+  fsyncDirectory(path.dirname(admissionPath))
+  return admissionPath
+}
+
+function checkMadReviewScope0600(scopePath, resultPath) {
+  const code = 'invalid_mad_review_scope'
+  const scope = readMadReviewScope0600(scopePath).value
+  const result = readStrictJson0600(resultPath, code, 'mad review result')
+  if (!Array.isArray(result.changedFiles) || result.changedFiles.length === 0) {
+    fail(code, 'mad review result changedFiles: 非空配列が必要である')
+  }
+  for (const changedFile of result.changedFiles) {
+    assertScopeRelativePath(changedFile, code, 'mad review changedFile')
+    if (!scope.allowedFiles.includes(changedFile)) fail(code, `mad review changedFile が scope 外である: ${changedFile}`)
+  }
+  return result.changedFiles
+}
+
+function assertMadReviewObservationsV1(value, task) {
+  const code = 'invalid_mad_review_observations'
+  exactKeys(value, MAD_REVIEW_OBSERVATION_KEYS, code, 'mad review observations')
+  if (value.version !== 1 || value.type !== 'mad-review-observations') fail(code, 'mad review observations: discriminator が不正である')
+  safeIdentifier(value.task, code, 'mad review observations task')
+  if (task !== undefined && value.task !== task) fail(code, 'mad review observations task が scope と一致しない')
+  if (!Array.isArray(value.items)) fail(code, 'mad review observations items: 配列が必要である')
+  const ids = new Set()
+  for (const [index, item] of value.items.entries()) {
+    const label = `mad review observation[${index}]`
+    exactKeys(item, ['id', 'severity', 'location', 'summary', 'source'], code, label)
+    safeIdentifier(item.id, code, `${label} id`)
+    if (ids.has(item.id)) fail(code, `${label} id が重複している`)
+    ids.add(item.id)
+    if (!['critical', 'important', 'minor'].includes(item.severity)) fail(code, `${label} severity が不正である`)
+    for (const field of ['location', 'summary', 'source']) nonEmptyString(item[field], code, `${label} ${field}`)
+    if (JSON.stringify(item).includes('://')) fail(code, `${label}: URL が許可されない`)
+  }
+  return value
+}
+
+function assertMadReviewObservationsFile0600(observationsPath, task) {
+  const code = 'invalid_mad_review_observations'
+  const value = readStrictJson0600(observationsPath, code, 'mad review observations')
+  return assertMadReviewObservationsV1(value, task)
+}
+
+function writeMadReviewObservations0600(value, observationsPath, task) {
+  const code = 'invalid_mad_review_observations'
+  assertMadReviewObservationsV1(value, task)
+  return writeAtomic0600(observationsPath, JSON.stringify(value, null, 2) + '\n', code, 'mad review observations')
+}
+
 function assertCreateContext(value) {
   const code = 'invalid_mad_create_request'
   exactKeys(value, ['title', 'workspaceId', 'initialPrompt', 'notifyOnFinish'], code, 'mad create context')
@@ -641,6 +875,8 @@ module.exports = {
   MadContractError,
   MAD_CREATE_TRANSPORT,
   MAD_CREATE_PREPARE_MARKER_NAME,
+  MAD_REVIEW_MAX_ROUNDS,
+  MAD_REVIEW_PHASE_ROUNDS,
   assertMadLaunchSpecV1,
   assertMadCreateRequestV1,
   assertMadCreateRequestFile0600,
@@ -650,6 +886,14 @@ module.exports = {
   assertMadAttemptStatePending0600,
   prepareMadCreate0600,
   assertMadCreatePrepared0600,
+  assertMadReviewScopeV1,
+  assertMadReviewAdmissionV1,
+  assertMadReviewAdmissionFile0600,
+  prepareMadReview0600,
+  checkMadReviewScope0600,
+  assertMadReviewObservationsV1,
+  assertMadReviewObservationsFile0600,
+  writeMadReviewObservations0600,
   assertMadCreateAcceptedResponseV1,
   parseJsonWithoutDuplicateKeys,
   buildMadCreateRequestV1,

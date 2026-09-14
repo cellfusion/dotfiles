@@ -931,6 +931,198 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--assert-create-request" ]; then
   exit $?
 fi
 
+# review/fix child の create 前に、同じ task scope と固定 round 上限を確認する。
+# この境界を通らない review/fix node（hotfix を含む）は公式 MCP create へ進めない。
+mad_prepare_review() {
+  local share_dir=""
+  local run_dir=""
+  local scope_file=""
+  local task=""
+  local phase=""
+  local node=""
+  local attempt=""
+  local value=""
+  local required=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--run-dir|--scope-file|--task|--phase|--node|--attempt)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --run-dir) run_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --task) task="$2" ;;
+          --phase) phase="$2" ;;
+          --node) node="$2" ;;
+          --attempt) attempt="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown review option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  for required in run_dir scope_file task phase node attempt; do
+    case "$required" in
+      run_dir) value="$run_dir" ;;
+      scope_file) value="$scope_file" ;;
+      task) value="$task" ;;
+      phase) value="$phase" ;;
+      node) value="$node" ;;
+      attempt) value="$attempt" ;;
+    esac
+    mad_require_non_empty "--$required" "$value" || return 2
+  done
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --run-dir "$run_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  [ -d "$run_dir" ] && [ ! -L "$run_dir" ] || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  node -e 'require(process.argv[1]).prepareMadReview0600(process.argv[2], process.argv[3], process.argv[4], process.argv[5], process.argv[6], process.argv[7])' \
+    "$share_dir/mad-contract.js" "$run_dir" "$scope_file" "$phase" "$node" "$attempt" "$task" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: review/fix admission denied\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--prepare-review" ]; then
+  shift
+  mad_prepare_review "$@"
+  exit $?
+fi
+
+# fix child が返した changedFiles を immutable task scope と照合する。scope 外の変更は
+# その run の fix として採用せず、最終 gate の observation に回す。
+mad_check_review_scope() {
+  local share_dir=""
+  local scope_file=""
+  local result_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--result-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --result-file) result_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown scope option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --result-file "$result_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --result-file "$result_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  node -e 'require(process.argv[1]).checkMadReviewScope0600(process.argv[2], process.argv[3])' \
+    "$share_dir/mad-contract.js" "$scope_file" "$result_file" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-scope" ]; then
+  shift
+  mad_check_review_scope "$@"
+  exit $?
+fi
+
+# scope 外の重要事項は review/fix loop に戻さず、最終 gate の一回の user decision 用に
+# 検査する。ここでは observation の内容を変更せず、0600 と schema だけを確認する。
+mad_check_review_observations() {
+  local share_dir=""
+  local scope_file=""
+  local observation_file=""
+  local task=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--observation-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --observation-file) observation_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown observation option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --observation-file "$observation_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --observation-file "$observation_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  task="$(jq -r '.task' "$scope_file" 2>/dev/null)" || return 2
+  [ -n "$task" ] && [ "$task" != "null" ] || return 2
+  node -e 'require(process.argv[1]).assertMadReviewObservationsFile0600(process.argv[2], process.argv[3])' \
+    "$share_dir/mad-contract.js" "$observation_file" "$task" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+mad_write_review_observations() {
+  local share_dir=""
+  local scope_file=""
+  local observation_file=""
+  local input_file=""
+  local task=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--observation-file|--input)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --observation-file) observation_file="$2" ;;
+          --input) input_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown observation writer option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --observation-file "$observation_file" || return 2
+  mad_require_non_empty --input "$input_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --observation-file "$observation_file" || return 2
+  mad_require_absolute --input "$input_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  [ -f "$input_file" ] && [ ! -L "$input_file" ] || return 2
+  task="$(jq -r '.task' "$scope_file" 2>/dev/null)" || return 2
+  [ -n "$task" ] && [ "$task" != "null" ] || return 2
+  node -e '
+    const fs = require("node:fs")
+    const contract = require(process.argv[1])
+    const scope = contract.assertMadReviewScopeV1(contract.parseJsonWithoutDuplicateKeys(fs.readFileSync(process.argv[2], "utf8"), "invalid_mad_review_scope", "mad review scope"))
+    const observation = contract.assertMadReviewObservationsV1(contract.parseJsonWithoutDuplicateKeys(fs.readFileSync(process.argv[3], "utf8"), "invalid_mad_review_observations", "mad review observations"), scope.task)
+    contract.writeMadReviewObservations0600(observation, process.argv[4], scope.task)
+  ' "$share_dir/mad-contract.js" "$scope_file" "$input_file" "$observation_file" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--write-review-observations" ]; then
+  shift
+  mad_write_review_observations "$@"
+  exit $?
+fi
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-observations" ]; then
+  shift
+  mad_check_review_observations "$@"
+  exit $?
+fi
+
 # 親の MCP 境界が create の前に呼ぶ。request/state/call log の strict 検証が全て
 # 成功したときだけ一回性 marker を作る。marker を取れた呼び出しだけが
 # mcp__paseo__create_agent へ進める。state と call log は書き換えない。
@@ -992,7 +1184,7 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
 fi
 
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
@@ -1011,12 +1203,131 @@ require_string_array "$run_state" '.completed_nodes' 'completed_nodes'
 require_absolute_paths "$run_state" '.artifact_paths' 'artifact_paths'
 jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.value | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map basename-safe node IDs to attempt IDs"
-if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
+if jq -e 'has("decision_request") and .decision_request != null' "$run_state" >/dev/null 2>&1; then
   jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: decision_request must be an absolute path"
   require_regular_file "$(jq -r '.decision_request' "$run_state")" \
     "$run_state: decision_request の実体"
 fi
+
+# review/fix は親の prose だけで増やせない。review policy、admission marker、immutable
+# scope を各 attempt と突き合わせ、上限到達後の hotfix/re-review node を拒否する。
+validate_review_policy() {
+  local run_dir="$1"
+  local run_state="$2"
+  local run_status="$3"
+  local recipe="$4"
+  local current_round="$5"
+  local has_review=0
+  local attempt_state
+  local phase
+  local policy_rounds
+  local scope_path
+  local observations_path
+  local scope_task
+  local scope_files
+  local scope_digest
+  local observation_count
+  local node_id
+  local expected_node
+  local admission_path
+  local admission_round
+  local attempt_round
+  local result_file
+  while IFS= read -r attempt_state; do
+    phase="$(jq -r '.phase // empty' "$attempt_state" 2>/dev/null)"
+    case "$phase" in
+      review|fix|re-review) has_review=1 ;;
+    esac
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print 2>/dev/null)
+  [ "$has_review" -eq 1 ] || return 0
+  case "$recipe" in
+    implement|delivery|refine) ;;
+    *) fail "$run_state: review policy is not valid for recipe $recipe" ;;
+  esac
+
+  jq -e '.review_policy | type == "object" and (keys | sort) == ["max_rounds","out_of_scope_path","scope_file"]' \
+    "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: review policy is required for review/fix attempts"
+  policy_rounds="$(jq -r '.review_policy.max_rounds' "$run_state")"
+  [ "$policy_rounds" = "2" ] ||
+    fail "$run_state: review policy max_rounds must be 2"
+  [ "$(jq -r '.max_rounds // empty' "$run_state")" = "$policy_rounds" ] ||
+    fail "$run_state: max_rounds must match the review policy"
+  [ "$current_round" -ge 0 ] && [ "$current_round" -lt 2 ] ||
+    fail "$run_state: review policy current_round reached its hard limit"
+  scope_path="$(jq -r '.review_policy.scope_file' "$run_state")"
+  observations_path="$(jq -r '.review_policy.out_of_scope_path' "$run_state")"
+  case "$scope_path" in /*) ;; *) fail "$run_state: review policy scope_file must be absolute" ;; esac
+  case "$observations_path" in /*) ;; *) fail "$run_state: review policy out_of_scope_path must be absolute" ;; esac
+  [ -f "$scope_path" ] && [ ! -L "$scope_path" ] || fail "$run_state: review scope file is missing"
+  [ "$(stat -f '%Lp' "$scope_path" 2>/dev/null)" = 600 ] ||
+    fail "$run_state: review scope file must be mode 0600"
+  jq -e 'type == "object" and (keys | sort) == ["allowedFiles","findingIds","outOfScopePath","task","type","version"] and .version == 1 and .type == "mad-review-scope" and (.task | type == "string" and length > 0) and (.allowedFiles | type == "array" and length > 0 and all(.[]; type == "string" and length > 0 and (startswith("/") | not) and (contains("..") | not))) and (.findingIds | type == "array" and all(.[]; type == "string" and length > 0)) and (.outOfScopePath | type == "string" and startswith("/"))' \
+    "$scope_path" >/dev/null 2>&1 ||
+    fail "$run_state: review scope file shape is invalid"
+  scope_task="$(jq -r '.task' "$scope_path")"
+  scope_files="$(jq -c '.allowedFiles' "$scope_path")"
+  scope_digest="$(shasum -a 256 "$scope_path" | awk '{print $1}')" ||
+    fail "$run_state: review scope digest cannot be calculated"
+  if [ -f "$observations_path" ]; then
+    [ ! -L "$observations_path" ] || fail "$run_state: out-of-scope observations must not be a symlink"
+    [ "$(stat -f '%Lp' "$observations_path" 2>/dev/null)" = 600 ] ||
+      fail "$run_state: out-of-scope observations must be mode 0600"
+    jq -e --arg task "$scope_task" 'type == "object" and (keys | sort) == ["items","task","type","version"] and .version == 1 and .type == "mad-review-observations" and .task == $task and (.items | type == "array" and all(.[]; type == "object" and (keys | sort) == ["id","location","severity","source","summary"] and (.id | type == "string" and length > 0) and (.severity | IN("critical","important","minor")) and (.location | type == "string" and length > 0) and (.summary | type == "string" and length > 0) and (.source | type == "string" and length > 0)))' \
+      "$observations_path" >/dev/null 2>&1 ||
+      fail "$run_state: out-of-scope observations shape is invalid"
+    observation_count="$(jq -r '.items | length' "$observations_path")"
+    if [ "$observation_count" -gt 0 ] && { [ "$run_status" = "ok" ] || [ "$run_status" = "waiting_for_user" ] || [ "$run_status" = "unresolved" ]; }; then
+      jq -e 'has("decision_request") and (.decision_request | type == "string" and startswith("/"))' \
+        "$run_state" >/dev/null 2>&1 ||
+        fail "$run_state: final gate must ask the user about out-of-scope observations"
+      require_regular_file "$(jq -r '.decision_request' "$run_state")" \
+        "$run_state: out-of-scope decision request"
+    fi
+  fi
+
+  while IFS= read -r attempt_state; do
+    phase="$(jq -r '.phase // empty' "$attempt_state" 2>/dev/null)"
+    case "$phase" in
+      review|fix|re-review) ;;
+      *) continue ;;
+    esac
+    [ "$(stat -f '%Lp' "$attempt_state" 2>/dev/null)" = 600 ] ||
+      fail "$attempt_state: review/fix state must be mode 0600"
+    node_id="$(jq -r '.node' "$attempt_state")"
+    expected_node="${scope_task}-${phase}"
+    [ "$node_id" = "$expected_node" ] ||
+      fail "$attempt_state: review/fix node is outside the task scope"
+    admission_path="$(jq -r '.review_admission // empty' "$attempt_state")"
+    case "$admission_path" in /*) ;; *) fail "$attempt_state: review_admission is required" ;; esac
+    [ -f "$admission_path" ] && [ ! -L "$admission_path" ] ||
+      fail "$attempt_state: review_admission file is missing"
+    [ "$(stat -f '%Lp' "$admission_path" 2>/dev/null)" = 600 ] ||
+      fail "$attempt_state: review_admission must be mode 0600"
+    jq -e --arg task "$scope_task" --arg phase "$phase" --arg node "$node_id" --arg attempt "$(jq -r '.attempt' "$attempt_state")" \
+      'type == "object" and (keys | sort) == ["attempt","node","phase","round","scopeDigest","task","type","version"] and .version == 1 and .type == "mad-review-admission" and .task == $task and .phase == $phase and .node == $node and .attempt == $attempt and (.round | type == "number" and floor == . and . >= 0 and . < 2) and (.scopeDigest | type == "string" and test("^[0-9a-f]{64}$"))' \
+      "$admission_path" >/dev/null 2>&1 ||
+      fail "$attempt_state: review_admission shape is invalid"
+    [ "$(jq -r '.scopeDigest' "$admission_path")" = "$scope_digest" ] ||
+      fail "$attempt_state: review_admission scope does not match the immutable scope"
+    admission_round="$(jq -r '.round' "$admission_path")"
+    attempt_round="$(jq -r '.round' "$attempt_state")"
+    [ "$attempt_round" = "$admission_round" ] ||
+      fail "$attempt_state: review round does not match admission"
+    [ "$attempt_round" -le 1 ] || fail "$attempt_state: review/fix round exceeds hard limit"
+    if [ "$phase" = "fix" ]; then
+      result_file="$(dirname "$attempt_state")/result.json"
+      [ -f "$result_file" ] ||
+        fail "$attempt_state: fix result.json with changedFiles is required"
+      [ "$(stat -f '%Lp' "$result_file" 2>/dev/null)" = 600 ] ||
+        fail "$attempt_state: fix result.json must be mode 0600"
+      jq -e --argjson allowed "$scope_files" '.changedFiles | type == "array" and length > 0 and all(.[]; . as $file | type == "string" and ($allowed | index($file)) != null)' \
+        "$result_file" >/dev/null 2>&1 ||
+        fail "$attempt_state: fix changedFiles exceed the task scope"
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print 2>/dev/null)
+}
 jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"
 if [ "$(jq -r '.state' "$run_state")" = "waiting_for_user" ]; then
@@ -1185,6 +1496,7 @@ if [ -d "$run_dir/nodes" ]; then
   done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
 
+validate_review_policy "$run_dir" "$run_state" "$run_status" "$recipe" "$current_round"
 validate_workspaces "$run_dir" "$run_state" "$run_status" "$recipe"
 
 if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then

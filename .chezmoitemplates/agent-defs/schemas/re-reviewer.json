@@ -3,7 +3,7 @@
   "required": ["verdicts", "newBreakage", "outOfScope", "round", "head", "packageBase", "packageHead"],
   "additionalProperties": false,
   "properties": {
-    "round": { "type": "integer" },
+    "round": { "type": "integer", "const": 1 },
     "head": { "type": "string" },
     "verdicts": {
       "type": "array",

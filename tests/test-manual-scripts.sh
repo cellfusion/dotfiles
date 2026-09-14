@@ -49,6 +49,26 @@ done
 # ---------------------------------------------------------------------------
 mad_smoke="$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh"
 mad="$(bash "$mad_smoke" --dry-run 2>&1)"
+mad_contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+
+# review/fix は固定上限と immutable scope を持つ。scope 外の重要事項は loop に戻さず、
+# 最終 gate の一回の user decision へ送る。
+for review_guard_step in \
+  "manual-orchestration-validate --prepare-review" \
+  "max_rounds は 2" \
+  "scope 外" \
+  "out-of-scope" \
+  "最終 gate" \
+  "新しい fix/review を起動しない"; do
+  assert_contains "$mad_contract" "$review_guard_step" \
+    "review guard: 共通契約に $review_guard_step を明記する"
+done
+for role_prompt in task-reviewer re-reviewer final-reviewer implementer; do
+  role_text="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/$role_prompt.md")"
+  assert_contains "$role_text" "scope" "review guard: $role_prompt prompt に scope を明記する"
+done
+assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/re-reviewer.md")" \
+  "hotfix node" "review guard: re-reviewer は hotfix node を増やさない"
 
 # --- backend は Paseo MCP だけである ---
 assert_contains "$mad" "manual-orchestration-validate --select-backend" \
@@ -126,3 +146,4 @@ assert_contains "$mad_help" "--dry-run" "mad smoke: --help が dry-run を案内
 assert_contains "$mad_help" "--report" "mad smoke: --help が実行済み run の検証方法を案内する"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0
