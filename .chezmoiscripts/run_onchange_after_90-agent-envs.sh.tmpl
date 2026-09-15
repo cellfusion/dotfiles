@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # 正本を検証してから、Paseo の生成 CLI を実行する。
+#
+# hash には directory setup の入力を全部入れる。symlink の一覧は
+# config-validator.js の SETUP_TABLE にあるので、hash から漏らすと一覧を変えても
+# 展開結果が変わらず、chezmoi がこのスクリプトを再実行しない。2 つ目以降の
+# AI 環境に symlink が作られないまま apply が成功してしまう。
+#
+# manifest hash: {{ list
+    (include "private_dot_local/private_share/agent-config/config-validator.js")
+    (include "private_dot_local/private_share/agent-config/directory-setup.js")
+    (include "private_dot_local/private_share/agent-config/config-types.js")
+    (include "private_dot_local/private_share/agent-config/agent-config.schema.json")
+    | join "" | sha256sum }}
 set -eu
 
 {{ includeTemplate "install/preamble" }}

@@ -56,10 +56,20 @@ for f in "$plugin_src_dir"/*.ts "$plugin_src_dir"/*.tsx; do
     "paseo-plugin: manifest hash に $name を含む"
 done
 
+# --- agent-env の manifest hash が directory setup の入力を含む ---
+# symlink の一覧は config-validator.js の SETUP_TABLE にある。hash に含めないと、
+# 一覧を変えてもスクリプトの展開結果が変わらず、chezmoi が再実行しない。
+# 2 つ目以降の AI 環境に symlink が作られないまま apply が成功してしまう。
+agent_env_tmpl_src="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
+for name in config-validator.js directory-setup.js config-types.js agent-config.schema.json; do
+  assert_contains "$agent_env_tmpl_src" "agent-config/$name\")" \
+    "agent-env: manifest hash に $name を含む"
+done
+
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
 for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
-            "paseo-plugin:$paseo_plugin_s"; do
+            "paseo-plugin:$paseo_plugin_s" "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
   hash_line="$(printf '%s\n' "$body" | grep -cE '^# manifest hash: [0-9a-f]{64}$' || true)"
