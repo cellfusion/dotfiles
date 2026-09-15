@@ -1,0 +1,1 @@
+{"daemon":{"agentProfiles":[]},"agents":{"providers":{"codex":{"label":"Codex","env":{"AGENT_ENV":"primary","CHEZMOI_AGENT_CONFIG_MANAGED":"0"}}}}}

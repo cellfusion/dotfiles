@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.test/schemas/agent-config-v1.json",
+  "title": "Paseo agent configuration v1",
+  "type": "object",
+  "required": ["version", "defaults", "providers", "tiers", "environments", "agentRoles", "projectRouting"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "defaults": { "type": "object", "required": ["environment", "tier"], "additionalProperties": false, "properties": { "environment": { "type": "string", "minLength": 1 }, "tier": { "const": "work" } } },
+    "providers": {
+      "type": "object", "minProperties": 1, "patternProperties": { "^[a-z][a-z0-9_-]*$": {
+        "type": "object", "required": ["displayName", "setup", "featureAllowlist"], "additionalProperties": false,
+        "properties": {
+          "displayName": { "type": "string", "minLength": 1 },
+          "setup": { "type": ["object", "null"], "required": ["configDirectoryEnv", "directoryPattern", "symlinks", "preservedMutable", "existingPathPolicy"], "additionalProperties": false, "properties": {
+            "configDirectoryEnv": { "type": "object", "minProperties": 1, "patternProperties": { "^[A-Z][A-Z0-9_]*$": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" } }, "additionalProperties": false },
+            "directoryPattern": { "type": "object", "required": ["primary", "nonPrimary"], "additionalProperties": false, "properties": { "primary": { "type": "string", "minLength": 1 }, "nonPrimary": { "type": "string", "minLength": 1 } } },
+            "symlinks": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "preservedMutable": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "existingPathPolicy": { "const": "reject-real-or-wrong-symlink" }
+          } },
+          "featureAllowlist": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "enum": ["boolean", "string", "integer"] } }, "additionalProperties": false }
+        }
+      } },
+      "additionalProperties": false
+    },
+    "tiers": {
+      "type": "object", "required": ["deep", "think", "work", "light"], "additionalProperties": false, "properties": {
+        "deep": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "thinkingOptionId", "featureValues"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "thinkingOptionId": { "type": "string", "minLength": 1 }, "featureValues": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+        "think": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "thinkingOptionId", "featureValues"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "thinkingOptionId": { "type": "string", "minLength": 1 }, "featureValues": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+        "work": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "thinkingOptionId", "featureValues"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "thinkingOptionId": { "type": "string", "minLength": 1 }, "featureValues": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+        "light": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "thinkingOptionId", "featureValues"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "thinkingOptionId": { "type": "string", "minLength": 1 }, "featureValues": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } }
+      }
+    },
+    "environments": { "type": "object", "minProperties": 1, "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": "object", "required": ["providers", "tiers"], "additionalProperties": false, "properties": { "providers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }, "tiers": { "type": "object", "additionalProperties": false, "patternProperties": { "^(deep|think|work|light)$": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "thinkingOptionId", "featureValues"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "thinkingOptionId": { "type": "string", "minLength": 1 }, "featureValues": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } } } } } } }, "additionalProperties": false },
+    "agentRoles": { "type": "object", "minProperties": 1, "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": "object", "required": ["access", "description", "artifactContract", "deliveryDuties"], "additionalProperties": false, "properties": { "access": { "enum": ["read", "write"] }, "description": { "type": "string", "minLength": 1 }, "artifactContract": { "type": "string", "minLength": 1 }, "deliveryDuties": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "tier": { "enum": ["deep", "think", "work", "light"] } } } }, "additionalProperties": false },
+    "projectRouting": { "type": "object", "required": ["rules"], "additionalProperties": false, "properties": { "rules": { "type": "array", "items": { "type": "object", "required": ["name", "environment", "match"], "additionalProperties": false, "properties": { "name": { "type": "string", "minLength": 1 }, "environment": { "type": "string", "minLength": 1 }, "match": { "type": "object", "minProperties": 1, "additionalProperties": false, "properties": { "remote": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$" }, "path": { "type": "string", "minLength": 1 } } } } } } } }
+  }
+}

@@ -1,201 +1,86 @@
 #!/usr/bin/env bash
-# run_onchange_after_90-agent-envs.sh.tmpl を展開して fixture 上で実行し、
-# 2 つ目以降の AI 環境ディレクトリが正しく作られることを検証する。
+# run_onchange_after_90-agent-envs.sh.tmpl の安全な実行順序を検証する。
 set -u
 . "$(dirname "$0")/lib/assert.sh"
 
-cfg="$(mktemp)"
-cat > "$cfg" <<'EOF'
-[[data.environments]]
-    session = "default"
-    label   = "P1"
-    agents  = ["claude", "codex"]
-
-[[data.environments]]
-    session = "work"
-    label   = "P2"
-    agents  = ["claude"]
-
-[[data.environments]]
-    session = "solo"
-    label   = "P3"
-    agents  = ["codex"]
-
-[[data.environments]]
-    session = "both"
-    label   = "P4"
-    agents  = ["claude", "codex"]
-EOF
-
 SCRIPT="$(mktemp)"
-chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
-  < "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl" > "$SCRIPT"
 fixture="$(mktemp -d)"
-trap 'rm -rf "$SCRIPT" "$cfg" "$fixture"' EXIT
+trap 'rm -rf "$SCRIPT" "$fixture"' EXIT
 
-# 以降のすべてのスクリプト実行に、実在の ~/.paseo/config.json ではなく fixture の
-# パスを使わせる。個々の呼び出しで渡し忘れると実マシンの設定を書き換えてしまうため、
-# ここで export して既定にする。存在しないファイルへのフォールバックが必要な
-# ケースだけ、その呼び出しに限って別のパスを渡す。
-export PASEO_CONFIG_FILE="$fixture/paseo-config.json"
-
-# 先頭環境のディレクトリは chezmoi 本体が配る。fixture では手で用意する。
-mkdir -p "$fixture/claude/agents" "$fixture/claude/commands" "$fixture/claude/skills" \
-         "$fixture/claude/hooks" "$fixture/codex/agents" "$fixture/codex/rules"
-: > "$fixture/claude/CLAUDE.md"
-: > "$fixture/claude/settings.json"
-: > "$fixture/codex/AGENTS.md"
-
-if XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1; then status=0; else status=$?; fi
-assert_eq "$status" "0" "スクリプトが 0 で終わる"
-
-# --- 展開結果の健全性 ---
+chezmoi execute-template --source "$CHEZMOI_SOURCE" \
+  < "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl" > "$SCRIPT"
 script_body="$(cat "$SCRIPT")"
+
 assert_contains "$script_body" "#!/usr/bin/env bash" "shebang がある"
 assert_contains "$script_body" "set -eu" "set -eu がある"
 assert_not_contains "$script_body" "{{" "未展開のテンプレート構文が残っていない"
+assert_not_contains "$script_body" "private-data.toml" "hook: 旧 private-data 経路を持たない"
+assert_not_contains "$script_body" "setup_paseo_provider" "hook: 旧 provider 書き込みを持たない"
+assert_contains "$script_body" "setupDirectories" "hook: directory setup を呼ぶ"
+assert_contains "$script_body" "generate-paseo-config" "hook: 生成 CLI を呼ぶ"
+assert_eq "$(grep -c 'generate-paseo-config' "$SCRIPT")" "1" "hook: CLI の呼び出しは一回だけ"
 
-# --- 先頭環境には触らない ---
-# ls の並びはロケールに依るので、数だけ見る。用意した 6 エントリのままであること。
-assert_eq "$(ls "$fixture/claude" | wc -l | tr -d ' ')" "6" \
-  "先頭環境の ~/.config/claude にエントリを足さない"
-assert_eq "$([ -e "$fixture/claude_default" ] && echo yes || echo no)" "no" \
-  "先頭環境に対して claude_<session> を作らない"
+fake_home="$fixture/home"
+xdg="$fixture/config"
+share="$fake_home/.local/share/agent-config"
+fake_bin="$fake_home/.local/bin"
+calls="$fixture/generator-calls"
+mkdir -p "$share" "$fake_bin" "$xdg/chezmoi" "$xdg/claude" "$xdg/codex"
+cp "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/config-validator.js" "$share/"
+cp "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/config-types.js" "$share/"
+cp "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.schema.json" "$share/"
+cp "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/directory-setup.js" "$share/"
+cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/valid-v1.json" "$xdg/chezmoi/agent-config.json"
+mkdir -p "$fake_home/.paseo"
+cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/base.json" "$fake_home/.paseo/config.json"
+mkdir -p "$xdg/claude/agents" "$xdg/claude/commands" "$xdg/claude/skills" \
+  "$xdg/claude/hooks" "$xdg/codex/agents"
+for name in CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
+: > "$xdg/codex/AGENTS.md"
 
-# --- claude を持つ 2 つ目の環境 ---
-for name in agents commands skills hooks CLAUDE.md settings.json; do
-  assert_eq "$(readlink "$fixture/claude_work/$name")" "../claude/$name" \
-    "claude_work: $name が claude 本体を指す"
-done
-assert_eq "$(jq -r 'type' < "$fixture/claude_work/.claude.json")" "object" \
-  "claude_work: .claude.json が JSON オブジェクトになる"
-assert_eq "$(jq -r '.mcpServers | type' < "$fixture/claude_work/.claude.json")" "object" \
-  "claude_work: mcpServers を持つ"
-
-# --- 空の .claude.json も初期化して MCP をマージする ---
-: > "$fixture/claude_work/.claude.json"
-if XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1; then empty_status=0; else empty_status=$?; fi
-assert_eq "$empty_status" "0" "空の .claude.json があってもスクリプトが 0 で終わる"
-assert_eq "$(jq -r 'type' < "$fixture/claude_work/.claude.json")" "object" \
-  "空の .claude.json が JSON オブジェクトに初期化される"
-assert_eq "$(jq -r '.mcpServers | type' < "$fixture/claude_work/.claude.json")" "object" \
-  "空の .claude.json に mcpServers を持つ"
-
-# --- codex を持たない環境には codex ディレクトリを作らない ---
-assert_eq "$([ -e "$fixture/codex_work" ] && echo yes || echo no)" "no" \
-  "codex を持たない環境に codex_<session> を作らない"
-
-# --- codex だけの環境 ---
-assert_eq "$(readlink "$fixture/codex_solo/agents")" "../codex/agents" \
-  "codex_solo: agents が codex 本体を指す"
-assert_eq "$(readlink "$fixture/codex_solo/AGENTS.md")" "../codex/AGENTS.md" \
-  "codex_solo: AGENTS.md が codex 本体を指す"
-assert_eq "$(readlink "$fixture/codex_solo/rules")" "../codex/rules" \
-  "codex_solo: rules が codex 本体を指す"
-assert_contains "$(cat "$fixture/codex_solo/config.toml")" "model = " \
-  "codex_solo: config.toml に model が入る"
-assert_eq "$([ -e "$fixture/claude_solo" ] && echo yes || echo no)" "no" \
-  "claude を持たない環境に claude_<session> を作らない"
-
-# --- 冪等性: 2 回目でも壊れない ---
-XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
-assert_eq "$?" "0" "2 回目の実行も 0 で終わる"
-assert_eq "$(readlink "$fixture/claude_work/agents")" "../claude/agents" \
-  "2 回目の実行後も symlink が保たれる"
-
-# --- 定義から消えた環境は削除せず警告する ---
-mkdir -p "$fixture/claude_gone"
-warn="$(XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" 2>&1 >/dev/null)"
-assert_contains "$warn" "claude_gone" "定義に無い環境を警告する"
-assert_eq "$([ -d "$fixture/claude_gone" ] && echo yes || echo no)" "yes" \
-  "定義に無い環境を削除しない"
-
-# --- Paseo の provider に AGENT_ENV を注入する ---
-# Paseo は HERDR_SESSION を注入しないので、provider の env が環境名を伝える。
-paseo_cfg="$PASEO_CONFIG_FILE"
-cat > "$paseo_cfg" <<'EOF'
-{
-  "version": 1,
-  "daemon": { "listen": "127.0.0.1:6767" },
-  "agents": {
-    "providers": {
-      "copilot": { "enabled": false }
-    }
-  }
-}
+cat > "$fake_bin/generate-paseo-config" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$#" > "$CALLS"
+[ "$#" -eq 0 ]
+[ -L "$XDG_CONFIG_HOME/claude_lab/agents" ]
 EOF
-if XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
-then paseo_status=0; else paseo_status=$?; fi
-assert_eq "$paseo_status" "0" "Paseo の設定があってもスクリプトが 0 で終わる"
+chmod +x "$fake_bin/generate-paseo-config"
+cat > "$fake_bin/mise" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+[ "$1" = exec ]
+shift
+[ "$1" = -- ]
+shift
+exec "$@"
+EOF
+chmod +x "$fake_bin/mise"
 
-assert_eq "$(jq -r '.agents.providers.claude.env.AGENT_ENV' < "$paseo_cfg")" "default" \
-  "先頭環境: 組み込み claude に AGENT_ENV を足す"
-assert_eq "$(jq -r '.agents.providers.codex.env.AGENT_ENV' < "$paseo_cfg")" "default" \
-  "先頭環境: 組み込み codex に AGENT_ENV を足す"
-assert_eq "$(jq -r '.agents.providers["claude-work"].extends' < "$paseo_cfg")" "claude" \
-  "2 つ目: claude-work が claude を継承する"
-assert_eq "$(jq -r '.agents.providers["claude-work"].env.AGENT_ENV' < "$paseo_cfg")" "work" \
-  "2 つ目: claude-work に AGENT_ENV を足す"
-assert_eq "$(jq -r '.agents.providers["claude-work"].env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
-  "$fixture/claude_work" "2 つ目: claude-work に CLAUDE_CONFIG_DIR を足す"
-assert_eq "$(jq -r '.agents.providers["claude-work"].label' < "$paseo_cfg")" "Claude (P2)" \
-  "2 つ目: label に private-data.toml の label が入る"
-assert_eq "$(jq -r '.agents.providers | has("codex-work")' < "$paseo_cfg")" "false" \
-  "codex を持たない環境に codex-<session> を作らない"
-assert_eq "$(jq -r '.agents.providers["codex-solo"].env.CODEX_HOME' < "$paseo_cfg")" \
-  "$fixture/codex_solo" "3 つ目: codex-solo に CODEX_HOME を足す"
-assert_eq "$(jq -r '.agents.providers | has("claude-solo")' < "$paseo_cfg")" "false" \
-  "claude を持たない環境に claude-<session> を作らない"
+node_bin="$(dirname "$(command -v node)")"
+if HOME="$fake_home" XDG_CONFIG_HOME="$xdg" CALLS="$calls" PATH="$node_bin:/usr/bin:/bin" \
+  bash "$SCRIPT" >/dev/null 2>&1; then hook_status=0; else hook_status=$?; fi
+assert_eq "$hook_status" "0" "hook: setup 成功後に CLI を一回呼ぶ"
+assert_eq "$(cat "$calls")" "0" "hook: CLI に引数を渡さない"
+assert_eq "$(readlink "$xdg/claude_lab/agents")" "../claude/agents" "hook: setup が相対 symlink を作る"
 
-# --- provider は環境が持つ全ツールの設定ディレクトリを注入する ---
-# claude の provider で動く親が codex の子プロセスを起動すると、子は親の CODEX_HOME を
-# 継承する。claude 側の変数しか注入しないと、子が別環境の codex アカウントで動く。
-assert_eq "$(jq -r '.agents.providers.claude.env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
-  "$fixture/claude" "先頭環境: claude に CLAUDE_CONFIG_DIR を足す"
-assert_eq "$(jq -r '.agents.providers.claude.env.CODEX_HOME' < "$paseo_cfg")" \
-  "$fixture/codex" "先頭環境: claude にも CODEX_HOME を足す"
-assert_eq "$(jq -r '.agents.providers.codex.env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
-  "$fixture/claude" "先頭環境: codex にも CLAUDE_CONFIG_DIR を足す"
-assert_eq "$(jq -r '.agents.providers.codex.env.CODEX_HOME' < "$paseo_cfg")" \
-  "$fixture/codex" "先頭環境: codex に CODEX_HOME を足す"
-assert_eq "$(jq -r '.agents.providers["claude-both"].env.CODEX_HOME' < "$paseo_cfg")" \
-  "$fixture/codex_both" "4 つ目: claude-both にも CODEX_HOME を足す"
-assert_eq "$(jq -r '.agents.providers["codex-both"].env.CLAUDE_CONFIG_DIR' < "$paseo_cfg")" \
-  "$fixture/claude_both" "4 つ目: codex-both にも CLAUDE_CONFIG_DIR を足す"
+rm -f "$xdg/claude_lab/agents"
+printf 'real file\n' > "$xdg/claude_lab/agents"
+rm -f "$calls"
+if HOME="$fake_home" XDG_CONFIG_HOME="$xdg" CALLS="$calls" PATH="$node_bin:/usr/bin:/bin" \
+  bash "$SCRIPT" >/dev/null 2>&1; then failed_setup_status=0; else failed_setup_status=$?; fi
+assert_eq "$failed_setup_status" "2" "hook: setup failure は exit 2"
+assert_eq "$(test -e "$calls" && echo called || echo not-called)" "not-called" "hook: setup failure 後に CLI を呼ばない"
+assert_eq "$(cat "$xdg/claude_lab/agents")" "real file" "hook: setup failure で実体を置換しない"
 
-# 環境が持たないツールの変数は注入しない。注入すると、その環境に無い設定ディレクトリを
-# 子が使ってしまう。
-assert_eq "$(jq -r '.agents.providers["claude-work"].env | has("CODEX_HOME")' < "$paseo_cfg")" \
-  "false" "codex を持たない環境の provider に CODEX_HOME を足さない"
-assert_eq "$(jq -r '.agents.providers["codex-solo"].env | has("CLAUDE_CONFIG_DIR")' < "$paseo_cfg")" \
-  "false" "claude を持たない環境の provider に CLAUDE_CONFIG_DIR を足さない"
-
-# --- Paseo が書いた他の設定を壊さない ---
-assert_eq "$(jq -r '.agents.providers.copilot.enabled' < "$paseo_cfg")" "false" \
-  "他の provider を壊さない"
-assert_eq "$(jq -r '.daemon.listen' < "$paseo_cfg")" "127.0.0.1:6767" \
-  "daemon の設定を壊さない"
-assert_eq "$(jq -r '.version' < "$paseo_cfg")" "1" "version を壊さない"
-
-# --- 既存の env を消さない。2 回目でも壊れない ---
-jq '.agents.providers["claude-work"].env.EXISTING = "keep"' < "$paseo_cfg" > "$paseo_cfg.t"
-mv "$paseo_cfg.t" "$paseo_cfg"
-XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
-assert_eq "$(jq -r '.agents.providers["claude-work"].env.EXISTING' < "$paseo_cfg")" "keep" \
-  "既存の env のキーを消さない"
-assert_eq "$(jq -r '.agents.providers["claude-work"].env.AGENT_ENV' < "$paseo_cfg")" "work" \
-  "2 回目の実行後も AGENT_ENV が残る"
-
-# --- Paseo の設定が無いマシンでは何もしない ---
-missing_cfg="$fixture/no-such-paseo.json"
-if PASEO_CONFIG_FILE="$missing_cfg" XDG_CONFIG_HOME="$fixture" bash "$SCRIPT" >/dev/null 2>&1
-then missing_status=0; else missing_status=$?; fi
-assert_eq "$missing_status" "0" "Paseo の設定が無くても 0 で終わる"
-assert_eq "$([ -e "$missing_cfg" ] && echo yes || echo no)" "no" \
-  "Paseo の設定が無いとき作らない"
-
-# --- 環境名がソースに漏れていない ---
-tmpl="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
-assert_not_contains "$tmpl" "secondary" "テンプレートに固定の環境名が残っていない"
+rm -f "$xdg/claude_lab/agents"
+ln -s ../claude/agents "$xdg/claude_lab/agents"
+rm -f "$fake_home/.paseo/config.json" "$calls"
+if HOME="$fake_home" XDG_CONFIG_HOME="$xdg" CALLS="$calls" PATH="$node_bin:/usr/bin:/bin" \
+  bash "$SCRIPT" >/dev/null 2>&1; then skip_status=0; else skip_status=$?; fi
+assert_eq "$skip_status" "0" "hook: target が無ければ skip する"
+assert_eq "$(test -e "$fake_home/.paseo/config.json" && echo yes || echo no)" "no" "hook: target が無いとき config を作らない"
+assert_eq "$(cat "$calls")" "0" "hook: skip 時も CLI を一回呼ぶ"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

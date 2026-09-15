@@ -3,7 +3,7 @@ name: writing-plans
 description: >-
   spec や要件が固まった多段階の作業を、コードに触る前に実装プランへ落とすときに使う。
   brainstorming の次段として起動する。プランは agent-docs-dir plans が返す場所に書き、
-  承認後に subagent-driven-development へ引き継ぐ。
+  承認後に multi-agent-development へ引き継ぐ。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
@@ -64,7 +64,7 @@ MAD の `plan` recipe で `plan-author` を呼ぶ。呼び方は `multi-agent-de
 
 {{ includeTemplate "agent-skills/_approval-gate.md" (merge (dict "artifact" "plan" "nextLabel" "実装" "issue" false "worktree" true) .) }}
 
-plan は issue にしない。実装エージェント（subagent-driven-development / executing-plans）が plan ファイルのパスを受け取って直接読む前提であり、ファイルが無いと実行方式が成り立たない。
+plan は issue にしない。実装エージェント（multi-agent-development / executing-plans）が plan ファイルのパスを受け取って直接読む前提であり、ファイルが無いと実行方式が成り立たない。
 
 {{ includeTemplate "agent-skills/_worktree-handoff.md" . }}
 
@@ -73,14 +73,14 @@ plan は issue にしない。実装エージェント（subagent-driven-develop
 承認されたら実行方式を決める。判断の基準は subagent が使えるかどうかではなく、plan の規模である。
 
 - **並列にできるタスクを持つ plan、または worktree の隔離が要る plan** は
-  subagent-driven-development に渡す。タスクごとに子を立て、間にレビューを挟む
+  multi-agent-development に渡す。task ごとに Paseo の子を立て、間に review recipe を挟む
 - **実装が小さく、MAD を使わなくてよい plan** は executing-plans に渡す。このセッションで直列に
   実行し、タスクの区切りでレビューする
 
-どちらに渡すか迷ったら subagent-driven-development にする。並列にならないだけで、壊れることは
+どちらに渡すか迷ったら multi-agent-development にする。並列にならないだけで、壊れることは
 ない。
 
-subagent-driven-development を選んだ場合、実装は隔離されたワークスペースで行う
+multi-agent-development を選んだ場合、実装は隔離されたワークスペースで行う
 （using-git-worktrees）。
 
 ## よくある言い訳

@@ -1,0 +1,12 @@
+researcher
+synthesizer
+judge
+reviewer
+review-synthesizer
+implementer
+spec-author
+plan-author
+writer
+task-reviewer
+re-reviewer
+final-reviewer

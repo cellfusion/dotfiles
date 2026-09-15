@@ -236,7 +236,7 @@ agent の出力は次の finding 契約に従わせる。実際の path と head
 
 ### specialist trigger
 
-専門 role は base 側の `~/.agents/agent-defs/routing.json` に存在するものだけを使う。専門レビューを起動できない場合も、その事実を記録する。まず `reviewer` または routing に定義された専門 review role を探し、無い role、engine、model を作らない。Paseo では選んだ profile の provider default、Herdr では current runtime kind、その他では current agent を使う。
+専門 role は base 側で利用できる Paseo profile と現行 role の prompt/schema を確認してから使う。専門レビューを起動できない場合も、その事実を記録する。まず `reviewer` または利用可能な専門 review role を探し、無い role、engine、model を作らない。Paseo では選んだ profile の provider default、Herdr では current runtime kind、その他では current agent を使う。
 
 - **security** — auth、session、permission、secret、crypto、network boundary、入力検証、SQL / HTML / shell、serialization、依存 script、ファイル・URL・権限の扱いを変更した場合。OWASP の差分起点の脅威境界で確認する。
 - **tests** — 振る舞い・公開 API・データ変換を変更したのにテストが無い場合、既存テストを変更した場合、境界条件・失敗経路・regression の確認が必要な場合。テスト数ではなく、変更リスクを検証できるかを見る。

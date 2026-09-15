@@ -23,8 +23,8 @@ require_state() {
 
 require_backend() {
   local file="$1"
-  jq -e '.backend | IN("paseo-mcp", "subagent")' "$file" >/dev/null 2>&1 ||
-    fail "$file: backend must be paseo-mcp or subagent"
+  jq -e '.backend == "paseo-mcp"' "$file" >/dev/null 2>&1 ||
+    fail "$file: backend must be paseo-mcp"
   require_string "$file" '.backend_reason' 'backend_reason'
 }
 
@@ -209,116 +209,982 @@ node_is_ok() {
   jq -e '.state == "ok"' "$attempt_state" >/dev/null 2>&1
 }
 
-if [ "$#" -eq 1 ] && [ "$1" = "--select-backend" ]; then
+write_private_text() {
+  local file="$1"
+  local text="$2"
+  local directory
+  local basename
+  local temporary
+  directory="$(dirname "$file")"
+  basename="$(basename "$file")"
+  [ -d "$directory" ] || return 1
+  [ -d "$file" ] && return 1
+  temporary="$(mktemp "$directory/.${basename}.tmp.XXXXXX")" || return 1
+  if ! ( umask 077; printf '%s' "$text" > "$temporary"; chmod 600 "$temporary" ); then
+    rm -f "$temporary"
+    return 1
+  fi
+  if ! mv "$temporary" "$file"; then
+    rm -f "$temporary"
+    return 1
+  fi
+  return 0
+}
+
+mad_default_share_dir() {
+  [ -n "${HOME:-}" ] || return 1
+  printf '%s\n' "$HOME/.local/share/agent-config"
+}
+
+mad_add_event() {
+  local event="$1"
+  local with_sequence
+  with_sequence="$(jq -c --argjson sequence "$MAD_SEQUENCE" '. + {seq: $sequence}' <<<"$event" 2>/dev/null)" || return 1
+  MAD_EVENTS="$(jq -c --argjson event "$with_sequence" '. + [$event]' <<<"$MAD_EVENTS" 2>/dev/null)" || return 1
+  MAD_SEQUENCE=$((MAD_SEQUENCE + 1))
+  return 0
+}
+
+# contract module を読めるかは一度だけ判定して使い回す。読めない run は terminal
+# failure event しか書かないので、その一件だけ検証を通さずに記録する。
+mad_contract_loaded() {
+  if [ -z "${MAD_CONTRACT_LOADED:-}" ]; then
+    if [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1; then
+      MAD_CONTRACT_LOADED=1
+    else
+      MAD_CONTRACT_LOADED=0
+    fi
+  fi
+  [ "$MAD_CONTRACT_LOADED" = 1 ]
+}
+
+mad_persist_log() {
+  local value
+  value="$(jq -cn --argjson events "$MAD_EVENTS" '{version:1,type:"mad-call-log",events:$events}' 2>/dev/null)" || return 1
+  if mad_contract_loaded; then
+    MAD_CALL_LOG_JSON="$value" node -e '
+      require(process.argv[1]).assertMadCallLogV1(JSON.parse(process.env.MAD_CALL_LOG_JSON))
+    ' "$MAD_CONTRACT" >/dev/null 2>&1 || return 1
+  fi
+  write_private_text "$MAD_CALL_LOG" "$value"
+}
+
+mad_persist_state() {
+  local state="$1"
+  local child_ref="${2:-}"
+  local create_accepted="${3:-false}"
+  local state_json
+
+  case "$create_accepted" in
+    true|false) ;;
+    *) return 1 ;;
+  esac
+  if [ -n "$child_ref" ]; then
+    state_json="$(jq -cn --arg state "$state" --arg childRef "$child_ref" --argjson createAccepted "$create_accepted" \
+      '{state:$state,child_ref:$childRef,create_accepted:$createAccepted}')" || return 1
+  else
+    state_json="$(jq -cn --arg state "$state" --argjson createAccepted "$create_accepted" \
+      '{state:$state,create_accepted:$createAccepted}')" || return 1
+  fi
+  write_private_text "$MAD_ATTEMPT_DIR/state.json" "$state_json"
+}
+
+mad_finish_failure() {
+  local stage="$1"
+  local exit_code="$2"
+  local state="$3"
+  local create_calls="$4"
+  local child_ref="${5:-}"
+  local create_accepted="${6:-false}"
+  mad_add_event "$(jq -cn --arg stage "$stage" --argjson exitCode "$exit_code" \
+    --argjson createCalls "$create_calls" --arg state "$state" \
+    '{operation:"failure",stage:$stage,exitCode:$exitCode,createCalls:$createCalls,state:$state}')" || true
+  mad_persist_state "$state" "$child_ref" "$create_accepted" || true
+  mad_persist_log || true
+  exit "$exit_code"
+}
+
+mad_single_document() {
+  printf '%s' "$1" | jq -c -s 'if length == 1 and (.[0] | type == "object") then .[0] else error end' 2>/dev/null
+}
+
+mad_accepted_child_ref() {
+  local response
+  response="$1"
+  printf '%s' "$response" | node -e '
+    const fs = require("node:fs")
+    const contract = require(process.argv[1])
+    process.stdout.write(contract.assertMadCreateAcceptedResponseV1(fs.readFileSync(0, "utf8")).childRef)
+  ' "$2" 2>/dev/null
+}
+
+normalize_list_providers() {
+  local provider_ids="$1"
+  jq -c --argjson ids "$provider_ids" '
+    if (type != "object" or (keys | sort) != ["providers"] or (.providers | type) != "array") then error
+    elif (any(.providers[]; (type != "object" or (keys | sort) != ["available","id","modeIds"]))) then error
+    elif (any(.providers[]; (.id | type != "string" or (test("^[A-Za-z0-9][A-Za-z0-9._-]*$") | not)))) then error
+    elif (any(.providers[]; (.available | type != "boolean"))) then error
+    elif (any(.providers[]; (.modeIds | type != "array" or any(.[]; type != "string" or length == 0)))) then error
+    elif (any(.providers[]; ([.modeIds] | flatten | length) != ([.modeIds] | flatten | unique | length))) then error
+    elif ([.providers[].id] | length) != ([.providers[].id] | unique | length) then error
+    elif (($ids - [.providers[].id]) | length) != 0 then error
+    else {providers: [.providers[] | .id as $id | select(any($ids[]; . == $id)) | {id,available,modeIds}]} end
+  ' 2>/dev/null
+}
+
+normalize_list_models() {
+  local provider="$1"
+  jq -c --arg provider "$provider" '
+    if (type != "object" or (keys | sort) != ["models","provider"] or .provider != $provider or (.models | type) != "array") then error
+    elif (any(.models[]; (type != "object" or (keys | sort) != ["id","thinkingOptionIds"]))) then error
+    elif (any(.models[]; (.id | type != "string" or length == 0))) then error
+    elif ([.models[].id] | length) != ([.models[].id] | unique | length) then error
+    elif (any(.models[]; (.thinkingOptionIds | type != "array" or any(.[]; type != "string" or length == 0)))) then error
+    elif (any(.models[]; ([.thinkingOptionIds] | flatten | length) != ([.thinkingOptionIds] | flatten | unique | length))) then error
+    else {provider:.provider,models:[.models[] | {id,thinkingOptionIds}]} end
+  ' 2>/dev/null
+}
+
+normalize_launch_success() {
+  jq -c '
+    if (keys | sort) != ["environment","featureValues","modeId","model","profileName","provider","status","thinkingOptionId","tier","type","version","warnings"] then error
+    elif (.version != 1 or .type != "mad-launch-spec" or .status != "ok" or .modeId != "auto") then error
+    elif (any([.profileName,.environment,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0)) then error
+    elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
+    elif (.featureValues | type != "object" or any(to_entries[]; (.value | (type != "boolean" and type != "string" and type != "number")))) then error
+    elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
+    else . end
+  ' 2>/dev/null
+}
+
+normalize_launch_failure() {
+  jq -c '
+    if (keys | sort) != ["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"] then error
+    elif (.version != 1 or .type != "mad-launch-failure" or .status != "unresolved" or .reasonCode != "candidates_exhausted") then error
+    elif (any([.profileName,.environment][]; type != "string" or length == 0)) then error
+    elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
+    elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
+    elif (.candidates | type != "array") then error
+    elif (any(.candidates[]; (type != "object" or (keys | sort) != ["model","provider","reasonCode","thinkingOptionId"]))) then error
+    elif (any(.candidates[]; any([.provider,.model,.thinkingOptionId][]; type != "string" or length == 0))) then error
+    elif (any(.candidates[]; (.reasonCode as $reason | ["provider_missing_from_snapshot","provider_unavailable","auto_mode_unavailable","model_unavailable","thinking_option_unavailable"] | index($reason)) == null)) then error
+    else . end
+  ' 2>/dev/null
+}
+
+mad_assert_launch() {
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+contract.assertMadLaunchSpecV1(launch, allowlist)
+NODE
+}
+
+mad_build_request() {
+  local context_json="$1"
+  MAD_CONTEXT_JSON="$context_json" node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" \
+    "$MAD_ATTEMPT_DIR/launch.json" "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' 2>/dev/null
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+const context = JSON.parse(process.env.MAD_CONTEXT_JSON)
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const request = contract.buildMadCreateRequestV1(launch, allowlist, context)
+contract.writeMadCreateRequest0600(request, process.argv[5])
+process.stdout.write(JSON.stringify({
+  topLevelKeys: Object.keys(request),
+  settingsKeys: Object.keys(request.settings),
+  mode: 600,
+  regularFile: true,
+  validatedBeforeWrite: true,
+}))
+NODE
+}
+
+# 親が公式 MCP create を呼んだ後に runner が読む request を、mode と allowlist まで
+# 含めて検証する。launch と食い違う request で state を進めないための境界である。
+mad_assert_request_file() {
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" \
+    "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+const requestPath = process.argv[5]
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
+contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
+NODE
+}
+
+# create は attempt ごとに一回だけである。request が契約を満たし、state が厳密に
+# pending で、call log に create 以後の event が無く、まだ marker が無いときだけ
+# marker を作る。marker を作れた呼び出しだけが公式 MCP create を呼べる。失敗しても
+# marker、state、call log のどれも変えない。
+mad_prepare_create_marker() {
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const attemptDir = process.argv[3]
+const resolved = JSON.parse(fs.readFileSync(`${attemptDir}/resolved-export.json`, 'utf8'))
+const launch = JSON.parse(fs.readFileSync(`${attemptDir}/launch.json`, 'utf8'))
+const requestPath = `${attemptDir}/mcp-create.json`
+const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
+contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
+contract.prepareMadCreate0600(
+  `${attemptDir}/${contract.MAD_CREATE_PREPARE_MARKER_NAME}`,
+  requestPath,
+  `${attemptDir}/call-log.json`,
+  `${attemptDir}/state.json`,
+  allowlist,
+)
+NODE
+}
+
+# 受理の境界は marker を作らない。prepare が残した marker の mode と schema を見て、
+# state が厳密に pending で call log に create 以後の event が無いことを確かめる。
+mad_assert_prepared() {
+  node -e '
+    const contract = require(process.argv[1])
+    contract.assertMadCreatePrepared0600(
+      `${process.argv[2]}/${contract.MAD_CREATE_PREPARE_MARKER_NAME}`, process.argv[3], process.argv[4])
+  ' "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR" "$MAD_CALL_LOG" \
+    "$MAD_ATTEMPT_DIR/state.json" >/dev/null 2>&1
+}
+
+# create と wait は attempt をまたぐので、既存の call log を読み直して seq を続ける。
+mad_load_log() {
+  local events
+  [ -f "$MAD_CALL_LOG" ] && [ ! -L "$MAD_CALL_LOG" ] || return 1
+  events="$(jq -c '
+    if type == "object" and (keys | sort) == ["events","type","version"] and
+       .version == 1 and .type == "mad-call-log" and (.events | type == "array")
+    then .events else error end
+  ' "$MAD_CALL_LOG" 2>/dev/null)" || return 1
+  MAD_EVENTS="$events"
+  MAD_SEQUENCE="$(printf '%s' "$events" | jq '[.[].seq] | if length == 0 then 0 else (max + 1) end' 2>/dev/null)" || return 1
+  return 0
+}
+
+mad_require_non_empty() {
+  [ -n "$2" ] || { printf 'manual-orchestration-validate: %s is required\n' "$1" >&2; return 1; }
+}
+
+mad_require_absolute() {
+  case "$2" in
+    /*) return 0 ;;
+    *) printf 'manual-orchestration-validate: %s must be absolute\n' "$1" >&2; return 1 ;;
+  esac
+}
+
+mad_exercise_create() {
+  local snapshot=""
+  local launch=""
+  local request_out=""
+  local create_log=""
+  local share_dir=""
+  local feature_allowlist='{}'
+  local contract
+  local validation_status
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --snapshot|--launch|--request-out|--create-log|--share-dir|--feature-allowlist)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --snapshot) snapshot="$2" ;;
+          --launch) launch="$2" ;;
+          --request-out) request_out="$2" ;;
+          --create-log) create_log="$2" ;;
+          --share-dir) share_dir="$2" ;;
+          --feature-allowlist) feature_allowlist="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown exercise option\n' >&2; return 2 ;;
+    esac
+  done
+  mad_require_non_empty --snapshot "$snapshot" || return 2
+  mad_require_non_empty --launch "$launch" || return 2
+  mad_require_non_empty --request-out "$request_out" || return 2
+  mad_require_non_empty --create-log "$create_log" || return 2
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_absolute --snapshot "$snapshot" || return 2
+  mad_require_absolute --launch "$launch" || return 2
+  mad_require_absolute --request-out "$request_out" || return 2
+  mad_require_absolute --create-log "$create_log" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  contract="$share_dir/mad-contract.js"
+  [ -f "$contract" ] || { printf 'manual-orchestration-validate: Paseo contract is unavailable\n' >&2; return 2; }
+  node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  # runner は create の transport を持たない。create 回数は常に 0 である。
+  write_private_text "$create_log" '{"version":1,"type":"mad-create-log","createCalls":0}' || return 2
+  MAD_FEATURE_ALLOWLIST_JSON="$feature_allowlist" node - "$contract" "$snapshot" "$launch" <<'NODE' >/dev/null 2>&1
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const snapshot = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+exporter.assertAvailabilitySnapshot(snapshot)
+contract.assertMadLaunchSpecV1(launch, JSON.parse(process.env.MAD_FEATURE_ALLOWLIST_JSON))
+NODE
+  validation_status=$?
+  [ "$validation_status" -eq 0 ] || return 2
+  if ! MAD_FEATURE_ALLOWLIST_JSON="$feature_allowlist" node - "$contract" "$launch" "$request_out" <<'NODE' 2>/dev/null; then
+const fs = require('node:fs')
+const contract = require(process.argv[2])
+const launch = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
+const context = { title: 'exercise-create', workspaceId: 'exercise-create', initialPrompt: 'exercise-create', notifyOnFinish: true }
+const request = contract.buildMadCreateRequestV1(launch, JSON.parse(process.env.MAD_FEATURE_ALLOWLIST_JSON), context)
+contract.writeMadCreateRequest0600(request, process.argv[4])
+NODE
+    rm -f "$request_out"
+    return 2
+  fi
+  write_private_text "$create_log" \
+    "$(jq -cn --arg requestPath "$request_out" '{version:1,type:"mad-create-log",createCalls:0,requestPath:$requestPath}')" || return 2
+  return 0
+}
+
+mad_exercise_success() {
+  MAD_CALL_LOG=""
+  local generator=""
+  local share_dir=""
+  local input=""
+  local adapter=""
+  local attempt_dir=""
+  local project=""
+  local role=""
+  local provenance=""
+  local title=""
+  local workspace_id=""
+  local initial_prompt=""
+  local notify_raw=""
+  local notify_json
+  local contract
+  local launch_raw
+  local launch_json
+  local provider_ids
+  local available_ids
+  local provider
+  local models_raw
+  local models_json
+  local resolve_status
+  local resolve_output
+  local request_meta
+  local context_json
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --generator) generator="$2" ;;
+          --share-dir) share_dir="$2" ;;
+          --input) input="$2" ;;
+          --adapter) adapter="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+          --project) project="$2" ;;
+          --role) role="$2" ;;
+          --provenance) provenance="$2" ;;
+          --title) title="$2" ;;
+          --workspace-id) workspace_id="$2" ;;
+          --initial-prompt) initial_prompt="$2" ;;
+          --notify-on-finish) notify_raw="$2" ;;
+          --call-log) MAD_CALL_LOG="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown exercise option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)"
+  fi
+  mad_require_non_empty --generator "$generator" || return 2
+  mad_require_non_empty --input "$input" || return 2
+  mad_require_non_empty --adapter "$adapter" || return 2
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_non_empty --project "$project" || return 2
+  mad_require_non_empty --role "$role" || return 2
+  mad_require_non_empty --provenance "$provenance" || return 2
+  mad_require_non_empty --title "$title" || return 2
+  mad_require_non_empty --workspace-id "$workspace_id" || return 2
+  mad_require_non_empty --initial-prompt "$initial_prompt" || return 2
+  mad_require_non_empty --notify-on-finish "$notify_raw" || return 2
+  mad_require_non_empty --call-log "${MAD_CALL_LOG:-}" || return 2
+  mad_require_absolute --generator "$generator" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --input "$input" || return 2
+  mad_require_absolute --adapter "$adapter" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --project "$project" || return 2
+  mad_require_absolute --call-log "$MAD_CALL_LOG" || return 2
+  case "$notify_raw" in
+    true) notify_json=true ;;
+    false) notify_json=false ;;
+    *) printf 'manual-orchestration-validate: notify-on-finish must be true or false\n' >&2; return 2 ;;
+  esac
+  [ -f "$generator" ] || { printf 'manual-orchestration-validate: generator is unavailable\n' >&2; return 2; }
+  [ -f "$input" ] || { printf 'manual-orchestration-validate: input is unavailable\n' >&2; return 2; }
+  [ -f "$adapter" ] && [ -x "$adapter" ] || { printf 'manual-orchestration-validate: adapter is unavailable\n' >&2; return 2; }
+  [ -d "$project" ] || { printf 'manual-orchestration-validate: project is unavailable\n' >&2; return 2; }
+  mkdir -p "$attempt_dir" || return 2
+  contract="$share_dir/mad-contract.js"
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$contract"
+  MAD_CONTRACT_LOADED=""
+  MAD_EVENTS='[]'
+  MAD_SEQUENCE=0
+  mad_persist_state pending || return 2
+  mad_persist_log || return 2
+  [ -f "$contract" ] && node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 ||
+    mad_finish_failure resolve 2 failed 0
+
+  node -e 'require(process.argv[1]).writeResolvedExport0600(process.argv[2], process.argv[3])' \
+    "$contract" "$input" "$attempt_dir/resolved-export.json" >/dev/null 2>&1 ||
+    mad_finish_failure resolve 2 failed 0
+  node -e 'require(process.argv[1]).writeProviderEnumeration0600(process.argv[2], process.argv[3])' \
+    "$contract" "$attempt_dir/resolved-export.json" "$attempt_dir/provider-enumeration.json" >/dev/null 2>&1 ||
+    mad_finish_failure resolve 2 failed 0
+  provider_ids="$(jq -c '.providerIds' "$attempt_dir/provider-enumeration.json" 2>/dev/null)" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+  mad_add_event "$(jq -cn --argjson providerIds "$provider_ids" \
+    '{operation:"enumerate_materialized_provider_ids",providerIds:$providerIds}')" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+
+  providers_raw="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" list-providers 2>/dev/null)"
+  provider_status=$?
+  if [ "$provider_status" -ne 0 ]; then
+    mad_finish_failure discovery 2 waiting_for_user 0
+  fi
+  providers_raw="$(mad_single_document "$providers_raw")" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+  providers_json="$(printf '%s' "$providers_raw" | normalize_list_providers "$provider_ids")"
+  [ -n "$providers_json" ] || mad_finish_failure discovery 2 waiting_for_user 0
+  write_private_text "$attempt_dir/list-providers.json" "$providers_json" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+  available_ids="$(printf '%s' "$providers_json" | jq -c '[.providers[] | select(.available == true) | .id]' 2>/dev/null)" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+  mad_add_event "$(jq -cn --argjson materializedProviderIds "$provider_ids" \
+    --argjson availableProviderIds "$available_ids" \
+    '{operation:"list_providers",callCount:1,materializedProviderIds:$materializedProviderIds,availableProviderIds:$availableProviderIds}')" ||
+    mad_finish_failure discovery 2 waiting_for_user 0
+
+  while IFS= read -r provider; do
+    models_raw="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" list-models --provider "$provider" 2>/dev/null)"
+    provider_status=$?
+    if [ "$provider_status" -ne 0 ]; then
+      mad_finish_failure list_models 2 waiting_for_user 0
+    fi
+    models_raw="$(mad_single_document "$models_raw")" ||
+      mad_finish_failure list_models 2 waiting_for_user 0
+    models_json="$(printf '%s' "$models_raw" | normalize_list_models "$provider")"
+    [ -n "$models_json" ] || mad_finish_failure list_models 2 waiting_for_user 0
+    write_private_text "$attempt_dir/list-models-$provider.json" "$models_json" ||
+      mad_finish_failure list_models 2 waiting_for_user 0
+    mad_add_event "$(jq -cn --arg provider "$provider" \
+      '{operation:"list_models",callCount:1,provider:$provider}')" ||
+      mad_finish_failure list_models 2 waiting_for_user 0
+  done < <(printf '%s' "$available_ids" | jq -r '.[]' 2>/dev/null)
+
+  node -e 'require(process.argv[1]).writeAvailabilitySnapshot0600(process.argv[2], process.argv[3], process.argv[4], process.argv[5])' \
+    "$contract" "$attempt_dir/provider-enumeration.json" "$attempt_dir/list-providers.json" \
+    "$attempt_dir" "$attempt_dir/snapshot.json" >/dev/null 2>&1 ||
+    mad_finish_failure snapshot 2 waiting_for_user 0
+  mad_add_event "$(jq -cn --arg path "$attempt_dir/snapshot.json" \
+    '{operation:"write_snapshot",path:$path,mode:600,regularFile:true}')" ||
+    mad_finish_failure snapshot 2 waiting_for_user 0
+
+  resolve_output="$("$generator" --input "$input" resolve --project "$project" --role "$role" \
+    --provenance "$provenance" --snapshot "$attempt_dir/snapshot.json" 2>/dev/null)"
+  resolve_status=$?
+  case "$resolve_status" in
+    0)
+      launch_raw="$(mad_single_document "$resolve_output")" || mad_finish_failure resolve 2 failed 0
+      launch_json="$(printf '%s' "$launch_raw" | normalize_launch_success)" ||
+        mad_finish_failure launch_validation 2 failed 0
+      write_private_text "$attempt_dir/launch.json" "$launch_json" ||
+        mad_finish_failure launch_validation 2 failed 0
+      mad_add_event "$(jq -cn '{operation:"resolve",exitCode:0,outputType:"mad-launch-spec",stdoutDocuments:1}')" ||
+        mad_finish_failure resolve 2 failed 0
+      mad_assert_launch || mad_finish_failure launch_validation 2 failed 0
+      ;;
+    4)
+      launch_raw="$(mad_single_document "$resolve_output")" || mad_finish_failure resolve 4 waiting_for_user 0
+      launch_json="$(printf '%s' "$launch_raw" | normalize_launch_failure)" ||
+        mad_finish_failure resolve 4 waiting_for_user 0
+      write_private_text "$attempt_dir/launch.json" "$launch_json" ||
+        mad_finish_failure resolve 4 waiting_for_user 0
+      mad_finish_failure resolve 4 waiting_for_user 0
+      ;;
+    *) mad_finish_failure resolve 2 failed 0 ;;
+  esac
+
+  context_json="$(jq -cn --arg title "$title" --arg workspaceId "$workspace_id" \
+    --arg initialPrompt "$initial_prompt" --argjson notifyOnFinish "$notify_json" \
+    '{title:$title,workspaceId:$workspaceId,initialPrompt:$initialPrompt,notifyOnFinish:$notifyOnFinish}')"
+  request_meta="$(mad_build_request "$context_json")"
+  [ -n "$request_meta" ] || mad_finish_failure request_build 2 failed 0
+  request_meta="$(printf '%s' "$request_meta" | jq -c . 2>/dev/null)" ||
+    mad_finish_failure request_build 2 failed 0
+  mad_add_event "$(printf '%s' "$request_meta" | jq -c --arg path "$attempt_dir/mcp-create.json" \
+    '. + {operation:"build_create_request",path:$path}')" ||
+    mad_finish_failure request_build 2 failed 0
+
+  # runner はここで止まる。create の transport は親の mcp__paseo__create_agent だけが行う。
+  mad_persist_log || mad_finish_failure request_build 2 failed 0
+  return 0
+}
+
+# 親が公式 MCP create を呼んだ後の境界。書いた request と返ってきた accepted
+# response の両方が契約を満たしたときだけ、attempt state を running へ進める。
+mad_exercise_accepted() {
+  MAD_CALL_LOG=""
+  local share_dir=""
+  local attempt_dir=""
+  local adapter=""
+  local response=""
+  local wait_timeout="1200"
+  local contract
+  local response_raw
+  local child_ref
+  local create_calls
+  local wait_response
+  local wait_status
+  local wait_evidence
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir|--adapter|--response|--wait-timeout|--call-log)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+          --adapter) adapter="$2" ;;
+          --response) response="$2" ;;
+          --wait-timeout) wait_timeout="$2" ;;
+          --call-log) MAD_CALL_LOG="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown exercise option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_non_empty --adapter "$adapter" || return 2
+  mad_require_non_empty --response "$response" || return 2
+  mad_require_non_empty --call-log "${MAD_CALL_LOG:-}" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --adapter "$adapter" || return 2
+  mad_require_absolute --response "$response" || return 2
+  mad_require_absolute --call-log "$MAD_CALL_LOG" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  [ -f "$adapter" ] && [ -x "$adapter" ] || {
+    printf 'manual-orchestration-validate: adapter is unavailable\n' >&2
+    return 2
+  }
+  if [ -n "$wait_timeout" ]; then
+    case "$wait_timeout" in
+      *[!0-9]*|'') printf 'manual-orchestration-validate: wait-timeout must be a positive integer\n' >&2; return 2 ;;
+    esac
+    [ "$wait_timeout" -gt 0 ] && [ "$wait_timeout" -le 3600 ] || {
+      printf 'manual-orchestration-validate: wait-timeout must be between 1 and 3600\n' >&2
+      return 2
+    }
+  fi
+  contract="$share_dir/mad-contract.js"
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$contract"
+  MAD_CONTRACT_LOADED=""
+  MAD_EVENTS='[]'
+  MAD_SEQUENCE=0
+  # contract を読めないと受理済みかどうかを判定できない。state と log を触らずに止める。
+  [ -f "$contract" ] && node -e 'require(process.argv[1])' "$contract" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_assert_prepared || {
+    printf 'manual-orchestration-validate: create prepare marker is missing or create is already accepted\n' >&2
+    return 2
+  }
+  mad_load_log || return 2
+
+  # 未検証の request で create を受理しない。ここで落ちたら create は 0 回である。
+  mad_assert_request_file || mad_finish_failure create_agent 2 failed 0
+
+  [ -f "$response" ] && [ ! -L "$response" ] || mad_finish_failure create_agent 2 failed 0
+  response_raw="$(cat "$response" 2>/dev/null)" || mad_finish_failure create_agent 2 failed 0
+
+  create_calls=1
+  mad_add_event "$(jq -cn --arg path "$attempt_dir/mcp-create.json" \
+    '{operation:"create_agent",callCount:1,requestPath:$path,transport:"mcp__paseo__create_agent"}')" ||
+    mad_finish_failure create_agent 1 failed "$create_calls"
+  child_ref="$(mad_accepted_child_ref "$response_raw" "$contract")"
+  [ -n "$child_ref" ] || mad_finish_failure create_agent 1 failed "$create_calls"
+  mad_persist_state running "$child_ref" true ||
+    mad_finish_failure create_agent 1 failed "$create_calls" "$child_ref" true
+
+  if [ -n "$wait_timeout" ]; then
+    wait_response="$(PASEO_MAD_SHARE_DIR="$share_dir" "$adapter" wait-agent --child-ref "$child_ref" --timeout "$wait_timeout" 2>/dev/null)"
+    wait_status=$?
+    wait_evidence="$(printf '%s' "$wait_response" | jq -c '
+      if type == "object" and (keys | sort) == ["status"] and
+         (.status | IN("idle", "timeout", "error"))
+      then {status} else error end
+    ' 2>/dev/null)"
+    if [ "$wait_status" -ne 0 ] || [ -z "$wait_evidence" ]; then
+      mad_add_event "$(jq -cn --argjson timeoutSeconds "$wait_timeout" \
+        '{operation:"wait_agent",callCount:1,timeoutSeconds:$timeoutSeconds,status:"error"}')" || true
+      mad_finish_failure wait_agent 1 waiting_for_user "$create_calls" "$child_ref" true
+    fi
+    mad_add_event "$(printf '%s' "$wait_evidence" | jq -c --argjson timeoutSeconds "$wait_timeout" \
+      '. + {operation:"wait_agent",callCount:1,timeoutSeconds:$timeoutSeconds}')" ||
+      mad_finish_failure wait_agent 1 waiting_for_user "$create_calls" "$child_ref" true
+    write_private_text "$attempt_dir/wait-evidence.json" "$wait_evidence" ||
+      mad_finish_failure wait_agent 1 waiting_for_user "$create_calls" "$child_ref" true
+    if [ "$(printf '%s' "$wait_evidence" | jq -r '.status')" != "idle" ]; then
+      mad_finish_failure wait_agent 1 waiting_for_user "$create_calls" "$child_ref" true
+    fi
+  fi
+  mad_persist_log || mad_finish_failure create_agent 1 failed "$create_calls" "$child_ref" true
+  return 0
+}
+
+if [ "$#" -eq 1 ] && [ "${1:-}" = "--select-backend" ]; then
   if [ "${MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE:-0}" = "1" ]; then
     printf '%s\n' '{"backend":"paseo-mcp","backend_reason":"Paseo MCP available"}'
-  else
-    printf '%s\n' '{"backend":"subagent","backend_reason":"Paseo MCP unavailable"}'
+    exit 0
   fi
-  exit 0
+  printf '%s\n' 'manual-orchestration-validate: paseo-mcp backend is unavailable' >&2
+  exit 1
 fi
 
-# 役割の候補 provider に、親が動いている AI 環境を当てて並べ直す。親の環境は AGENT_ENV が
-# 持つ。Paseo は provider ごとに AGENT_ENV を注入するので、親が claude-work で動いていれば
-# work が入る。zsh が設定する AGENT_ENV_SESSION は対話 shell を経ないと更新されないため、
-# ここでは使わない。
-#
-#   manual-orchestration-validate --resolve-candidates ROLE [CANDIDATES_JSON]
-#
-# CANDIDATES_JSON を渡さない場合は paseo-routing.json の候補を使う。project rule の roles で
-# 候補を差し替えた親は、差し替えた後の配列を渡す。providerMap は読み替えの後に当てる。
-if [ "$#" -ge 2 ] && [ "$1" = "--resolve-candidates" ]; then
-  [ "$#" -le 3 ] ||
-    fail 'usage: manual-orchestration-validate --resolve-candidates ROLE [CANDIDATES_JSON]'
-  resolve_role="$2"
-  if [ "$#" -eq 3 ]; then
-    candidates="$3"
-    printf '%s' "$candidates" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1 ||
-      fail "--resolve-candidates: CANDIDATES_JSON must be a non-empty JSON array"
-  else
-    defs_dir="${AGENT_DEFS_DIR:-$HOME/.agents/agent-defs}"
-    routing_file="$defs_dir/paseo-routing.json"
-    [ -f "$routing_file" ] || fail "$routing_file: routing file does not exist"
-    candidates="$(jq -c --arg r "$resolve_role" '.[$r] // empty' "$routing_file")"
-    [ -n "$candidates" ] || fail "$routing_file: $resolve_role has no candidates"
-  fi
-  # 先頭環境は接尾辞を持たないので、読み替えるのは default 以外のときだけである。
-  # 読み替えた候補を先に置き、読み替え前の候補を後ろに残す。同じ環境の provider が
-  # すべて使えないときは、親が後ろの候補へ落とせる。
-  printf '%s' "$candidates" | jq -c --arg s "${AGENT_ENV:-default}" '
-    (if $s == "" or $s == "default" then []
-     else [ .[] | .provider = "\(.provider)-\($s)" ] end) + . as $all
-    | reduce $all[] as $c ([]; if any(.[]; .provider == $c.provider) then . else . + [$c] end)
-  ' || fail "--resolve-candidates: failed to resolve $resolve_role"
-  exit 0
-fi
-
-# 子を起動する前に、5 時間のセッション枠の残量を provider ごとに判定する。採取は
-# SketchyBar の usage.sh に任せる。実測で 1 回に約 8 秒かかるため、provider の数に
-# よらず 1 回だけ実行する。
-#
-#   manual-orchestration-validate --check-usage PROVIDER [PROVIDER...]
-#
-# 残量が分からないことを理由に run を止めないため、引数の使い方が誤っている場合を
-# 除いて終了コードは 0 にする。
-if [ "$#" -ge 1 ] && [ "$1" = "--check-usage" ]; then
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-success" ]; then
   shift
-  [ "$#" -ge 1 ] ||
-    fail 'usage: manual-orchestration-validate --check-usage PROVIDER [PROVIDER...]'
-  usage_script="${MANUAL_ORCHESTRATION_USAGE_SCRIPT:-$HOME/.config/sketchybar/helpers/usage.sh}"
-  defs_dir="${AGENT_DEFS_DIR:-$HOME/.agents/agent-defs}"
-  providers_file="$defs_dir/paseo-providers.json"
-  usage_rows=""
-  if [ -x "$usage_script" ]; then
-    usage_rows="$("$usage_script" 2>/dev/null)" || usage_rows=""
-  fi
-  for provider in "$@"; do
-    session_pct=""
-    session_resets_at=""
-    if [ -n "$usage_rows" ] && [ -f "$providers_file" ]; then
-      env_label="$(jq -r --arg p "$provider" '.[$p].usage.environment // empty' \
-        "$providers_file" 2>/dev/null)"
-      agent_name="$(jq -r --arg p "$provider" '.[$p].usage.agent // empty' \
-        "$providers_file" 2>/dev/null)"
-      if [ -n "$env_label" ] && [ -n "$agent_name" ]; then
-        usage_row="$(printf '%s\n' "$usage_rows" |
-          awk -F'\t' -v e="$env_label" -v a="$agent_name" '$1 == e && $2 == a { print; exit }')"
-        if [ -n "$usage_row" ]; then
-          session_pct="$(printf '%s' "$usage_row" | cut -f7)"
-          session_resets_at="$(printf '%s' "$usage_row" | cut -f8)"
-        fi
-      fi
-    fi
-    case "$session_pct" in
-      # 採取スクリプトは取得に失敗した組み合わせを - で出す。6 列しか出さない版では
-      # 第 7 列が空になるので、どちらもこの分岐へ入る。
-      ''|*[!0-9]*)
-        usage_verdict="unknown"
-        session_pct="null"
-        session_resets_at="null"
-        ;;
-      *)
-        if [ "$session_pct" -ge 95 ]; then
-          usage_verdict="exhausted"
-        elif [ "$session_pct" -ge 80 ]; then
-          usage_verdict="low"
-        else
-          usage_verdict="ok"
-        fi
-        case "$session_resets_at" in
-          ''|*[!0-9]*) session_resets_at="null" ;;
+  mad_exercise_success "$@"
+  exit $?
+fi
+
+# 親の MCP 境界が create の直前に呼ぶ。state も log も marker も触らない。
+mad_assert_create_request() {
+  local share_dir=""
+  local attempt_dir=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
         esac
+        shift 2
         ;;
+      *) printf 'manual-orchestration-validate: unknown assert option\n' >&2; return 2 ;;
     esac
-    jq -cn --arg provider "$provider" --argjson session_pct "$session_pct" \
-      --argjson session_resets_at "$session_resets_at" --arg verdict "$usage_verdict" \
-      '{provider: $provider, session_pct: $session_pct, session_resets_at: $session_resets_at, verdict: $verdict}'
   done
-  exit 0
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$share_dir/mad-contract.js"
+  [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_assert_request_file || {
+    printf 'manual-orchestration-validate: mcp-create.json does not satisfy the create contract\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--assert-create-request" ]; then
+  shift
+  mad_assert_create_request "$@"
+  exit $?
+fi
+
+# review/fix child の create 前に、同じ task scope と固定 round 上限を確認する。
+# この境界を通らない review/fix node（hotfix を含む）は公式 MCP create へ進めない。
+mad_prepare_review() {
+  local share_dir=""
+  local run_dir=""
+  local scope_file=""
+  local task=""
+  local phase=""
+  local node=""
+  local attempt=""
+  local value=""
+  local required=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--run-dir|--scope-file|--task|--phase|--node|--attempt)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --run-dir) run_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --task) task="$2" ;;
+          --phase) phase="$2" ;;
+          --node) node="$2" ;;
+          --attempt) attempt="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown review option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  for required in run_dir scope_file task phase node attempt; do
+    case "$required" in
+      run_dir) value="$run_dir" ;;
+      scope_file) value="$scope_file" ;;
+      task) value="$task" ;;
+      phase) value="$phase" ;;
+      node) value="$node" ;;
+      attempt) value="$attempt" ;;
+    esac
+    mad_require_non_empty "--$required" "$value" || return 2
+  done
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --run-dir "$run_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  [ -d "$run_dir" ] && [ ! -L "$run_dir" ] || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  node -e 'require(process.argv[1]).prepareMadReview0600(process.argv[2], process.argv[3], process.argv[4], process.argv[5], process.argv[6], process.argv[7])' \
+    "$share_dir/mad-contract.js" "$run_dir" "$scope_file" "$phase" "$node" "$attempt" "$task" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: review/fix admission denied\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--prepare-review" ]; then
+  shift
+  mad_prepare_review "$@"
+  exit $?
+fi
+
+# fix child が返した changedFiles を immutable task scope と照合する。scope 外の変更は
+# その run の fix として採用せず、最終 gate の observation に回す。
+mad_check_review_scope() {
+  local share_dir=""
+  local scope_file=""
+  local result_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--result-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --result-file) result_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown scope option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --result-file "$result_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --result-file "$result_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  node -e 'require(process.argv[1]).checkMadReviewScope0600(process.argv[2], process.argv[3])' \
+    "$share_dir/mad-contract.js" "$scope_file" "$result_file" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-scope" ]; then
+  shift
+  mad_check_review_scope "$@"
+  exit $?
+fi
+
+# scope 外の重要事項は review/fix loop に戻さず、最終 gate の一回の user decision 用に
+# 検査する。ここでは observation の内容を変更せず、0600 と schema だけを確認する。
+mad_check_review_observations() {
+  local share_dir=""
+  local scope_file=""
+  local observation_file=""
+  local task=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--observation-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --observation-file) observation_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown observation option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --observation-file "$observation_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --observation-file "$observation_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  task="$(jq -r '.task' "$scope_file" 2>/dev/null)" || return 2
+  [ -n "$task" ] && [ "$task" != "null" ] || return 2
+  node -e 'require(process.argv[1]).assertMadReviewObservationsFile0600(process.argv[2], process.argv[3])' \
+    "$share_dir/mad-contract.js" "$observation_file" "$task" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+mad_write_review_observations() {
+  local share_dir=""
+  local scope_file=""
+  local observation_file=""
+  local input_file=""
+  local task=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--scope-file|--observation-file|--input)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --observation-file) observation_file="$2" ;;
+          --input) input_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown observation writer option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --observation-file "$observation_file" || return 2
+  mad_require_non_empty --input "$input_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --observation-file "$observation_file" || return 2
+  mad_require_absolute --input "$input_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  [ -f "$input_file" ] && [ ! -L "$input_file" ] || return 2
+  task="$(jq -r '.task' "$scope_file" 2>/dev/null)" || return 2
+  [ -n "$task" ] && [ "$task" != "null" ] || return 2
+  node -e '
+    const fs = require("node:fs")
+    const contract = require(process.argv[1])
+    const scope = contract.assertMadReviewScopeV1(contract.parseJsonWithoutDuplicateKeys(fs.readFileSync(process.argv[2], "utf8"), "invalid_mad_review_scope", "mad review scope"))
+    const observation = contract.assertMadReviewObservationsV1(contract.parseJsonWithoutDuplicateKeys(fs.readFileSync(process.argv[3], "utf8"), "invalid_mad_review_observations", "mad review observations"), scope.task)
+    contract.writeMadReviewObservations0600(observation, process.argv[4], scope.task)
+  ' "$share_dir/mad-contract.js" "$scope_file" "$input_file" "$observation_file" >/dev/null 2>&1 || return 2
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--write-review-observations" ]; then
+  shift
+  mad_write_review_observations "$@"
+  exit $?
+fi
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-observations" ]; then
+  shift
+  mad_check_review_observations "$@"
+  exit $?
+fi
+
+# 親の MCP 境界が create の前に呼ぶ。request/state/call log の strict 検証が全て
+# 成功したときだけ一回性 marker を作る。marker を取れた呼び出しだけが
+# mcp__paseo__create_agent へ進める。state と call log は書き換えない。
+mad_prepare_create() {
+  local share_dir=""
+  local attempt_dir=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--attempt-dir)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --attempt-dir) attempt_dir="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown prepare option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then
+    share_dir="$(mad_default_share_dir)" || return 2
+  fi
+  mad_require_non_empty --attempt-dir "$attempt_dir" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --attempt-dir "$attempt_dir" || return 2
+  [ -d "$attempt_dir" ] && [ ! -L "$attempt_dir" ] || {
+    printf 'manual-orchestration-validate: attempt directory is unavailable\n' >&2
+    return 2
+  }
+  MAD_ATTEMPT_DIR="$attempt_dir"
+  MAD_CONTRACT="$share_dir/mad-contract.js"
+  [ -f "$MAD_CONTRACT" ] && node -e 'require(process.argv[1])' "$MAD_CONTRACT" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: Paseo contract could not be loaded\n' >&2
+    return 2
+  }
+  mad_prepare_create_marker || {
+    printf 'manual-orchestration-validate: create prepare failed or is already claimed\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--prepare-create" ]; then
+  shift
+  mad_prepare_create "$@"
+  exit $?
+fi
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-accepted" ]; then
+  shift
+  mad_exercise_accepted "$@"
+  exit $?
+fi
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
+  shift
+  mad_exercise_create "$@"
+  exit $?
 fi
 
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --resolve-candidates ROLE [CANDIDATES_JSON] | --check-usage PROVIDER [PROVIDER...]'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
@@ -337,12 +1203,131 @@ require_string_array "$run_state" '.completed_nodes' 'completed_nodes'
 require_absolute_paths "$run_state" '.artifact_paths' 'artifact_paths'
 jq -e '.adopted_attempts | type == "object" and all(to_entries[]; (.key | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.value | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: adopted_attempts must map basename-safe node IDs to attempt IDs"
-if jq -e 'has("decision_request")' "$run_state" >/dev/null 2>&1; then
+if jq -e 'has("decision_request") and .decision_request != null' "$run_state" >/dev/null 2>&1; then
   jq -e '.decision_request | type == "string" and test("^/")' "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: decision_request must be an absolute path"
   require_regular_file "$(jq -r '.decision_request' "$run_state")" \
     "$run_state: decision_request の実体"
 fi
+
+# review/fix は親の prose だけで増やせない。review policy、admission marker、immutable
+# scope を各 attempt と突き合わせ、上限到達後の hotfix/re-review node を拒否する。
+validate_review_policy() {
+  local run_dir="$1"
+  local run_state="$2"
+  local run_status="$3"
+  local recipe="$4"
+  local current_round="$5"
+  local has_review=0
+  local attempt_state
+  local phase
+  local policy_rounds
+  local scope_path
+  local observations_path
+  local scope_task
+  local scope_files
+  local scope_digest
+  local observation_count
+  local node_id
+  local expected_node
+  local admission_path
+  local admission_round
+  local attempt_round
+  local result_file
+  while IFS= read -r attempt_state; do
+    phase="$(jq -r '.phase // empty' "$attempt_state" 2>/dev/null)"
+    case "$phase" in
+      review|fix|re-review) has_review=1 ;;
+    esac
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print 2>/dev/null)
+  [ "$has_review" -eq 1 ] || return 0
+  case "$recipe" in
+    implement|delivery|refine) ;;
+    *) fail "$run_state: review policy is not valid for recipe $recipe" ;;
+  esac
+
+  jq -e '.review_policy | type == "object" and (keys | sort) == ["max_rounds","out_of_scope_path","scope_file"]' \
+    "$run_state" >/dev/null 2>&1 ||
+    fail "$run_state: review policy is required for review/fix attempts"
+  policy_rounds="$(jq -r '.review_policy.max_rounds' "$run_state")"
+  [ "$policy_rounds" = "2" ] ||
+    fail "$run_state: review policy max_rounds must be 2"
+  [ "$(jq -r '.max_rounds // empty' "$run_state")" = "$policy_rounds" ] ||
+    fail "$run_state: max_rounds must match the review policy"
+  [ "$current_round" -ge 0 ] && [ "$current_round" -lt 2 ] ||
+    fail "$run_state: review policy current_round reached its hard limit"
+  scope_path="$(jq -r '.review_policy.scope_file' "$run_state")"
+  observations_path="$(jq -r '.review_policy.out_of_scope_path' "$run_state")"
+  case "$scope_path" in /*) ;; *) fail "$run_state: review policy scope_file must be absolute" ;; esac
+  case "$observations_path" in /*) ;; *) fail "$run_state: review policy out_of_scope_path must be absolute" ;; esac
+  [ -f "$scope_path" ] && [ ! -L "$scope_path" ] || fail "$run_state: review scope file is missing"
+  [ "$(stat -f '%Lp' "$scope_path" 2>/dev/null)" = 600 ] ||
+    fail "$run_state: review scope file must be mode 0600"
+  jq -e 'type == "object" and (keys | sort) == ["allowedFiles","findingIds","outOfScopePath","task","type","version"] and .version == 1 and .type == "mad-review-scope" and (.task | type == "string" and length > 0) and (.allowedFiles | type == "array" and length > 0 and all(.[]; type == "string" and length > 0 and (startswith("/") | not) and (contains("..") | not))) and (.findingIds | type == "array" and all(.[]; type == "string" and length > 0)) and (.outOfScopePath | type == "string" and startswith("/"))' \
+    "$scope_path" >/dev/null 2>&1 ||
+    fail "$run_state: review scope file shape is invalid"
+  scope_task="$(jq -r '.task' "$scope_path")"
+  scope_files="$(jq -c '.allowedFiles' "$scope_path")"
+  scope_digest="$(shasum -a 256 "$scope_path" | awk '{print $1}')" ||
+    fail "$run_state: review scope digest cannot be calculated"
+  if [ -f "$observations_path" ]; then
+    [ ! -L "$observations_path" ] || fail "$run_state: out-of-scope observations must not be a symlink"
+    [ "$(stat -f '%Lp' "$observations_path" 2>/dev/null)" = 600 ] ||
+      fail "$run_state: out-of-scope observations must be mode 0600"
+    jq -e --arg task "$scope_task" 'type == "object" and (keys | sort) == ["items","task","type","version"] and .version == 1 and .type == "mad-review-observations" and .task == $task and (.items | type == "array" and all(.[]; type == "object" and (keys | sort) == ["id","location","severity","source","summary"] and (.id | type == "string" and length > 0) and (.severity | IN("critical","important","minor")) and (.location | type == "string" and length > 0) and (.summary | type == "string" and length > 0) and (.source | type == "string" and length > 0)))' \
+      "$observations_path" >/dev/null 2>&1 ||
+      fail "$run_state: out-of-scope observations shape is invalid"
+    observation_count="$(jq -r '.items | length' "$observations_path")"
+    if [ "$observation_count" -gt 0 ] && { [ "$run_status" = "ok" ] || [ "$run_status" = "waiting_for_user" ] || [ "$run_status" = "unresolved" ]; }; then
+      jq -e 'has("decision_request") and (.decision_request | type == "string" and startswith("/"))' \
+        "$run_state" >/dev/null 2>&1 ||
+        fail "$run_state: final gate must ask the user about out-of-scope observations"
+      require_regular_file "$(jq -r '.decision_request' "$run_state")" \
+        "$run_state: out-of-scope decision request"
+    fi
+  fi
+
+  while IFS= read -r attempt_state; do
+    phase="$(jq -r '.phase // empty' "$attempt_state" 2>/dev/null)"
+    case "$phase" in
+      review|fix|re-review) ;;
+      *) continue ;;
+    esac
+    [ "$(stat -f '%Lp' "$attempt_state" 2>/dev/null)" = 600 ] ||
+      fail "$attempt_state: review/fix state must be mode 0600"
+    node_id="$(jq -r '.node' "$attempt_state")"
+    expected_node="${scope_task}-${phase}"
+    [ "$node_id" = "$expected_node" ] ||
+      fail "$attempt_state: review/fix node is outside the task scope"
+    admission_path="$(jq -r '.review_admission // empty' "$attempt_state")"
+    case "$admission_path" in /*) ;; *) fail "$attempt_state: review_admission is required" ;; esac
+    [ -f "$admission_path" ] && [ ! -L "$admission_path" ] ||
+      fail "$attempt_state: review_admission file is missing"
+    [ "$(stat -f '%Lp' "$admission_path" 2>/dev/null)" = 600 ] ||
+      fail "$attempt_state: review_admission must be mode 0600"
+    jq -e --arg task "$scope_task" --arg phase "$phase" --arg node "$node_id" --arg attempt "$(jq -r '.attempt' "$attempt_state")" \
+      'type == "object" and (keys | sort) == ["attempt","node","phase","round","scopeDigest","task","type","version"] and .version == 1 and .type == "mad-review-admission" and .task == $task and .phase == $phase and .node == $node and .attempt == $attempt and (.round | type == "number" and floor == . and . >= 0 and . < 2) and (.scopeDigest | type == "string" and test("^[0-9a-f]{64}$"))' \
+      "$admission_path" >/dev/null 2>&1 ||
+      fail "$attempt_state: review_admission shape is invalid"
+    [ "$(jq -r '.scopeDigest' "$admission_path")" = "$scope_digest" ] ||
+      fail "$attempt_state: review_admission scope does not match the immutable scope"
+    admission_round="$(jq -r '.round' "$admission_path")"
+    attempt_round="$(jq -r '.round' "$attempt_state")"
+    [ "$attempt_round" = "$admission_round" ] ||
+      fail "$attempt_state: review round does not match admission"
+    [ "$attempt_round" -le 1 ] || fail "$attempt_state: review/fix round exceeds hard limit"
+    if [ "$phase" = "fix" ]; then
+      result_file="$(dirname "$attempt_state")/result.json"
+      [ -f "$result_file" ] ||
+        fail "$attempt_state: fix result.json with changedFiles is required"
+      [ "$(stat -f '%Lp' "$result_file" 2>/dev/null)" = 600 ] ||
+        fail "$attempt_state: fix result.json must be mode 0600"
+      jq -e --argjson allowed "$scope_files" '.changedFiles | type == "array" and length > 0 and all(.[]; . as $file | type == "string" and ($allowed | index($file)) != null)' \
+        "$result_file" >/dev/null 2>&1 ||
+        fail "$attempt_state: fix changedFiles exceed the task scope"
+    fi
+  done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print 2>/dev/null)
+}
 jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"
 if [ "$(jq -r '.state' "$run_state")" = "waiting_for_user" ]; then
@@ -428,11 +1413,20 @@ if [ -d "$run_dir/nodes" ]; then
     require_string "$attempt_state" '.attempt' 'attempt'
     require_string "$attempt_state" '.parent_decision' 'parent_decision'
     attempt_status="$(jq -r '.state' "$attempt_state")"
-    # 子をまだ起動していない pending だけが child_ref を持たなくてよい。
-    if [ "$attempt_status" != "pending" ]; then
+    jq -e '.create_accepted | type == "boolean"' "$attempt_state" >/dev/null 2>&1 ||
+      fail "$attempt_state: create_accepted must be a boolean"
+    create_accepted="$(jq -r '.create_accepted' "$attempt_state")"
+    # create の受理後は、timeout/error や親判断を含む全 state で child_ref を保持する。
+    if [ "$create_accepted" = "true" ]; then
       require_string "$attempt_state" '.child_ref' 'child_ref'
+      require_basename_safe_id "$(jq -r '.child_ref' "$attempt_state")" "$attempt_state: child_ref"
+    else
+      jq -e 'has("child_ref") | not' "$attempt_state" >/dev/null 2>&1 ||
+        fail "$attempt_state: child_ref must be absent before create acceptance"
     fi
     if [ "$attempt_status" = "running" ]; then
+      [ "$create_accepted" = "true" ] ||
+        fail "$attempt_state: running requires create_accepted true"
       require_string "$attempt_state" '.started_at' 'started_at'
       attempt_started_at="$(jq -r '.started_at' "$attempt_state")"
       [[ "$attempt_started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
@@ -502,6 +1496,7 @@ if [ -d "$run_dir/nodes" ]; then
   done < <(jq -r '.adopted_attempts | to_entries[] | [.key, .value] | @tsv' "$run_state")
 fi
 
+validate_review_policy "$run_dir" "$run_state" "$run_status" "$recipe" "$current_round"
 validate_workspaces "$run_dir" "$run_state" "$run_status" "$recipe"
 
 if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then

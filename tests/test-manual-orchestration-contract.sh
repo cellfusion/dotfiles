@@ -21,8 +21,8 @@ printf '%s\n' '{
   "current_round": 0,
   "started_at": "2026-09-05T00:00:00Z",
   "finished_at": "2026-09-05T00:01:00Z",
-  "backend": "subagent",
-  "backend_reason": "Paseo MCP unavailable",
+  "backend": "paseo-mcp",
+  "backend_reason": "Paseo MCP available",
   "parent_decision": "complete",
   "active_nodes": [],
   "completed_nodes": ["research-1", "research-2", "research-3", "synthesis"],
@@ -64,9 +64,10 @@ write_attempt_in() {
   \"next_action\": \"await parent decision\",
   \"started_at\": \"2026-09-05T00:00:00Z\",
   \"finished_at\": \"2026-09-05T00:01:00Z\",
-  \"backend\": \"subagent\",
-  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"backend\": \"paseo-mcp\",
+  \"backend_reason\": \"Paseo MCP available\",
   \"child_ref\": \"child-$node_id-$attempt_id\",
+  \"create_accepted\": true,
   \"parent_decision\": \"accepted\"
 }" > "$attempt_dir/state.json"
 }
@@ -106,7 +107,7 @@ set_backend() {
   done < <(find "$RUN/nodes" -type f -name state.json -print)
 }
 
-for backend_case in "paseo-mcp:Paseo MCP available" "subagent:Paseo MCP unavailable"; do
+for backend_case in "paseo-mcp:Paseo MCP available"; do
   backend="${backend_case%%:*}"
   reason="${backend_case#*:}"
   set_backend "$backend" "$reason"
@@ -122,52 +123,8 @@ assert_eq "$status" "0" "selector: Paseo MCP が利用可能なら selector が�
 assert_contains "$out" '"backend":"paseo-mcp"' "selector: Paseo MCP を優先する"
 out="$(MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=0 bash "$VALIDATOR" --select-backend 2>&1)"
 status=$?
-assert_eq "$status" "0" "selector: Paseo MCP が利用不可でも selector が成功する"
-assert_contains "$out" '"backend":"subagent"' "selector: Paseo MCP が利用不可なら native subagent を選ぶ"
-
-# 候補解決は、親が動いている AI 環境の provider を先に並べる。親が work で動いていても
-# 候補が claude と codex のままだと、子が別アカウントの使用量を消費する。
-DEFS="$FIXTURE/defs"
-mkdir -p "$DEFS"
-printf '%s\n' '{
-  "researcher": [{ "provider": "codex" }, { "provider": "claude" }],
-  "reviewer": [{ "provider": "claude", "tier": "deep" }]
-}' > "$DEFS/paseo-routing.json"
-
-resolve() { AGENT_DEFS_DIR="$DEFS" bash "$VALIDATOR" --resolve-candidates "$@" 2>&1; }
-
-out="$(AGENT_ENV=work resolve researcher)"
-status=$?
-assert_eq "$status" "0" "candidates: AGENT_ENV があっても解決が成功する"
-assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
-  '["codex-work","claude-work","codex","claude"]' \
-  "candidates: 同じ環境の provider を先に並べ、既定環境を後ろに残す"
-
-out="$(AGENT_ENV=default resolve researcher)"
-assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
-  '["codex","claude"]' \
-  "candidates: 先頭環境では接尾辞を付けない"
-
-out="$(env -u AGENT_ENV bash -c "AGENT_DEFS_DIR='$DEFS' bash '$VALIDATOR' --resolve-candidates researcher" 2>&1)"
-assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
-  '["codex","claude"]' \
-  "candidates: AGENT_ENV が未設定なら先頭環境として扱う"
-
-# provider 以外のキーは読み替えで落とさない。tier を落とすと役割の model が変わる。
-out="$(AGENT_ENV=work resolve reviewer)"
-assert_eq "$(printf '%s' "$out" | jq -c '[.[] | {provider, tier}]' 2>/dev/null)" \
-  '[{"provider":"claude-work","tier":"deep"},{"provider":"claude","tier":"deep"}]' \
-  "candidates: 読み替えても tier などの指定を保つ"
-
-# 親が project rule で候補を差し替えたときは、その候補を第 2 引数で渡す。
-out="$(AGENT_ENV=work resolve researcher '[{"provider":"claude"}]')"
-assert_eq "$(printf '%s' "$out" | jq -c '[.[].provider]' 2>/dev/null)" \
-  '["claude-work","claude"]' \
-  "candidates: 渡した候補に読み替えを当てる"
-
-out="$(AGENT_ENV=work resolve nonexistent-role)"
-status=$?
-assert_not_contains "|$status|" "|0|" "candidates: routing に無い役割は失敗する"
+assert_eq "$status" "1" "selector: Paseo MCP が利用不可なら停止する"
+assert_contains "$out" 'paseo-mcp' "selector: 利用できない backend を示す"
 
 # 完了した research は既定の 3 調査 node と synthesis output を全て持つ。
 rm -rf "$RUN/nodes/research-3"
@@ -310,8 +267,8 @@ printf '%s\n' '{
   "max_rounds": 2,
   "started_at": "2026-09-05T00:00:00Z",
   "finished_at": "2026-09-05T00:01:00Z",
-  "backend": "subagent",
-  "backend_reason": "Paseo MCP unavailable",
+  "backend": "paseo-mcp",
+  "backend_reason": "Paseo MCP available",
   "parent_decision": "max_rounds reached without completion",
   "active_nodes": [],
   "completed_nodes": [],
@@ -360,8 +317,8 @@ printf '%s\n' '{
   "phase_state": "ok",
   "next_action": "start plan phase",
   "current_round": 0,
-  "backend": "subagent",
-  "backend_reason": "Paseo MCP unavailable",
+  "backend": "paseo-mcp",
+  "backend_reason": "Paseo MCP available",
   "parent_decision": "continue to plan",
   "active_nodes": [],
   "completed_nodes": [],
@@ -412,15 +369,16 @@ write_recipe_run() {
     run_id: $run, node: $node, attempt: "attempt-001", round: 0,
     state: "ok", phase: "child_work", phase_state: "ok",
     next_action: "await parent decision",
+    create_accepted: true,
     child_ref: "child-\($node)-attempt-001",
-    backend: "subagent", backend_reason: "Paseo MCP unavailable",
+    backend: "paseo-mcp", backend_reason: "Paseo MCP available",
     parent_decision: "accepted"
   }' > "$attempt_dir/state.json"
   jq -n --arg run "$run_id" --arg recipe "$recipe" --arg node "$node_id" \
     --arg artifact "$attempt_dir/result.json" '{
     run_id: $run, recipe: $recipe, state: "ok", phase: $recipe, phase_state: "ok",
     next_action: "complete run", current_round: 1, max_rounds: 2,
-    backend: "subagent", backend_reason: "Paseo MCP unavailable",
+    backend: "paseo-mcp", backend_reason: "Paseo MCP available",
     parent_decision: "complete", active_nodes: [], completed_nodes: [$node],
     adopted_attempts: { ($node): "attempt-001" }, artifact_paths: [$artifact]
   }' > "$run_dir/state.json"
@@ -471,8 +429,8 @@ printf '%s\n' "{
   \"next_action\": \"await planner\",
   \"current_round\": 0,
   \"started_at\": \"2026-09-06T00:00:00Z\",
-  \"backend\": \"subagent\",
-  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"backend\": \"paseo-mcp\",
+  \"backend_reason\": \"Paseo MCP available\",
   \"parent_decision\": \"await child\",
   \"active_nodes\": [\"planner\"],
   \"completed_nodes\": [],
@@ -543,10 +501,60 @@ assert_contains "$out" "child_ref must be a non-empty string" \
   "validator: 欠けた child_ref を示す"
 
 # pending は子をまだ起動していないので、child_ref も started_at も要求しない。
-edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | del(.started_at)'
+edit_json "$OD_ATTEMPT" '.state = "pending" | .phase_state = "pending" | .create_accepted = false | del(.started_at) | del(.child_ref)'
 out="$(validate_run "$OD")"
 status=$?
 assert_eq "$status" "0" "validator: pending の attempt には child_ref を要求しない"
+
+# create 前の discovery / resolve / create failure は childRef を得ていないので、
+# waiting_for_user または failed でも child_ref を要求してはならない。
+for precreate_state in waiting_for_user failed; do
+  edit_json "$OD_ATTEMPT" --arg state "$precreate_state" \
+    '.state = $state | .phase_state = $state | .parent_decision = "create failed before acceptance" | .create_accepted = false | del(.child_ref) | del(.started_at)'
+  edit_json "$OD/state.json" --arg state "$precreate_state" \
+    '.state = $state | .phase_state = $state'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "0" "validator: accepted 前の $precreate_state に child_ref を要求しない"
+done
+
+# accepted create の後は、終了状態にかかわらず child_ref を残す。これが欠けると
+# timeout/error や親判断後に、親が作成済み child を追跡・停止できない。
+for postcreate_state in failed waiting_for_user unresolved stopped ok; do
+  edit_json "$OD_ATTEMPT" --arg state "$postcreate_state" \
+    '.state = $state | .phase_state = $state | .parent_decision = "create accepted" | .create_accepted = true | del(.child_ref) | del(.started_at)'
+  edit_json "$OD/state.json" '.state = "running" | .phase_state = "running"'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "1" "validator: accepted 後の $postcreate_state で child_ref 欠落を拒否する"
+  assert_contains "$out" "child_ref must be a non-empty string" \
+    "validator: accepted 後の $postcreate_state の child_ref 欠落を示す"
+done
+
+edit_json "$OD_ATTEMPT" '.state = "running" | .phase_state = "running" | .create_accepted = true | .child_ref = "child-planner-a1" | .started_at = "2020-01-01T00:00:00Z"'
+edit_json "$OD/state.json" '.state = "running" | .phase_state = "running"'
+
+# running は accepted create が済んだ child だけに許す。false のままにすると、親が
+# 未作成 child を待機対象として扱ってしまう。
+edit_json "$OD_ATTEMPT" '.create_accepted = false | del(.child_ref)'
+out="$(validate_run "$OD")"
+status=$?
+assert_eq "$status" "1" "validator: create 未受理の running を拒否する"
+assert_contains "$out" "running requires create_accepted true" \
+  "validator: running の create 受理要件を示す"
+
+# accepted childRef は path traversal や special directory を含まず、stop/wait に安全に
+# 渡せる basename-safe ID でなければならない。
+for unsafe_child_ref in ../outside .; do
+  edit_json "$OD_ATTEMPT" --arg child_ref "$unsafe_child_ref" \
+    '.create_accepted = true | .child_ref = $child_ref'
+  out="$(validate_run "$OD")"
+  status=$?
+  assert_eq "$status" "1" "validator: unsafe accepted child_ref $unsafe_child_ref を拒否する"
+  assert_contains "$out" "child_ref must be basename-safe" \
+    "validator: unsafe child_ref の安全性要件を示す"
+done
+edit_json "$OD_ATTEMPT" '.child_ref = "child-planner-a1"'
 
 # implement と spike は子が同時にファイルを書くので、node ごとに worktree を作る。
 # 台帳が無いと、どの run がどの workspace を作ったかが追えなくなる。
@@ -823,8 +831,8 @@ printf '%s\n' "{
   \"next_action\": \"relay decision request\",
   \"current_round\": 0,
   \"started_at\": \"2026-09-06T00:00:00Z\",
-  \"backend\": \"subagent\",
-  \"backend_reason\": \"Paseo MCP unavailable\",
+  \"backend\": \"paseo-mcp\",
+  \"backend_reason\": \"Paseo MCP available\",
   \"parent_decision\": \"ask user\",
   \"active_nodes\": [\"spec-author\"],
   \"completed_nodes\": [],
@@ -842,141 +850,6 @@ out="$(validate_run "$DR")"
 assert_not_contains "$out" "decision_request の実体" \
   "decision_request の実体がある run では、その指摘を出さない"
 
-# --- provider の usage: 残量確認が読む環境ラベルと agent 名 ---
-# provider ごとに別の dict を作らないと、同じ family の provider が同じラベルを共有する。
-PROV="$FIXTURE/providers-default.json"
-chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$PROV"
-for p in $(jq -r 'keys[]' "$PROV"); do
-  env_label="$(jq -r --arg p "$p" '.[$p].usage.environment // ""' "$PROV")"
-  assert_not_contains "|$env_label|" "||" "usage: $p が usage.environment を持つ"
-  agent_name="$(jq -r --arg p "$p" '.[$p].usage.agent // ""' "$PROV")"
-  assert_eq "$agent_name" "$(jq -r --arg p "$p" '.[$p].family' "$PROV")" \
-    "usage: $p の usage.agent は family と一致する"
-done
-
-# 環境定義を持たないマシンでは、既定の環境ラベルを usage.sh のテンプレートと揃える。
-# 2 つの既定がずれると、その環境の provider の行が採取結果から引けなくなる。
-usage_empty_cfg="$(mktemp)"
-printf '[data]\n' > "$usage_empty_cfg"
-chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  --config "$usage_empty_cfg" --config-format toml \
-  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-empty.json"
-assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-empty.json")" "P1" \
-  "usage: 環境定義が無ければ既定のラベル P1 を使う"
-
-# 同じ family の provider が別々の環境ラベルを持つ。同じラベルを返すなら、テンプレートが
-# provider 間で dict を共有しており、残量確認が別のアカウントの行を読むことになる。
-usage_envs_cfg="$(mktemp)"
-cat > "$usage_envs_cfg" <<'EOF'
-[[data.environments]]
-    session = "default"
-    label   = "P1"
-    agents  = ["claude", "codex"]
-
-[[data.environments]]
-    session = "work"
-    label   = "P2"
-    agents  = ["claude", "codex"]
-EOF
-chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  --config "$usage_envs_cfg" --config-format toml \
-  '{{ includeTemplate "agent-defs/paseo-providers.json" . }}' > "$FIXTURE/providers-envs.json"
-assert_eq "$(jq -r '.claude.usage.environment' "$FIXTURE/providers-envs.json")" "P1" \
-  "usage: 先頭環境の claude は P1 を持つ"
-assert_eq "$(jq -r '."claude-work".usage.environment' "$FIXTURE/providers-envs.json")" "P2" \
-  "usage: 2 つ目の環境の claude-work は P2 を持つ"
-assert_eq "$(jq -r '."codex-work".usage.agent' "$FIXTURE/providers-envs.json")" "codex" \
-  "usage: codex-work の usage.agent は codex である"
-rm -f "$usage_empty_cfg" "$usage_envs_cfg"
-
-# --- 起動前の残量確認: 5 時間のセッション枠が尽きた候補を親が末尾へ回せるようにする ---
-# 採取は SketchyBar の usage.sh に任せる。テストは偽の採取スクリプトへ差し替え、実際の
-# Claude と Codex へ問い合わせない。
-USAGE_DIR="$FIXTURE/usage"
-mkdir -p "$USAGE_DIR"
-FAKE_USAGE="$USAGE_DIR/usage.sh"
-CALL_LOG="$USAGE_DIR/calls"
-cat > "$FAKE_USAGE" <<EOF
-#!/usr/bin/env bash
-printf 'call\n' >> "$CALL_LOG"
-printf 'P1\tclaude\t12\t1788000000\tok\tok\t10\t1788010000\tok\n'
-printf 'P1\tcodex\t20\t1788000000\tok\tok\t85\t1788020000\tcrit\n'
-printf 'P2\tclaude\t30\t1788000000\tok\tok\t97\t1788030000\tcrit\n'
-printf 'P2\tcodex\t40\t1788000000\tok\tok\t-\t-\tnone\n'
-EOF
-chmod +x "$FAKE_USAGE"
-
-printf '%s\n' '{
-  "claude": { "family": "claude", "usage": { "environment": "P1", "agent": "claude" } },
-  "codex": { "family": "codex", "usage": { "environment": "P1", "agent": "codex" } },
-  "claude-work": { "family": "claude", "usage": { "environment": "P2", "agent": "claude" } },
-  "codex-work": { "family": "codex", "usage": { "environment": "P2", "agent": "codex" } }
-}' > "$DEFS/paseo-providers.json"
-
-check_usage() {
-  AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
-    bash "$VALIDATOR" --check-usage "$@" 2>&1
-}
-
-rm -f "$CALL_LOG"
-out="$(check_usage claude codex claude-work codex-work)"
-status=$?
-assert_eq "$status" "0" "check-usage: 4 つの provider を判定して成功する"
-assert_eq "$(printf '%s\n' "$out" | head -1)" \
-  '{"provider":"claude","session_pct":10,"session_resets_at":1788010000,"verdict":"ok"}' \
-  "check-usage: provider と使用率と回復時刻と判定を 1 行の JSON で出す"
-assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].verdict]')" \
-  '["ok","low","exhausted","unknown"]' \
-  "check-usage: 使用率から ok と low と exhausted と unknown を出す"
-assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]')" \
-  '["claude","codex","claude-work","codex-work"]' \
-  "check-usage: 引数の順に 1 行ずつ返す"
-assert_eq "$(wc -l < "$CALL_LOG" | tr -d ' ')" "1" \
-  "check-usage: provider の数によらず採取スクリプトを 1 回だけ実行する"
-
-# provider は JSON 文字列としてエスケープし、引用符を含む値でも各行を JSON として読める。
-out="$(check_usage 'a"b')"
-status=$?
-assert_eq "$status" "0" "check-usage: 引用符を含む provider でも成功する"
-assert_eq "$(printf '%s\n' "$out" | jq -s -c '[.[].provider]' 2>/dev/null)" '["a\"b"]' \
-  "check-usage: 引用符を含む provider を有効な JSON のまま保持する"
-
-# 残量が分からないことを理由に run を止めない。採取できない 3 つの場合はどれも unknown で
-# 終了コード 0 にする。
-out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$USAGE_DIR/absent.sh" \
-  bash "$VALIDATOR" --check-usage claude 2>&1)"
-status=$?
-assert_eq "$status" "0" "check-usage: 採取スクリプトが無くても終了コード 0 で終わる"
-assert_eq "$out" \
-  '{"provider":"claude","session_pct":null,"session_resets_at":null,"verdict":"unknown"}' \
-  "check-usage: 採取スクリプトが無ければ unknown を返す"
-
-# 配布先の 2026-08-27 の版は 6 列しか出さず、5 時間の枠の 3 列を持たない。
-SIX_USAGE="$USAGE_DIR/usage-six.sh"
-cat > "$SIX_USAGE" <<'EOF'
-#!/usr/bin/env bash
-printf 'P1\tclaude\t12\t1788000000\tok\tok\n'
-EOF
-chmod +x "$SIX_USAGE"
-out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$SIX_USAGE" \
-  bash "$VALIDATOR" --check-usage claude 2>&1)"
-status=$?
-assert_eq "$status" "0" "check-usage: 6 列の採取スクリプトでも終了コード 0 で終わる"
-assert_contains "$out" '"verdict":"unknown"' \
-  "check-usage: 6 列の採取スクリプトでは unknown を返す"
-
-out="$(check_usage claude-absent)"
-status=$?
-assert_eq "$status" "0" "check-usage: 対応表に無い provider でも終了コード 0 で終わる"
-assert_contains "$out" '"provider":"claude-absent","session_pct":null' \
-  "check-usage: paseo-providers.json に無い provider は unknown を返す"
-
-out="$(AGENT_DEFS_DIR="$DEFS" MANUAL_ORCHESTRATION_USAGE_SCRIPT="$FAKE_USAGE" \
-  bash "$VALIDATOR" --check-usage 2>&1)"
-status=$?
-assert_eq "$status" "1" "check-usage: provider を渡さない呼び方を拒否する"
-assert_contains "$out" "usage: manual-orchestration-validate --check-usage" \
-  "check-usage: provider を渡さない呼び方に使い方を示す"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

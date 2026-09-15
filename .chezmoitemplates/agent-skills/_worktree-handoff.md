@@ -61,7 +61,7 @@ herdr agent prompt "<agent-name>" "<指示>" --wait --timeout 120000
 指示に入れるのは次の 4 点だけである。会話の履歴や経緯を貼らない。
 
 - plan の**絶対パス**。保存先はリポジトリの作業ツリーの外にあり、どのチェックアウトから見ても同じ絶対パスなので、そのまま渡せばよい
-- このプランを subagent-driven-development で実装すること
+- このプランを multi-agent-development の implement recipe で実装すること
 - worktree は用意済みなので、新しく worktree を切らないこと
 - この worktree のブランチ名
 

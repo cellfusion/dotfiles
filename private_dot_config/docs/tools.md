@@ -18,7 +18,7 @@
 | ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
 | Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
-| AI 環境ディレクトリ | `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` | `run_onchange_after_90-agent-envs.sh` |
+| AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
 
 マニフェストを持つスクリプトは、そのハッシュを埋め込んでいる。マニフェストを
 書き換えたときだけ `chezmoi apply` で走る。マニフェストを持たない 4 本
@@ -96,10 +96,9 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
 1. **アクセシビリティ権限の付与**（yabai と skhd）。システム設定 → プライバシーと
    セキュリティ → アクセシビリティ で許可する。付与するまでウィンドウ操作と
    ホットキーは効かない
-2. **`~/.config/chezmoi/private-data.toml` の配置**。AI 環境の定義（`[[data.environments]]`）、
-   Cloudflare のアカウント ID、AWS プロファイル、1Password のパス、再汚染テストの禁止語を
-   持つ。無くても apply は通り、各テンプレートは既定値で描画される。AI 環境については
-   「claude と codex を持つ `default` 環境 1 つ」が既定値になる
+2. **`~/.config/chezmoi/private-data.toml` の配置**。Cloudflare のアカウント ID、AWS プロファイル、
+   1Password のパス、再汚染テストの禁止語を持つ。無くても apply は通り、各テンプレートは既定値で
+   描画される。Paseo の AI 環境、tier、provider、model は下の `agent-config.json` へ移す。
 3. **1Password へのサインイン**。AWS の `credential_process` が `op read` を呼ぶ
 4. **AquaSKK の導入と入力ソースへの追加**。2026-08-27 に Brewfile から外したので
    apply では入らない。手で入れたうえで、システム設定 → キーボード → 入力ソース で
@@ -122,6 +121,72 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 システム設定 → プライバシーとセキュリティ → フルディスクアクセス に
 `~/.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events`
 を足す。makefile が ad-hoc 署名を打っているので、付与は再ビルドをまたいで保持される。
+
+## Paseo agent config の移行
+
+旧 `~/.config/chezmoi/private-data.toml` にある Paseo の環境・project rule・tier・model・provider の
+設定は自動変換しない。秘密、credential、auth、history の値を公開 sample や報告へ写さず、利用者が
+`$XDG_CONFIG_HOME/chezmoi/agent-config.json`（`XDG_CONFIG_HOME` 未設定時は
+`$HOME/.config/chezmoi/agent-config.json`）へ手で移す。公開 schema と sample は
+`~/.local/share/agent-config/agent-config.schema.json` と
+`~/.local/share/agent-config/agent-config.sample.json` で確認する。
+
+移行時は次の対応にする。
+
+1. environment の定義は `environments` に移し、`providers` はその environment で eligible な
+   provider family の一覧だけにする。root `providers` には全 family の base record を持たせ、
+   environment 側の eligibility だけを理由に base record を省略しない。
+2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。明示した
+   `--environment` が最優先で、無ければ最初に一致した rule、どれにも一致しなければ
+   `defaults.environment` を使う。
+3. tier は `tiers` または対象 environment の `tiers` に移す。environment tier があればそれを使い、
+   無ければ共通 tier を使う。role の tier と候補の順序も保持する。
+4. model と provider の優先順位は各 tier の `candidates` 配列の順序にする。先頭から provider の
+   availability、`auto` mode、model、thinking option を確認し、最初に成立した候補を使う。
+   `fast` は入力時だけ `light` に正規化されるため、正本には書かない。
+5. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
+   family 名をそのまま root `providers` の key にする。v1 ではその family の `setup` は `null`、
+   `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
+
+実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
+この移行手順でも、先に次の絶対 path を設定する。
+
+```bash
+MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
+MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
+MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+```
+
+`MAD_SCRIPTS`配下の3 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。他のrepositoryでは
+そのrepository固有のgateを使い、無ければこのmigration gateを実行しない。
+
+その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
+provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
+global option は subcommand より前に置くため、実際の呼び出しは
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> resolve \
+--project <absolute-project> --role <role> --provenance <provenance> --snapshot <absolute-snapshot>` とする。
+
+次に `"$MAD_GENERATOR" --diff` で copy に対する managed projection だけを確認する。明示的な
+copy path を付けた実際の呼び出しは
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --diff` とする。
+差分が意図どおりなら、同じ明示的な copy path に対して試行 write を行う。
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy>` の後、
+`"$MAD_GENERATOR" --check` を
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --check` として実行する。
+`--check` が 0 になることを確認するまで実 target へ write しない。0 は一致または成功、1 は差分、
+2 は入力・path・schema などの不備、4 は候補が尽きたことを表す。`--diff` と `--check` は target を
+書き換えない。
+
+copy の `--check` が 0 になった後、利用者が内容を確認して明示承認した場合だけ、同じ正本に対して
+flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-target>` を
+実 target へ実行する。実 target の path を省略して既定値へ向ける手順は書かない。legacy との衝突、
+stale な provider・profile・directory は自動削除しない。auth と history の有無を利用者が確認した
+うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
 
 ## core
 
@@ -258,37 +323,62 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
 
-`multi-agent-development` スキルの backend は Paseo MCP と native subagent の 2 つである。
-親エージェントは run の開始時に Paseo MCP へ届くかを確かめ、届くときは Paseo MCP で子を
-起動する。届かないときだけ native subagent へ fallback する。開始済みの子が失敗しても
-別 backend へ自動で切り替えない。
+`multi-agent-development` の backend は Paseo MCP だけである。Paseo MCP が利用できないときは
+run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
 Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
 `paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
-出し、`paseo wait <agent-id>` が idle になるまで待つ。止めるときは `paseo stop <agent-id>`
-が実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
-native subagent で起動した子は Paseo の一覧に現れないので、親は run ディレクトリの
-`state.json` だけで状態を判断する。
+出す。MAD 親は raw activity を受け取らず、adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>`
+だけを通じて `paseo wait <agent-id> --timeout <seconds> --json` を一回実行し、検証済みの
+`idle`、`timeout`、`error` status だけを受け取る。止めるときは `paseo stop <agent-id>` が
+実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
 
-`~/.agents/skills/subagent-driven-development/scripts/` のうち、MAD の `implement` recipe で
-親が呼ぶのは `sdd-workspace`、`task-waves`、`task-brief`、`review-package` である。
-`run-registry` と `agent-backend` は、親が起動した子が呼ぶ。どのスクリプトを誰が呼ぶかと、
-実行基盤の呼び出し手順は `multi-agent-development` スキルの「implement の実行基盤」にある。
+実行は `"$MAD_ADAPTER"` の `list-providers`、provider ごとの `list-models`、0600 の
+availability snapshot、`"$MAD_GENERATOR" resolve`、0600 の `mcp-create.json`、
+`"$MAD_VALIDATE" --prepare-create`、親による `mcp__paseo__create_agent` 一回、
+accepted childRef に対する `"$MAD_ADAPTER" wait-agent` 一回の順に進める。
+create の transport は公式 MCP tool だけであり、adapter は create の subcommand を持たない。
+Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create に使わない。
+`--prepare-create` は request と attempt state と call log を検証してから、0600 の
+`mcp-create.prepared` を `O_EXCL` で作る。marker を取れた呼び出しだけが create を呼べるので、
+2 つの親が同時に検証を通っても create は一回で止まる。
+wait の raw response は adapter が `{status}` へ縮約し、attempt には 0600 の `wait-evidence.json` と
+sanitized call log だけを残す。各 JSON 成果物は run の attempt directory にだけ置く。
+snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
 
-`task-worktree` と `sdd-run` は `implement` の子の手順に入らない。worktree を作るのは親であり、
-波の進行と裁定は親が共通契約の state で管理するためである。`sdd-task` は MAD を通さずに 1 task を
-headless で回すときの入口であり、`implement` の子は使わない。この 3 つと Workflow の定義は、
-MAD を通さない経路のために残してある。撤去したのは旧 MAD の shell runner とレシピだけである。
+review/fix は task ごとに `max_rounds` を 2（初回 review、fix/re-review）へ固定する。
+review/fix child を create する前に `"$MAD_VALIDATE" --prepare-review` を通し、
+同じ task の scope file と admission marker を使う。scope 外の重要事項は observations に保持し、
+review/fix 中に新しい fix/review や hotfix node を起動しない。最終 gate で一つの decision request に
+まとめてユーザーへ確認し、scope 拡張は新しい run として開始する。
+observations は `--write-review-observations` で atomic 0600 に保存し、
+`--check-review-observations` で最終 gate 前に検査する。
+
+`--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
+実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
+snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
+はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。
 
 `implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
 直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
 `paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
 ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
 
-実 backend で 1 度通す手順は `tests/manual/mad-orchestration-smoke.sh` にある。
-`research` レシピの 3 子並列、統合前の親の gate、統合、観測方法、停止方法を扱う。
-実機と課金を伴うので `tests/run-tests.sh` の対象には入れていない。
-`--dry-run` で手順だけを読める。
+実Paseoを起動する代表 MAD run は、待ち時間と API 課金を避けるため廃止している。
+`tests/manual/mad-representative-run.sh` は `--verify-only` だけを受け付け、保存済みの
+匿名 fixture を検査する。実Paseo、MCP、provider CLI、network、課金対象の child は起動しない。
+
+保存済み証跡の検査は次の verify-only 経路を使う。これは承認変数を読まず、adapterを呼ばない。
+
+    bash tests/test-paseo-mad.sh
+    bash tests/manual/mad-representative-run.sh --verify-only \
+      --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
+
+fixture の handoff は `/fixture/*.json` という匿名 placeholder を使い、verify-only が
+一時 directory に 0600 の regular file として解決する。`wait-evidence.json` は `{status}` だけを持ち、
+raw wait response や activity history は証跡に入れない。fixture の mode は Git が保存しない
+ため、単体で別の証跡を検査するときは `find` で列挙した証跡を `chmod 600` にしてから
+実行する。証跡には credential、auth/history、raw response、remote URL を入れない。
 
 ### Paseo プラグイン pr-review
 

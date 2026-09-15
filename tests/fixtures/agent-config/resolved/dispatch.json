@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "type": "resolved-config",
+  "scope": "dispatch",
+  "defaultEnvironment": "primary",
+  "providerFamilies": [
+    { "family": "claude", "displayName": "Claude", "setup": null, "featureAllowlist": {} },
+    { "family": "codex", "displayName": "Codex", "setup": null, "featureAllowlist": {} },
+    { "family": "opencode", "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
+    { "family": "pi", "displayName": "Pi", "setup": null, "featureAllowlist": {} }
+  ],
+  "environments": [
+    { "name": "primary", "eligibleFamilies": ["claude", "codex", "opencode", "pi"] },
+    { "name": "lab", "eligibleFamilies": ["claude", "codex"] }
+  ],
+  "resolutions": [
+    { "environment": "lab", "tier": "think", "candidates": [{ "family": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
+  ],
+  "selection": { "environment": "lab", "tier": "think" }
+}

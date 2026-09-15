@@ -65,6 +65,24 @@ Codex の 5 時間制限は採取しない。`usage.sh` の `provider_codex` が
 
 launchd ジョブは 900 秒ごとに実行する。
 
+### 失敗したときに残すもの
+
+`~/Library/Logs/sketchybar-usage-claude.err.log` には失敗の行しか残らない。
+どれも先頭に `2026-09-15T20:34:11` の形の時刻を付ける。時刻が無いと、
+何件たまっているかは分かっても、いつ起きたのかと頻度が変わったのかが分からない。
+
+`/usage` の出力を解釈できなかったときは、そのときの出力を
+`~/.cache/sketchybar-usage/<環境名>-claude.last-failure` へ保存する。
+次に同じ環境で失敗するまで残り、そこで上書きする。
+`claude -p /usage` は Claude Code の中で処理されてモデルへのリクエストを出さないため、
+失敗の原因はネットワークやレート制限ではなくローカル側にある。
+何が返ってきたのかが分からないと原因を絞れないので、出力そのものを残す。
+
+2026-09-02 から 09-15 までの実測では、ジョブの実行が 1266 回、環境ごとの試行が
+2532 回で、解釈できなかったのが 65 件だった。失敗率は 2.6% である。
+表示が灰色で止まるには同じ環境で 2 回続けて失敗する必要があり、
+その頻度はおよそ 2 週間に 1 回である。原因は未特定である。
+
 ### リセット時刻の解釈
 
 `/usage` の出力には年が無く、分がちょうどのときは分も省かれる（`7pm`）。
@@ -104,13 +122,11 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchyba
 
 ## MAD の残量確認も読む
 
-`usage.sh` の 9 列の出力は、SketchyBar のウィジェットだけでなく MAD の validator
-`~/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate` も読む。MAD の親
-エージェントは子を起動する前に `manual-orchestration-validate --check-usage <provider>...` を呼ぶ。
-validator は `usage.sh` を引数なしで 1 回実行し、`~/.agents/agent-defs/paseo-providers.json` の
-`usage.environment` と `usage.agent` に一致する行を選び、第 7 列の 5 時間の使用率から `ok`、`low`、
-`exhausted`、`unknown` を判定する。親はこの判定で候補の provider を並べ直し、すべてが `exhausted` なら
-子を起動せずにユーザーへ渡す。列の並びを変えると、状態バーの表示と MAD の残量確認が同時に壊れる。
+`usage.sh` の 9 列の出力は SketchyBar の表示専用である。Paseo の子を作る前に、親は
+adapter の `list-providers` と provider ごとの `list-models` で discovery を行い、選んだ agent profile
+の provider/model/mode を availability snapshot と create request に記録する。profile の prompt/schema
+境界は MAD の現行 role asset が担い、残量の推測で provider の優先順位を変更しない。列の並びを変えると
+状態バーの表示が壊れるため、widget の互換性を保つ。
 
 ## 色の決め方
 

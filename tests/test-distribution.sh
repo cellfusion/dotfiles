@@ -4,12 +4,113 @@
 set -u
 . "$(dirname "$0")/lib/assert.sh"
 
+CLEAN_APPLY=0
+PLAN_FILE=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --clean-apply) CLEAN_APPLY=1; shift ;;
+    --plan) PLAN_FILE="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+if [ "$CLEAN_APPLY" -eq 1 ]; then
+  . "$CHEZMOI_SOURCE/tests/lib/unit-gate.sh"
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  EVIDENCE="${PASEO_MIGRATION_EVIDENCE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/paseo-agent-config-migration/evidence}"
+
+  if ! test "${PASEO_CLEAN_APPLY_APPROVED:-0}" = 1; then
+    write_decision_request "${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}" \
+      '最終の配布 gate のために temporary な clean chezmoi apply を実行してよいか' \
+      'temporary な apply を承認する' 'apply せず Unit 3 を rollback する'
+    exit 1
+  fi
+
+  case "$PLAN_FILE" in
+    /*) : ;;
+    *) printf 'plan: 絶対 path が必要である\n' >&2; exit 2 ;;
+  esac
+  test -f "$PLAN_FILE" || { printf 'plan: file が無い\n' >&2; exit 2; }
+  clean_request_path="${DECISION_REQUEST_PATH:-$EVIDENCE/clean-apply-decision-request.md}"
+  if test -e "$clean_request_path" || test -L "$clean_request_path"; then
+    test -f "$clean_request_path" && test ! -L "$clean_request_path" &&
+      test "$(stat -f '%Lp' "$clean_request_path" 2>/dev/null)" = 600 || exit 1
+    rm -f "$clean_request_path" || exit 1
+  fi
+  rm -f "$EVIDENCE/clean-apply-result.txt" || exit 1
+
+  clean_home="$TMP/clean-home"
+  clean_source="$TMP/clean-source"
+  mkdir -p "$clean_home" "$clean_source" || exit 1
+  cp -R "$CHEZMOI_SOURCE/." "$clean_source/" || exit 1
+
+  # 事前に退役 leaf を置き、.chezmoiremove が実際に回収したことを確認する。
+  retired_skill="$(printf '%s-%s-%s' subagent driven development)"
+  retired_leaf="$(printf '%s-%s' task waves)"
+  retired="$clean_home/.agents/skills/$retired_skill/scripts/$retired_leaf"
+  mkdir -p "$(dirname "$retired")" || exit 1
+  printf '#!/usr/bin/env bash\n' > "$retired" || exit 1
+  HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" \
+    chezmoi apply --exclude=scripts --source "$clean_source" --destination "$clean_home" || exit 1
+
+  installed="$clean_home/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate"
+  test -x "$installed" || exit 1
+  test ! -e "$retired" || exit 1
+  node "$installed" "$PLAN_FILE" || exit 1
+  write_unit_decision "$EVIDENCE/clean-apply-result.txt" approved-success
+  exit $?
+fi
+
 managed="$(chezmoi managed --source "$CHEZMOI_SOURCE" 2>&1)"
 # .chezmoiremove の削除対象は managed にも列挙されるため、配布ファイルだけを別に見る。
 managed_files="$(chezmoi managed --source "$CHEZMOI_SOURCE" --include=files,symlinks 2>&1)"
 
 # `chezmoi managed` 自体が成功していること（.chezmoiremove と source の衝突などを検出する）。
 assert_not_contains "$managed" "inconsistent state" "managed が inconsistent state を出さない"
+
+# Paseo の設定生成に必要な CLI と runtime 非依存の契約を配布する。正本は利用者の
+# 秘密領域なので配布しない。
+assert_contains "$managed" ".local/bin/generate-paseo-config" "distribution: 生成 CLI を配る"
+assert_contains "$managed" ".local/share/agent-config/config-types.js" "distribution: runtime 非依存の契約を配る"
+assert_contains "$managed" ".local/share/agent-config/mad-contract.js" "distribution: MAD の契約 module を配る"
+assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
+assert_contains "$managed" ".local/share/agent-config/agent-config.sample.json" "distribution: 匿名 sample を配る"
+assert_not_contains "$managed" ".config/chezmoi/agent-config.json" "distribution: 正本を配らない"
+
+# 配布する sample は実測 provider ID を使い、Claude と Codex だけが fast_mode を
+# 宣言する。test fixture は配布しない。
+sample="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.sample.json"
+assert_eq "$(jq -r 'has("pi") and (has("pie") | not)' <<<"$(jq -c '.providers' "$sample")")" "true" \
+  "distribution: sample の provider ID は実測値の pi"
+assert_eq "$(jq -c '.providers.claude.featureAllowlist, .providers.codex.featureAllowlist' "$sample" | tr '\n' ' ')" \
+  '{"fast_mode":"boolean"} {"fast_mode":"boolean"} ' \
+  "distribution: sample は Claude と Codex に fast_mode を宣言する"
+assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$sample" | tr '\n' ' ')" \
+  "{} {} " "distribution: sample は OpenCode と Pi を空 allowlist にする"
+assert_eq "$(jq -c '[.tiers[].candidates[0].featureValues | if has("fast_mode") then .fast_mode else "absent" end] | sort' "$sample")" \
+  '[false,true,true,"absent"]' "distribution: sample は fast_mode の true と false を両方示す"
+assert_not_contains "$managed" "tests/fixtures" "distribution: test fixture を配らない"
+
+# 配布する adapter は create の境界を持たない。create は公式 MCP tool だけが行う。
+adapter_distributed="$(cat "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter")"
+assert_not_contains "$adapter_distributed" "create-agent" \
+  "distribution: adapter は create-agent subcommand を持たない"
+assert_not_contains "$adapter_distributed" "'run', '--background'" \
+  "distribution: adapter は paseo run による create 経路を持たない"
+hook_source="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl")"
+for legacy in private-data.toml setup_paseo_provider list_providers; do
+  assert_not_contains "$hook_source" "$legacy" "hook: $legacy を持たない"
+done
+docs="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
+for step in '"$MAD_GENERATOR" resolve' '"$MAD_GENERATOR" --diff' '"$MAD_GENERATOR" --check'; do
+  assert_contains "$docs" "$step" "docs: 移行手順に $step がある"
+done
+assert_contains "$docs" "--paseo-config <absolute-copy>" \
+  "docs: 承認前の各検査と試行 write が target copy を明示する"
+assert_contains "$docs" "--paseo-config <absolute-target>" \
+  "docs: 承認後の通常 write も target path を明示する"
+assert_contains "$docs" 'chezmoi apply' "docs: apply が利用者の明示許可であることを書く"
 
 # リポジトリの作業用ディレクトリを配らない。
 for d in docs tests _cellfusion; do
@@ -22,14 +123,25 @@ assert_contains "$managed" ".config/git/ignore" "global gitignore を配る"
 assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/git/ignore")" "_cellfusion/" \
   "global gitignore が _cellfusion/ を無視する"
 
-# SDD のスクリプトは ~/.agents/skills 側にだけ配られる。
-for s in review-package sdd-workspace task-brief task-waves \
-         task-worktree run-registry agent-backend sdd-run sdd-task; do
-  assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/$s" \
-    "スクリプトを共有パスへ配る: $s"
-  assert_not_contains "$managed" ".config/claude/skills/subagent-driven-development/scripts/$s" \
-    "旧パスへは配らない: $s"
+# MAD の Paseo-only adapter と plan validator を配る。
+for s in paseo-mcp-adapter paseo-plan-dependency-validate; do
+  assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
+    "MAD: $s を共有パスへ配る"
 done
+
+# review/fix の admission と scope contract を validator/module と一緒に配る。
+review_validator="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
+review_contract="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/mad-contract.js"
+assert_contains "$(cat "$review_validator")" "--prepare-review" \
+  "MAD review guard: prepare-review CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-scope" \
+  "MAD review guard: scope check CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-observations" \
+  "MAD review guard: observation check CLI を配る"
+assert_contains "$(cat "$review_validator")" "--write-review-observations" \
+  "MAD review guard: observation writer CLI を配る"
+assert_contains "$(cat "$review_contract")" "prepareMadReview0600" \
+  "MAD review guard: admission contract を配る"
 
 # SKILL.md は 3 ツールすべてに配られる。
 for skill in brainstorming writing-plans using-git-worktrees multi-agent-development; do
@@ -44,8 +156,6 @@ done
 # codex の設定は実運用の CODEX_HOME（~/.config/codex）へ配る。
 assert_contains "$managed" ".config/codex/AGENTS.md" \
   "codex: AGENTS.md を ~/.config/codex へ配る"
-assert_contains "$managed" ".config/codex/agents/sdd-implementer.toml" \
-  "codex: agent 定義を ~/.config/codex へ配る"
 assert_contains "$managed" ".config/codex/config.toml" \
   "codex: config.toml を ~/.config/codex へ配る"
 
@@ -98,33 +208,12 @@ done
 assert_eq "$(printf '%s\n' "$managed" | grep -c run_onchange)" "0" \
   "run_onchange スクリプトをホームへ配らない"
 
-# 実行時アセットは ~/.agents/agent-defs/ にだけ配る。
-for f in routing.json tiers.json manifests.json; do
-  assert_contains "$managed" ".agents/agent-defs/$f" \
-    "agent-defs: $f を ~/.agents へ配る"
-done
-
-# MAD delivery の実 role は、prompt と schema を一緒に ~/.agents へ配る。Paseo MCP と
-# native subagent がどちらも同じ prompt/schema を参照できることを保証する。
-delivery_manifest="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/manifests.json" . }}')"
-for a in $(printf '%s' "$delivery_manifest" | jq -r \
-  'to_entries[] | select(.value.delivery_duties | length > 0) | .key'); do
-  assert_contains "$managed" ".agents/agent-defs/prompts/$a.md" \
-    "MAD delivery: prompts/$a.md を ~/.agents へ配る"
-  assert_contains "$managed" ".agents/agent-defs/schemas/$a.json" \
-    "MAD delivery: schemas/$a.json を ~/.agents へ配る"
-done
-
-# `[dispatch-subagent: role]` は runtime ごとの agents ディレクトリを引く。prompt と
-# schema だけを配っても、agent 定義が配られていない role は native subagent で起動できない。
-for a in $(printf '%s' "$delivery_manifest" | jq -r 'keys[]'); do
-  assert_contains "$managed" ".config/claude/agents/$a.md" \
-    "MAD subagent: claude の $a 定義を配る"
-  assert_contains "$managed" ".config/opencode/agents/$a.md" \
-    "MAD subagent: opencode の $a 定義を配る"
-  assert_contains "$managed" ".config/codex/agents/$a.toml" \
-    "MAD subagent: codex の $a 定義を配る"
+# MAD の現行 role は prompt と schema を一緒に ~/.agents へ配る。
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
+    "MAD role: prompts/$role.md を ~/.agents へ配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
+    "MAD role: schemas/$role.json を ~/.agents へ配る"
 done
 
 # review 統合は研究の要約 role と異なる専用 role を配る。採用 verdict と finding の
@@ -134,37 +223,11 @@ assert_contains "$managed" ".agents/agent-defs/prompts/review-synthesizer.md" \
 assert_contains "$managed" ".agents/agent-defs/schemas/review-synthesizer.json" \
   "MAD delivery: review-synthesizer schema を ~/.agents へ配る"
 
-# 配る routing.json はテンプレートと同じ内容になる。
-rendered="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/routing.json" . }}')"
-assert_contains "$rendered" '"sdd-implementer"' "routing: implementer の項がある"
-assert_contains "$rendered" '"engine": "codex"' "routing: 既定で codex を使う役割がある"
-
-# routing の engine は claude と codex だけ。
-assert_not_contains "$rendered" "opencode" "routing: opencode は対象外"
-
-# routing の役割は manifests の役割と一致する。
-keys='const d="";let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(Object.keys(JSON.parse(s)).sort().join(" ")))'
-roles_r="$(printf '%s' "$rendered" | node -e "$keys")"
-roles_m="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  '{{ includeTemplate "agent-defs/manifests.json" . }}' | node -e "$keys")"
-assert_eq "$roles_r" "$roles_m" "routing: 役割の集合が manifests と一致する"
-
-assert_contains "$managed" ".agents/skills/_shared/scripts/agent-route" \
-  "agent-route を共有パスへ配る"
-
-assert_contains "$managed" ".agents/skills/subagent-driven-development/scripts/sdd-task" \
-  "sdd-task を共有パスへ配る"
-
 # agent 専用の worktrunk config を配る。人の config とは別ファイルである。
 assert_contains "$managed" ".config/worktrunk/agent.toml" "worktrunk: agent 専用 config を配る"
 assert_contains "$managed" ".config/worktrunk/config.toml" "worktrunk: 人用 config も配る"
 
-# herdr-dispatch は畳んだ。配布先にも残さない。
-assert_not_contains "$managed_files" "subagent-driven-development/scripts/herdr-dispatch" \
-  "herdr-dispatch を配らない"
-
-for s in agent-route agent-docs-dir json-schema; do
+for s in agent-docs-dir json-schema; do
   assert_contains "$managed" ".agents/skills/_shared/scripts/$s" \
     "_shared のスクリプトを配る: $s"
 done
@@ -243,6 +306,10 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoiignore")" ".DS_Store" \
 # 配布しない。braid も 3 runtime のいずれにも配布しない。
 assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/manual-orchestration-validate" \
   "MAD: validator を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-mcp-adapter" \
+  "MAD: Paseo MCP adapter を共有パスへ配る"
+assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate" \
+  "MAD: plan dependency validator を共有パスへ配る"
 for legacy in \
   ".agents/skills/multi-agent-development/scripts/mad-route" \
   ".agents/skills/multi-agent-development/scripts/mad-agent" \
@@ -278,9 +345,27 @@ assert_contains "$managed" ".config/opencode/skills/multi-agent-development/SKIL
   "MAD: opencode へ配られる"
 assert_contains "$managed" ".agents/skills/multi-agent-development/SKILL.md" \
   "MAD: ~/.agents へ配られる"
-for f in paseo-providers paseo-routing paseo-project-routing; do
-  assert_contains "$managed" ".agents/agent-defs/$f.json" \
-    "MAD: 設定アセットを配る: $f"
-done
+# この suite が置換先になっている retired distribution source は source tree に残さない。
+removal_manifest="$CHEZMOI_SOURCE/private_dot_config/docs/paseo-agent-config-removal-manifest.md"
+while read -r source_path; do
+  [ -n "$source_path" ] || continue
+  assert_eq "$(test -e "$CHEZMOI_SOURCE/$source_path" && echo yes || echo no)" "no" \
+    "MAD: retired distribution source を残さない"
+done < <(awk -F'|' '$3 ~ /Delete/ && $4 ~ /test-distribution/ { path=$2; gsub(/^ +| +$/, "", path); print path }' "$removal_manifest")
+
+# removal manifest が参照する置換 test は、削除後も実行できる現行 test である。
+replacement_tests="$(awk -F'|' '$3 ~ /Delete|Keep/ {
+  path=$4
+  gsub(/^ +| +$/, "", path)
+  if (path ~ /^tests\/test-[^ ]+\.sh$/) print path
+}' "$removal_manifest" | sort -u)"
+while read -r replacement_test; do
+  [ -n "$replacement_test" ] || continue
+  assert_eq "$(test -f "$CHEZMOI_SOURCE/$replacement_test" && echo yes || echo no)" "yes" \
+    "removal manifest: 置換 test が実在する: $replacement_test"
+done <<EOF
+$replacement_tests
+EOF
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

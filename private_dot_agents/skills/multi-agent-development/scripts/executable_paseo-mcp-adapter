@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+'use strict'
+
+const os = require('node:os')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+function fail(message, status = 2) {
+  if (process.argv[2] === 'stop-agent' && status === 1) {
+    process.stdout.write(JSON.stringify({ status: 'error' }) + '\n')
+  }
+  process.stderr.write(`paseo-mcp-adapter: ${message}\n`)
+  process.exit(status)
+}
+
+function exactKeys(value, expected) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort())
+}
+
+function safeId(value) {
+  return typeof value === 'string' && value !== '.' && value !== '..' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
+}
+
+function opaqueStrings(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.length > 0) &&
+    new Set(value).size === value.length
+}
+
+// JSON.parse silently overwrites duplicate object keys. Paseo's transport
+// response is a security boundary, so reject rather than normalize them.
+const MODE_LABEL_TO_ID = Object.freeze({
+  'Plan Mode': 'plan',
+  'Always Ask': 'default',
+  'Accept File Edits': 'acceptEdits',
+  'Auto mode': 'auto',
+  'Bypass': 'bypassPermissions',
+  'Default Permissions': 'auto',
+  'Auto-review': 'auto-review',
+  'Full Access': 'full-access',
+  'Build': 'build',
+  'Plan': 'plan',
+})
+
+function modeIdsFromLabels(value) {
+  if (typeof value !== 'string') fail('provider discovery response is invalid', 1)
+  if (value.length === 0) return []
+  const labels = value.split(',').map((label) => label.trim())
+  if (labels.some((label) => label.length === 0) ||
+      labels.some((label) => !Object.prototype.hasOwnProperty.call(MODE_LABEL_TO_ID, label)) ||
+      new Set(labels).size !== labels.length) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return labels.map((label) => MODE_LABEL_TO_ID[label])
+}
+
+function normalizeEnabled(value) {
+  if (typeof value !== 'string') fail('provider discovery response is invalid', 1)
+  const normalized = value.toLowerCase()
+  if (!['enabled', 'disabled'].includes(normalized)) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return normalized
+}
+
+function providerModeIds(row) {
+  const realCliShape = ['enabled', 'label', 'defaultMode', 'modes']
+    .some((field) => Object.prototype.hasOwnProperty.call(row, field))
+  if (realCliShape) {
+    if (!exactKeys(row, ['provider', 'status', 'enabled', 'label', 'defaultMode', 'modes']) ||
+        !safeId(row.provider) ||
+        !['available', 'unavailable'].includes(row.status) ||
+        typeof row.label !== 'string' || row.label.length === 0 ||
+        typeof row.defaultMode !== 'string' || row.defaultMode.length === 0) {
+      fail('provider discovery response is invalid', 1)
+    }
+    normalizeEnabled(row.enabled)
+    return modeIdsFromLabels(row.modes)
+  }
+
+  // Existing fixture adapters use the already-normalized contract shape. Keep
+  // accepting it for tests while giving the real CLI shape precedence above.
+  if (!exactKeys(row, ['provider', 'status', 'modeIds']) ||
+      !safeId(row.provider) || !['available', 'unavailable'].includes(row.status) ||
+      !opaqueStrings(row.modeIds)) {
+    fail('provider discovery response is invalid', 1)
+  }
+  return [...row.modeIds]
+}
+
+function paseo(args) {
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', args, { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP transport failed', 1)
+  return result.stdout || ''
+}
+
+function listProviders() {
+  let rows
+  try { rows = JSON.parse(paseo(['provider', 'ls', '--json'])) } catch { fail('provider discovery response is invalid', 1) }
+  if (!Array.isArray(rows)) fail('provider discovery response is invalid', 1)
+  const providers = []
+  const seen = new Set()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || seen.has(row.provider)) {
+      fail('provider discovery response is invalid', 1)
+    }
+    const rawStatus = row.status
+    if (!['available', 'unavailable'].includes(rawStatus)) {
+      fail('provider discovery response is invalid', 1)
+    }
+    const modeIds = providerModeIds(row)
+    const available = Object.prototype.hasOwnProperty.call(row, 'enabled')
+      ? normalizeEnabled(row.enabled) === 'enabled'
+      : rawStatus === 'available'
+    seen.add(row.provider)
+    providers.push({ id: row.provider, available, modeIds })
+  }
+  process.stdout.write(JSON.stringify({ providers }) + '\n')
+}
+
+function listModels(provider) {
+  if (!safeId(provider)) fail('provider is invalid')
+  let rows
+  try { rows = JSON.parse(paseo(['provider', 'models', '--json', '--thinking', provider])) } catch { fail('model discovery response is invalid', 1) }
+  if (!Array.isArray(rows)) fail('model discovery response is invalid', 1)
+  const models = []
+  const seen = new Set()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || typeof row.id !== 'string' || row.id.length === 0 || seen.has(row.id)) {
+      fail('model discovery response is invalid', 1)
+    }
+    if (!opaqueStrings(row.thinkingOptionIds)) fail('model discovery response is invalid', 1)
+    seen.add(row.id)
+    models.push({ id: row.id, thinkingOptionIds: [...row.thinkingOptionIds] })
+  }
+  process.stdout.write(JSON.stringify({ provider, models }) + '\n')
+}
+
+function waitAgent(childRef, timeout) {
+  if (!safeId(childRef) || !/^[1-9][0-9]*$/.test(timeout) || Number(timeout) > 3600) {
+    fail('wait arguments are invalid')
+  }
+  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+  let contract
+  try { contract = require(path.join(shareDir, 'mad-contract.js')) } catch { fail('Paseo wait contract is unavailable', 1) }
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
+    'wait', childRef, '--timeout', timeout, '--json',
+  ], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP wait failed', 1)
+  let status
+  try {
+    const response = contract.parseJsonWithoutDuplicateKeys(
+      result.stdout || '', 'invalid_mad_wait_response', 'Paseo MCP wait response')
+    if (response === null || typeof response !== 'object' || Array.isArray(response) ||
+        Object.keys(response).some((key) => !['agentId', 'status', 'message'].includes(key)) ||
+        !['idle', 'timeout', 'error'].includes(response.status) ||
+        !Object.prototype.hasOwnProperty.call(response, 'agentId') || response.agentId !== childRef ||
+        (Object.prototype.hasOwnProperty.call(response, 'message') && typeof response.message !== 'string')) {
+      throw new Error('invalid response')
+    }
+    status = response.status
+  } catch { fail('Paseo MCP wait response is invalid', 1) }
+  process.stdout.write(JSON.stringify({ status }) + '\n')
+}
+
+function stopAgent(childRef) {
+  if (!safeId(childRef)) fail('stop arguments are invalid')
+  const shareDir = process.env.PASEO_MAD_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+  let contract
+  try { contract = require(path.join(shareDir, 'mad-contract.js')) } catch { fail('Paseo stop contract is unavailable', 1) }
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', [
+    'stop', childRef, '--json',
+  ], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo MCP stop failed', 1)
+  try {
+    const response = contract.parseJsonWithoutDuplicateKeys(
+      result.stdout || '', 'invalid_mad_stop_response', 'Paseo MCP stop response')
+    // Paseo's stop --json response is {stoppedCount, agentIds}. For one
+    // requested child, require exactly one stopped ID and an exact match.
+    if (!exactKeys(response, ['stoppedCount', 'agentIds']) ||
+        !Number.isInteger(response.stoppedCount) || response.stoppedCount !== 1 ||
+        !opaqueStrings(response.agentIds) || response.agentIds.length !== 1 ||
+        !safeId(response.agentIds[0]) || response.agentIds[0] !== childRef) {
+      throw new Error('invalid response')
+    }
+  } catch { fail('Paseo MCP stop response is invalid', 1) }
+  process.stdout.write(JSON.stringify({ status: 'stopped' }) + '\n')
+}
+
+const args = process.argv.slice(2)
+switch (args[0]) {
+  case 'list-providers':
+    if (args.length !== 1) fail('list-providers arguments are invalid')
+    listProviders()
+    break
+  case 'list-models':
+    if (args.length !== 3 || args[1] !== '--provider') fail('list-models arguments are invalid')
+    listModels(args[2])
+    break
+  case 'wait-agent':
+    if (args.length !== 5 || args[1] !== '--child-ref' || args[3] !== '--timeout') fail('wait-agent arguments are invalid')
+    waitAgent(args[2], args[4])
+    break
+  case 'stop-agent':
+    if (args.length !== 3 || args[1] !== '--child-ref') fail('stop-agent arguments are invalid')
+    stopAgent(args[2])
+    break
+  default:
+    fail('command is invalid')
+}

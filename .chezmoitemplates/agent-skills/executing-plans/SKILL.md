@@ -3,7 +3,7 @@ name: executing-plans
 description: >-
   実装が小さく、MAD を使わなくてよい実装プランを、このセッションで直列に実行するときに使う。
   並列にできるタスクを持つプランや worktree の隔離が要るプランは
-  subagent-driven-development のほうが適する。
+  multi-agent-development のほうが適する。
   タスクの区切りでレビューを挟みながらタスクを順に消化する。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
@@ -17,7 +17,7 @@ description: >-
 **開始時に宣言する**: 「executing-plans を使ってこのプランを実装する」
 
 **先に確認する**: このプランは実装が小さく、MAD を使わなくてよいか。次のどれかに当たるなら
-subagent-driven-development のほうが適する。
+multi-agent-development のほうが適する。
 
 - 依存が無く並列にできるタスクが 2 つ以上ある
 - 同時に書くタスクがあり、worktree の隔離が要る
@@ -45,7 +45,7 @@ subagent-driven-development のほうが適する。
 3. 指定された検証を実行する
 4. todo を完了にする
 
-タスクの区切りごとに、そのタスクの diff を自分で見返す。spec 準拠（欠落・余分・誤解）とテストの実効性を確認する。ここが subagent-driven-development のタスクレビューの代わりになる。
+タスクの区切りごとに、そのタスクの diff を自分で見返す。spec 準拠（欠落・余分・誤解）とテストの実効性を確認する。ここが multi-agent-development の review recipe を使わない場合のレビューになる。
 
 ### Step 3: 開発を完了する
 
@@ -81,4 +81,4 @@ subagent-driven-development のほうが適する。
 - 検証を飛ばさない
 - 詰まったら止まる。推測しない
 - ユーザーの明示的な同意なしに main / master で実装を始めない
-- 実装が想定より大きいと分かったら止まる。subagent-driven-development へ切り替えるかをユーザーに聞く
+- 実装が想定より大きいと分かったら止まる。multi-agent-development へ切り替えるかをユーザーに聞く

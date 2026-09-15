@@ -1,149 +1,46 @@
-{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
-{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end -}}
 #!/usr/bin/env bash
-# 2 つ目以降の AI 環境ディレクトリを作る。定義は
-# ~/.config/chezmoi/private-data.toml の [[data.environments]] にある。
-#
-# chezmoi のソースツリーは静的なので、ディレクトリ名に環境名が現れるものは
-# source 側に置けない（リポジトリは public で、環境名は書けない）。ここで作る。
-# そのため生成物は `chezmoi managed` に出ない。
-#
-# 先頭環境（~/.config/claude と ~/.config/codex）は chezmoi 本体が直接配るので触らない。
-#
-# environments hash: {{ $envs | toJson | sha256sum }}
+# 正本を検証してから、Paseo の生成 CLI を実行する。
 set -eu
 
 {{ includeTemplate "install/preamble" }}
 
-command -v jq >/dev/null 2>&1 || die 'jq が見つからない。10-brew が失敗している'
+local_bin_env
 
-# 全プロファイル共通の MCP 定義。claude 本体の modify_dot_claude.json.tmpl と同じものを使う。
-SERVERS='{{ includeTemplate "claude-mcp-servers.json" . }}'
-REMOVED='{{ includeTemplate "claude-mcp-removed.json" . }}'
+input="$XDG_CONFIG_HOME/chezmoi/agent-config.json"
+target="$HOME/.paseo/config.json"
+agent_config_share="$HOME/.local/share/agent-config"
+generator='generate-paseo-config'
 
-# $CODEX_HOME/config.toml の変換。claude 本体の modify_private_config.toml.tmpl と
-# 同じ処理を関数として持つ。stdin を読み stdout に出す。
-codex_config() {
-{{ includeTemplate "codex-config.sh" . }}
-}
+# target がまだ無い初回 apply では、directory setup も行わず generator の skip に任せる。
+if [ -f "$input" ] && [ -f "$target" ]; then
+  run_node() {
+    if command -v mise >/dev/null 2>&1; then
+      mise exec -- node "$@"
+    else
+      node "$@"
+    fi
+  }
+  run_node -e '
+    try {
+      const fs = require("node:fs")
+      const input = process.argv[1]
+      const xdgConfigHome = process.argv[2]
+      const validatorPath = process.argv[3]
+      const setupPath = process.argv[4]
+      const { validateConfig } = require(validatorPath)
+      const { setupDirectories } = require(setupPath)
+      const { config } = validateConfig(fs.readFileSync(input, "utf8"))
+      setupDirectories(config, { xdgConfigHome, defaultEnvironment: config.defaults.environment })
+    } catch (error) {
+      process.stderr.write(`agent environment setup: ${error instanceof Error ? error.message : "失敗した"}\n`)
+      process.exitCode = error && Number.isInteger(error.exitCode) ? error.exitCode : 2
+    }
+  ' "$input" "$XDG_CONFIG_HOME" \
+    "$agent_config_share/config-validator.js" "$agent_config_share/directory-setup.js"
+fi
 
-# $2 を $1 への symlink にする。既に正しく張られていれば何もしない。
-link() {
-  target="$1"
-  dest="$2"
-  if [ -L "$dest" ]; then
-    [ "$(readlink "$dest")" = "$target" ] && return 0
-    rm -f "$dest"
-  elif [ -e "$dest" ]; then
-    die "$dest が symlink ではない実体として存在する。手で退避してから apply し直す"
-  fi
-  ln -s "$target" "$dest"
-}
-
-setup_claude() {
-  session="$1"
-  dir="$XDG_CONFIG_HOME/claude_$session"
-  mkdir -p "$dir"
-  for name in agents commands skills hooks CLAUDE.md settings.json; do
-    link "../claude/$name" "$dir/$name"
-  done
-  # .claude.json はランタイム状態を持つ実体である。mcpServers だけをマージする。
-  f="$dir/.claude.json"
-  [ -s "$f" ] || printf '{}' > "$f"
-  jq --argjson servers "$SERVERS" --argjson removed "$REMOVED" \
-    '.mcpServers += $servers | reduce $removed[] as $key (.; del(.mcpServers[$key]))' \
-    < "$f" > "$f.tmp" || die "$f のマージに失敗した"
-  mv "$f.tmp" "$f"
-}
-
-setup_codex() {
-  session="$1"
-  dir="$XDG_CONFIG_HOME/codex_$session"
-  mkdir -p "$dir"
-  link "../codex/agents" "$dir/agents"
-  link "../codex/AGENTS.md" "$dir/AGENTS.md"
-  # rules/default.rules は Codex が承認の永続化で追記する。実体を環境ごとに
-  # 持たせず 1 つを共有し、どの環境で永続化しても全環境に載るようにする。
-  link "../codex/rules" "$dir/rules"
-  # config.toml は独立した実体である。projects の trust_level などは残す。
-  f="$dir/config.toml"
-  [ -f "$f" ] || : > "$f"
-  codex_config < "$f" > "$f.tmp" || die "$f の変換に失敗した"
-  mv "$f.tmp" "$f"
-}
-
-# Paseo は provider ごとに環境変数を注入する。AGENT_ENV を足すと、その provider で
-# 動くエージェントの子 shell が agent-environments.zsh で正しい環境に解決する。
-# agent-environments.zsh は対話 shell だけが読む .zshrc から source されるので、
-# エージェントが直接起動する子プロセスには届かない。設定ディレクトリの変数もここで注入する。
-# Paseo アプリ自身が config.json を書き換えるので、必要なキーだけを更新する。
-PASEO_CONFIG="${PASEO_CONFIG_FILE:-$HOME/.paseo/config.json}"
-
-# $1=provider 名 $2=extends（空なら書かない） $3=label（空なら書かない）
-# $4=AGENT_ENV の値 $5 以降=env に足すキーと値の組
-#
-# env には、その環境が持つ AI ツール全部の設定ディレクトリを入れる。provider で動く親が
-# 別のツールを子プロセスとして起動すると、子は親の環境変数を継承する。claude の provider に
-# CLAUDE_CONFIG_DIR しか入れないと、codex の子が別の環境のアカウントで動いてしまう。
-setup_paseo_provider() {
-  [ -f "$PASEO_CONFIG" ] || return 0
-  provider="$1"
-  extends="$2"
-  label="$3"
-  session="$4"
-  shift 4
-  extra='{}'
-  while [ "$#" -ge 2 ]; do
-    extra="$(printf '%s' "$extra" | jq -c --arg k "$1" --arg v "$2" '.[$k] = $v')" \
-      || die "$provider の env の組み立てに失敗した"
-    shift 2
-  done
-  jq --arg p "$provider" --arg ext "$extends" --arg label "$label" \
-     --argjson extra "$extra" --arg session "$session" '
-    .agents.providers[$p] = ((.agents.providers[$p] // {})
-      | (if $ext   != "" then .extends = $ext   else . end)
-      | (if $label != "" then .label   = $label else . end)
-      | .env = ((.env // {}) + $extra | .AGENT_ENV = $session))
-  ' < "$PASEO_CONFIG" > "$PASEO_CONFIG.tmp" \
-    || die "$PASEO_CONFIG の更新に失敗した"
-  mv "$PASEO_CONFIG.tmp" "$PASEO_CONFIG"
-}
-
-{{ range $i, $env := $envs }}
-{{- /* 先頭環境のディレクトリだけが接尾辞を持たない。$envargs は、その環境の全 provider が
-       共通で受け取る env の組である。 */ -}}
-{{- $suffix := "" -}}
-{{- if $i }}{{ $suffix = printf "_%s" $env.session }}{{ end -}}
-{{- $envargs := "" -}}
-{{- if has "claude" $env.agents }}{{ $envargs = printf `%s "CLAUDE_CONFIG_DIR" "$XDG_CONFIG_HOME/claude%s"` $envargs $suffix }}{{ end -}}
-{{- if has "codex" $env.agents }}{{ $envargs = printf `%s "CODEX_HOME" "$XDG_CONFIG_HOME/codex%s"` $envargs $suffix }}{{ end -}}
-{{- if $i }}
-{{- if has "claude" $env.agents }}
-setup_claude {{ $env.session | quote }}
-setup_paseo_provider {{ printf "claude-%s" $env.session | quote }} "claude" {{ printf "Claude (%s)" $env.label | quote }} {{ $env.session | quote }}{{ $envargs }}
-{{- end }}
-{{- if has "codex" $env.agents }}
-setup_codex {{ $env.session | quote }}
-setup_paseo_provider {{ printf "codex-%s" $env.session | quote }} "codex" {{ printf "Codex (%s)" $env.label | quote }} {{ $env.session | quote }}{{ $envargs }}
-{{- end }}
-{{- else }}
-{{- if has "claude" $env.agents }}
-setup_paseo_provider "claude" "" "" {{ $env.session | quote }}{{ $envargs }}
-{{- end }}
-{{- if has "codex" $env.agents }}
-setup_paseo_provider "codex" "" "" {{ $env.session | quote }}{{ $envargs }}
-{{- end }}
-{{- end }}
-{{- end }}
-
-# 定義から消えた環境のディレクトリは削除しない。認証情報（.credentials.json /
-# auth.json）と履歴を持つため、破棄はユーザーが判断する。残っていることだけ知らせる。
-KNOWN=' {{ range $i, $env := $envs }}{{ if $i }}{{ if has "claude" $env.agents }}claude_{{ $env.session }} {{ end }}{{ if has "codex" $env.agents }}codex_{{ $env.session }} {{ end }}{{ end }}{{ end }}'
-for d in "$XDG_CONFIG_HOME"/claude_* "$XDG_CONFIG_HOME"/codex_*; do
-  [ -d "$d" ] || continue
-  base="${d##*/}"
-  case "$KNOWN" in
-    *" $base "*) ;;
-    *) printf '定義に無い AI 環境が残っている: %s（消すかどうかは手で判断する）\n' "$d" >&2 ;;
-  esac
-done
+if command -v mise >/dev/null 2>&1; then
+  mise exec -- "$generator"
+else
+  "$generator"
+fi

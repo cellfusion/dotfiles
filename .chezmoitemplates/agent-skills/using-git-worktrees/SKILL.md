@@ -129,15 +129,15 @@ cd "$path"
 
 **sandbox で失敗した場合**: `git worktree add` が権限エラーで落ちたら、sandbox に阻まれたので現在のディレクトリで作業する旨をユーザーに伝える。セットアップとベースラインテストはその場で行う。
 
-### `.worktrees/` の ignore を確認する（SDD 用）
+### `.worktrees/` の ignore を確認する（MAD 用）
 
-subagent-driven-development のタスク波は、隔離ワークスペースをどの手段で作ったかによらず常に `.worktrees/` を使う（`git worktree add "<repo-root>/.worktrees/task-<N>"`）。1a・1b を通った場合、または 1c で `worktrees`（代替）を選んだ場合は、`.worktrees/` の ignore をまだ確認していない。Step 2 の前に 1 度確認する。
+multi-agent-development の implement recipe は、隔離ワークスペースを `.worktrees/` に置く場合がある。1a・1b を通った場合、または 1c で `worktrees`（代替）を選んだ場合は、`.worktrees/` の ignore をまだ確認していない。Step 2 の前に 1 度確認する。
 
 ```bash
 git check-ignore -q .worktrees 2>/dev/null || {
   echo ".worktrees/" >> .gitignore
   git add .gitignore
-  git commit -m "chore: ignore .worktrees/ for SDD task waves"
+  git commit -m "chore: ignore .worktrees for mad tasks"
 }
 ```
 

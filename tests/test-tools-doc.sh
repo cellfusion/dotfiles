@@ -7,6 +7,13 @@ doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md" 2>&1)"
 brewfile="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "install/brewfile" (dict "os" "darwin") }}' 2>&1)"
 
+assert_contains "$doc" '.agents/skills/multi-agent-development/scripts' \
+  "docs: MAD script の配布先を絶対 path で示す"
+assert_contains "$doc" 'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"' \
+  "docs: AGENT_CONFIG の fallback を示す"
+assert_contains "$doc" 'checkout 専用である' \
+  "docs: unit gate が repository 専用であることを示す"
+
 # 削除候補の節はファイル末尾まで続く。複数の assert が同じ範囲を見るので 1 回だけ切る。
 removal_section="$(printf '%s\n' "$doc" | sed -n '/^## 削除候補/,$p')"
 
@@ -66,8 +73,28 @@ done
 # --- worktree を作るレシピは後片付けが要る。片付け方が docs に無いと workspace が残る ---
 assert_contains "$doc" "archive_workspace" \
   "docs: MAD の worktree を片付ける手段を書く"
+assert_contains "$doc" 'mcp-create.prepared' \
+  "docs: MAD は create の前に一回性 marker を取ると書く"
+assert_contains "$doc" 'max_rounds` を 2' \
+  "docs: MAD review/fix の上限を2 roundに固定する"
+assert_contains "$doc" '--prepare-review' \
+  "docs: MAD review/fix の admission を通す"
+assert_contains "$doc" '--write-review-observations' \
+  "docs: scope外 observation を atomic 保存する"
+assert_contains "$doc" '--check-review-observations' \
+  "docs: scope外 observation を最終 gate 前に検査する"
+assert_contains "$doc" 'scope 外の重要事項' \
+  "docs: scope外の重要事項を observations に保留する"
+assert_contains "$doc" '新しい fix/review や hotfix node を起動しない' \
+  "docs: review/fix 中に loop を延長しない"
 assert_contains "$doc" "workspaces.json" \
   "docs: MAD の workspace 台帳の場所を書く"
+assert_contains "$doc" "--verify-only" \
+  "docs: 代表証跡は verify-only で検査する"
+assert_not_contains "$doc" "MAD_REPRESENTATIVE_RUN_APPROVED=1" \
+  "docs: API課金対象の代表 run 承認を案内しない"
+assert_not_contains "$doc" "mad-representative-run.sh --run" \
+  "docs: API課金対象の代表 run コマンドを案内しない"
 
 # --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
 # plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
@@ -202,8 +229,6 @@ done
 # MAD の implement / spike では worktree を作るのは親である。子が作ると、実装の
 # コミットが親の見ないブランチに載り、親が取る diff が空になる。
 worktrees_doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/worktrees.md" 2>&1)"
-assert_not_contains "$worktrees_doc" "sdd-run" \
-  "worktrees: 削除した sdd-run 経由の worktree 作成を書かない"
 assert_contains "$worktrees_doc" "using-git-worktrees" \
   "worktrees: worktree の手順が using-git-worktrees にあると書く"
 assert_contains "$worktrees_doc" "multi-agent-development" \
@@ -215,16 +240,11 @@ assert_not_contains "$worktrees_doc" "親は worktree を作らない" \
 assert_contains "$worktrees_doc" "mcp__paseo__create_workspace" \
   "worktrees: Paseo MCP backend の worktree 作成手段を書く"
 
-# --- MAD の下で残す SDD 基盤の役割が記録されている ---
-# sdd-run / sdd-task と補助スクリプトは MAD の implement recipe の子が使う。
-# 何のために残っているかを書いていないと、退役済みと誤解して消される。
-for s in sdd-run sdd-task task-brief task-waves task-worktree run-registry \
-         agent-backend sdd-workspace; do
-  assert_contains "$doc" "$s" "docs: MAD の下で残す $s が記録されている"
+# --- Paseo-only の実行順が記録されている ---
+for step in "list-providers" "list-models" "snapshot" "create"; do
+  assert_contains "$doc" "$step" "docs: Paseo の $step 手順を記録する"
 done
-# 呼び出し手順の所在を書いていないと、子は実行基盤を持っていても呼べない。
-assert_contains "$doc" "実行基盤の呼び出し手順は \`multi-agent-development\` スキル" \
-  "docs: 実行基盤の呼び出し手順の所在を書く"
+assert_contains "$doc" "0600" "docs: Paseo 成果物の権限を記録する"
 
 # --- README と棚卸しの整合 ---
 readme="$(cat "$CHEZMOI_SOURCE/README.md" 2>&1)"
@@ -254,3 +274,4 @@ declared="$(printf '%s\n' "$doc" | sed -n 's/^apply の中で上の表の \([0-9
 assert_eq "$declared" "$script_rows" "docs: 表のスクリプト数と本文の本数が一致する"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

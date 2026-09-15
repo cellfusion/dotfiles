@@ -17,6 +17,12 @@ FAILED=0
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# 失敗の知らせを時刻つきで出す。err.log には失敗の行しか残らないので、
+# 時刻が無いと頻度も傾向も後から追えない。
+warn() {
+  printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" >&2
+}
+
 # 「Sep 3 7pm」の形の日時を epoch 秒にする。/usage は年を書かず、分がちょうどの
 # ときは分を省く。今年として解釈し、週次のリセットは常に 7 日以内の未来にあるため、
 # 1 日より過去になったときだけ翌年として解釈し直す。秒は 0 に丸める。
@@ -109,7 +115,7 @@ collect_env() {
   config_dir="${1:-}"
   cache_key="${2:-}"
   if [ ! -d "$config_dir" ]; then
-    printf '設定ディレクトリが無いので飛ばす: %s\n' "$config_dir" >&2
+    warn "$(printf '設定ディレクトリが無いので飛ばす: %s' "$config_dir")"
     FAILED=1
     return 1
   fi
@@ -125,12 +131,14 @@ collect_env() {
   grep -v -e 'hook \[' -e '^[[:space:]]*$' "$err_file" >&2
   rm -f "$err_file"
   if [ -z "$output" ]; then
-    printf '%s から使用量を取れなかった\n' "$config_dir" >&2
+    warn "$(printf '%s から使用量を取れなかった' "$config_dir")"
     FAILED=1
     return 1
   fi
   if ! printf '%s\n' "$output" | record_usage "$cache_key"; then
-    printf '%s の使用量を解釈できなかった\n' "$config_dir" >&2
+    # 何が返ってきたのかを残す。次の失敗で上書きする。キャッシュは書き換えない。
+    printf '%s\n' "$output" > "$CACHE_DIR/$cache_key.last-failure" 2>/dev/null || :
+    warn "$(printf '%s の使用量を解釈できなかった' "$config_dir")"
     FAILED=1
     return 1
   fi

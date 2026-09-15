@@ -1,436 +1,213 @@
-## 手動オーケストレーション
+# Paseo MAD の共通契約
 
-MAD は親エージェントが実行の進行を管理する。レシピを開始するたびに、次の共通契約を使う。
+MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP の discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。利用できない場合は run を開始せず `waiting_for_user` として停止する。開始後に別の backend へ切り替えたり、別の transport を試したり、同じ create を retry したりしてはならない。
 
-1. 親は一意な run ID を発行し、`~/.agents/skills/_shared/scripts/agent-docs-dir` に
-   `orchestration/<run-id>` を渡して run ディレクトリを作る。返るパスは
-   `~/docs/<owner>/<repo>/orchestration/<run-id>/` である。保存先はリポジトリの作業ツリーの
-   外にあるので、run の成果物が呼び出し元のリポジトリに混ざらない。親は run 全体の状態と
-   各子の成果物をこのディレクトリに集める。
-2. 親は最初に Paseo MCP の接続可否を確認する。利用可能なら Paseo MCP で子を起動し、状態確認、
-   ログ取得、中断を行う。`manual-orchestration-validate --select-backend` は backend selector の
-   成果物形式を確認できる。利用できない場合だけ、`[dispatch-subagent: role]` で組み込みの
-   subagent を起動する。実行開始後の失敗を別 backend へ自動的に切り替えてはならない。
-3. run 全体の状態は `<run-dir>/state.json` だけに保存する。子の成果物は必ず
-   `<run-dir>/nodes/<node-id>/attempts/<attempt-id>/` に分離し、その中に `prompt.md`、
-   `result.md` または `result.json`、`state.json`、`handoff.json`、`log.md` を残す。`handoff.json`
-   には後段へ渡す `artifact_paths` を絶対パスだけで記録する。node 直下に成果物や
-   `state.json` を置いてはならない。同じ node を再実行するときも新しい `<attempt-id>` を発行し、
-   既存 attempt のファイルを上書きしてはならない。
-4. 親は子の完了後に `state.json` と成果物を確認する。親が確認して次の処理を許可するまで、
-   統合・裁定・次のラウンドへ自動的に進めてはならない。失敗した子は親が再指示、再実行、停止を
-   判断し、失敗を隠して統合してはならない。
-5. 統合役や後段の子には、本文を会話へ転記せず、入力成果物の絶対パスだけを渡す。親が読むのは
-   状態と必要最小限の統合要約とし、子の本文を親の最終応答へ自動転記しない。
+## 実行pathの初期化
 
-### run とノードの状態
-
-run の `state.json` と attempt の `state.json` は別の責務を持つ。双方とも JSON object とし、
-パスの名前だけに依存せず、識別子を state の第一級フィールドとして保存する。
-
-- run state: `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、
-  `started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、
-  `completed_nodes`、`adopted_attempts`、`artifact_paths`。ユーザー判断が必要なときは
-  `decision_request` に request ファイルの絶対パスを記録する。worktree を作る run では、確定した
-  base を `base` に記録する。
-- attempt state: `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、
-  `started_at`、`finished_at`、`child_ref`、
-  `backend`、`backend_reason`、`parent_decision`。`node`、`attempt`、`round` はディレクトリ名や
-  ログの文言ではなく state の第一級フィールドである
-- `state`: `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` の
-  いずれか。user gate では run の `state` と `phase_state` を `waiting_for_user` にする。
-- `started_at` と `finished_at`: 状態が変わった時刻。書式は UTC の ISO 8601、すなわち
-  `YYYY-MM-DDTHH:MM:SSZ` とする。`state` が `running` の attempt では `started_at` を必須にする。
-  期限超過の判定が `started_at` を読むためである。`finished_at` は未完了なら未設定でもよい
-- `child_ref`: 親が起動した子の識別子。Paseo MCP なら `mcp__paseo__create_agent` が返した
-  `agentId`、`Agent` ツールなら `Agent` ツールが返した識別子を入れる。この値が無いと、親は後から
-  子の生存を確認できない。`state` が `pending` の attempt は子をまだ起動していないので
-  `child_ref` を持たなくてよい。それ以外の `state` では非空の文字列にする
-- `backend`: `paseo-mcp` または `subagent` と、選択理由
-- `error`: 失敗時のエラー概要。成功時は空でもよい
-- `parent_decision`: 親が確認した境界での継続、再実行、停止、統合の判断
-
-親は子を起動した直後に、その attempt state の `child_ref` と `started_at` を書く。書いてから
-「子の完了検知」の見張りを起動する。
-
-attempt state の `run_id`、`node`、`attempt` は、それぞれ run、node、attempt のディレクトリ名と
-一致させる。`round` は run state の `current_round` 以下の非負整数にする。この照合によって、並列子の
-書き込み先取り違えや再実行による成果物の上書きを検出する。
-
-`adopted_attempts` は node ID から親が採用した attempt ID への map である。run を `ok` にする前に、
-各完了 node の採用 attempt を明示する。採用 attempt が `ok` なら、履歴上の `failed` attempt は retry
-成功を妨げない。親は採用 attempt の `handoff.json` だけを後段へ渡し、本文を会話へ転記しない。
-
-### provider と model の解決
-
-親は子を起動する前に `mcp__paseo__list_providers` と `mcp__paseo__list_models` で可用性を
-確かめる。そのうえで `mcp__paseo__create_agent` の `provider`、`settings.thinkingOptionId`、
-`settings.modeId` を決める。
-
-`mcp__paseo__list_providers` は全 provider を絞り込まずに返す。各 provider は `enabled`（真偽値）と
-`status`（`available` または `unavailable`）を持つ。親は `enabled` が `true` かつ `status` が
-`available` の provider だけを利用可能として扱う。どちらか一方でも条件を満たさない provider は
-候補から外す。
-
-候補の優先順位は `~/.agents/agent-defs/paseo-routing.json` が role ごとに持つ。リポジトリごとの
-上書きは `~/.agents/agent-defs/paseo-project-routing.json` が持つ。rule は git remote かリポジトリの
-パスで照合する。ssh 形式 (`git@host:path`) と https 形式の remote は、どちらも `host/path` に
-正規化してから比べる。
-
-一致した rule は、候補に 2 段階の上書きを掛ける。第 1 に、rule の `roles` に対象の role の項が
-あるとき、その配列が `paseo-routing.json` の候補配列そのものを置き換える。`roles` に対象の role が
-無いときは `paseo-routing.json` の候補をそのまま使う。第 2 に、rule の `providerMap` は候補の
-provider id を別の provider id へ読み替える対応表である。
-
-`roles` の置き換えと `providerMap` の間で、親は自分が動いている AI 環境を候補に当てる。当てるのは
-validator の `--resolve-candidates` である。`MAD_VALIDATE` の決め方は「成果物契約の受け入れ検証」と
-同じである。このブランチを merge した後に `chezmoi apply` を実行してから MAD を使うため、配布先の
-validator を使う。
+配布済みのMAD scriptは`~/.agents/skills/.../scripts`にあり、`PATH`には依存しない。次を同じshellで一度だけ設定してから、以下の手順で使う。`AGENT_CONFIG`は正本configの場所であり、共有module置き場ではない。
 
 ```bash
-MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
-bash "$MAD_VALIDATE" --resolve-candidates researcher
-bash "$MAD_VALIDATE" --resolve-candidates researcher '[{"provider":"claude"}]'
+MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
+MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
+MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
 ```
 
-第 2 引数を渡さないときは `paseo-routing.json` の候補を使う。rule の `roles` で候補を差し替えた
-親は、差し替えた後の配列を第 2 引数に渡す。
+`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
 
-`--resolve-candidates` は、環境変数 `AGENT_ENV` が持つ環境名を候補の provider id に付ける。Paseo は
-provider ごとに `AGENT_ENV` を注入するので、親が `claude-work` で動いていれば `work` が入る。
-`AGENT_ENV` が `default` か未設定なら、先頭環境は接尾辞を持たないので候補を変えない。それ以外の
-環境では、`codex` と `claude` の候補が `codex-work`、`claude-work`、`codex`、`claude` の順に
-なる。同じ環境の provider を先に置き、読み替え前の候補を後ろに残す。同じ環境の provider が
-すべて使えないときだけ、親は後ろの候補へ落とす。
+## provider と model の解決
 
-`--resolve-candidates` の出力に rule の `providerMap` を当てる。仕事のリポジトリで使う provider を
-`providerMap` が名指ししている場合、その指定が環境の読み替えより優先する。親はこの読み替え後の
-provider id で利用可能性と model を確認する。
-
-親は候補を確定する前に、候補の provider id をすべて validator へ渡して 5 時間のセッション枠の残量を
-確かめる。`MAD_VALIDATE` の決め方は「成果物契約の受け入れ検証」と同じで、`chezmoi apply` 前は配布先に
-validator が無いのでソース側を使う。
+親はまず、Task 5 の exporter が生成した export を配布 module で検証する。
 
 ```bash
-bash "$MAD_VALIDATE" --check-usage claude-work claude codex-work codex
+MAD_SHARE="$HOME/.local/share/agent-config"
+node -e 'const c=require(process.argv[1]); c.writeResolvedExport0600(process.argv[2], process.argv[3])' \
+  "$MAD_SHARE/mad-contract.js" "$AGENT_CONFIG" "$RUN_DIR/resolved-export.json"
+node -e 'const c=require(process.argv[1]); c.writeProviderEnumeration0600(process.argv[2], process.argv[3])' \
+  "$MAD_SHARE/mad-contract.js" "$RUN_DIR/resolved-export.json" "$RUN_DIR/provider-enumeration.json"
 ```
 
-出力は 1 行 1 provider の JSON object で、引数の順に並ぶ。フィールドは `provider`、`session_pct`、
-`session_resets_at`、`verdict` の 4 つである。`session_pct` は 5 時間のセッション枠の使用率で、整数か
-`null` になる。`session_resets_at` はセッション枠の回復時刻で、unix 時刻の整数か `null` になる。
-`verdict` は `ok`、`low`、`exhausted`、`unknown` のいずれかで、使用率が 95 以上なら `exhausted`、
-80 以上なら `low`、それ未満なら `ok`、使用率が取れないなら `unknown` になる。
+`provider-enumeration.json` の provider ID 集合だけを discovery の入力にする。親は adapter の `list-providers` を一回呼び、列挙集合と `available: true` の集合の積集合に対して `list-models --provider <id>` を一回ずつ呼ぶ。未選択の provider に model discovery を行わない。adapter は discovery と wait/stop の transport と応答の strict な形の境界であり、親は raw response、account metadata、credential、URL を保存しない。adapter は create の subcommand を持たない。
 
-親は候補を次の順で並べ直す。
+各 response を検査してから、mode 0600 の regular file として保存する。`mad-contract.js` の `writeAvailabilitySnapshot0600` は列挙集合を snapshot の入力集合にし、available でない provider の models を空配列にする。snapshot が不正、欠落、書き込み失敗のときは create を行わず、run の `state` と `phase_state` を `waiting_for_user` にする。
 
-1. `--resolve-candidates ROLE [CANDIDATES_JSON]` で AI 環境を当てた候補の並びを得る。
-2. 一致した rule の `providerMap` を当てる。
-3. 並べ直した後の provider id をすべて `--check-usage` に渡す。
-4. `verdict` が `exhausted` の候補を、互いの相対順序を保ったまま末尾へ移す。`low` と `unknown` は
-   移さない。
-5. 移した候補と理由を attempt state の `backend_reason` に書く。
-6. 並べ直した候補に対して、この節の残りの手順どおり可用性と model と `thinkingOptions` を確かめる。
-
-すべての候補が `exhausted` だったときは、親は子を起動しない。run の `state` と `phase_state` を
-`waiting_for_user` にし、`next_action` に全候補が `exhausted` であることと最も早い
-`session_resets_at` を書いてユーザーへ渡す。`session_resets_at` は unix 時刻なので、ユーザーへ渡す
-前に読める時刻へ変換する。残量のある候補が無い状態で起動すると、成果物を残さずに終わる子を作り、
-再実行も同じ結果になるためである。子を起動しなかった attempt は `state` を `pending` のまま残す。
-
-残量が分からないときは run を止めない。`--check-usage` は `unknown` を返して終了コード 0 で終わる。
-親は `unknown` の候補を並べ直しの対象にしない。
-
-tier と access から model・thinking・mode への対応は `~/.agents/agent-defs/paseo-providers.json` が
-持つ。tier と access は `~/.agents/agent-defs/manifests.json` の role の項が持つ。親は候補を
-優先順位どおりに調べ、次のすべてを満たす最初の候補を採用する。第 1 に、provider が利用可能である。
-第 2 に、`mcp__paseo__list_models` にその provider の対応 model が載っている。第 3 に、その model の
-`thinkingOptions` が、tier に対応する thinking option を含む。model が存在しても要求する
-`thinkingOptions` を持たない場合は、その候補を採用しない。
-
-どの候補も使えない場合は推測で代替せず止める。
-
-`paseo-providers.json` の `modes` は role の `access` を provider の mode に対応させる表である。
-claude の `write` が対応する `bypassPermissions` は、許可の確認を出さないモードであり、書き込める
-パスの制限ではない。書き込む役が worktree の外に書かない保証は、role のプロンプトの指示だけである。
-仕事のリポジトリでこの mode を使うかどうかは利用者が判断する。
-
-native subagent 側は `~/.agents/agent-defs/routing.json` の engine 解決に従う。native subagent は
-provider を選ばず、親のプロセスから環境変数を継承する。どの環境のアカウントで動くかは、親を
-起動した Paseo の provider が注入した `CLAUDE_CONFIG_DIR` と `CODEX_HOME` が決める。親はこの
-2 つを子へ渡す前に書き換えない。
-
-### 子の起動
-
-`mad-attempt-v1` は attempt の成果物契約の名前である。`~/.agents/agent-defs/manifests.json` の
-`artifact_contract` がこの値を持つ role は、次の 3 つを満たす。第 1 に、子は role の schema に従う
-JSON だけを返し、本文を親へ返さない。第 2 に、親はその JSON を attempt の `result.json` に保存する。
-第 3 に、親は JSON に含まれる絶対パスを attempt の `handoff.json` の `artifact_paths` へ写す。
-
-親は子を起動する前に、attempt ディレクトリの `prompt.md` を書く。`prompt.md` は 3 つを含む。
-role の指示は `~/.agents/agent-defs/prompts/<role>.md` の内容とし、入力は成果物の絶対パスだけとし、
-出力形式は `~/.agents/agent-defs/schemas/<role>.json` の内容と「この schema に従う JSON だけを返す」
-という指示とする。どちらのファイルも `chezmoi apply` 前は存在しないので、その場合はこの
-checkout の `.chezmoitemplates/agent-defs/` 側を読む。
-
-- Paseo MCP: `create_agent` の `provider`、`settings.thinkingOptionId`、`settings.modeId` は
-  「provider と model の解決」の手順で決め、`initialPrompt` に `prompt.md` の内容をそのまま渡す。
-  `create_agent` は system prompt も出力 schema も別の引数に取らないため、両方を `initialPrompt`
-  に含める。
-- native subagent: `[dispatch-subagent: <role>]` で起動する。role の定義は
-  `~/.agents/agent-defs/prompts/<role>.md` から生成済みなので、渡すのは入力と出力形式だけでよい。
-
-親は子の構造化出力を attempt の `result.json` へ保存する。schema に合わない出力は親が整形せず、
-その attempt を `failed` として記録する。schema を持たない補助的な子だけが `result.md` を残す。
-
-### 子の完了検知
-
-親は子を起動した直後に、その attempt に対する見張りを 1 つ、背景の Bash で起動する。前面の Bash では
-`sleep` が拒否されるため、`run_in_background` を `true` にして起動する。背景の Bash は終了時に親を
-呼び戻すので、通知が届かない子でも親が必ず再開する。
-
-Paseo MCP の子は `paseo wait` で待つ。
+snapshot の保存後、親は次の CLI のみで launch を解決する。
 
 ```bash
-CHILD_REF="<create_agent が返した agentId>"
-status="$(paseo wait "$CHILD_REF" --timeout <待ち時間> --json 2>/dev/null | jq -r '.status // "unknown"')"
-printf 'watchdog %s %s\n' "$CHILD_REF" "$status"
+"$MAD_GENERATOR" --input "$AGENT_CONFIG" resolve \
+  --project "$PROJECT" --role "$ROLE" --provenance mad-dispatch \
+  --snapshot "$RUN_DIR/snapshot.json" > "$RUN_DIR/launch.json"
 ```
 
-`paseo wait` は子が `idle` になるまで待ち、`--timeout` の秒数を超えたら戻る。返す JSON の `status` は
-`idle`、`timeout`、`error` のいずれかである。終了コードはどの場合も 0 なので、親は終了コードではなく
-`status` で判断する。`--json` の `message` は子の直近の活動履歴を全文で持つため、親は
-`jq -r '.status'` で 1 語だけを取り出す。JSON をそのまま出力すると、別の子の本文が親の文脈へ流れ込み、
-「本文を親の会話へ転記しない」という契約に反する。
+成功時の stdout は `mad-launch-spec` 一件で exit 0、候補が尽きたときは `mad-launch-failure` 一件で exit 4、入力または snapshot が不正なときは exit 2 である。exit 4 は `waiting_for_user`、exit 2 は `failed` として create を行わない。成功 launch は strict に検査し、`modeId` が `auto` でないもの、allowlist に無い feature、宣言型と違う scalar、整数でない整数 feature を拒否する。
 
-`Agent` ツールの子は shell から生存を確認する手段が無いので、待ち時間だけで終わる。
+## create request と state
+
+create の順序は `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
+
+launch の検証後、親は `buildMadCreateRequestV1` を使って次の 6 つの top-level key だけを持つ request を作る。key は公式 MCP tool の引数と一対一に対応する。
+
+```text
+title, workspaceId, initialPrompt, notifyOnFinish, provider, settings
+settings: modeId, thinkingOptionId, features
+```
+
+`provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto`、`settings.features` は launch の `featureValues` そのものである。`claude` と `codex` は `fast_mode` の `true`/`false` をここに載せられる。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、`mcp-create.json` という mode 0600 の regular file とする。runner はここで停止し、create の transport を実行しない。
+
+親は `mcp-create.json` を読み、`assertMadCreateRequestV1` で再検証してから、その 6 key をそのまま `mcp__paseo__create_agent` の引数に渡す。検証を通していない request で create を呼ばない。Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create の経路に使わない。
+
+create の直前の検証は次で行う。state、call log、消費 marker のいずれも変更しない。
 
 ```bash
-CHILD_REF="<Agent ツールが返した識別子>"
-sleep <待ち時間>
-printf 'watchdog %s timeout\n' "$CHILD_REF"
+"$MAD_VALIDATE" --assert-create-request \
+  --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
 ```
 
-`<待ち時間>` は「既定値」の表が持つ秒数を使う。既定は 1200 秒、`implement` と `spike` は 3600 秒で
-ある。親がレシピごとに値を指定した場合は、指定した値を使う。
+この assertion は `mcp-create.json` が mode 0600 の regular file であること、重複 key が無いこと、`MadCreateRequestV1` の exact key set であること、`settings.modeId` が `auto` であること、`settings.features` が launch の provider の allowlist に収まり `featureValues` と一致すること、`provider` が `<launch.provider>/<launch.model>` であることを確認する。exit 2 のときは create を呼ばない。
 
-見張りが終わると親に通知が届く。親は次の順で処理する。
+`--assert-create-request` は検証だけを行い、marker を作らない。検証を通ったことは、create を呼ぶ権利にはならない。同じ attempt を見る 2 つの親が同時にこの assertion を通れば、`mcp__paseo__create_agent` を 2 回呼べてしまう。そのため、create を呼ぶ直前には次の `--prepare-create` を必ず通す。
 
-1. 子の完了通知を先に受け取っていたなら、見張りを `TaskStop` で止め、通常どおり成果物を確認する。
-   停止に失敗しても構わない。後から届く `watchdog ... timeout` は、attempt に構造化出力が既にある
-   ため 2 の判定で通常の処理へ進む。
-2. 完了通知を受け取っていないなら、attempt に構造化出力が残っているかを確認する。残っていれば
-   通常どおり処理する。
-3. 出力が無く、見張りの `status` が `idle` だったなら、その子は成果物を残さずに終了している。親は
-   attempt を `failed` として記録し、`error` に構造化出力が無いことと `status` の値を書く。同じ node に
-   新しい `<attempt-id>` を発行して、同じ backend で 1 回だけ再実行してよい。再実行の前に「provider と
-   model の解決」の残量確認を通す。
-4. 出力が無く、`status` が `timeout`、`error`、`unknown` のいずれかだったなら、親は再実行しない。
-   run の `state` と `phase_state` を `waiting_for_user` にし、`next_action` に裁定待ちであることと
-   `status` の値を書いてユーザーへ渡す。子が生きたまま二重に走ることを防ぐためである。`Agent`
-   ツールの子は常にこの経路へ入る。
+```bash
+"$MAD_VALIDATE" --prepare-create \
+  --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
+```
 
-親は `mcp__paseo__create_agent` の `notifyOnFinish` を既定の `true` から変えない。見張りは通知の
-代わりではなく、通知が届かない場合の受け皿である。
+create は attempt ごとに一回だけである。`--prepare-create` は `--assert-create-request` と同じ request の strict 検証に加えて、attempt state が厳密に `{"state":"pending","create_accepted":false}` の 0600 regular file であること、call log が `MadCallLogV1` を満たし `create_agent`、`wait_agent`、`stop_agent`、`failure` の event を持たないことを確認する。全て成功した後にだけ、mode 0600 の `mcp-create.prepared` を `O_EXCL` で作る。`--prepare-create` が成功した呼び出しだけが `mcp__paseo__create_agent` を呼べる。exit 2 のときは create を呼ばない。
 
-1 attempt につき見張りは 1 つとする。見張りは子を停止せず、観測した `status` を親へ返すだけである。
+検証に落ちた呼び出しは marker を残さず、state と call log も書き換えない。request が契約を満たさないときは marker が存在しないままである。marker を既に取られている二回目と同時実行の敗者も、marker、state、call log のどれも書き換えずに exit 2 で止まる。
 
-### worktree 隔離
+`--exercise-accepted` は marker を作らない。`mcp-create.prepared` が 0600 の regular file で `{"version":1,"type":"mad-create-prepare","consumed":true}` の exact key set であることを確認し、attempt state と call log の受理前検査を通してから response を処理する。marker が無い、mode が違う、schema が違う、又は既に受理済みの attempt は、state と call log を一切書き換えずに exit 2 で拒否する。
 
-`implement` と `spike` は子が同時にファイルを書くので、node ごとに worktree を作る。同じ
-作業ディレクトリで並列に起動すると、子の書き込みが互いを上書きする。
+create は child ごとに一回だけである。親は返ってきた response を `{"status":"accepted","childRef":"<safe-id>"}` の exact key set に縮約し、basename-safe opaque な `childRef` だけを保存する。raw response、activity、log、`inspect` 出力を state にも log にも残さない。attempt state は create 前に `create_accepted: false` を保存し、親は key set が厳密な accepted response の `childRef` を受け取ったときだけ `create_accepted: true`、`state: running`、`child_ref` を同時に保存する。この true は wait timeout/error、親の decision、`failed`、`waiting_for_user`、`unresolved`、`stopped`、`ok` を含む以後の全 state で保持し、child_ref を必須にする。受理前の discovery、resolve、request build、create の失敗は `create_accepted: false` かつ child_ref を持たない。欠損、未知 key、重複 key、型不正、不安全な ID、拒否、transport failure は `failed` とし、retry を行わない。
 
-worktree を作るのは親である。`mcp__paseo__create_agent` は作成時に `workspaceId` を要求するので、
-子を起動する前に workspace が存在している必要がある。親は台帳の `cwd` から diff を取るので、子が
-別の場所に worktree を作ると親が取る diff が空になる。子は親が渡した worktree の中で働き、自分では
-worktree を作らない。
+`notifyOnFinish` は `mcp__paseo__create_agent` が持つ引数なので、request の boolean をそのまま渡す。完了検知は accepted `childRef` を使う polling であり、親は adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>` を child ごとに一つだけ呼ぶ。adapter は内部で wait の raw response の allowed key (`agentId`、`status`、`message`) と必須の `agentId` が childRef に一致することを検証してから `{"status":"idle"|"timeout"|"error"}` に縮約する。停止も親が直接 CLI/MCP を呼ばず、adapter の `stop-agent --child-ref <safe-id>` を使う。adapter は停止 response の allowed key (`stoppedCount`、`agentIds`)、`stoppedCount: 1`、`agentIds` の一件、および childRef との完全一致を検証してから `{"status":"stopped"}` に縮約し、transport または不正 response は `{"status":"error"}` だけを返す。wait/stop の status 以外の活動履歴・本文・raw response を state/log へ保存しない。
 
-- Paseo MCP: `mcp__paseo__create_workspace` を呼ぶ。`isolation` は `worktree`、`mode` は
-  `branch-off`、`path` は呼び出し元のパス、`branchName` は `mad/<run-id>/<node-id>`、
-  `baseBranch` は確定した base、`title` は node の用途を示す文字列にする。
-  返り値は `workspaceId` と `cwd` を持つ。`cwd` は作られた worktree の絶対パスである。
-  `workspaceId` を `mcp__paseo__create_agent` の `workspaceId` に渡し、`cwd` を台帳へ記録する。
-  `workspaceId` を渡すときは、作業ディレクトリを別に指定しない。
-- native subagent: `Agent` ツールの `isolation` に `worktree` を渡す。`workspace_id` には `Agent`
-  ツールが返す子の識別子を、`cwd` には `git worktree list` で確認した worktree の絶対パスを記録する。
+成功 run の call log は `mad-call-log` として discovery、create、wait、必要な stop の順序、回数、検証済み artifact path と縮約済み wait/stop status だけを記録する。実運用の state と log に prompt、request payload、raw adapter response、credential、auth/history、URL を入れない。fixture の匿名 call log だけが検証済み request payload を持てる。
 
-作った workspace は run ディレクトリ直下の `workspaces.json` に記録する。形式は node ID をキーとし、
-値が `workspace_id`、`cwd`、`branch`、`integration`、`archived` を持つ object である。`cwd` は
-絶対パスにする。`integration` は作った時点では `pending` にし、`archived` は作った時点では `false`
-にする。
+`MadCallLogV1` は `{version:1,type:"mad-call-log",events:[...]}` である。event は `seq` と `operation` に加えて、次の表の key だけを持つ。`seq` は 0 から連続する整数であり、配列の index と一致する。宣言に無い key、宣言に無い `operation`、飛んだ `seq`、URL を含む値は exit 2 である。runner は書き込む前にこの検査を通す。
 
-1 node につき workspace は 1 つとする。node が失敗して作り直す場合は、同じ workspace を再利用するか、
-新しい node ID を発行する。台帳の既存の key を別の `workspace_id` で上書きしてはならない。上書きすると
-前の `workspace_id` が台帳から消え、後片付けの対象から外れる。
-
-run ディレクトリはリポジトリの作業ツリーの外にあるので、worktree の中には現れない。子へ渡す要件ファイルは絶対パスにする。
-
-### base の確定
-
-`base` 引数が空なら、親は現在のブランチを base として使う。detached HEAD なら base を決められない
-ので、run を開始せずに止める。
-
-確定した base は run の `state.json` の `base` に記録する。run state が base の唯一の記録である。
-
-### diff の受け渡し
-
-レビュー役と judge は worktree の中を見られない。実装役は別の workspace で働くので、後段が
-自分の作業ディレクトリを読んでも実装の変更は現れない。親が差分を取り出して attempt へ置く。
-
-親は `workspaces.json` のその node の `cwd` を `git -C <cwd> diff <base>...HEAD` に渡し、出力を
-実装役の attempt ディレクトリの `diff.patch` に書く。diff を取るのは後片付けより前である。
-`archived` が `true` になった workspace の `cwd` は既に存在しないので、archive の後では diff を
-取れない。
-
-上限行数は `implement` が 2000 行、`spike` が 800 行である。超えた分は切り、切ったことと元の
-行数をファイル末尾に注記する。
-
-後段には `diff.patch` の絶対パスだけを渡す。diff の本文を親の会話へ転記しない。
-
-diff の取得に失敗したら、中身の無いレビュー依頼を作らず run を止める。親は `git` コマンドが
-0 以外で終わった場合と、正常に終わって出力が空だった場合を区別する。前者は取得の失敗なので
-run を `failed` として停止する。後者は変更が無いという結果なので、親が次の処理を判断する。
-
-### 改稿前の退避
-
-`refine` の親は、改稿役を起動する前に対象ファイルを attempt ディレクトリの `before/` へ複製する。
-複製先は `before/<対象ファイルの basename>` とし、改稿役には対象ファイルの元のパスだけを渡す。
-改稿を採用しないと決めたとき、親はこの複製から元の内容に戻す。attempt ディレクトリが持てる
-ディレクトリは `before/` だけであり、`before/` は複製したファイルだけを持つ。
-
-退避されるのは対象ファイルだけである。改稿役が同じディレクトリの別のファイルを変更した場合は
-戻せない。親は改稿役への指示に、対象ファイル以外を変更しないことを書く。
-
-対象ファイルが呼び出し元のパスの外にある場合は、run を開始せずに止める。
-
-### 既定値
-
-| 項目 | 値 |
+| operation | 追加 key |
 |---|---|
-| 子の待ち時間の既定 | 1200 秒 |
-| `implement` と `spike` の子の待ち時間 | 3600 秒 |
-| 同時に走らせる子の上限 | 4 |
+| `enumerate_materialized_provider_ids` | `providerIds` |
+| `list_providers` | `callCount`、`materializedProviderIds`、`availableProviderIds` |
+| `list_models` | `callCount`、`provider` |
+| `write_snapshot` | `path`、`mode`、`regularFile` |
+| `resolve` | `exitCode`、`outputType`、`stdoutDocuments` |
+| `build_create_request` | `path`、`mode`、`regularFile`、`topLevelKeys`、`settingsKeys`、`validatedBeforeWrite` |
+| `create_agent` | `callCount`、`requestPath`、`transport` |
+| `wait_agent` | `callCount`、`timeoutSeconds`、`status` |
+| `stop_agent` | `callCount`、`status` |
+| `failure` | `stage`、`exitCode`、`createCalls`、`state` |
 
-親がレシピごとに値を指定した場合は、指定した値が既定より優先する。
+`create_agent.transport` は `mcp__paseo__create_agent` の一語に固定する。create の経路が公式 MCP tool だけであることを、この値が証跡として示す。
 
-### 成果物契約の受け入れ検証
+run の対応は次で固定する。
 
-親は子を起動する backend と切り離して、run の完了前に次を実行する。これは Paseo MCP の実在ツールを
-呼ばず、作成済みの state と成果物だけを検証する。このブランチを merge した後に `chezmoi apply` を
-実行してから MAD を使うため、配布先の validator を使う。
+| 事象 | state | create |
+|---|---|---|
+| discovery / model discovery / snapshot の失敗 | `waiting_for_user` | 0 回 |
+| launch exit 4 | `waiting_for_user` | 0 回 |
+| launch exit 2 / launch validation / request build の失敗 | `failed` | 0 回 |
+| prepare の失敗（request 不正、state が pending でない、log に create 以後の event、marker 済み） | 変更しない | 0 回 |
+| 受理前検査の失敗（prepare marker が無い、mode 不正、schema 不正、既に受理済み） | 変更しない | 0 回 |
+| `mcp-create.json` の検証失敗 | `failed` | 0 回 |
+| create の拒否 / accepted response の契約違反 | `failed` | 1 回 |
+| create 受理 | `running` | 1 回 |
+| 子の decision request | `unresolved` | 親が停止 |
+
+## delivery role map
+
+MAD の delivery role は次の 4 役である。各 role は同名の `agent-defs/prompts/<role>.md` と `agent-defs/schemas/<role>.json` を持ち、正本の `agentRoles` に同じ key で登録する。
+
+| role | 責務 |
+|---|---|
+| `implementer` | 実装と検証 |
+| `task-reviewer` | task 単位の spec / quality review |
+| `re-reviewer` | fix diff の指摘判定 |
+| `final-reviewer` | branch 全体の最終 review |
+
+親は role の prompt と schema の絶対 path を子の `initialPrompt` に含め、子の JSON を `result.json` と `handoff.json` の artifact path へ保存する。read role の `access` は prompt と artifact contract の情報だけを示し、Paseo mode を変更しない。
+
+## review/fix の上限と scope
+
+review/fix loop は task ごとに **max_rounds は 2** とする。round `0` は task-reviewer の初回 review、round `1` は同じ task scope の fix と re-review であり、これで解決しない finding、または新しい hotfix node はこの run で扱わない。上限到達時は `unresolved` として停止し、新しい fix/review を起動しない。
+
+親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 2`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。
+
+review/fix child を create する前に、必ず次を実行する。
 
 ```bash
-MAD_VALIDATE="$HOME/.agents/skills/multi-agent-development/scripts/manual-orchestration-validate"
-bash "$MAD_VALIDATE" "$RUN_DIR"
+"$MAD_VALIDATE" --prepare-review \
+  --run-dir "$RUN_DIR" --task "$TASK_ID" --phase review \
+  --node "$TASK_ID-review" --attempt "$ATTEMPT_ID" --scope-file "$SCOPE_FILE"
 ```
 
-validator が失敗した run は `ok` にせず、親が `failed` または `stopped` と記録して確認する。
+fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review --node "$TASK_ID-re-review"` とし、同じ scope marker を使う。admission が失敗したら `mcp__paseo__create_agent` を呼ばない。親は fix 後に `"$MAD_VALIDATE" --check-review-scope --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"` を実行し、scope 外なら fix を採用しない。
 
-validator は `overdue attempt: <node>/<attempt> started_at=<値> elapsed=<秒>s limit=<秒>s` の行を
-標準出力へ出すことがある。`state` が `running` の attempt が、`started_at` から待ち時間を超えて
-残っているという観測結果であり、契約違反ではないので終了コードは 0 のままである。この行を受け取った
-親は「子の完了検知」の 3 と 4 の手順へ進む。待ち時間は recipe から決まり、run state に
-`child_timeout_seconds` が正の整数としてあればその値を使う。この行は run の `state` によらず出るので、
-`stopped` の run に残った `running` の attempt も報告の対象になる。
+spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad-review-observations` として `outOfScopePath` に 0600 で保持する。review/fix 中はそれを理由に新しい fix/review を起動しない。最終 gate で一度だけ decision request に列挙し、ユーザーが scope 拡張を承認した場合は元 run を再利用せず、新しい task/run として開始する。
 
-レシピごとに、run を `ok` にする前に `completed_nodes` と `adopted_attempts` へ入っていなければ
-ならない node がある。親はこの node ID をそのまま使う。
+観測は次で atomic に保存する。
 
-| レシピ | 必須 output node |
-|---|---|
-| `research` / `fanout` | `synthesis` |
-| `decide` / `debate` | `verdict` |
-| `spec` | `spec-author` |
-| `plan` | `planner` |
-| `implement` / `delivery` | `final-review` |
-| `review` | `review-synthesis` |
+```bash
+"$MAD_VALIDATE" --write-review-observations \
+  --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE" \
+  --input "$OBSERVATION_INPUT"
+```
 
-run の `state` が `pending` または `running` の間は、`phase_state` に完了した phase の状態を
-残してよい。それ以外の `state` では `phase_state` を `state` と同じ値にする。
+観測ファイルは最終 gate 前に次で検査する。
 
-### 子からの判断要求
+```bash
+"$MAD_VALIDATE" --check-review-observations \
+  --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE"
+```
 
-子は、判断に必要な情報が欠けるときに推測で成果物を完成させてはならない。要求の伝え方は role の
-`access` で 2 通りに分かれる。`access` は `~/.agents/agent-defs/manifests.json` が role ごとに持つ。
+## plan dependency gate
 
-要求に書くものは、どちらの経路でも次の 4 つである。
+plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証する。
 
-- 質問 — 何を決めてほしいかを 1 文で書く
-- 選択肢 — 選べる案を 2 つ以上挙げ、それぞれ選ぶと何をするのかを書く
-- 推す案とその理由 — どれかを推すなら、推す案と理由を書く。推さないなら、推せない理由を書く
-- 確認済みのこと — 判断できないと分かった時点で、何を調べて何が分かったかを書く
+```bash
+"$MAD_PLAN_VALIDATE" "$PLAN_FILE"
+```
 
-**`access` が `write` の role**（`spec-author`、`plan-author`、`implementer`、`writer`）は、attempt
-ディレクトリの `decision-request.md` に要求を書き、構造化出力の `decisionRequestPath` にその絶対
-パスを入れて返す。判断を求めないときは `decisionRequestPath` を `null` にする。親は子を起動する前に、
-その attempt の `decision-request.md` の絶対パスを決め、`prompt.md` の入力に
-`DECISION_REQUEST_PATH` という名前で含める。role の指示はこの名前で書き先を参照する。
+存在しない Task の参照、循環、同じ wave の Files 衝突があれば exit 2、問題が無ければ stdout 空で exit 0 である。plan を検証できないときは後段の child を起動しない。
 
-**`access` が `read` の role**（`reviewer`、`researcher`、`judge`、`synthesizer`、
-`review-synthesizer`）は、ファイルを書く手段を持たない。この role には書き込み系のツールを渡さない
-ためである。要求は構造化出力の `decisionRequest` に入れて返す。`decisionRequest` は上の 4 つを
-`question`、`options`、`recommendation`、`confirmed` として持つ object である。判断を求めないときは
-`decisionRequest` を `null` にする。親はこの role に `DECISION_REQUEST_PATH` を渡さない。
+## run と attempt の状態
 
-親は子の完了後に `result.json` を読む。`decisionRequestPath` が `null` でない場合、または
-`decisionRequest` が `null` でない場合、判断が要る。
+親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
 
-`decisionRequest` を受け取った場合、親がその内容を attempt ディレクトリの `decision-request.md` へ
-書く。書き方は上の 4 つを見出しにした Markdown とし、`options` は箇条書きにする。子の代わりに
-書くのは親であるが、中身を作り直してはならない。
+run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 2`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
 
-どちらの経路でも、親は run の `state` と `phase_state` を `waiting_for_user` にし、run state の
-`decision_request` に `decision-request.md` の絶対パスを記録する。親は `decision-request.md` を
-読んで [ask-user] でユーザーへ渡す。親が子に代わって判断してはならない。
+`state` は `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` のいずれかである。`state` が `running` の attempt は UTC ISO 8601 の `started_at` と `create_accepted: true` を必須にする。`create_accepted` は必須 boolean である。false なら child_ref を持たず、true なら state を問わず basename-safe な child_ref を必須にする。`adopted_attempts` は node ID から親が採用した attempt ID への map とし、run を `ok` にする前に採用結果を確認する。
 
-ユーザーの回答を受け取ったら、親は同じ node に新しい `<attempt-id>` を発行し、その attempt
-ディレクトリに `decision.md` を書く。`decision.md` には、ユーザーが選んだ案と、ユーザーが添えた
-指示をそのまま書く。親は `decision.md` の絶対パスを入力に加えて同じ role を起動する。既存 attempt
-のファイルを上書きしてはならない。
+`handoff.json.artifact_paths` には子が返した絶対 path の regular file だけを入れる。親は `state.json` と handoff の path を確認し、子の本文を会話へ転記しない。実運用の state、handoff、log は mode 0600 とし、credential、auth/history、raw response、prompt の値を保存しない。
 
-子を起動するときに、親は run state の `decision_request` を `null` に戻し、`state` と `phase_state` を
-`running` に戻す。古い attempt の request ファイルを指したままにすると、`decision_request` が
-run の現在の状態を表さなくなる。
+## child の起動と完了検知
 
-ユーザーが何も選ばずに閉じた場合は、run を `stopped` として記録して止める。推測で先へ進めない。
+child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。system prompt と schema は role の prompt file と schema file の絶対 path を `initialPrompt` に含めて渡す。
 
-### 親の介入境界とループ
+起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は adapter の `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは adapter の `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
 
-並列子の完了後、統合や裁定の起動前に、親が確認する境界を置く。親は成果物を確認して追加指示を
-出し、一部の子だけを再実行し、後段の指示や出力形式を変更し、または run を停止できる。
+1 attempt につき create と見張りは一つだけである。create の transport failure、拒否、状態不明を別経路で補完せず、親が `failed`、`waiting_for_user`、`stopped` のいずれかを記録する。停止も adapter 以外の経路を使わず、stop の縮約結果を記録してから `stopped` を確定する。
 
-ループを持つレシピでは、各ラウンドの開始・完了、子の成果物、`parent_decision` を run の
-`state.json` に記録する。`max_rounds` は必須の安全上限であり、上限に達したら成功扱いにせず、
-最終状態を `unresolved` として保存して停止する。
+## worktree と diff
 
-### 取り込み
+`implement` と `spike` は child ごとに Paseo workspace を先に作る。workspace は `isolation: worktree`、`mode: branch-off`、呼び出し元 path、`mad/<run-id>/<node-id>` の branch、確定した base を持つ。返った `workspaceId` を create request に渡し、absolute `cwd` と branch を `workspaces.json` に記録する。workspace は node ごとに一つであり、既存の台帳 entry を別 ID で上書きしない。
 
-`mcp__paseo__archive_workspace` は workspace が持つものをまとめて片付け、worktree の
-ディレクトリを消す。`diff.patch` は上限行数で切られるので、archive の後には上限を超えた実装が
-残らない。親は run を `ok` にする前に取り込みの判断を済ませる。
+レビュー child には worktree の中身を直接読ませず、親が `git -C <cwd> diff <base>...HEAD` の出力を attempt の `diff.patch` に保存し、その絶対 path だけを渡す。diff の取得は workspace archive より前に行う。取得失敗は run を `failed` とし、空の diff は親が判断する。workspace の integration は `pending`、`merged`、`declined` のいずれかで、`declined` には理由を残す。integration の判断後にだけ archive し、`archived: true` を台帳へ書く。
 
-`implement` と `spike` の run を `ok` にする前に、親は各 workspace の実装成果を呼び出し元へ
-取り込むか、取り込まないかを決める。判断は `workspaces.json` の各エントリの `integration` に
-記録する。値は `pending`（未判断）、`merged`（取り込んだ）、`declined`（取り込まないと決めた）の
-3 つである。
+## recipe と判断要求
 
-取り込む場合は、呼び出し元のチェックアウトでそのエントリの `branch` を merge し、`integration` を
-`merged` にする。merge が衝突したら run を止め、衝突した branch と node を run の `state.json` の
-`error` に記録する。親は衝突を自分で解消しない。
+`research`、`decide`、`debate`、`fanout`、`review`、`triage` は独立 child を並列に起動し、全 child が `ok` になってから親が統合 child を一つ起動する。`spec`、`plan`、`implement`、`refine` は `max_rounds` を親が管理する。各 round の開始、成果物、parent decision、終了状態を state に残し、上限到達時に成功扱いにせず `unresolved` とする。
 
-取り込まないと決めた場合は `integration` を `declined` にし、その理由を同じエントリの
-`integration_reason` に書く。
+child が判断を要求する場合、write role は `decisionRequestPath` として absolute path を返し、read role は構造化された `decisionRequest` を返す。親は質問、選択肢、推す案と理由、確認済みのことをそのまま decision request に記録し、run の `state` と `phase_state` を `waiting_for_user` にする。回答後は同じ node に新しい attempt を発行し、既存 attempt を上書きしない。回答が無い場合は `stopped` として停止する。
 
-`mcp__paseo__archive_workspace` を呼べるのは、そのエントリの `integration` が `pending` で
-なくなった後だけである。`archived` が `true` の workspace の `cwd` は既に存在しない可能性が
-あるので、diff の取得と取り込みは archive より前に行う。
+親はフェーズ境界で child の state と成果物を確認する。失敗 child を隠して統合せず、レビュー、再実行、停止、user decision のいずれかを明示的に state へ記録する。delivery は spec、plan、implement、review、final-review の境界を順に進み、4 つの delivery role の prompt と schema を同じ artifact contract で使う。
 
-### 後片付け
+## validator と後片付け
 
-取り込みの判断が済んだら、`workspaces.json` の各 workspace を `mcp__paseo__archive_workspace` で
-片付け、その node の `archived` を `true` にする。
+親は child の実行 backend と切り離して成果物 validator を実行する。validator は MCP を呼ばず、state、attempt、handoff、workspace、artifact path の形だけを確認する。完了 recipe に必要な node の adopted attempt、regular file、integration、archive を確認し、失敗した run を `ok` にしない。
 
-archive に失敗した workspace がある run は、run ディレクトリを消さない。台帳を失うと、どの run が
-どの workspace を作ったかの対応が追えなくなる。
-
-`integration` が `pending` の workspace、または `archived` が `false` の workspace が 1 つでも
-残っている run を `ok` にしない。
+integration の判断と diff の保存が完了したら、親は workspace を Paseo MCP で archive し、台帳に `archived: true` を記録する。archive に失敗しても run directory と台帳は削除しない。`pending` の integration や未 archive workspace が残る run は `ok` にしない。

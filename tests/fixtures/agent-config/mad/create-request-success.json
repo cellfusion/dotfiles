@@ -1,0 +1,12 @@
+{
+  "title": "fixture title",
+  "workspaceId": "fixture-workspace",
+  "initialPrompt": "fixture prompt",
+  "notifyOnFinish": true,
+  "provider": "codex/sample-work",
+  "settings": {
+    "modeId": "auto",
+    "thinkingOptionId": "high",
+    "features": {}
+  }
+}
