@@ -20,7 +20,7 @@ const SETUP_TABLE = {
   },
   codex: {
     configDirectoryEnv: { CODEX_HOME: 'codex' },
-    symlinks: ['agents', 'AGENTS.md'],
+    symlinks: ['agents', 'AGENTS.md', 'rules'],
     preservedMutable: ['config.toml'],
   },
 }

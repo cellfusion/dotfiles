@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# $CODEX_HOME/rules/default.rules のうち、chezmoi が保証する範囲だけを書き換える。
+#
+# 全体を管理しない理由: Codex は承認ダイアログで永続化を選ぶと、このファイルへ
+# prefix_rule と network_rule を追記する。全体を管理すると追記のたびに
+# chezmoi diff が汚れ、chezmoi apply で巻き戻ってしまう。config.toml を
+# modify_private_config.toml.tmpl で扱っているのと同じ理由である。
+#
+# chezmoi の modify_ スクリプトは現在のファイルを stdin で受け取り、
+# 変更後の内容を stdout に出す。ファイルが無い場合は stdin が空になる。
+#
+# 2 つ目以降の AI 環境（~/.config/codex_<session>/rules）には実体を置かない。
+# run_onchange_after_90-agent-envs.sh が symlink でこのファイルを共有させる。
+#
+# decision は allow / prompt / forbidden の 3 つを取る。allow は承認を省くだけでなく
+# sandbox の外での実行まで許すので、内容を変えない操作と、このリポジトリと
+# 作業プロジェクトの検証コマンドに限る。
+set -eu
+
+BEGIN='# chezmoi-managed-begin'
+END='# chezmoi-managed-end'
+
+block="$(mktemp)"
+trap 'rm -f "$block"' EXIT
+
+{
+  printf '%s\n' "$BEGIN"
+  cat <<'RULES'
+# この囲みの中は chezmoi が管理する。手で直しても chezmoi apply で戻る。
+# 囲みの外の行は、Codex が承認の永続化で追記したものと手で足したものとして残る。
+
+# 作業プロジェクトのビルドと片付け。
+prefix_rule(pattern=["vp", "remove"], decision="allow")
+prefix_rule(pattern=["vp", "run", "build"], decision="allow")
+
+# git はファイルの内容を変えない操作と、コミットの組み立てだけを許す。
+prefix_rule(pattern=["git", "add"], decision="allow")
+prefix_rule(pattern=["git", "commit"], decision="allow")
+prefix_rule(pattern=["git", "diff", "--check"], decision="allow")
+
+# pnpm の検証コマンド。
+prefix_rule(pattern=["pnpm", "typecheck"], decision="allow")
+prefix_rule(pattern=["pnpm", "test"], decision="allow")
+prefix_rule(pattern=["pnpm", "lint"], decision="allow")
+prefix_rule(pattern=["pnpm", "build"], decision="allow")
+
+# dotfiles の確認と、このリポジトリのテスト。
+# chezmoi execute-template は入れない。テンプレートの output 関数が任意の外部
+# コマンドを実行でき、allow は sandbox の外での実行まで許すためである。
+# tests/run-tests.sh を回すときは、その中から呼ばれるので承認は要らない。
+prefix_rule(pattern=["chezmoi", "diff"], decision="allow")
+prefix_rule(pattern=["bash", "tests/run-tests.sh"], decision="allow")
+
+# スキルが毎回呼ぶスクリプト。spec と plan の保存先を返す。
+prefix_rule(pattern=["~/.agents/skills/_shared/scripts/agent-docs-dir"], decision="allow")
+
+# chezmoi apply は CLAUDE.md がユーザーの明示の許可を要ると定めている。
+# 承認ダイアログでうっかり allow に永続化されないよう、prompt で押さえる。
+prefix_rule(pattern=["chezmoi", "apply"], decision="prompt")
+RULES
+  printf '%s\n' "$END"
+} > "$block"
+
+# 囲みの中の行と、囲みの外にある管理対象と同じ規則を落として、残りを取り出す。
+# 同じ規則を落とすのは、囲みを導入した初回に手書きの行と二重にならないようにするため。
+rest="$(awk -v b="$BEGIN" -v e="$END" '
+FNR == NR {
+  if ($0 ~ /^(prefix_rule|network_rule)\(/) managed[$0] = 1
+  next
+}
+$0 == b { skip = 1; next }
+$0 == e { skip = 0; next }
+skip     { next }
+$0 in managed { next }
+{ print }
+' "$block" - | awk '
+{ line[++n] = $0 }
+END {
+  first = 1
+  while (first <= n && line[first] ~ /^[[:space:]]*$/) first++
+  last = n
+  while (last >= first && line[last] ~ /^[[:space:]]*$/) last--
+  for (i = first; i <= last; i++) print line[i]
+}
+')"
+
+cat "$block"
+[ -n "$rest" ] && printf '\n%s\n' "$rest"
+exit 0

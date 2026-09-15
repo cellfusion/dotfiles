@@ -321,7 +321,8 @@ assert_eq "$(test -e "$NO_TARGET_HOME/.paseo/config.json" && echo yes || echo no
 
 SETUP_XDG="$TMP/setup-xdg"; mkdir -p "$SETUP_XDG/claude" "$SETUP_XDG/codex"
 mkdir -p "$SETUP_XDG/claude/agents" "$SETUP_XDG/claude/commands" \
-  "$SETUP_XDG/claude/skills" "$SETUP_XDG/claude/hooks" "$SETUP_XDG/codex/agents"
+  "$SETUP_XDG/claude/skills" "$SETUP_XDG/claude/hooks" "$SETUP_XDG/codex/agents" \
+  "$SETUP_XDG/codex/rules"
 for name in CLAUDE.md settings.json; do : > "$SETUP_XDG/claude/$name"; done
 : > "$SETUP_XDG/codex/AGENTS.md"
 SETUP_MODULE="$SHARE/directory-setup.js"
@@ -343,7 +344,8 @@ assert_eq "$?" "0" "setup: 同じ内容の再実行は成功する"
 
 SYMLINK_SOURCE_XDG="$TMP/symlink-source-xdg"; mkdir -p "$SYMLINK_SOURCE_XDG/claude" "$SYMLINK_SOURCE_XDG/codex"
 mkdir -p "$SYMLINK_SOURCE_XDG/claude/commands" "$SYMLINK_SOURCE_XDG/claude/skills" \
-  "$SYMLINK_SOURCE_XDG/claude/hooks" "$SYMLINK_SOURCE_XDG/codex/agents"
+  "$SYMLINK_SOURCE_XDG/claude/hooks" "$SYMLINK_SOURCE_XDG/codex/agents" \
+  "$SYMLINK_SOURCE_XDG/codex/rules"
 ln -s commands "$SYMLINK_SOURCE_XDG/claude/agents"
 for name in CLAUDE.md settings.json; do : > "$SYMLINK_SOURCE_XDG/claude/$name"; done
 : > "$SYMLINK_SOURCE_XDG/codex/AGENTS.md"
@@ -354,7 +356,8 @@ assert_eq "$(test -e "$SYMLINK_SOURCE_XDG/claude_lab" && echo yes || echo no)" "
 
 SPECIAL_SOURCE_XDG="$TMP/special-source-xdg"; mkdir -p "$SPECIAL_SOURCE_XDG/claude" "$SPECIAL_SOURCE_XDG/codex"
 mkdir -p "$SPECIAL_SOURCE_XDG/claude/agents" "$SPECIAL_SOURCE_XDG/claude/commands" \
-  "$SPECIAL_SOURCE_XDG/claude/skills" "$SPECIAL_SOURCE_XDG/codex/agents"
+  "$SPECIAL_SOURCE_XDG/claude/skills" "$SPECIAL_SOURCE_XDG/codex/agents" \
+  "$SPECIAL_SOURCE_XDG/codex/rules"
 mkfifo "$SPECIAL_SOURCE_XDG/claude/hooks"
 for name in CLAUDE.md settings.json; do : > "$SPECIAL_SOURCE_XDG/claude/$name"; done
 : > "$SPECIAL_SOURCE_XDG/codex/AGENTS.md"

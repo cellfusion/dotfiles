@@ -158,6 +158,8 @@ assert_contains "$managed" ".config/codex/AGENTS.md" \
   "codex: AGENTS.md を ~/.config/codex へ配る"
 assert_contains "$managed" ".config/codex/config.toml" \
   "codex: config.toml を ~/.config/codex へ配る"
+assert_contains "$managed" ".config/codex/rules/default.rules" \
+  "codex: execpolicy の default.rules を ~/.config/codex へ配る"
 
 # 旧配布先には配らない。CODEX_HOME と食い違うと AGENTS.md も agent 定義も効かない。
 # `chezmoi managed` は .chezmoiremove の削除対象も列挙するため、実際の destination に

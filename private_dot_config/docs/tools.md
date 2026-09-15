@@ -38,6 +38,41 @@ tap trust に止められない。手で回すなら次のとおり。
 
     xargs -n1 brew install < ~/.config/install/third-party.txt
 
+### 一部だけを管理するファイル
+
+ツール自身が実行中に書き換えるファイルは、全体を chezmoi に持たせない。全体を
+管理すると、ツールが書き足すたびに `chezmoi diff` が汚れ、`chezmoi apply` で
+書き足した内容が消える。chezmoi の `modify_` スクリプトで、保証したい範囲だけを
+差し込む。
+
+| ファイル | ツールが書き足すもの | chezmoi が保証する範囲 |
+|---|---|---|
+| `~/.config/codex/config.toml` | `[projects]` の `trust_level`、MCP サーバー | model、承認設定、sandbox 設定 |
+| `~/.config/codex/rules/default.rules` | 承認を永続化したときの `prefix_rule` と `network_rule` | `# chezmoi-managed-begin` と `# chezmoi-managed-end` で囲んだ範囲 |
+
+`default.rules` は Codex の execpolicy である。コマンドの承認を省くかどうかを
+`prefix_rule` で決め、`decision` に `allow` / `prompt` / `forbidden` のどれかを取る。
+`allow` は承認を省くだけでなく sandbox の外での実行まで許すため、囲みに入れるのは
+ファイルの内容を変えない操作と、検証コマンドに限る。
+
+囲みの外に見覚えのない行があれば、承認ダイアログで永続化を選んだときに Codex が
+書いたものである。消してよい。囲みの中を手で直しても `chezmoi apply` で戻るので、
+変えたいときは `private_dot_config/codex/rules/modify_default.rules.tmpl` を直す。
+
+2 つ目以降の AI 環境は、`~/.config/codex_<environment>/rules` を
+`~/.config/codex/rules` への symlink にして実体を共有する。どの環境で承認を
+永続化しても、全環境に載る。`config.toml` は `preservedMutable` にあり環境ごとに
+実体を持つので、`trust_level` は環境をまたがない。
+
+symlink を張る一覧は 1 か所では決まらない。
+`~/.local/share/agent-config/config-validator.js` の `SETUP_TABLE` が正本で、
+`~/.config/chezmoi/agent-config.json` の `providers.codex.setup.symlinks` が
+JSON 文字列として完全一致しないと検証に落ち、`chezmoi apply` が失敗する。
+`agent-config.json` は chezmoi の管理外なので、`SETUP_TABLE` を変えたら手で
+そろえる。リポジトリ側では `agent-config.sample.json` と
+`tests/fixtures/agent-config/` の各ファイルもそろえる。
+`tests/test-codex-rules.sh` が、この一致を検証する。
+
 ## 新マシンでの手順
 
 素の macOS の `/usr/bin/git` は Xcode Command Line Tools の stub である。実行すると
