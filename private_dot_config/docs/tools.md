@@ -59,10 +59,19 @@ tap trust に止められない。手で回すなら次のとおり。
 書いたものである。消してよい。囲みの中を手で直しても `chezmoi apply` で戻るので、
 変えたいときは `private_dot_config/codex/rules/modify_default.rules.tmpl` を直す。
 
-2 つ目以降の AI 環境は、`~/.config/codex_<session>/rules` を
+2 つ目以降の AI 環境は、`~/.config/codex_<environment>/rules` を
 `~/.config/codex/rules` への symlink にして実体を共有する。どの環境で承認を
-永続化しても、全環境に載る。`config.toml` は環境ごとに実体を持つので、
-`trust_level` は環境をまたがない。
+永続化しても、全環境に載る。`config.toml` は `preservedMutable` にあり環境ごとに
+実体を持つので、`trust_level` は環境をまたがない。
+
+symlink を張る一覧は 1 か所では決まらない。
+`~/.local/share/agent-config/config-validator.js` の `SETUP_TABLE` が正本で、
+`~/.config/chezmoi/agent-config.json` の `providers.codex.setup.symlinks` が
+JSON 文字列として完全一致しないと検証に落ち、`chezmoi apply` が失敗する。
+`agent-config.json` は chezmoi の管理外なので、`SETUP_TABLE` を変えたら手で
+そろえる。リポジトリ側では `agent-config.sample.json` と
+`tests/fixtures/agent-config/` の各ファイルもそろえる。
+`tests/test-codex-rules.sh` が、この一致を検証する。
 
 ## 新マシンでの手順
 

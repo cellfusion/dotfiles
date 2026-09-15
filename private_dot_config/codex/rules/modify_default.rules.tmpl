@@ -51,8 +51,7 @@ prefix_rule(pattern=["pnpm", "build"], decision="allow")
 prefix_rule(pattern=["chezmoi", "diff"], decision="allow")
 prefix_rule(pattern=["bash", "tests/run-tests.sh"], decision="allow")
 
-# スキルが毎回呼ぶスクリプト。
-prefix_rule(pattern=["~/.agents/skills/subagent-driven-development/scripts/review-package"], decision="allow")
+# スキルが毎回呼ぶスクリプト。spec と plan の保存先を返す。
 prefix_rule(pattern=["~/.agents/skills/_shared/scripts/agent-docs-dir"], decision="allow")
 
 # chezmoi apply は CLAUDE.md がユーザーの明示の許可を要ると定めている。

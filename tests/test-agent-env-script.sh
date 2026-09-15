@@ -34,7 +34,7 @@ cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/valid-v1.json" "$xdg/chezmoi/age
 mkdir -p "$fake_home/.paseo"
 cp "$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/base.json" "$fake_home/.paseo/config.json"
 mkdir -p "$xdg/claude/agents" "$xdg/claude/commands" "$xdg/claude/skills" \
-  "$xdg/claude/hooks" "$xdg/codex/agents"
+  "$xdg/claude/hooks" "$xdg/codex/agents" "$xdg/codex/rules"
 for name in CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
 : > "$xdg/codex/AGENTS.md"
 

@@ -31,7 +31,6 @@ MANAGED_RULES=(
   'prefix_rule(pattern=["pnpm", "build"], decision="allow")'
   'prefix_rule(pattern=["chezmoi", "diff"], decision="allow")'
   'prefix_rule(pattern=["bash", "tests/run-tests.sh"], decision="allow")'
-  'prefix_rule(pattern=["~/.agents/skills/subagent-driven-development/scripts/review-package"], decision="allow")'
   'prefix_rule(pattern=["~/.agents/skills/_shared/scripts/agent-docs-dir"], decision="allow")'
   'prefix_rule(pattern=["chezmoi", "apply"], decision="prompt")'
 )
@@ -103,10 +102,50 @@ for rule in "${MANAGED_RULES[@]}"; do
   assert_contains "$migrated_out" "$rule" "囲みが無い入力から $rule を補う"
 done
 
-# --- 6. 2 つ目以降の AI 環境は本体の rules を symlink で共有する ---
-script="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
-  < "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_90-agent-envs.sh.tmpl" 2>/dev/null)"
-assert_contains "$script" 'link "../codex/rules" "$dir/rules"' \
-  "setup_codex が rules を codex 本体へ向ける"
+# --- 6. symlink の一覧を宣言する場所がすべて揃っている ---
+# config-validator.js の SETUP_TABLE が正本である。設定ファイル側の symlinks と
+# JSON 文字列として完全一致しないと検証に落ち、chezmoi apply が失敗する。
+share="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config"
+assert_contains "$(cat "$share/config-validator.js")" \
+  "symlinks: ['agents', 'AGENTS.md', 'rules']" \
+  "config-validator.js の SETUP_TABLE が codex の rules を持つ"
+
+EXPECTED_SYMLINKS='["agents","AGENTS.md","rules"]'
+for f in "$share/agent-config.sample.json" \
+         "$CHEZMOI_SOURCE"/tests/fixtures/agent-config/*.json \
+         "$CHEZMOI_SOURCE"/tests/fixtures/agent-config/invalid/*.json; do
+  [ -f "$f" ] || continue
+  # malformed.json は JSON として読めない。読めないものと、symlinks を宣言しない
+  # ものと、衝突の検証のために空にしてあるものは対象外にする。
+  actual="$(jq -c '.providers.codex.setup.symlinks // empty' "$f" 2>/dev/null)" || continue
+  [ -n "$actual" ] || continue
+  [ "$actual" = "[]" ] && continue
+  assert_eq "$actual" "$EXPECTED_SYMLINKS" \
+    "${f#"$CHEZMOI_SOURCE"/}: codex の symlinks が SETUP_TABLE と一致する"
+done
+
+# --- 7. directory-setup が rules の相対 symlink を実際に作る ---
+setup_fixture="$(mktemp -d)"
+xdg="$setup_fixture/config"
+mkdir -p "$xdg/claude/agents" "$xdg/claude/commands" "$xdg/claude/skills" "$xdg/claude/hooks" \
+  "$xdg/codex/agents" "$xdg/codex/rules"
+for name in CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
+: > "$xdg/codex/AGENTS.md"
+: > "$xdg/codex/rules/default.rules"
+
+setup_err="$(node -e '
+  const fs = require("node:fs")
+  const share = process.argv[2]
+  const { validateConfig } = require(share + "/config-validator.js")
+  const { setupDirectories } = require(share + "/directory-setup.js")
+  const { config } = validateConfig(fs.readFileSync(process.argv[3], "utf8"))
+  setupDirectories(config, { xdgConfigHome: process.argv[1], defaultEnvironment: config.defaults.environment })
+' "$xdg" "$share" "$CHEZMOI_SOURCE/tests/fixtures/agent-config/valid-v1.json" 2>&1)"
+assert_eq "$setup_err" "" "directory-setup が valid-v1 の構成で失敗しない"
+assert_eq "$(readlink "$xdg/codex_lab/rules")" "../codex/rules" \
+  "codex_lab: rules が codex 本体を指す"
+assert_eq "$(readlink "$xdg/codex_lab/AGENTS.md")" "../codex/AGENTS.md" \
+  "codex_lab: AGENTS.md の symlink を壊さない"
+rm -rf "$setup_fixture"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
