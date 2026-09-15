@@ -393,6 +393,36 @@ assert_contains "$(cat "$collect_stderr")" 'Auth error: token expired' \
 assert_eq "$(wc -l < "$collect_stderr" | tr -d ' ')" "3" \
   "採取: ログに空行を残さない"
 
+# --- 解釈に失敗した回の証拠を残す ---
+# 採取は 15 分ごとに回るが、ログには失敗の文言しか残らない。何が返ってきたのか
+# 分からないままなので、失敗した回だけ claude の出力を保存し、行に時刻を付ける。
+# 新しい claude の呼び出しは増やさない。
+fail_claude="$fixture_home/fake-claude-fail"
+cat > "$fail_claude" <<'FAKE'
+#!/bin/sh
+printf 'You are currently using your subscription to power your Claude Code usage\n'
+printf 'Current session: 5%% used · resets Sep 30 at 9pm (Asia/Tokyo)\n'
+FAKE
+chmod +x "$fail_claude"
+rm -f "$fixture_home/.cache/sketchybar-usage/"*.last-failure
+fail_stderr="$fixture_home/collect-fail.stderr"
+HOME="$fixture_home" USAGE_CLAUDE_BIN="$fail_claude" \
+  "$COLLECT_SH" >/dev/null 2>"$fail_stderr"
+fail_rc=$?
+assert_eq "$fail_rc" "1" "採取: 週次の行が無ければ終了ステータスで知らせる"
+assert_eq "$(head -1 "$fixture_home/.cache/sketchybar-usage/default-claude.last-failure" 2>/dev/null)" \
+  "You are currently using your subscription to power your Claude Code usage" \
+  "採取: 解釈できなかった回の出力を last-failure に残す"
+assert_contains "$(cat "$fail_stderr")" '使用量を解釈できなかった' \
+  "採取: 解釈できなかったことをログに残す"
+# 設定ディレクトリが有る 2 環境の解釈失敗と、無い 1 環境を飛ばした知らせの 3 行。
+# どれも失敗なので、いつ起きたかを追えるように時刻を付ける。
+assert_eq "$(grep -c -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$fail_stderr")" "3" \
+  "採取: 失敗のログの行に時刻を付ける"
+# 解釈に失敗した環境のキャッシュは書き換えない。前の値が残る。
+assert_eq "$(jq -r '.used_pct' "$fixture_home/.cache/sketchybar-usage/default-claude.json")" "11" \
+  "採取: 解釈に失敗してもキャッシュは書き換えない"
+
 collect_body="$(cat "$COLLECT_SH")"
 assert_contains "$collect_body" 'collect_env "$HOME/.config/claude" default-claude' \
   "採取: 先頭環境はサフィックス無しのパスを見る"
