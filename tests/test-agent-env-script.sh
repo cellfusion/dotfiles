@@ -41,7 +41,7 @@ export PASEO_CONFIG_FILE="$fixture/paseo-config.json"
 
 # 先頭環境のディレクトリは chezmoi 本体が配る。fixture では手で用意する。
 mkdir -p "$fixture/claude/agents" "$fixture/claude/commands" "$fixture/claude/skills" \
-         "$fixture/claude/hooks" "$fixture/codex/agents"
+         "$fixture/claude/hooks" "$fixture/codex/agents" "$fixture/codex/rules"
 : > "$fixture/claude/CLAUDE.md"
 : > "$fixture/claude/settings.json"
 : > "$fixture/codex/AGENTS.md"
@@ -90,6 +90,8 @@ assert_eq "$(readlink "$fixture/codex_solo/agents")" "../codex/agents" \
   "codex_solo: agents が codex 本体を指す"
 assert_eq "$(readlink "$fixture/codex_solo/AGENTS.md")" "../codex/AGENTS.md" \
   "codex_solo: AGENTS.md が codex 本体を指す"
+assert_eq "$(readlink "$fixture/codex_solo/rules")" "../codex/rules" \
+  "codex_solo: rules が codex 本体を指す"
 assert_contains "$(cat "$fixture/codex_solo/config.toml")" "model = " \
   "codex_solo: config.toml に model が入る"
 assert_eq "$([ -e "$fixture/claude_solo" ] && echo yes || echo no)" "no" \

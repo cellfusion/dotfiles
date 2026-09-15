@@ -62,6 +62,9 @@ setup_codex() {
   mkdir -p "$dir"
   link "../codex/agents" "$dir/agents"
   link "../codex/AGENTS.md" "$dir/AGENTS.md"
+  # rules/default.rules は Codex が承認の永続化で追記する。実体を環境ごとに
+  # 持たせず 1 つを共有し、どの環境で永続化しても全環境に載るようにする。
+  link "../codex/rules" "$dir/rules"
   # config.toml は独立した実体である。projects の trust_level などは残す。
   f="$dir/config.toml"
   [ -f "$f" ] || : > "$f"
