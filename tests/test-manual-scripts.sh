@@ -51,10 +51,38 @@ mad_smoke="$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh"
 mad="$(bash "$mad_smoke" --dry-run 2>&1)"
 mad_contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
 
+# 配布先のskillは裸のコマンド名や未定義のAGENT_CONFIGに依存しない。
+for mad_path_contract in \
+  'MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"' \
+  'MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"' \
+  'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"' \
+  'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"' \
+  'MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"' \
+  'MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'; do
+  assert_contains "$mad_contract" "$mad_path_contract" \
+    "path contract: $mad_path_contract を初期化する"
+done
+assert_contains "$mad_contract" "checkout 専用である" \
+  "path contract: unit gate が repository 専用であることを明記する"
+for mad_smoke_path in \
+  'MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"' \
+  'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"' \
+  'MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"'; do
+  assert_contains "$mad" "$mad_smoke_path" \
+    "path contract: mad smoke が $mad_smoke_path を出す"
+done
+assert_contains "$out" 'MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"' \
+  "path contract: herdr smoke がMAD script pathを出す"
+assert_contains "$out" 'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"' \
+  "path contract: herdr smoke がadapter pathを出す"
+multi_agent_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+assert_contains "$multi_agent_skill" 'PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"' \
+  "path contract: MAD skill がrepository gate pathを初期化する"
+
 # review/fix は固定上限と immutable scope を持つ。scope 外の重要事項は loop に戻さず、
 # 最終 gate の一回の user decision へ送る。
 for review_guard_step in \
-  "manual-orchestration-validate --prepare-review" \
+  '"$MAD_VALIDATE" --prepare-review' \
   "max_rounds は 2" \
   "scope 外" \
   "out-of-scope" \
@@ -71,22 +99,22 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/prompts/re-
   "hotfix node" "review guard: re-reviewer は hotfix node を増やさない"
 
 # --- backend は Paseo MCP だけである ---
-assert_contains "$mad" "manual-orchestration-validate --select-backend" \
+assert_contains "$mad" '"$MAD_VALIDATE" --select-backend' \
   "mad smoke: backend selector を叩く"
 assert_contains "$mad" "paseo-mcp" "mad smoke: Paseo MCP を優先する"
 assert_not_contains "$mad" "paseo-mcp-adapter create-agent" \
   "mad smoke: adapter に create の境界を残さない"
-assert_contains "$mad" "wait と stop の境界はすべて paseo-mcp-adapter に限定する" \
+assert_contains "$mad" 'wait と stop の境界はすべて "$MAD_ADAPTER" に限定する' \
   "mad smoke: wait/stop の唯一経路を示す"
 assert_contains "$mad" "mcp__paseo__create_agent" \
   "mad smoke: create は公式 MCP tool で行う"
 # create の順序を smoke が明示する。request を検証せずに create を呼ばせない。
 for create_step in \
-  "manual-orchestration-validate --exercise-success" \
+  '"$MAD_VALIDATE" --exercise-success' \
   "mcp-create.json" \
   "assertMadCreateRequestV1" \
-  "manual-orchestration-validate --prepare-create" \
-  "manual-orchestration-validate --exercise-accepted"; do
+  '"$MAD_VALIDATE" --prepare-create' \
+  '"$MAD_VALIDATE" --exercise-accepted'; do
   assert_contains "$mad" "$create_step" "mad smoke: create の手順に $create_step を出す"
 done
 assert_contains "$mad" "request を検証してから create を呼ぶ" \
@@ -112,7 +140,7 @@ assert_contains "$mad" "synthesis" "mad smoke: 統合 node を作る"
 assert_contains "$mad" "artifact_paths" "mad smoke: 統合役へ絶対パスだけを渡す"
 
 # --- 観測方法 ---
-assert_contains "$mad" "paseo-mcp-adapter wait-agent" "mad smoke: adapter で完了を待つ"
+assert_contains "$mad" '"$MAD_ADAPTER" wait-agent' "mad smoke: adapter で完了を待つ"
 assert_not_contains "$mad" "paseo inspect" "mad smoke: raw inspect を呼ばない"
 assert_not_contains "$mad" "paseo logs" "mad smoke: raw logs を呼ばない"
 assert_not_contains "$mad" "paseo wait" "mad smoke: raw wait を呼ばない"
@@ -122,7 +150,7 @@ assert_contains "$mad" "sanitized response" "mad smoke: adapter response を縮�
 assert_contains "$mad" "0600 の state/evidence" "mad smoke: state/evidence だけを読む"
 
 # --- 停止方法 ---
-assert_contains "$mad" "paseo-mcp-adapter stop-agent" "mad smoke: adapter で実行中の子を止める"
+assert_contains "$mad" '"$MAD_ADAPTER" stop-agent' "mad smoke: adapter で実行中の子を止める"
 assert_not_contains "$mad" "paseo stop" "mad smoke: raw stop を呼ばない"
 assert_not_contains "$mad" "mcp__paseo__cancel_agent" "mad smoke: 親から直接 cancel MCP を呼ばない"
 assert_contains "$mad" '"state": "stopped"' "mad smoke: 停止を run state に残す"
@@ -130,7 +158,7 @@ assert_contains "$mad" '"state": "stopped"' "mad smoke: 停止を run state に�
 # --- 実行結果として出す情報 ---
 assert_contains "$mad" "run ID" "mad smoke: run ID を出す"
 assert_contains "$mad" "backend" "mad smoke: 選んだ backend を出す"
-assert_contains "$mad" "manual-orchestration-validate \"\$RUN_DIR\"" \
+assert_contains "$mad" '"$MAD_VALIDATE" "$RUN_DIR"' \
   "mad smoke: 成果物契約の検証コマンドを出す"
 
 # --- 常時 suite から外れている ---

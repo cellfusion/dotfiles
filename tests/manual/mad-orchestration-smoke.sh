@@ -89,9 +89,18 @@ select_backend() {
 }
 
 print_procedure() {
+  say "path setup"
+  note '  MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"'
+  note '  MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"'
+  note '  AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"'
+  note '  MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"'
+  note '  MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"'
+  note '  MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'
+  note '  MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"'
+
   say "1. Paseo MCP backend を確認する"
   note 'paseo status で daemon に届くことを確かめてから selector を叩く。'
-  note '  MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=1 manual-orchestration-validate --select-backend'
+  note '  MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=1 "$MAD_VALIDATE" --select-backend'
   note '  → {"backend":"paseo-mcp","backend_reason":"Paseo MCP available"}'
   note 'Paseo MCP が利用できなければ run を開始しない。開始済みの子が失敗しても別 backend へ'
   note '自動で切り替えない。失敗した子は再指示、再実行、停止のいずれかを親が裁定する。'
@@ -101,7 +110,7 @@ print_procedure() {
   note 'run 全体の状態は $RUN_DIR/state.json だけに置く。子の成果物は'
   note '$RUN_DIR/nodes/<node-id>/attempts/<attempt-id>/ に分ける。'
   note 'state.json の recipe は research、phase は research、backend は 1 で選んだ値にする。'
-  note 'launch の解決には generate-paseo-config resolve を使う。'
+  note 'launch の解決には "$MAD_GENERATOR" resolve を使う。'
 
   say "3. research の子を 3 つ並列に起動する"
   note '既定の 3 観点は次のとおりであり、node ID と 1 対 1 に対応する。'
@@ -110,18 +119,18 @@ print_procedure() {
   note '  research-3: 代替案'
   note '3 つは依存しないので同時に起動する。役割はいずれも researcher である。'
   note ''
-  note 'wait と stop の境界はすべて paseo-mcp-adapter に限定する。create の境界は'
+  note 'wait と stop の境界はすべて "$MAD_ADAPTER" に限定する。create の境界は'
   note '公式 MCP tool の mcp__paseo__create_agent だけであり、adapter は create の'
   note 'subcommand を持たない。子ごとに次の順で進める。'
-  note '  1. manual-orchestration-validate --exercise-success が launch を検証し、'
+  note '  1. "$MAD_VALIDATE" --exercise-success が launch を検証し、'
   note '     mode 0600 の mcp-create.json を書いて停止する。'
   note '  2. 親が mcp-create.json を assertMadCreateRequestV1 で再検証する。'
   note '     request を検証してから create を呼ぶ。検証を通らなければ create しない。'
-  note '  3. manual-orchestration-validate --prepare-create が同じ request を検証し、'
+  note '  3. "$MAD_VALIDATE" --prepare-create が同じ request を検証し、'
   note '     create の前に一回性 marker を取る。marker を取れた呼び出しだけが次へ進む。'
   note '  4. 親が mcp__paseo__create_agent を子ごとに一回だけ呼ぶ。引数は'
   note '     mcp-create.json の 6 key をそのまま渡し、値を作り直さない。'
-  note '  5. manual-orchestration-validate --exercise-accepted が prepare marker を確かめ、'
+  note '  5. "$MAD_VALIDATE" --exercise-accepted が prepare marker を確かめ、'
   note '     accepted response を検証して childRef と create_accepted だけを'
   note '     0600 の state へ保存する。この境界は marker を作らない。'
   note '3 回の create を 1 つの応答にまとめて並列に起動する。prompt には'
@@ -131,7 +140,7 @@ print_procedure() {
   note ''
   say "4. 子の実行を観測する"
   note '親は各 childRef に対して adapter の wait-agent を一回だけ呼ぶ。'
-  note '  paseo-mcp-adapter wait-agent --child-ref <safe-id> --timeout <seconds>'
+  note '  "$MAD_ADAPTER" wait-agent --child-ref <safe-id> --timeout <seconds>'
   note 'adapter は Paseo の応答を検証し、親へ sanitized response の status だけを返す。'
   note '親は raw の agent status、詳細、activity、ログを取得しない。'
   note ''
@@ -156,7 +165,7 @@ print_procedure() {
   note 'artifact_paths に入れ、completed_nodes に 4 つの node をすべて並べる。'
 
   say "7. 成果物契約を検証する"
-  note '  manual-orchestration-validate "$RUN_DIR"'
+  note '  "$MAD_VALIDATE" "$RUN_DIR"'
   note 'この検証は Paseo MCP の実ツールを呼ばず、作られた state と成果物だけを見る。'
   note 'research では synthesis が completed_nodes と adopted_attempts の両方に'
   note '無いと失敗する。3 子が ok になる前に後段の node があっても失敗する。'
@@ -166,7 +175,7 @@ print_procedure() {
 
   say "8. 途中で止める"
   note '実行中の子は adapter の stop-agent だけで止める。'
-  note '  paseo-mcp-adapter stop-agent --child-ref <safe-id>'
+  note '  "$MAD_ADAPTER" stop-agent --child-ref <safe-id>'
   note 'adapter は stop response の agent ID が childRef と一致することを検証し、'
   note '親へ sanitized response の {"status":"stopped"} または {"status":"error"} だけを返す。'
   note '親は raw の停止 response を保存・転記せず、0600 の state/evidence に結果を記録する。'
@@ -183,7 +192,7 @@ print_procedure() {
   note '2. research-1、research-2、research-3 の 3 子が同時に走ること'
   note '3. 3 子が ok になるまで synthesis が起動しないこと'
   note '4. synthesis が 3 子の artifact_paths だけを入力に取ること'
-  note '5. manual-orchestration-validate が run ディレクトリを valid と出すこと'
+  note '5. "$MAD_VALIDATE" が run ディレクトリを valid と出すこと'
   note '6. 子の調査本文が親の会話に転記されていないこと'
 }
 
@@ -228,7 +237,7 @@ case "$MODE" in
     RUN_STATE="$RUN_DIR/state.json"
 
     say "成果物契約の検証"
-    printf 'manual-orchestration-validate "%s"\n' "$RUN_DIR" >&2
+    printf '"$MAD_VALIDATE" "%s"\n' "$RUN_DIR" >&2
     if ! bash "$VALIDATOR" "$RUN_DIR"; then
       printf 'mad-orchestration-smoke: validator が失敗した。この run を ok にしない\n' >&2
       exit 1
@@ -342,7 +351,7 @@ case "$MODE" in
     print_procedure
 
     say "ここから先は親エージェントが行う"
-    note 'child の create、wait、stop は paseo-mcp-adapter 経由で親エージェントが実行する。'
+    note 'child の create、wait、stop は "$MAD_ADAPTER" 経由で親エージェントが実行する。'
     note 'raw MCP/CLI の create、wait、stop は親から直接呼ばない。終わったら次で結果を確かめる。'
     printf '  bash tests/manual/mad-orchestration-smoke.sh --report %s\n' "$RUN_DIR" >&2
     exit 0

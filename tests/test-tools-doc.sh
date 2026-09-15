@@ -7,6 +7,13 @@ doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md" 2>&1)"
 brewfile="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "install/brewfile" (dict "os" "darwin") }}' 2>&1)"
 
+assert_contains "$doc" '.agents/skills/multi-agent-development/scripts' \
+  "docs: MAD script の配布先を絶対 path で示す"
+assert_contains "$doc" 'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"' \
+  "docs: AGENT_CONFIG の fallback を示す"
+assert_contains "$doc" 'checkout 専用である' \
+  "docs: unit gate が repository 専用であることを示す"
+
 # 削除候補の節はファイル末尾まで続く。複数の assert が同じ範囲を見るので 1 回だけ切る。
 removal_section="$(printf '%s\n' "$doc" | sed -n '/^## 削除候補/,$p')"
 
@@ -267,3 +274,4 @@ declared="$(printf '%s\n' "$doc" | sed -n 's/^apply の中で上の表の \([0-9
 assert_eq "$declared" "$script_rows" "docs: 表のスクリプト数と本文の本数が一致する"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

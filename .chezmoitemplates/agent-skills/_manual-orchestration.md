@@ -2,6 +2,22 @@
 
 MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP の discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。利用できない場合は run を開始せず `waiting_for_user` として停止する。開始後に別の backend へ切り替えたり、別の transport を試したり、同じ create を retry したりしてはならない。
 
+## 実行pathの初期化
+
+配布済みのMAD scriptは`~/.agents/skills/.../scripts`にあり、`PATH`には依存しない。次を同じshellで一度だけ設定してから、以下の手順で使う。`AGENT_CONFIG`は正本configの場所であり、共有module置き場ではない。
+
+```bash
+MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
+MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
+MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+```
+
+`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
+
 ## provider と model の解決
 
 親はまず、Task 5 の exporter が生成した export を配布 module で検証する。
@@ -21,7 +37,7 @@ node -e 'const c=require(process.argv[1]); c.writeProviderEnumeration0600(proces
 snapshot の保存後、親は次の CLI のみで launch を解決する。
 
 ```bash
-generate-paseo-config --input "$AGENT_CONFIG" resolve \
+"$MAD_GENERATOR" --input "$AGENT_CONFIG" resolve \
   --project "$PROJECT" --role "$ROLE" --provenance mad-dispatch \
   --snapshot "$RUN_DIR/snapshot.json" > "$RUN_DIR/launch.json"
 ```
@@ -46,7 +62,7 @@ settings: modeId, thinkingOptionId, features
 create の直前の検証は次で行う。state、call log、消費 marker のいずれも変更しない。
 
 ```bash
-manual-orchestration-validate --assert-create-request \
+"$MAD_VALIDATE" --assert-create-request \
   --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
 ```
 
@@ -55,7 +71,7 @@ manual-orchestration-validate --assert-create-request \
 `--assert-create-request` は検証だけを行い、marker を作らない。検証を通ったことは、create を呼ぶ権利にはならない。同じ attempt を見る 2 つの親が同時にこの assertion を通れば、`mcp__paseo__create_agent` を 2 回呼べてしまう。そのため、create を呼ぶ直前には次の `--prepare-create` を必ず通す。
 
 ```bash
-manual-orchestration-validate --prepare-create \
+"$MAD_VALIDATE" --prepare-create \
   --share-dir "$MAD_SHARE" --attempt-dir "$ATTEMPT_DIR"
 ```
 
@@ -124,19 +140,19 @@ review/fix loop は task ごとに **max_rounds は 2** とする。round `0` �
 review/fix child を create する前に、必ず次を実行する。
 
 ```bash
-manual-orchestration-validate --prepare-review \
+"$MAD_VALIDATE" --prepare-review \
   --run-dir "$RUN_DIR" --task "$TASK_ID" --phase review \
   --node "$TASK_ID-review" --attempt "$ATTEMPT_ID" --scope-file "$SCOPE_FILE"
 ```
 
-fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review --node "$TASK_ID-re-review"` とし、同じ scope marker を使う。admission が失敗したら `mcp__paseo__create_agent` を呼ばない。親は fix 後に `--check-review-scope --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"` を実行し、scope 外なら fix を採用しない。
+fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review --node "$TASK_ID-re-review"` とし、同じ scope marker を使う。admission が失敗したら `mcp__paseo__create_agent` を呼ばない。親は fix 後に `"$MAD_VALIDATE" --check-review-scope --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"` を実行し、scope 外なら fix を採用しない。
 
 spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad-review-observations` として `outOfScopePath` に 0600 で保持する。review/fix 中はそれを理由に新しい fix/review を起動しない。最終 gate で一度だけ decision request に列挙し、ユーザーが scope 拡張を承認した場合は元 run を再利用せず、新しい task/run として開始する。
 
 観測は次で atomic に保存する。
 
 ```bash
-manual-orchestration-validate --write-review-observations \
+"$MAD_VALIDATE" --write-review-observations \
   --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE" \
   --input "$OBSERVATION_INPUT"
 ```
@@ -144,7 +160,7 @@ manual-orchestration-validate --write-review-observations \
 観測ファイルは最終 gate 前に次で検査する。
 
 ```bash
-manual-orchestration-validate --check-review-observations \
+"$MAD_VALIDATE" --check-review-observations \
   --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE"
 ```
 
@@ -153,7 +169,7 @@ manual-orchestration-validate --check-review-observations \
 plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証する。
 
 ```bash
-paseo-plan-dependency-validate "$PLAN_FILE"
+"$MAD_PLAN_VALIDATE" "$PLAN_FILE"
 ```
 
 存在しない Task の参照、循環、同じ wave の Files 衝突があれば exit 2、問題が無ければ stdout 空で exit 0 である。plan を検証できないときは後段の child を起動しない。

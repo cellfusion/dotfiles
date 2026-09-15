@@ -103,7 +103,7 @@ for legacy in private-data.toml setup_paseo_provider list_providers; do
   assert_not_contains "$hook_source" "$legacy" "hook: $legacy を持たない"
 done
 docs="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
-for step in 'generate-paseo-config resolve' 'generate-paseo-config --diff' 'generate-paseo-config --check'; do
+for step in '"$MAD_GENERATOR" resolve' '"$MAD_GENERATOR" --diff' '"$MAD_GENERATOR" --check'; do
   assert_contains "$docs" "$step" "docs: 移行手順に $step がある"
 done
 assert_contains "$docs" "--paseo-config <absolute-copy>" \

@@ -123,25 +123,41 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
    `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
 
 実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
-その copy に対して次の順序で確認する。`generate-paseo-config resolve` は正本、project、role、
+この移行手順でも、先に次の絶対 path を設定する。
+
+```bash
+MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
+MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
+MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+```
+
+`MAD_SCRIPTS`配下の3 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。他のrepositoryでは
+そのrepository固有のgateを使い、無ければこのmigration gateを実行しない。
+
+その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
 global option は subcommand より前に置くため、実際の呼び出しは
-`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> resolve \
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> resolve \
 --project <absolute-project> --role <role> --provenance <provenance> --snapshot <absolute-snapshot>` とする。
 
-次に `generate-paseo-config --diff` で copy に対する managed projection だけを確認する。明示的な
+次に `"$MAD_GENERATOR" --diff` で copy に対する managed projection だけを確認する。明示的な
 copy path を付けた実際の呼び出しは
-`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> --diff` とする。
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --diff` とする。
 差分が意図どおりなら、同じ明示的な copy path に対して試行 write を行う。
-`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy>` の後、
-`generate-paseo-config --check` を
-`generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> --check` として実行する。
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy>` の後、
+`"$MAD_GENERATOR" --check` を
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --check` として実行する。
 `--check` が 0 になることを確認するまで実 target へ write しない。0 は一致または成功、1 は差分、
 2 は入力・path・schema などの不備、4 は候補が尽きたことを表す。`--diff` と `--check` は target を
 書き換えない。
 
 copy の `--check` が 0 になった後、利用者が内容を確認して明示承認した場合だけ、同じ正本に対して
-flags なしの `generate-paseo-config --input <absolute-input> --paseo-config <absolute-target>` を
+flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-target>` を
 実 target へ実行する。実 target の path を省略して既定値へ向ける手順は書かない。legacy との衝突、
 stale な provider・profile・directory は自動削除しない。auth と history の有無を利用者が確認した
 うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
@@ -291,10 +307,10 @@ Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と
 `idle`、`timeout`、`error` status だけを受け取る。止めるときは `paseo stop <agent-id>` が
 実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
 
-実行は `paseo-mcp-adapter` の `list-providers`、provider ごとの `list-models`、0600 の
-availability snapshot、`generate-paseo-config resolve`、0600 の `mcp-create.json`、
-`manual-orchestration-validate --prepare-create`、親による `mcp__paseo__create_agent` 一回、
-accepted childRef に対する `wait-agent` 一回の順に進める。
+実行は `"$MAD_ADAPTER"` の `list-providers`、provider ごとの `list-models`、0600 の
+availability snapshot、`"$MAD_GENERATOR" resolve`、0600 の `mcp-create.json`、
+`"$MAD_VALIDATE" --prepare-create`、親による `mcp__paseo__create_agent` 一回、
+accepted childRef に対する `"$MAD_ADAPTER" wait-agent` 一回の順に進める。
 create の transport は公式 MCP tool だけであり、adapter は create の subcommand を持たない。
 Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create に使わない。
 `--prepare-create` は request と attempt state と call log を検証してから、0600 の
@@ -305,7 +321,7 @@ sanitized call log だけを残す。各 JSON 成果物は run の attempt direc
 snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
 
 review/fix は task ごとに `max_rounds` を 2（初回 review、fix/re-review）へ固定する。
-review/fix child を create する前に `manual-orchestration-validate --prepare-review` を通し、
+review/fix child を create する前に `"$MAD_VALIDATE" --prepare-review` を通し、
 同じ task の scope file と admission marker を使う。scope 外の重要事項は observations に保持し、
 review/fix 中に新しい fix/review や hotfix node を起動しない。最終 gate で一つの decision request に
 まとめてユーザーへ確認し、scope 拡張は新しい run として開始する。

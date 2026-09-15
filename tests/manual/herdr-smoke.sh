@@ -9,16 +9,23 @@ say() { printf '\n## %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*" >&2; }
 
 say "1. input と 0600 target copy を用意する"
+note 'MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"'
+note 'MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"'
+note 'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"'
+note 'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"'
+note 'MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"'
+note 'MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'
+note 'MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"'
 note 'agent-config.json と ~/.paseo/config.json の copy は絶対 path で渡す。'
 note 'copy は regular file かつ 0600 であることを確認する。'
 
 say "2. Paseo の catalog を列挙する"
-note 'paseo-mcp-adapter list-providers'
-note 'paseo-mcp-adapter list-models --provider <provider>'
+note '"$MAD_ADAPTER" list-providers'
+note '"$MAD_ADAPTER" list-models --provider <provider>'
 note '列挙結果から availability snapshot を 0600 の run artifact に保存する。'
 
 say "3. launch を解決する"
-note 'generate-paseo-config --input <absolute-input> --paseo-config <absolute-copy> resolve \\ '
+note '"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> resolve \\ '
 note '  --project <absolute-project> --role task-reviewer --provenance manual-smoke \\ '
 note '  --snapshot <absolute-snapshot>'
 note 'resolve の成功後だけ create request を 0600 で作る。'

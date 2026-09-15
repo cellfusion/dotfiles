@@ -221,7 +221,7 @@ EOF
     assert_eq "$?" "0" "plan validator: 削除後もこの plan を検証できる"
   fi
   assert_contains "$(cat "$CHEZMOI_SOURCE/tests/manual/mad-orchestration-smoke.sh")" \
-    'generate-paseo-config resolve' "smoke: exporter の launch を使う"
+    '"$MAD_GENERATOR" resolve' "smoke: exporter の launch を使う"
   assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_workflow-table.md")" \
     'multi-agent-development' "workflow table: MAD を指す"
   hook_source="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/hooks/executable_dev-workflow-inject.sh")"

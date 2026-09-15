@@ -708,9 +708,9 @@ assert_not_contains "$manual_doc" 'create-agent --request' \
   "create: manual doc は adapter の create subcommand を残さない"
 assert_contains "$manual_doc" 'assertMadCreateRequestV1' \
   "create: manual doc は create 前の request 再検証を求める"
-assert_contains "$manual_doc" 'manual-orchestration-validate --assert-create-request' \
+assert_contains "$manual_doc" '"$MAD_VALIDATE" --assert-create-request' \
   "create: manual doc は create 直前の assertion コマンドを示す"
-assert_contains "$manual_doc" 'manual-orchestration-validate --prepare-create' \
+assert_contains "$manual_doc" '"$MAD_VALIDATE" --prepare-create' \
   "create: manual doc は create 前の prepare コマンドを示す"
 assert_contains "$manual_doc" 'mcp-create.prepared' \
   "create: manual doc は一回だけ create を許す prepare marker を名指しする"
