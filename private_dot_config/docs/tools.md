@@ -110,9 +110,12 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 1. environment の定義は `environments` に移し、`providers` はその environment で eligible な
    provider family の一覧だけにする。root `providers` には全 family の base record を持たせ、
    environment 側の eligibility だけを理由に base record を省略しない。
-2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。明示した
-   `--environment` が最優先で、無ければ最初に一致した rule、どれにも一致しなければ
-   `defaults.environment` を使う。
+2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。environment は
+   4 段で決まる。1 段目は明示した `--environment` である。2 段目は親の AI 環境名である。
+   3 段目は最初に一致した rule である。どれにも当たらなければ `defaults.environment` を使う。
+   親の AI 環境名は `AGENT_ENV_SESSION` を先に読み、未設定または空文字のときだけ `AGENT_ENV` を
+   読む。2 つとも未設定または空文字なら 2 段目を飛ばす。親の AI 環境名が `environments` に無い
+   名前のときは、`resolve` が終了コード 2 で終わり stdout に JSON を出さない。
 3. tier は `tiers` または対象 environment の `tiers` に移す。environment tier があればそれを使い、
    無ければ共通 tier を使う。role の tier と候補の順序も保持する。
 4. model と provider の優先順位は各 tier の `candidates` 配列の順序にする。先頭から provider の
