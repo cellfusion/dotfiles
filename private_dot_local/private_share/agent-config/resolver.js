@@ -161,13 +161,22 @@ function pathMatches(project, rulePath) {
   }
 }
 
-function selectEnvironment(config, project, explicitEnvironment) {
+// 親の環境名は --environment の次に強い。正本に無い名前は、--environment の有無に
+// かかわらず設定の不正として扱う。
+function selectEnvironment(config, project, explicitEnvironment, parentEnvironment) {
+  const parent = typeof parentEnvironment === 'string' && parentEnvironment.length > 0
+    ? parentEnvironment
+    : undefined
+  if (parent !== undefined && !Object.prototype.hasOwnProperty.call(config.environments, parent)) {
+    throw new ConfigError('parent environment: 正本に無い')
+  }
   if (explicitEnvironment !== undefined) {
     if (!Object.prototype.hasOwnProperty.call(config.environments, explicitEnvironment)) {
       throw new ConfigError('environment: 正本に無い')
     }
     return { environment: explicitEnvironment, warnings: [] }
   }
+  if (parent !== undefined) return { environment: parent, warnings: [] }
 
   const warnings = []
   let remote
@@ -219,7 +228,7 @@ function resolveDispatch(config, input) {
   if (typeof input.provenance !== 'string' || input.provenance.length === 0) {
     throw new ConfigError('provenance: 非空 string が必要である')
   }
-  const environmentSelection = selectEnvironment(config, project, input.environment)
+  const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
   const { tier, warnings } = selectTier(config, input.role, input.provenance, input.tier)
   const exported = resolveExport(config)
   const resolution = exported.resolutions.find(

@@ -44,6 +44,8 @@ snapshot の保存後、親は次の CLI のみで launch を解決する。
 
 成功時の stdout は `mad-launch-spec` 一件で exit 0、候補が尽きたときは `mad-launch-failure` 一件で exit 4、入力または snapshot が不正なときは exit 2 である。exit 4 は `waiting_for_user`、exit 2 は `failed` として create を行わない。成功 launch は strict に検査し、`modeId` が `auto` でないもの、allowlist に無い feature、宣言型と違う scalar、整数でない整数 feature を拒否する。
 
+environment は親の AI 環境名も見て決まる。CLI と runner はどちらも `AGENT_ENV_SESSION` を先に読み、未設定または空文字のときだけ `AGENT_ENV` を読む。2 つとも未設定または空文字なら、親の AI 環境名は無いものとして扱う。親の AI 環境名が正本の `environments` に無い名前なら、`resolve` は exit 2 で終わる。runner は create の直前に launch spec の `environment` と親の AI 環境名を比べる。2 つが食い違うときは `mcp-create.json` を書かずに `waiting_for_user` で止まるので、親は `mcp__paseo__create_agent` を呼ばない。
+
 ## create request と state
 
 create の順序は `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
@@ -111,6 +113,7 @@ run の対応は次で固定する。
 | discovery / model discovery / snapshot の失敗 | `waiting_for_user` | 0 回 |
 | launch exit 4 | `waiting_for_user` | 0 回 |
 | launch exit 2 / launch validation / request build の失敗 | `failed` | 0 回 |
+| 親の AI 環境名と launch の環境の不一致 | `waiting_for_user` | 0 回 |
 | prepare の失敗（request 不正、state が pending でない、log に create 以後の event、marker 済み） | 変更しない | 0 回 |
 | 受理前検査の失敗（prepare marker が無い、mode 不正、schema 不正、既に受理済み） | 変更しない | 0 回 |
 | `mcp-create.json` の検証失敗 | `failed` | 0 回 |
