@@ -283,7 +283,9 @@ SNAPSHOTS="$FIXTURES/snapshots"
 GENERATE="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
 GENERATOR="$GENERATE"
 NON_GIT_DIR="$TMP/non-git"; mkdir -p "$NON_GIT_DIR"
-generate() { "$GENERATE" "$@"; }
+# 親の AI 環境を表す 2 つの変数は resolve の environment 選択に入る。
+# 既存の case は fixture の environments だけを使うので、両方を取り除いてから呼ぶ。
+generate() { env -u AGENT_ENV -u AGENT_ENV_SESSION "$GENERATE" "$@"; }
 
 DIFF_TARGET="$TMP/diff-target.json"; cp "$FIXTURES/targets/auth-history-sentinel.json" "$DIFF_TARGET"
 mtime="$(stat -f '%m' "$DIFF_TARGET")"
