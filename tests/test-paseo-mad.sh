@@ -746,6 +746,21 @@ assert_eq "$(jq -c 'keys|sort' "$enumeration_json")" '["providerIds","type","ver
 assert_eq "$(jq -r '.type' "$enumeration_json")" "paseo-provider-enumeration" "enumerate: discriminator"
 assert_eq "$(jq -c '.providerIds' "$enumeration_json")" \
   '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "enumerate: materialized provider ID 全件列挙"
+
+environment_for_provider="$(EXPORTER="$SHARE/paseo-exporter.js" EXPORT_JSON="$export_json" node -e '
+const fs = require("node:fs")
+const { environmentForProviderId } = require(process.env.EXPORTER)
+const resolved = JSON.parse(fs.readFileSync(process.env.EXPORT_JSON, "utf8"))
+let unknown = "none"
+try { environmentForProviderId(resolved, "claude-nosuch") } catch (error) { unknown = error.name }
+process.stdout.write([
+  environmentForProviderId(resolved, "claude-lab"),
+  environmentForProviderId(resolved, "claude"),
+  unknown,
+].join(" "))
+' 2>/dev/null)"
+assert_eq "$environment_for_provider" "lab primary ConfigError" \
+  "environmentForProviderId: 非 default 環境と default 環境と未知の ID を区別する"
 for forbidden_subcommand in export enumerate-providers; do
   node "$GENERATOR" --input "$VALID" "$forbidden_subcommand" >/dev/null 2>&1
   assert_eq "$?" "2" "CLI: spec の契約表に無い $forbidden_subcommand を受け付けない"
