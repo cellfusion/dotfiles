@@ -113,6 +113,7 @@ run の対応は次で固定する。
 | discovery / model discovery / snapshot の失敗 | `waiting_for_user` | 0 回 |
 | launch exit 4 | `waiting_for_user` | 0 回 |
 | launch exit 2 / launch validation / request build の失敗 | `failed` | 0 回 |
+| 親の AI 環境名と launch の環境の不一致 | `waiting_for_user` | 0 回 |
 | prepare の失敗（request 不正、state が pending でない、log に create 以後の event、marker 済み） | 変更しない | 0 回 |
 | 受理前検査の失敗（prepare marker が無い、mode 不正、schema 不正、既に受理済み） | 変更しない | 0 回 |
 | `mcp-create.json` の検証失敗 | `failed` | 0 回 |
