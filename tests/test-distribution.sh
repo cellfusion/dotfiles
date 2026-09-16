@@ -122,6 +122,10 @@ done
 assert_contains "$managed" ".config/git/ignore" "global gitignore を配る"
 assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/git/ignore")" "_cellfusion/" \
   "global gitignore が _cellfusion/ を無視する"
+global_ignore="$CHEZMOI_SOURCE/private_dot_config/git/ignore"
+assert_eq "$(git -c core.excludesFile="$global_ignore" check-ignore --no-index \
+  paseo.json nested/paseo.json 2>/dev/null)" $'paseo.json\nnested/paseo.json' \
+  "global gitignore が任意階層の paseo.json を無視する"
 
 # MAD の Paseo-only adapter と plan validator を配る。
 for s in paseo-mcp-adapter paseo-plan-dependency-validate; do
