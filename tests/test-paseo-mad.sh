@@ -695,7 +695,8 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
     "role map: $role の schema がある"
   assert_eq "$(jq -r --arg role "$role" '.agentRoles[$role].artifactContract' "$VALID")" "mad-attempt-v1" \
     "role map: $role は mad-attempt-v1 を返す"
-  node "$GENERATOR" --input "$VALID" resolve --project "$NON_GIT_DIR" --role "$role" \
+  env -u AGENT_ENV -u AGENT_ENV_SESSION node "$GENERATOR" --input "$VALID" resolve \
+    --project "$NON_GIT_DIR" --role "$role" \
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
@@ -752,7 +753,8 @@ done
 
 attempt="$TMP/mad-success"
 mkdir -p "$attempt"
-out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-success \
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV -u AGENT_ENV_SESSION \
+  bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -865,7 +867,8 @@ jq -c '.tiers.work.candidates = [{provider:"claude",model:"sample-think",thinkin
   "$VALID" > "$FALSE_INPUT"
 false_attempt="$TMP/mad-fast-mode-false"
 mkdir -p "$false_attempt"
-out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" bash "$MAD_RUNNER" --exercise-success \
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV -u AGENT_ENV_SESSION \
+  bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$FALSE_INPUT" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$false_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -1225,7 +1228,7 @@ mkdir -p "$broken_share"
 printf '%s\n' "module.exports = require('./missing-module.js')" > "$broken_share/mad-contract.js"
 broken_attempt="$TMP/mad-broken-contract"
 mkdir -p "$broken_attempt"
-out="$(bash "$MAD_RUNNER" --exercise-success \
+out="$(env -u AGENT_ENV -u AGENT_ENV_SESSION bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$broken_share" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$broken_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -1241,7 +1244,7 @@ fail_case() {
   stage="$1"; adapter="$2"; role="$3"; input_config="$4"; expected_exit="$5"; expected_state="$6"
   dir="$TMP/mad-fail-$stage"
   mkdir -p "$dir"
-  bash "$MAD_RUNNER" --exercise-success \
+  env -u AGENT_ENV -u AGENT_ENV_SESSION bash "$MAD_RUNNER" --exercise-success \
     --generator "$GENERATOR" --share-dir "$SHARE" --input "$input_config" --adapter "$adapter" \
     --attempt-dir "$dir" --project "$NON_GIT_DIR" --role "$role" \
     --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -1287,7 +1290,7 @@ assert_not_contains "$runner_source" 'create-agent --request' \
   "MAD runner: adapter の create subcommand を呼ばない"
 wait_timeout_dir="$TMP/mad-exercise-success-wait-timeout"
 mkdir -p "$wait_timeout_dir"
-bash "$MAD_RUNNER" --exercise-success \
+env -u AGENT_ENV -u AGENT_ENV_SESSION bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$wait_timeout_dir" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -1649,7 +1652,8 @@ assert_eq "$?" "0" "contract: accepted response は exact key set と safe child
 
 opaque_attempt="$TMP/mad-opaque-mode"
 mkdir -p "$opaque_attempt"
-out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_OPAQUE_MODE_IDS=1 bash "$MAD_RUNNER" --exercise-success \
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" PASEO_FAKE_OPAQUE_MODE_IDS=1 \
+  env -u AGENT_ENV -u AGENT_ENV_SESSION bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$opaque_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \

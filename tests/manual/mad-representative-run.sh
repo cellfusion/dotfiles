@@ -385,7 +385,7 @@ write_run_evidence() {
 
   # discovery、resolve、request build までを runner が一度だけ実行する。runner は
   # create を呼ばず、mode 0600 の mcp-create.json を書いて停止する。
-  bash "$MAD_RUNNER" --exercise-success \
+  env -u AGENT_ENV -u AGENT_ENV_SESSION bash "$MAD_RUNNER" --exercise-success \
     --generator "$generator" --share-dir "$share_dir" --input "$input" \
     --adapter "$adapter" --attempt-dir "$attempt_dir" --project "$project" \
     --role implementer --provenance mad-representative \
