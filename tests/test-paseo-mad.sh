@@ -746,6 +746,21 @@ assert_eq "$(jq -c 'keys|sort' "$enumeration_json")" '["providerIds","type","ver
 assert_eq "$(jq -r '.type' "$enumeration_json")" "paseo-provider-enumeration" "enumerate: discriminator"
 assert_eq "$(jq -c '.providerIds' "$enumeration_json")" \
   '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "enumerate: materialized provider ID 全件列挙"
+
+environment_for_provider="$(EXPORTER="$SHARE/paseo-exporter.js" EXPORT_JSON="$export_json" node -e '
+const fs = require("node:fs")
+const { environmentForProviderId } = require(process.env.EXPORTER)
+const resolved = JSON.parse(fs.readFileSync(process.env.EXPORT_JSON, "utf8"))
+let unknown = "none"
+try { environmentForProviderId(resolved, "claude-nosuch") } catch (error) { unknown = error.name }
+process.stdout.write([
+  environmentForProviderId(resolved, "claude-lab"),
+  environmentForProviderId(resolved, "claude"),
+  unknown,
+].join(" "))
+' 2>/dev/null)"
+assert_eq "$environment_for_provider" "lab primary ConfigError" \
+  "environmentForProviderId: 非 default 環境と default 環境と未知の ID を区別する"
 for forbidden_subcommand in export enumerate-providers; do
   node "$GENERATOR" --input "$VALID" "$forbidden_subcommand" >/dev/null 2>&1
   assert_eq "$?" "2" "CLI: spec の契約表に無い $forbidden_subcommand を受け付けない"
@@ -1670,6 +1685,77 @@ assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent")]' "$opaque
   '[]' "MAD opaque mode: runner は create を呼ばない"
 assert_eq "$(stat -f '%HT:%Lp' "$opaque_attempt/mcp-create.json")" "Regular File:600" \
   "MAD opaque mode: mcp-create.json は 0600 の regular file"
+
+# 親の環境名が lab のとき、子は lab の候補で起動する。
+ALL_AVAILABLE_ADAPTER="$MAD_FIXTURES/adapter/fake-all-available-adapter.sh"
+lab_attempt="$TMP/mad-parent-lab"
+mkdir -p "$lab_attempt"
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV AGENT_ENV_SESSION=lab \
+  bash "$MAD_RUNNER" --exercise-success \
+  --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$ALL_AVAILABLE_ADAPTER" \
+  --attempt-dir "$lab_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$lab_attempt/call-log.json")"
+assert_eq "$?" "0" "親の環境 lab: request build まで成功する"
+assert_eq "$out" "" "親の環境 lab: runner は stdout を出さない"
+assert_eq "$(jq -S . "$lab_attempt/snapshot.json")" \
+  "$(jq -S . "$MAD_FIXTURES/snapshot-all-available.json")" \
+  "親の環境 lab: 正規化した snapshot は新しい fixture と一致する"
+assert_eq "$(jq -r '.environment, .provider' "$lab_attempt/launch.json" | tr '\n' ' ')" \
+  "lab codex-lab " "親の環境 lab: launch spec の environment と provider が lab を指す"
+assert_eq "$(jq -r '.provider' "$lab_attempt/mcp-create.json")" "codex-lab/sample-lab-work" \
+  "親の環境 lab: mcp-create.json の provider が lab の候補になる"
+assert_eq "$(jq -c 'keys' "$lab_attempt/mcp-create.json")" \
+  '["initialPrompt","notifyOnFinish","provider","settings","title","workspaceId"]' \
+  "親の環境 lab: mcp-create.json は 6 key のままである"
+assert_eq "$(jq -c '.settings | keys' "$lab_attempt/mcp-create.json")" \
+  '["features","modeId","thinkingOptionId"]' \
+  "親の環境 lab: settings は 3 key のままである"
+
+# launch の環境と親の環境名が食い違う run は、create の手前で止まる。
+# stub の generator は provider を claude-lab にする。claude-lab は materialize 済みの
+# ID なので featureAllowlistForProviderId が成功し、環境の比較まで届く。
+mismatch_generator="$TMP/mismatch-generator.sh"
+cat > "$mismatch_generator" <<'GENERATOR_EOF'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' '{"version":1,"type":"mad-launch-spec","status":"ok","profileName":"work_lab","environment":"lab","tier":"work","provider":"claude-lab","model":"sample-think","modeId":"auto","thinkingOptionId":"high","featureValues":{"fast_mode":false},"warnings":[]}'
+GENERATOR_EOF
+chmod 700 "$mismatch_generator"
+mismatch_attempt="$TMP/mad-parent-mismatch"
+mkdir -p "$mismatch_attempt"
+env -u AGENT_ENV AGENT_ENV_SESSION=primary bash "$MAD_RUNNER" --exercise-success \
+  --generator "$mismatch_generator" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$mismatch_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true \
+  --call-log "$mismatch_attempt/call-log.json" >"$mismatch_attempt/stdout" 2>/dev/null
+assert_eq "$?" "2" "親の環境の不一致: runner は exit 2 で終わる"
+assert_eq "$(cat "$mismatch_attempt/stdout")" "" "親の環境の不一致: stdout を出さない"
+assert_eq "$(test -e "$mismatch_attempt/mcp-create.json" && echo yes || echo no)" "no" \
+  "親の環境の不一致: mcp-create.json を作らない"
+assert_eq "$(jq -r '.state' "$mismatch_attempt/state.json")" "waiting_for_user" \
+  "親の環境の不一致: state は waiting_for_user"
+assert_eq "$(jq -r '.events[-1] | "\(.operation) \(.stage) \(.createCalls) \(.state)"' \
+  "$mismatch_attempt/call-log.json")" "failure launch_validation 0 waiting_for_user" \
+  "親の環境の不一致: 終端 event は create 回数 0 を記録する"
+assert_eq "$(jq -c '[.events[] | select(.operation == "create_agent")]' \
+  "$mismatch_attempt/call-log.json")" '[]' "親の環境の不一致: create を呼ばない"
+
+# 2 つの変数が未設定のときは、create 直前の検査を飛ばす。
+skip_attempt="$TMP/mad-parent-unset"
+mkdir -p "$skip_attempt"
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV -u AGENT_ENV_SESSION \
+  bash "$MAD_RUNNER" --exercise-success \
+  --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
+  --attempt-dir "$skip_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
+  --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
+  --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$skip_attempt/call-log.json")"
+assert_eq "$?" "0" "親の環境が未設定: 現行どおり request build まで進む"
+assert_eq "$(jq -r '.provider' "$skip_attempt/mcp-create.json")" "codex/sample-work" \
+  "親の環境が未設定: defaults.environment の候補を使う"
+assert_eq "$(jq -r '.state' "$skip_attempt/state.json")" "pending" \
+  "親の環境が未設定: create 前の state は pending"
 
 # --exercise-create は create の transport を持たない。snapshot と launch を検証して
 # から 0600 の request を書くだけであり、create 回数は常に 0 である。

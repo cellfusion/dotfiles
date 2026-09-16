@@ -179,6 +179,15 @@ function featureAllowlistForProviderId(resolvedExport, providerId) {
   return { ...providerFamilyDefinition(resolvedExport, entry.family).featureAllowlist }
 }
 
+// materializeProviderId の逆を行う。family 名が `-` を含む場合に文字列の分解では
+// 環境名と区別できないため、生成済みの entry を引く。
+function environmentForProviderId(resolvedExport, providerId) {
+  const generated = generatedProviderEntries(resolvedExport)
+  const entry = generated.entries.find((candidate) => candidate.id === providerId)
+  if (!entry) throw new ConfigError(`provider id ${providerId}: 未知である`)
+  return entry.environment
+}
+
 function assertAvailabilitySnapshot(value) {
   exactKeys(value, ['version', 'type', 'providers', 'models'], 'snapshot')
   if (value.version !== 1 || value.type !== 'paseo-availability-snapshot') {
@@ -275,6 +284,7 @@ module.exports = {
   CANDIDATE_REASONS,
   assertAvailabilitySnapshot,
   enumerateMaterializedProviderIds,
+  environmentForProviderId,
   featureAllowlistForProviderId,
   materializePaseo,
   materializeProviderId,

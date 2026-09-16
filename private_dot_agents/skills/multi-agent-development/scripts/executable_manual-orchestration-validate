@@ -373,15 +373,25 @@ normalize_launch_failure() {
   ' 2>/dev/null
 }
 
+# 契約違反は node の例外で非 0 になる。環境の不一致だけは 3 を返し、
+# 呼び出し側が waiting_for_user と failed を区別できるようにする。
 mad_assert_launch() {
-  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" <<'NODE' >/dev/null 2>&1
+  local parent_environment="${AGENT_ENV_SESSION-}"
+  [ -n "$parent_environment" ] || parent_environment="${AGENT_ENV-}"
+  node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" \
+    "$parent_environment" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
 const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
 const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
+const parentEnvironment = process.argv[5]
 const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
 contract.assertMadLaunchSpecV1(launch, allowlist)
+if (parentEnvironment.length > 0 &&
+  exporter.environmentForProviderId(resolved, launch.provider) !== parentEnvironment) {
+  process.exit(3)
+}
 NODE
 }
 
@@ -721,7 +731,13 @@ mad_exercise_success() {
         mad_finish_failure launch_validation 2 failed 0
       mad_add_event "$(jq -cn '{operation:"resolve",exitCode:0,outputType:"mad-launch-spec",stdoutDocuments:1}')" ||
         mad_finish_failure resolve 2 failed 0
-      mad_assert_launch || mad_finish_failure launch_validation 2 failed 0
+      mad_assert_launch
+      launch_assert_status=$?
+      case "$launch_assert_status" in
+        0) ;;
+        3) mad_finish_failure launch_validation 2 waiting_for_user 0 ;;
+        *) mad_finish_failure launch_validation 2 failed 0 ;;
+      esac
       ;;
     4)
       launch_raw="$(mad_single_document "$resolve_output")" || mad_finish_failure resolve 4 waiting_for_user 0
