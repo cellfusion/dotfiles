@@ -120,6 +120,17 @@
 - **仕様変更はドキュメント先行** — 正式なドキュメント（`docs/`）を実装より先に更新して仕様と実装の乖離を防ぐ。spec は `~/docs/<owner>/<repo>/specs/`、実装プランは `~/docs/<owner>/<repo>/plans/` に置く。パスは `~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。保存先はリポジトリの作業ツリーの外にあり、`docs/` はリポジトリの正式なドキュメント専用にする
 - **検証コマンド** — `/verify`（ビルド・型・lint・テスト）と `/pre-commit-review`（セキュリティ・品質）。`finishing-a-development-branch` の Step 1 がこれらを回す
 
+## Paseo の子エージェントを作るとき
+
+`mcp__paseo__create_agent` を呼ぶ前に `mcp__paseo__list_profiles` を呼び、各 profile の `notes` を読んで選ぶ。`notes` には、その profile をどの作業に使うかが書いてある。`profile` という引数は無いので、選んだ profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を `create_agent` へ写す。
+
+- 既定は `think_*` である。設計判断・調査・レビューを含め、考える作業はまずこれを選ぶ。
+- `deep_*` はエスカレーション専用である。`think_*` で解けなかったとき、または branch 全体の最終レビューのときだけ選ぶ。名前が「深い」からという理由で選ばない。
+- 実装と task 単位のレビューは `work_*`、指摘の解消判定のような判断の幅が狭い確認は `light_*` を選ぶ。
+- profile 名の接尾辞は AI 環境を表す。親の AI 環境と同じ接尾辞の profile を選び、別の環境の profile を選ばない。
+
+multi-agent-development の delivery は role が tier を決めるので、この選択を親が行わない。
+
 ## Shell Execution
 
 開発サーバー・ウォッチャーなど、止めるまで終わらないプロセスは Bash ツール内で直接動かさない。Bash ツール内で起動すると孤児として残留することがあり、ユーザーからは実行状況が見えない。別の端末に置けば、ユーザーが状況を見て停止できる。

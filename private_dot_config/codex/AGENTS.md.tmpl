@@ -24,6 +24,15 @@ code mode では MCP ツールが通常のツール一覧に並ばない。`exec
 - Paseo を操作するときは、`paseo` CLI より MCP ツールを先に使う。
 - 使えるツール名が分からないときは、`exec` で `Object.keys(tools)` を出して確認する。ツール一覧に無いことを理由に「MCP が使えない」と答えない。
 
+## Paseo の子エージェント profile
+
+`create_agent` の前に `list_profiles` を呼び、各 profile の `notes` を読んで選ぶ。`profile` 引数は無いので、選んだ profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を写す。
+
+- 既定は `think_*`。考える作業はまずこれを選ぶ。
+- `deep_*` はエスカレーション専用。`think_*` で解けなかったときと、branch 全体の最終レビューのときだけ選ぶ。
+- 実装と task 単位のレビューは `work_*`、判断の幅が狭い確認は `light_*`。
+- 環境の接尾辞は親の AI 環境に合わせる。
+
 ## Chezmoi
 
 - `~/.config` 配下を変更するときは、実体を直接編集せず `~/.local/share/chezmoi/` の対応するソースを編集する。
