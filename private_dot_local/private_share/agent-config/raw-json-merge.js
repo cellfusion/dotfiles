@@ -224,6 +224,10 @@ function assertMaterialized(materialized) {
         typeof profile.name !== 'string' || profile.name.length === 0 || typeof profile.provider !== 'string' ||
         typeof profile.model !== 'string' || profile.modeId !== 'auto' || typeof profile.thinkingOptionId !== 'string' ||
         !isObject(profile.featureValues)) throw new ConfigError('materialized profile: shape が不正である')
+    if (Object.prototype.hasOwnProperty.call(profile, 'notes') &&
+        (typeof profile.notes !== 'string' || profile.notes.length === 0)) {
+      throw new ConfigError('materialized profile: notes が不正である')
+    }
     if (profileIds.has(profile.id)) throw new ConfigError(`materialized profile ${profile.id}: 重複する`)
     profileIds.add(profile.id)
   }

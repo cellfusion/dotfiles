@@ -25,11 +25,16 @@ function resolvedEnvironments(config) {
   }))
 }
 
+// notes は採用した tier 定義のものだけを使う。environment tier が notes を持たない
+// ときに共通 tier の notes を借りると、説明と候補の出所がずれる。
 function staticCandidates(config, environment, tier) {
   const environmentTier = config.environments[environment].tiers[tier]
-  if (environmentTier !== undefined) return { candidates: environmentTier.candidates, warnings: [] }
+  if (environmentTier !== undefined) {
+    return { candidates: environmentTier.candidates, notes: environmentTier.notes, warnings: [] }
+  }
   return {
     candidates: config.tiers[tier].candidates,
+    notes: config.tiers[tier].notes,
     warnings: [`environment tier missing: ${environment}/${tier}; using common tier`],
   }
 }
@@ -48,7 +53,8 @@ function allStaticResolutions(config) {
           featureValues: candidate.featureValues,
         }))
       if (candidates.length === 0) throw new ConfigError(`resolution ${environment}/${tier}: candidate がない`)
-      resolutions.push({ environment, tier, candidates, warnings: selected.warnings })
+      const notes = selected.notes === undefined ? null : selected.notes
+      resolutions.push({ environment, tier, notes, candidates, warnings: selected.warnings })
     }
   }
   return resolutions

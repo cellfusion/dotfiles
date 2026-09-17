@@ -426,6 +426,15 @@ assert_eq "$(printf '%s' "$materialized" | jq -c '.profiles[] | select(.id == "a
 assert_eq "$(printf '%s' "$materialized" | jq -c '.profiles[] | select(.id == "agent_profile_managed_light_primary") | .featureValues')" \
   '{}' "allowlist: feature を書かない candidate は空のままにする"
 
+assert_eq "$(jq -r '.resolutions[] | select(.environment == "primary" and .tier == "deep") | .notes' "$export_json")" \
+  'fixture: think で解けなかったときだけ使う' "notes: 共通 tier の notes を resolved export へ渡す"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "agent_profile_managed_deep_primary") | .notes')" \
+  'fixture: think で解けなかったときだけ使う' "notes: profile の notes に tier の notes を写す"
+assert_eq "$(printf '%s' "$materialized" | jq -r '.profiles[] | select(.id == "agent_profile_managed_work_lab") | .notes')" \
+  'fixture: lab の通常作業に使う' "notes: environment tier の notes を優先する"
+assert_eq "$(printf '%s' "$materialized" | jq -c '[.profiles[] | select(has("notes") | not)] | length')" \
+  '0' "notes: 生成した profile がすべて notes を持つ"
+
 fast_mode_launch="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$?" "0" "launch: fast_mode true の candidate を解決できる"

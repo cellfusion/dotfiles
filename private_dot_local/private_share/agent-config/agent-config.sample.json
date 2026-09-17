@@ -8,10 +8,10 @@
     "pi": { "displayName": "Pi", "setup": null, "featureAllowlist": {} }
   },
   "tiers": {
-    "light": { "candidates": [{ "provider": "codex", "model": "sample-light", "thinkingOptionId": "medium", "featureValues": {} }] },
-    "work": { "candidates": [{ "provider": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": true } }] },
-    "think": { "candidates": [{ "provider": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] },
-    "deep": { "candidates": [{ "provider": "claude", "model": "sample-deep", "thinkingOptionId": "max", "featureValues": { "fast_mode": true } }] }
+    "light": { "notes": "sample: 定型の軽い作業に使う", "candidates": [{ "provider": "codex", "model": "sample-light", "thinkingOptionId": "medium", "featureValues": {} }] },
+    "work": { "notes": "sample: 通常の実装とレビューに使う", "candidates": [{ "provider": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": true } }] },
+    "think": { "notes": "sample: 設計判断を伴う作業に使う", "candidates": [{ "provider": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] },
+    "deep": { "notes": "sample: think で解けなかったときだけ使う", "candidates": [{ "provider": "claude", "model": "sample-deep", "thinkingOptionId": "max", "featureValues": { "fast_mode": true } }] }
   },
   "environments": {
     "primary": { "providers": ["claude", "codex", "opencode", "pi"], "tiers": {} },

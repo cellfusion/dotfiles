@@ -73,10 +73,11 @@ function assertProviderFamily(value) {
 }
 
 function assertResolution(value) {
-  assertExactObject(value, ['environment', 'tier', 'candidates', 'warnings'])
+  assertExactObject(value, ['environment', 'tier', 'notes', 'candidates', 'warnings'])
   assertNoPaseoField(value)
   assertNonEmptyString(value.environment)
   if (!TIERS.includes(value.tier)) throw new TypeError('resolved-config: tier が不正')
+  if (value.notes !== null) assertNonEmptyString(value.notes)
   if (!Array.isArray(value.candidates) || !Array.isArray(value.warnings)) throw new TypeError('resolved-config: resolution の配列が不正')
   for (const candidate of value.candidates) {
     assertExactObject(candidate, ['family', 'model', 'thinkingOptionId', 'featureValues'])

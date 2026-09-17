@@ -151,6 +151,7 @@ function materializePaseo(resolved) {
     const id = `agent_profile_managed_${resolution.tier}_${resolution.environment}`
     if (profileIds.has(id)) throw new ConfigError(`generated profile id ${id}: 重複する`)
     profileIds.add(id)
+    // notes は Paseo の "When to use" 欄であり、子を作る側が profile を選ぶ根拠になる。
     profiles.push({
       id,
       name: `${resolution.tier}_${resolution.environment}`,
@@ -159,6 +160,7 @@ function materializePaseo(resolved) {
       modeId: 'auto',
       thinkingOptionId: candidate.thinkingOptionId,
       featureValues: { ...candidate.featureValues },
+      ...(resolution.notes === null ? {} : { notes: resolution.notes }),
     })
     for (const warning of resolution.warnings) {
       if (!warnings.includes(warning)) warnings.push(warning)

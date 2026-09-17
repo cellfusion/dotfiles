@@ -8,14 +8,14 @@
     "pi": { "displayName": "Pi", "setup": null, "featureAllowlist": {} }
   },
   "tiers": {
-    "light": { "candidates": [{ "provider": "codex", "model": "sample-light", "thinkingOptionId": "medium", "featureValues": {} }] },
-    "work": { "candidates": [{ "provider": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": true } }] },
-    "think": { "candidates": [{ "provider": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] },
-    "deep": { "candidates": [{ "provider": "claude", "model": "sample-deep", "thinkingOptionId": "max", "featureValues": { "fast_mode": true } }] }
+    "light": { "notes": "fixture: 定型の軽い作業に使う", "candidates": [{ "provider": "codex", "model": "sample-light", "thinkingOptionId": "medium", "featureValues": {} }] },
+    "work": { "notes": "fixture: 通常の実装とレビューに使う", "candidates": [{ "provider": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": true } }] },
+    "think": { "notes": "fixture: 設計判断を伴う作業に使う", "candidates": [{ "provider": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] },
+    "deep": { "notes": "fixture: think で解けなかったときだけ使う", "candidates": [{ "provider": "claude", "model": "sample-deep", "thinkingOptionId": "max", "featureValues": { "fast_mode": true } }] }
   },
   "environments": {
     "primary": { "providers": ["claude", "codex", "opencode", "pi"], "tiers": {} },
-    "lab": { "providers": ["claude", "codex"], "tiers": { "work": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] } } }
+    "lab": { "providers": ["claude", "codex"], "tiers": { "work": { "notes": "fixture: lab の通常作業に使う", "candidates": [{ "provider": "codex", "model": "sample-lab-work", "thinkingOptionId": "high", "featureValues": { "fast_mode": false } }] } } }
   },
   "agentRoles": {
     "implementer": { "tier": "work", "access": "write", "description": "実装と検証を行う", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["implementer"] },

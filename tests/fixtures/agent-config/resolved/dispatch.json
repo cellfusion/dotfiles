@@ -14,7 +14,7 @@
     { "name": "lab", "eligibleFamilies": ["claude", "codex"] }
   ],
   "resolutions": [
-    { "environment": "lab", "tier": "think", "candidates": [{ "family": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
+    { "environment": "lab", "tier": "think", "notes": null, "candidates": [{ "family": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
   ],
   "selection": { "environment": "lab", "tier": "think" }
 }

@@ -212,7 +212,7 @@ function writeAtomic(pathname, raw) {
   }
 }
 
-const MANAGED_PROFILE_FIELDS = ['id', 'name', 'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues']
+const MANAGED_PROFILE_FIELDS = ['id', 'name', 'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues', 'notes']
 
 function hasOwn(value, key) {
   return value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)
