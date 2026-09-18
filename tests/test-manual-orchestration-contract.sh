@@ -263,8 +263,8 @@ printf '%s\n' '{
   "phase": "review",
   "phase_state": "unresolved",
   "next_action": "stop run",
-  "current_round": 2,
-  "max_rounds": 2,
+  "current_round": 4,
+  "max_rounds": 4,
   "started_at": "2026-09-05T00:00:00Z",
   "finished_at": "2026-09-05T00:01:00Z",
   "backend": "paseo-mcp",
@@ -285,7 +285,7 @@ status=$?
 assert_eq "$status" "1" "validator: max_rounds を超えた unresolved run を拒否する"
 assert_contains "$out" "max_rounds" "validator: loop 上限違反を示す"
 
-jq '.max_rounds = 2 | .state = "running" | .phase_state = "running"' \
+jq '.max_rounds = 4 | .state = "running" | .phase_state = "running"' \
   "$LOOP_RUN/state.json" > "$LOOP_RUN/state.json.tmp"
 mv "$LOOP_RUN/state.json.tmp" "$LOOP_RUN/state.json"
 out="$(bash "$VALIDATOR" "$LOOP_RUN" 2>&1)"
@@ -377,7 +377,7 @@ write_recipe_run() {
   jq -n --arg run "$run_id" --arg recipe "$recipe" --arg node "$node_id" \
     --arg artifact "$attempt_dir/result.json" '{
     run_id: $run, recipe: $recipe, state: "ok", phase: $recipe, phase_state: "ok",
-    next_action: "complete run", current_round: 1, max_rounds: 2,
+    next_action: "complete run", current_round: 1, max_rounds: 4,
     backend: "paseo-mcp", backend_reason: "Paseo MCP available",
     parent_decision: "complete", active_nodes: [], completed_nodes: [$node],
     adopted_attempts: { ($node): "attempt-001" }, artifact_paths: [$artifact]
@@ -567,7 +567,7 @@ mk_run_with_workspaces() {
   # 既存の run-01 の state.json を土台にし、recipe を implement、base を足す。
   # implement の ok run は max_rounds と final-review node も要る。
   jq --arg run "$run_id" --arg artifact "$dir/nodes/final-review/attempts/a1/result.md" \
-    '.run_id = $run | .recipe = "implement" | .base = "master" | .max_rounds = 2 |
+    '.run_id = $run | .recipe = "implement" | .base = "master" | .max_rounds = 4 |
      .completed_nodes = ["implement-1", "final-review"] |
      .adopted_attempts = {"implement-1": "a1", "final-review": "a1"} |
      .artifact_paths = [$artifact]' "$RUN/state.json" > "$dir/state.json"
@@ -657,7 +657,7 @@ mk_recipe_run_with_node() {
   jq --arg run "$run_id" --arg recipe "$recipe" --arg node "$node_id" \
     --arg attempt "$attempt_id" \
     --arg artifact "$run_dir/nodes/$node_id/attempts/$attempt_id/result.md" \
-    '.run_id = $run | .recipe = $recipe | .max_rounds = 2 |
+    '.run_id = $run | .recipe = $recipe | .max_rounds = 4 |
      .completed_nodes = [$node] | .adopted_attempts = { ($node): $attempt } |
      .artifact_paths = [$artifact]' "$RUN/state.json" > "$run_dir/state.json"
   if [ -n "$output_node" ]; then
@@ -849,6 +849,15 @@ printf '質問と選択肢\n' > "$DR_FILE"
 out="$(validate_run "$DR")"
 assert_not_contains "$out" "decision_request の実体" \
   "decision_request の実体がある run では、その指摘を出さない"
+
+SHARE="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config"
+names="$(node -e '
+const c = require(process.argv[1])
+console.log([1, 2, 3].map((round) =>
+  require("node:path").basename(c.reviewAdmissionPath("/tmp/run", "task-a", "fix", round))).join(" "))
+' "$SHARE/mad-contract.js")"
+assert_eq "$names" "task-a-fix-round-1.json task-a-fix-round-2.json task-a-fix-round-3.json" \
+  "review admission: round ごとにファイル名が分かれる"
 
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

@@ -1266,11 +1266,11 @@ validate_review_policy() {
     "$run_state" >/dev/null 2>&1 ||
     fail "$run_state: review policy is required for review/fix attempts"
   policy_rounds="$(jq -r '.review_policy.max_rounds' "$run_state")"
-  [ "$policy_rounds" = "2" ] ||
-    fail "$run_state: review policy max_rounds must be 2"
+  [ "$policy_rounds" = "4" ] ||
+    fail "$run_state: review policy max_rounds must be 4"
   [ "$(jq -r '.max_rounds // empty' "$run_state")" = "$policy_rounds" ] ||
     fail "$run_state: max_rounds must match the review policy"
-  [ "$current_round" -ge 0 ] && [ "$current_round" -lt 2 ] ||
+  [ "$current_round" -ge 0 ] && [ "$current_round" -lt 4 ] ||
     fail "$run_state: review policy current_round reached its hard limit"
   scope_path="$(jq -r '.review_policy.scope_file' "$run_state")"
   observations_path="$(jq -r '.review_policy.out_of_scope_path' "$run_state")"

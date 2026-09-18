@@ -42,13 +42,13 @@ const MAD_CALL_LOG_EVENT_KEYS = {
 // create の transport は公式 MCP tool だけである。call log はその一語だけを許す。
 const MAD_CREATE_TRANSPORT = 'mcp__paseo__create_agent'
 const MAD_POST_CREATE_OPERATIONS = ['create_agent', 'wait_agent', 'stop_agent', 'failure']
-// review/fix は review 一回と fix/re-review 一回だけを許す。上限は protocol の値であり、
-// 親が任意の max_rounds を設定して回避できないようにする。
-const MAD_REVIEW_MAX_ROUNDS = 2
+// review/fix は round 0 の初回 review と、round 1 から 3 の fix/re-review を許す。
+// 上限は protocol の値であり、親が任意の max_rounds を設定して回避できないようにする。
+const MAD_REVIEW_MAX_ROUNDS = 4
 const MAD_REVIEW_SCOPE_KEYS = ['version', 'type', 'task', 'allowedFiles', 'findingIds', 'outOfScopePath']
 const MAD_REVIEW_ADMISSION_KEYS = ['version', 'type', 'task', 'phase', 'node', 'attempt', 'round', 'scopeDigest']
 const MAD_REVIEW_OBSERVATION_KEYS = ['version', 'type', 'task', 'items']
-const MAD_REVIEW_PHASE_ROUNDS = { review: 0, fix: 1, 're-review': 1 }
+const MAD_REVIEW_PHASE_ROUNDS = { review: [0, 0], fix: [1, 3], 're-review': [1, 3] }
 const SNAPSHOT_KEYS = ['version', 'type', 'providers', 'models']
 
 class MadContractError extends Error {
@@ -460,7 +460,8 @@ function assertMadReviewAdmissionV1(value) {
   if (!Number.isInteger(value.round) || value.round < 0 || value.round >= MAD_REVIEW_MAX_ROUNDS) {
     fail(code, 'mad review admission round が不正である')
   }
-  if (value.round !== MAD_REVIEW_PHASE_ROUNDS[value.phase]) {
+  const range = MAD_REVIEW_PHASE_ROUNDS[value.phase]
+  if (value.round < range[0] || value.round > range[1]) {
     fail(code, 'mad review admission phase と round が一致しない')
   }
   if (!/^[0-9a-f]{64}$/.test(value.scopeDigest)) fail(code, 'mad review admission scopeDigest が不正である')
@@ -471,8 +472,8 @@ function assertMadReviewAdmissionFile0600(admissionPath) {
   return assertMadReviewAdmissionV1(readStrictJson0600(admissionPath, 'invalid_mad_review_admission', 'mad review admission'))
 }
 
-function reviewAdmissionPath(runDir, task, phase) {
-  return path.join(runDir, 'review-admissions', `${task}-${phase}-round-${MAD_REVIEW_PHASE_ROUNDS[phase]}.json`)
+function reviewAdmissionPath(runDir, task, phase, round) {
+  return path.join(runDir, 'review-admissions', `${task}-${phase}-round-${round}.json`)
 }
 
 function assertReviewRunPolicy(runState, scopePath, scope, code) {
@@ -503,7 +504,7 @@ function existingReviewAdmissions(runDir, task) {
   return admissions
 }
 
-// review/fix child の create 前に、task scope と固定 round 上限を確認して admission を一回だけ発行する。
+// review/fix child の create 前に、task scope と round 上限を確認して admission を一回だけ発行する。
 // marker の取得に失敗した呼び出しは公式 MCP create へ進めない。
 function prepareMadReview0600(runDir, scopePath, phase, node, attempt, taskOverride) {
   const code = 'invalid_mad_review_admission'
@@ -520,33 +521,34 @@ function prepareMadReview0600(runDir, scopePath, phase, node, attempt, taskOverr
   const statePath = path.join(runDir, 'state.json')
   const runState = readStrictJson0600(statePath, code, 'mad review run state')
   assertReviewRunPolicy(runState, scopePath, scope, code)
-  const round = MAD_REVIEW_PHASE_ROUNDS[phase]
-  if (runState.current_round !== round) fail(code, 'mad review current_round と admission round が一致しない')
+  const round = runState.current_round
+  const range = MAD_REVIEW_PHASE_ROUNDS[phase]
+  if (!Number.isInteger(round) || round < range[0] || round > range[1]) {
+    fail(code, 'mad review current_round と phase が一致しない')
+  }
   const admissions = existingReviewAdmissions(runDir, scope.task)
   const digest = reviewScopeDigest(scopeFile.raw)
   if (phase !== 'review') {
     const previousPhase = phase === 'fix' ? 'review' : 'fix'
-    const previous = admissions.find(({ value }) => value.phase === previousPhase)
+    const previousRound = phase === 'fix' ? 0 : round
+    const previous = admissions.find(({ value }) => value.phase === previousPhase && value.round === previousRound)
     if (!previous || previous.value.scopeDigest !== digest) {
       fail(code, 'mad review scope は loop 中に変更できない')
     }
   }
-  if (admissions.some(({ value }) => value.round >= MAD_REVIEW_MAX_ROUNDS)) {
-    fail(code, 'mad review round 上限に達している')
-  }
-  if (admissions.some(({ value }) => value.phase === phase)) {
+  if (admissions.some(({ value }) => value.phase === phase && value.round === round)) {
     fail(code, 'mad review admission は既に発行されている')
   }
-  if (phase === 'fix' && !admissions.some(({ value }) => value.phase === 'review')) {
+  if (phase === 'fix' && !admissions.some(({ value }) => value.phase === 'review' && value.round === 0)) {
     fail(code, 'fix は review admission の後でなければならない')
   }
-  if (phase === 're-review' && !admissions.some(({ value }) => value.phase === 'fix')) {
-    fail(code, 're-review は fix admission の後でなければならない')
+  if (phase === 're-review' && !admissions.some(({ value }) => value.phase === 'fix' && value.round === round)) {
+    fail(code, 're-review は同じ round の fix admission の後でなければならない')
   }
   if ((phase === 'fix' || phase === 're-review') && scope.findingIds.length === 0) {
     fail(code, 'fix/re-review には既存 finding が必要である')
   }
-  const admissionPath = reviewAdmissionPath(runDir, scope.task, phase)
+  const admissionPath = reviewAdmissionPath(runDir, scope.task, phase, round)
   const admission = {
     version: 1,
     type: 'mad-review-admission',
@@ -890,6 +892,7 @@ module.exports = {
   assertMadReviewScopeV1,
   assertMadReviewAdmissionV1,
   assertMadReviewAdmissionFile0600,
+  reviewAdmissionPath,
   prepareMadReview0600,
   checkMadReviewScope0600,
   assertMadReviewObservationsV1,
