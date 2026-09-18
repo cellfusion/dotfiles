@@ -6,16 +6,14 @@ const crypto = require('node:crypto')
 
 const { validateConfig } = require('./config-validator.js')
 const { resolveExport } = require('./resolver.js')
-const {
-  assertAvailabilitySnapshot,
-  enumerateMaterializedProviderIds,
-} = require('./paseo-exporter.js')
+const { assertAvailabilitySnapshot } = require('./paseo-launch.js')
+const { enumerateMaterializedProviderIds } = require('./paseo-providers.js')
 
-const TIERS = ['deep', 'think', 'work', 'light']
+const { DUTIES, COMPLEXITIES } = require('./config-types.js')
 const SCALAR_TYPES = ['boolean', 'string', 'integer']
 const MAD_LAUNCH_KEYS = [
-  'version', 'type', 'status', 'profileName', 'environment', 'tier',
-  'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues', 'warnings',
+  'version', 'type', 'status', 'environment', 'duty', 'complexity', 'requestedComplexity',
+  'provider', 'model', 'modeId', 'thinkingOptionId', 'features', 'warnings',
 ]
 const MAD_REQUEST_KEYS = ['title', 'workspaceId', 'initialPrompt', 'notifyOnFinish', 'provider', 'settings']
 const MAD_SETTINGS_KEYS = ['modeId', 'thinkingOptionId', 'features']
@@ -33,7 +31,8 @@ const MAD_CALL_LOG_EVENT_KEYS = {
   list_providers: ['callCount', 'materializedProviderIds', 'availableProviderIds'],
   list_models: ['callCount', 'provider'],
   write_snapshot: ['path', 'mode', 'regularFile'],
-  resolve: ['exitCode', 'outputType', 'stdoutDocuments'],
+  resolve: ['exitCode', 'outputType', 'stdoutDocuments', 'environment', 'role', 'duty',
+    'complexity', 'requestedComplexity', 'provider', 'model', 'effort', 'features'],
   build_create_request: ['path', 'mode', 'regularFile', 'topLevelKeys', 'settingsKeys', 'validatedBeforeWrite'],
   create_agent: ['callCount', 'requestPath', 'transport'],
   wait_agent: ['callCount', 'timeoutSeconds', 'status'],
@@ -228,14 +227,15 @@ function assertMadLaunchSpecV1(value, featureAllowlist) {
   if (value.version !== 1 || value.type !== 'mad-launch-spec' || value.status !== 'ok') {
     fail(code, 'mad launch: success discriminator が不正である')
   }
-  safeIdentifier(value.profileName, code, 'mad launch profileName')
   safeIdentifier(value.environment, code, 'mad launch environment')
-  if (!TIERS.includes(value.tier)) fail(code, 'mad launch tier が不正である')
+  if (!DUTIES.includes(value.duty)) fail(code, 'mad launch duty が不正である')
+  if (!COMPLEXITIES.includes(value.complexity)) fail(code, 'mad launch complexity が不正である')
+  if (!COMPLEXITIES.includes(value.requestedComplexity)) fail(code, 'mad launch requestedComplexity が不正である')
   safeIdentifier(value.provider, code, 'mad launch provider')
   nonEmptyString(value.model, code, 'mad launch model')
   if (value.modeId !== 'auto') fail(code, 'mad launch modeId は auto でなければならない')
   nonEmptyString(value.thinkingOptionId, code, 'mad launch thinkingOptionId')
-  assertFeatureValues(value.featureValues, featureAllowlist, code, 'mad launch featureValues')
+  assertFeatureValues(value.features, featureAllowlist, code, 'mad launch features')
   assertWarnings(value.warnings, code, 'mad launch warnings')
   return value
 }
@@ -262,7 +262,7 @@ function assertMadCreateRequestMatchesLaunchV1(request, launch) {
   const sorted = (value) => JSON.stringify(Object.entries(value).sort())
   if (request.provider !== `${launch.provider}/${launch.model}` ||
       request.settings.thinkingOptionId !== launch.thinkingOptionId ||
-      sorted(request.settings.features) !== sorted(launch.featureValues)) {
+      sorted(request.settings.features) !== sorted(launch.features)) {
     fail(code, 'mad create request: launch spec と一致しない')
   }
   return request
@@ -643,7 +643,7 @@ function buildMadCreateRequestV1(launchValue, featureAllowlist, context) {
     settings: {
       modeId: 'auto',
       thinkingOptionId: launch.thinkingOptionId,
-      features: { ...launch.featureValues },
+      features: { ...launch.features },
     },
   }
   return assertMadCreateRequestV1(request, featureAllowlist)
@@ -875,6 +875,7 @@ module.exports = {
   MadContractError,
   MAD_CREATE_TRANSPORT,
   MAD_CREATE_PREPARE_MARKER_NAME,
+  MAD_LAUNCH_KEYS,
   MAD_REVIEW_MAX_ROUNDS,
   MAD_REVIEW_PHASE_ROUNDS,
   assertMadLaunchSpecV1,
