@@ -214,22 +214,9 @@ function applyEdits(raw, edits) {
 }
 
 function assertMaterialized(materialized) {
-  if (!isObject(materialized) || !Array.isArray(materialized.profiles) || !isObject(materialized.providers) ||
+  if (!isObject(materialized) || !isObject(materialized.providers) ||
       !Array.isArray(materialized.warnings) || !materialized.warnings.every((warning) => typeof warning === 'string')) {
     throw new ConfigError('materialized Paseo: shape が不正である')
-  }
-  const profileIds = new Set()
-  for (const profile of materialized.profiles) {
-    if (!isObject(profile) || typeof profile.id !== 'string' || profile.id.length === 0 ||
-        typeof profile.name !== 'string' || profile.name.length === 0 || typeof profile.provider !== 'string' ||
-        typeof profile.model !== 'string' || profile.modeId !== 'auto' || typeof profile.thinkingOptionId !== 'string' ||
-        !isObject(profile.featureValues)) throw new ConfigError('materialized profile: shape が不正である')
-    if (Object.prototype.hasOwnProperty.call(profile, 'notes') &&
-        (typeof profile.notes !== 'string' || profile.notes.length === 0)) {
-      throw new ConfigError('materialized profile: notes が不正である')
-    }
-    if (profileIds.has(profile.id)) throw new ConfigError(`materialized profile ${profile.id}: 重複する`)
-    profileIds.add(profile.id)
   }
   for (const [providerId, provider] of Object.entries(materialized.providers)) {
     if (!isObject(provider) || typeof provider.label !== 'string' || !isObject(provider.env)) {
@@ -297,61 +284,19 @@ function mergeManagedPaseo(raw, materialized) {
   const root = parseRawJson(raw)
   if (root.type !== 'object') throw new ConfigError('target: root は object である必要がある')
   const rootEntries = objectEntries(root, 'target root')
-  const daemonEntry = rootEntries.get('daemon')
   const agentsEntry = rootEntries.get('agents')
-  if (!daemonEntry || !agentsEntry) throw new ConfigError('target: daemon と agents の親が必要である')
-  if (daemonEntry.value.type !== 'object' || agentsEntry.value.type !== 'object') {
-    throw new ConfigError('target: daemon と agents は object である必要がある')
-  }
-  const daemonEntries = objectEntries(daemonEntry.value, 'target daemon')
+  if (!agentsEntry) throw new ConfigError('target: agents の親が必要である')
+  if (agentsEntry.value.type !== 'object') throw new ConfigError('target: agents は object である必要がある')
   const agentsEntries = objectEntries(agentsEntry.value, 'target agents')
-  const profilesEntry = daemonEntries.get('agentProfiles')
   const providersEntry = agentsEntries.get('providers')
-  if (!profilesEntry || !providersEntry) throw new ConfigError('target: agentProfiles と providers の親が必要である')
-  if (profilesEntry.value.type !== 'array' || providersEntry.value.type !== 'object') {
-    throw new ConfigError('target: agentProfiles は array、providers は object である必要がある')
-  }
+  if (!providersEntry) throw new ConfigError('target: providers の親が必要である')
+  if (providersEntry.value.type !== 'object') throw new ConfigError('target: providers は object である必要がある')
 
-  const materializedProfileById = new Map(materialized.profiles.map((profile) => [profile.id, profile]))
   const materializedProviderById = new Map(Object.entries(materialized.providers))
   const edits = []
   const insertions = new Map()
   const warnings = [...materialized.warnings]
-  const existingProfileIds = new Set()
   const existingProviderIds = new Set()
-
-  for (const item of profilesEntry.value.items) {
-    if (item.type !== 'object') {
-      throw new ConfigError('target: agentProfiles の record が object でない')
-    }
-    const id = item.value.id
-    const name = item.value.name
-    if (isManagedProfileId(id)) {
-      if (existingProfileIds.has(id)) throw new ConfigError(`target profile ${id}: ID が重複する`)
-      existingProfileIds.add(id)
-      if (materializedProfileById.has(id)) {
-        edits.push({ start: item.start, end: item.end, text: stringify(materializedProfileById.get(id)) })
-      } else {
-        warnings.push(`stale managed profile: ${id}; remove manually`)
-      }
-    }
-  }
-
-  for (const profile of materialized.profiles) {
-    for (const item of profilesEntry.value.items) {
-      if (item.type !== 'object' || isManagedProfileId(item.value.id)) continue
-      if (item.value.name === profile.name) {
-        throw new ConfigError(`target profile name ${profile.name}: unmanaged profile と衝突する`)
-      }
-    }
-  }
-
-  const newProfiles = materialized.profiles.filter((profile) => !existingProfileIds.has(profile.id))
-  if (newProfiles.length > 0) {
-    const content = newProfiles.map((profile) => stringify(profile)).join(',')
-    const prefix = profilesEntry.value.items.length === 0 ? '' : ','
-    edits.push({ start: profilesEntry.value.end - 1, end: profilesEntry.value.end - 1, text: `${prefix}${content}` })
-  }
 
   for (const entry of providersEntry.value.entries) {
     if (entry.value.type !== 'object') throw new ConfigError(`target provider ${entry.key}: record が object でない`)
@@ -385,4 +330,43 @@ function mergeManagedPaseo(raw, materialized) {
   return { raw: merged, changed: merged !== raw, warnings }
 }
 
-module.exports = { mergeManagedPaseo }
+// prune-paseo-profiles が呼ぶ。profile の生成をやめた後、~/.paseo/config.json に
+// 残った managed profile だけを取り除く。
+function removeManagedPaseoProfiles(raw) {
+  const root = parseRawJson(raw)
+  if (root.type !== 'object') throw new ConfigError('target: root は object である必要がある')
+  const rootEntries = objectEntries(root, 'target root')
+  const daemonEntry = rootEntries.get('daemon')
+  if (!daemonEntry || daemonEntry.value.type !== 'object') return { raw, changed: false }
+  const daemonEntries = objectEntries(daemonEntry.value, 'target daemon')
+  const profilesEntry = daemonEntries.get('agentProfiles')
+  if (!profilesEntry || profilesEntry.value.type !== 'array') return { raw, changed: false }
+
+  const items = profilesEntry.value.items
+  const managed = items.map((item) => item.type === 'object' && isManagedProfileId(item.value.id))
+  // 連続する managed profile を 1 件の編集にまとめる。1 件ずつ編集にすると、
+  // 隣り合う 2 件の区間が重なり applyEdits が overlapping JSON edit を投げる。
+  const removed = []
+  let index = 0
+  while (index < items.length) {
+    if (!managed[index]) { index += 1; continue }
+    let last = index
+    while (last + 1 < items.length && managed[last + 1]) last += 1
+    if (index > 0) {
+      // 直前に残す要素があるので、その要素の終わりから区間の終わりまでを消す。
+      removed.push({ start: items[index - 1].end, end: items[last].end, text: '' })
+    } else if (last + 1 < items.length) {
+      // 先頭から始まる区間で、後ろに残す要素がある。次の要素の手前までを消す。
+      removed.push({ start: items[0].start, end: items[last + 1].start, text: '' })
+    } else {
+      // 配列の全要素が managed である。
+      removed.push({ start: items[0].start, end: items[last].end, text: '' })
+    }
+    index = last + 1
+  }
+  if (removed.length === 0) return { raw, changed: false }
+  const merged = applyEdits(raw, removed)
+  return { raw: merged, changed: merged !== raw }
+}
+
+module.exports = { mergeManagedPaseo, removeManagedPaseoProfiles }
