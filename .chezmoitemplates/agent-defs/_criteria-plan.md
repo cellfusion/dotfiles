@@ -63,6 +63,8 @@
 
 **Depends on:** Task 2, Task 3
 
+**Complexity:** standard
+
 **Interfaces:**
 - Consumes: [先行タスクから使うもの — 正確なシグネチャ]
 - Produces: [後続タスクが依存するもの — 正確な関数名、引数と戻り値の型。
@@ -111,6 +113,21 @@ git commit -m "feat: add specific feature"
 - **Interfaces の Consumes に他タスクの Produces が出てくるなら、そのタスクを Depends on に書く。** 例外なく
 - **`Files:` が重なるタスクは並行にできない。** 同じファイルを触る 2 つのタスクは、どちらかがもう一方に依存する形にする
 - 迷ったら依存を書く。並行にならないだけで、壊れることはない
+
+### タスクの複雑度
+
+各タスクは `**Depends on:**` の直後に `**Complexity:**` の 1 行を持つ。値は `routine`、
+`standard`、`complex` のいずれかである。親はこの値を `agent-config resolve` の
+`--complexity` へ渡し、子の provider と model を決める。
+
+- `routine` — 変更の形が既に決まっており、判断の幅が狭い。文字列の置き換え、path の付け替え、
+  既存の検査の値だけを変えるタスクが当たる
+- `standard` — 1 ファイルから数ファイルの範囲で、既存の設計に沿って実装する。既定の値である
+- `complex` — 設計判断を含む。ファイルの分割、契約の key set の変更、複数の呼び出し元へ
+  波及する変更が当たる
+
+行を書かないタスクは `standard` として扱われる。値を書き間違えると
+`paseo-plan-dependency-validate` が exit 2 で拒む。
 
 `Depends on` を書かないタスクは、それより前の全タスク全部に依存するものとして扱われる（＝直列）。安全側には倒れるが、並行の余地は失われる。
 
