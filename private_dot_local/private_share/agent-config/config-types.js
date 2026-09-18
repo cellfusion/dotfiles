@@ -1,7 +1,9 @@
 'use strict'
 
-const TIERS = ['deep', 'think', 'work', 'light']
-const PASEO_FIELDS = ['provider', 'profileName', 'modeId', 'extends', 'label', 'env', 'reasonCode', 'snapshot', 'providerId']
+const DUTIES = ['author', 'implement', 'review', 'synthesize']
+const COMPLEXITIES = ['routine', 'standard', 'complex']
+const PASEO_FIELDS = ['provider', 'profileName', 'modeId', 'thinkingOptionId', 'featureValues',
+  'extends', 'label', 'env', 'reasonCode', 'snapshot', 'providerId']
 const EXPORT_KEYS = ['version', 'type', 'scope', 'defaultEnvironment', 'providerFamilies', 'environments', 'resolutions']
 const DISPATCH_KEYS = [...EXPORT_KEYS, 'selection']
 const SCHEMA_KEYWORDS = ['$schema', '$id', 'title', 'description', 'type', 'const', 'enum', 'required',
@@ -26,12 +28,12 @@ function assertNoPaseoField(value) {
 
 function assertFeatureValues(value) {
   assertNoPaseoField(value)
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('resolved-config: featureValues は object')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('resolved-config: features は object')
   for (const [key, scalar] of Object.entries(value)) {
-    if (!/^[a-z][a-z0-9_-]*$/.test(key)) throw new TypeError('resolved-config: featureValues の key が不正')
+    if (!/^[a-z][a-z0-9_-]*$/.test(key)) throw new TypeError('resolved-config: features の key が不正')
     const scalarType = typeof scalar
     const ok = scalarType === 'boolean' || scalarType === 'string' || (scalarType === 'number' && Number.isFinite(scalar))
-    if (!ok) throw new TypeError('resolved-config: featureValues の値が許可した scalar でない')
+    if (!ok) throw new TypeError('resolved-config: features の値が許可した scalar でない')
   }
 }
 
@@ -56,10 +58,13 @@ function assertSetup(value) {
 }
 
 function assertProviderFamily(value) {
-  assertExactObject(value, ['family', 'displayName', 'setup', 'featureAllowlist'])
+  assertExactObject(value, ['family', 'displayName', 'backends', 'setup', 'featureAllowlist'])
   assertNoPaseoField(value)
   assertNonEmptyString(value.family)
   assertNonEmptyString(value.displayName)
+  if (!Array.isArray(value.backends) || value.backends.length === 0) throw new TypeError('resolved-config: backends が不正')
+  value.backends.forEach(assertNonEmptyString)
+  if (new Set(value.backends).size !== value.backends.length) throw new TypeError('resolved-config: backends が重複する')
   if (value.setup !== null) assertSetup(value.setup)
   assertNoPaseoField(value.featureAllowlist)
   if (!value.featureAllowlist || typeof value.featureAllowlist !== 'object' || Array.isArray(value.featureAllowlist)) {
@@ -73,19 +78,20 @@ function assertProviderFamily(value) {
 }
 
 function assertResolution(value) {
-  assertExactObject(value, ['environment', 'tier', 'notes', 'candidates', 'warnings'])
+  assertExactObject(value, ['environment', 'duty', 'complexity', 'notes', 'candidates', 'warnings'])
   assertNoPaseoField(value)
   assertNonEmptyString(value.environment)
-  if (!TIERS.includes(value.tier)) throw new TypeError('resolved-config: tier が不正')
+  if (!DUTIES.includes(value.duty)) throw new TypeError('resolved-config: duty が不正')
+  if (!COMPLEXITIES.includes(value.complexity)) throw new TypeError('resolved-config: complexity が不正')
   if (value.notes !== null) assertNonEmptyString(value.notes)
   if (!Array.isArray(value.candidates) || !Array.isArray(value.warnings)) throw new TypeError('resolved-config: resolution の配列が不正')
   for (const candidate of value.candidates) {
-    assertExactObject(candidate, ['family', 'model', 'thinkingOptionId', 'featureValues'])
+    assertExactObject(candidate, ['family', 'model', 'effort', 'features'])
     assertNoPaseoField(candidate)
     assertNonEmptyString(candidate.family)
     assertNonEmptyString(candidate.model)
-    assertNonEmptyString(candidate.thinkingOptionId)
-    assertFeatureValues(candidate.featureValues)
+    assertNonEmptyString(candidate.effort)
+    assertFeatureValues(candidate.features)
   }
   if (!value.warnings.every((warning) => typeof warning === 'string')) throw new TypeError('resolved-config: warnings が不正')
 }
@@ -116,12 +122,16 @@ function assertResolvedConfig(value) {
   }
   value.resolutions.forEach(assertResolution)
   if (value.scope === 'dispatch') {
-    assertExactObject(value.selection, ['environment', 'tier'])
+    assertExactObject(value.selection, ['environment', 'duty', 'complexity', 'requestedComplexity'])
     assertNoPaseoField(value.selection)
     assertNonEmptyString(value.selection.environment)
-    if (!TIERS.includes(value.selection.tier)) throw new TypeError('resolved-config: selection.tier が不正')
+    if (!DUTIES.includes(value.selection.duty)) throw new TypeError('resolved-config: selection.duty が不正')
+    if (!COMPLEXITIES.includes(value.selection.complexity)) throw new TypeError('resolved-config: selection.complexity が不正')
+    if (!COMPLEXITIES.includes(value.selection.requestedComplexity)) {
+      throw new TypeError('resolved-config: selection.requestedComplexity が不正')
+    }
   }
   return value
 }
 
-module.exports = { TIERS, PASEO_FIELDS, SCHEMA_KEYWORDS, assertResolvedConfig }
+module.exports = { DUTIES, COMPLEXITIES, PASEO_FIELDS, SCHEMA_KEYWORDS, assertResolvedConfig }
