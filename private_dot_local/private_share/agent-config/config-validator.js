@@ -203,7 +203,7 @@ function candidateLists(config) {
     }
   }
   for (const [environment, definition] of Object.entries(config.environments)) {
-    for (const [duty, byComplexity] of Object.entries(definition.selection)) {
+    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
       for (const [complexity, slot] of Object.entries(byComplexity)) {
         lists.push({
           location: `environments.${environment}.selection.${duty}.${complexity}`,
@@ -286,7 +286,7 @@ function assertSemantics(config) {
         throw new ConfigError(`environment ${environment}: 未知の provider ${provider} である`)
       }
     }
-    for (const [duty, byComplexity] of Object.entries(definition.selection)) {
+    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
       for (const [complexity, slot] of Object.entries(byComplexity)) {
         for (const candidate of slot.candidates) {
           if (!definition.providers.includes(candidate.provider)) {
