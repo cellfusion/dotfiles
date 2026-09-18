@@ -584,6 +584,7 @@ mad_exercise_success() {
   local project=""
   local role=""
   local provenance=""
+  local parent_environment=""
   local complexity=""
   local round=""
   local title=""
@@ -770,7 +771,9 @@ mad_exercise_success() {
       mad_finish_failure resolve 4 waiting_for_user 0
       ;;
     *)
-      mad_add_event "$(jq -cn --arg role "$role" --arg environment "${environment:-}" '{
+      parent_environment="${AGENT_ENV_SESSION-}"
+      [ -n "$parent_environment" ] || parent_environment="${AGENT_ENV-}"
+      mad_add_event "$(jq -cn --arg role "$role" --arg environment "$parent_environment" '{
         operation:"resolve", exitCode:2, outputType:null, stdoutDocuments:0,
         environment:(if $environment == "" then null else $environment end), role:$role,
         duty:null, complexity:null, requestedComplexity:null,
