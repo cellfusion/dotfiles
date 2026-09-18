@@ -18,7 +18,7 @@ cat > "$TMP/snapshot.json" <<'JSON'
 JSON
 
 run() {
-  node "$CLI" --input "$SHARE/agent-config.sample.json" resolve \
+  env -u AGENT_ENV -u AGENT_ENV_SESSION node "$CLI" --input "$SHARE/agent-config.sample.json" resolve \
     --project "$ROOT" --role implementer --environment primary \
     --snapshot "$TMP/snapshot.json" "$@"
 }
@@ -36,5 +36,5 @@ assert_eq "$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s
   "standard 1" "resolve: --complexity 省略で defaults.complexity に落ちる"
 
 status=0
-node "$CLI" --input "$SHARE/agent-config.sample.json" >/dev/null 2>&1 || status=$?
+env -u AGENT_ENV -u AGENT_ENV_SESSION node "$CLI" --input "$SHARE/agent-config.sample.json" >/dev/null 2>&1 || status=$?
 assert_eq "$status" "2" "subcommand 無しは exit 2"
