@@ -13,7 +13,7 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
-MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
@@ -34,13 +34,20 @@ node -e 'const c=require(process.argv[1]); c.writeProviderEnumeration0600(proces
 
 各 response を検査してから、mode 0600 の regular file として保存する。`mad-contract.js` の `writeAvailabilitySnapshot0600` は列挙集合を snapshot の入力集合にし、available でない provider の models を空配列にする。snapshot が不正、欠落、書き込み失敗のときは create を行わず、run の `state` と `phase_state` を `waiting_for_user` にする。
 
-snapshot の保存後、親は次の CLI のみで launch を解決する。
+snapshot の保存後、親は次の `agent-config resolve` のみで launch を解決する。
 
 ```bash
 "$MAD_GENERATOR" --input "$AGENT_CONFIG" resolve \
-  --project "$PROJECT" --role "$ROLE" --provenance mad-dispatch \
+  --project "$PROJECT" --role "$ROLE" --provenance "$PROVENANCE" \
+  --complexity "$COMPLEXITY" --round "$ROUND" \
   --snapshot "$RUN_DIR/snapshot.json" > "$RUN_DIR/launch.json"
 ```
+
+`$PROVENANCE` に入れる値は子の役目で決める。implement とそれ以外の初回の子は `mad-dispatch`、
+指摘を修正する子は `mad-fix`、再レビューの子は `mad-review` を渡す。`$COMPLEXITY` には
+プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `standard` を入れる。
+`$ROUND` には review/fix loop のラウンド番号を入れ、review/fix loop の外で起動する子には
+`0` を入れる。`mad-fix` で `$ROUND` が 2 以上のとき、CLI が複雑度を 1 段上げる。
 
 成功時の stdout は `mad-launch-spec` 一件で exit 0、候補が尽きたときは `mad-launch-failure` 一件で exit 4、入力または snapshot が不正なときは exit 2 である。exit 4 は `waiting_for_user`、exit 2 は `failed` として create を行わない。成功 launch は strict に検査し、`modeId` が `auto` でないもの、allowlist に無い feature、宣言型と違う scalar、整数でない整数 feature を拒否する。
 
@@ -97,12 +104,14 @@ create は child ごとに一回だけである。親は返ってきた response
 | `list_providers` | `callCount`、`materializedProviderIds`、`availableProviderIds` |
 | `list_models` | `callCount`、`provider` |
 | `write_snapshot` | `path`、`mode`、`regularFile` |
-| `resolve` | `exitCode`、`outputType`、`stdoutDocuments` |
+| `resolve` | `exitCode`、`outputType`、`stdoutDocuments`、`environment`、`role`、`duty`、`complexity`、`requestedComplexity`、`provider`、`model`、`effort`、`features` |
 | `build_create_request` | `path`、`mode`、`regularFile`、`topLevelKeys`、`settingsKeys`、`validatedBeforeWrite` |
 | `create_agent` | `callCount`、`requestPath`、`transport` |
 | `wait_agent` | `callCount`、`timeoutSeconds`、`status` |
 | `stop_agent` | `callCount`、`status` |
 | `failure` | `stage`、`exitCode`、`createCalls`、`state` |
+
+`resolve` が exit 2 のときは `provider`、`model`、`effort`、`features`、`duty`、`complexity`、`requestedComplexity` に `null` を入れ、`environment` と `role` は親が渡した値を入れる。exit 4 のときは `mad-launch-failure` の値を入れ、`provider`、`model`、`effort`、`features` に `null` を入れる。`effort` には launch spec の `thinkingOptionId` の値を入れる。
 
 `create_agent.transport` は `mcp__paseo__create_agent` の一語に固定する。create の経路が公式 MCP tool だけであることを、この値が証跡として示す。
 
@@ -136,9 +145,9 @@ MAD の delivery role は次の 4 役である。各 role は同名の `agent-de
 
 ## review/fix の上限と scope
 
-review/fix loop は task ごとに **max_rounds は 2** とする。round `0` は task-reviewer の初回 review、round `1` は同じ task scope の fix と re-review であり、これで解決しない finding、または新しい hotfix node はこの run で扱わない。上限到達時は `unresolved` として停止し、新しい fix/review を起動しない。
+review/fix loop は task ごとに **max_rounds は 4** とする。round `0` は task-reviewer の初回 review、round `1` から `3` は同じ task scope の fix と re-review であり、4 ラウンドで解決しない finding、または新しい hotfix node はこの run で扱わない。上限到達時は `unresolved` として停止し、新しい fix/review を起動しない。
 
-親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 2`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。
+親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 4`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。
 
 review/fix child を create する前に、必ず次を実行する。
 
@@ -181,7 +190,7 @@ plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証�
 
 親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
 
-run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 2`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
+run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 4`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
 
 `state` は `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` のいずれかである。`state` が `running` の attempt は UTC ISO 8601 の `started_at` と `create_accepted: true` を必須にする。`create_accepted` は必須 boolean である。false なら child_ref を持たず、true なら state を問わず basename-safe な child_ref を必須にする。`adopted_attempts` は node ID から親が採用した attempt ID への map とし、run を `ok` にする前に採用結果を確認する。
 
