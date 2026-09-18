@@ -1,1 +1,19 @@
-{"version":1,"type":"mad-launch-failure","status":"unresolved","reasonCode":"candidates_exhausted","profileName":"work_primary","environment":"primary","tier":"work","candidates":[{"provider":"codex","model":"sample-work","thinkingOptionId":"high","reasonCode":"provider_unavailable"}],"warnings":[]}
+{
+  "version": 1,
+  "type": "mad-launch-failure",
+  "status": "unresolved",
+  "reasonCode": "candidates_exhausted",
+  "environment": "primary",
+  "duty": "implement",
+  "complexity": "standard",
+  "requestedComplexity": "standard",
+  "candidates": [
+    {
+      "provider": "codex",
+      "model": "sample-work",
+      "thinkingOptionId": "high",
+      "reasonCode": "model_unavailable"
+    }
+  ],
+  "warnings": []
+}

@@ -1,1 +1,170 @@
-{"version":1,"defaults":{"environment":"primary","tier":"work"},"providers":{"claude":{"displayName":"Claude","setup":null,"featureAllowlist":{"verbose":{}}}},"tiers":{"deep":{"candidates":[]},"think":{"candidates":[]},"work":{"candidates":[]},"light":{"candidates":[]}},"environments":{"primary":{"providers":["claude"],"tiers":{}}},"agentRoles":{"reviewer":{"access":"read","description":"review","artifactContract":"mad-attempt-v1","deliveryDuties":["reviewer"]}},"projectRouting":{"rules":[]}}
+{
+  "version": 2,
+  "defaults": {
+    "environment": "primary",
+    "complexity": "standard"
+  },
+  "providers": {
+    "claude": {
+      "displayName": "Claude",
+      "setup": null,
+      "featureAllowlist": {
+        "verbose": {}
+      },
+      "backends": [
+        "paseo"
+      ]
+    }
+  },
+  "environments": {
+    "primary": {
+      "providers": [
+        "claude"
+      ],
+      "selection": {}
+    }
+  },
+  "agentRoles": {
+    "reviewer": {
+      "access": "read",
+      "description": "review",
+      "artifactContract": "mad-attempt-v1",
+      "deliveryDuties": [
+        "reviewer"
+      ]
+    }
+  },
+  "projectRouting": {
+    "rules": []
+  },
+  "selection": {
+    "author": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "implement": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "review": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "synthesize": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    }
+  }
+}

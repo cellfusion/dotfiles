@@ -1,1 +1,182 @@
-{"version":1,"defaults":{"environment":"primary","tier":"work"},"providers":{"alpha":{"displayName":"Alpha","setup":null,"featureAllowlist":{}},"alpha-lab":{"displayName":"Alpha Lab","setup":null,"featureAllowlist":{}}},"tiers":{"deep":{"candidates":[{"provider":"alpha","model":"anonymous-deep","thinkingOptionId":"high","featureValues":{}}]},"think":{"candidates":[{"provider":"alpha","model":"anonymous-think","thinkingOptionId":"high","featureValues":{}}]},"work":{"candidates":[{"provider":"alpha","model":"anonymous-work","thinkingOptionId":"high","featureValues":{}}]},"light":{"candidates":[{"provider":"alpha","model":"anonymous-light","thinkingOptionId":"low","featureValues":{}}]}},"environments":{"primary":{"providers":["alpha"],"tiers":{}},"lab":{"providers":["alpha"],"tiers":{}}},"agentRoles":{"reviewer":{"access":"read","description":"review","artifactContract":"mad-attempt-v1","deliveryDuties":["reviewer"]}},"projectRouting":{"rules":[]}}
+{
+  "version": 2,
+  "defaults": {
+    "environment": "primary",
+    "complexity": "standard"
+  },
+  "providers": {
+    "alpha": {
+      "displayName": "Alpha",
+      "setup": null,
+      "featureAllowlist": {},
+      "backends": [
+        "paseo"
+      ]
+    },
+    "alpha-lab": {
+      "displayName": "Alpha Lab",
+      "setup": null,
+      "featureAllowlist": {},
+      "backends": [
+        "paseo"
+      ]
+    }
+  },
+  "environments": {
+    "primary": {
+      "providers": [
+        "alpha"
+      ],
+      "selection": {}
+    },
+    "lab": {
+      "providers": [
+        "alpha"
+      ],
+      "selection": {}
+    }
+  },
+  "agentRoles": {
+    "reviewer": {
+      "access": "read",
+      "description": "review",
+      "artifactContract": "mad-attempt-v1",
+      "deliveryDuties": [
+        "reviewer"
+      ]
+    }
+  },
+  "projectRouting": {
+    "rules": []
+  },
+  "selection": {
+    "author": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "implement": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "review": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "synthesize": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "alpha",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,1 +1,183 @@
-{"version":1,"defaults":{"environment":"primary","tier":"work"},"providers":{"codex":{"displayName":"Codex","setup":{"configDirectoryEnv":{"CODEX_HOME":"codex"},"directoryPattern":{"primary":"$XDG_CONFIG_HOME/codex","nonPrimary":"$XDG_CONFIG_HOME/codex_<environment>"},"symlinks":["agents","AGENTS.md","rules"],"preservedMutable":[],"existingPathPolicy":"reject-real-or-wrong-symlink"},"featureAllowlist":{}}},"tiers":{"deep":{"candidates":[{"provider":"codex","model":"anonymous-deep","thinkingOptionId":"high","featureValues":{}}]},"think":{"candidates":[{"provider":"codex","model":"anonymous-think","thinkingOptionId":"high","featureValues":{}}]},"work":{"candidates":[{"provider":"codex","model":"anonymous-work","thinkingOptionId":"high","featureValues":{}}]},"light":{"candidates":[{"provider":"codex","model":"anonymous-light","thinkingOptionId":"low","featureValues":{}}]}},"environments":{"primary":{"providers":["codex"],"tiers":{}}},"agentRoles":{"reviewer":{"access":"read","description":"anonymous reviewer","artifactContract":"mad-attempt-v1","deliveryDuties":["reviewer"]}},"projectRouting":{"rules":[]}}
+{
+  "version": 2,
+  "defaults": {
+    "environment": "primary",
+    "complexity": "standard"
+  },
+  "providers": {
+    "codex": {
+      "displayName": "Codex",
+      "setup": {
+        "configDirectoryEnv": {
+          "CODEX_HOME": "codex"
+        },
+        "directoryPattern": {
+          "primary": "$XDG_CONFIG_HOME/codex",
+          "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>"
+        },
+        "symlinks": [
+          "agents",
+          "AGENTS.md",
+          "rules"
+        ],
+        "preservedMutable": [],
+        "existingPathPolicy": "reject-real-or-wrong-symlink"
+      },
+      "featureAllowlist": {},
+      "backends": [
+        "paseo"
+      ]
+    }
+  },
+  "environments": {
+    "primary": {
+      "providers": [
+        "codex"
+      ],
+      "selection": {}
+    }
+  },
+  "agentRoles": {
+    "reviewer": {
+      "access": "read",
+      "description": "anonymous reviewer",
+      "artifactContract": "mad-attempt-v1",
+      "deliveryDuties": [
+        "reviewer"
+      ]
+    }
+  },
+  "projectRouting": {
+    "rules": []
+  },
+  "selection": {
+    "author": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "implement": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "review": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    },
+    "synthesize": {
+      "routine": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-light",
+            "effort": "low",
+            "features": {}
+          }
+        ]
+      },
+      "standard": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-work",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "complex": {
+        "candidates": [
+          {
+            "provider": "codex",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      }
+    }
+  }
+}

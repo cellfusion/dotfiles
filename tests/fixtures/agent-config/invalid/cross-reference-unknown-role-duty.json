@@ -7,20 +7,7 @@
   "providers": {
     "claude": {
       "displayName": "Claude",
-      "setup": {
-        "configDirectoryEnv": {
-          "CLAUDE_CONFIG_DIR": "claude"
-        },
-        "directoryPattern": {
-          "primary": "$XDG_CONFIG_HOME/claude",
-          "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>"
-        },
-        "symlinks": [
-          "../parent"
-        ],
-        "preservedMutable": [],
-        "existingPathPolicy": "reject-real-or-wrong-symlink"
-      },
+      "setup": null,
       "featureAllowlist": {},
       "backends": [
         "paseo"
@@ -42,7 +29,8 @@
       "artifactContract": "mad-attempt-v1",
       "deliveryDuties": [
         "reviewer"
-      ]
+      ],
+      "duty": "unknown"
     }
   },
   "projectRouting": {
