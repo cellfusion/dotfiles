@@ -75,8 +75,8 @@ assert_contains "$doc" "archive_workspace" \
   "docs: MAD の worktree を片付ける手段を書く"
 assert_contains "$doc" 'mcp-create.prepared' \
   "docs: MAD は create の前に一回性 marker を取ると書く"
-assert_contains "$doc" 'max_rounds` を 2' \
-  "docs: MAD review/fix の上限を2 roundに固定する"
+assert_contains "$doc" 'max_rounds` を 4' \
+  "docs: MAD review/fix の上限を4 roundに固定する"
 assert_contains "$doc" '--prepare-review' \
   "docs: MAD review/fix の admission を通す"
 assert_contains "$doc" '--write-review-observations' \
@@ -95,6 +95,14 @@ assert_not_contains "$doc" "MAD_REPRESENTATIVE_RUN_APPROVED=1" \
   "docs: API課金対象の代表 run 承認を案内しない"
 assert_not_contains "$doc" "mad-representative-run.sh --run" \
   "docs: API課金対象の代表 run コマンドを案内しない"
+
+assert_eq "$(printf '%s' "$doc" | grep -c 'generate-paseo-config')" "0" \
+  "tools.md: 旧 CLI 名が残らない"
+assert_eq "$(printf '%s' "$doc" | grep -cE '\"\$MAD_GENERATOR\" (--input [^ ]+ )?(--paseo-config [^ ]+ )?(--diff|--check)?$')" "0" \
+  "tools.md: subcommand を付けない呼び出しが残らない"
+assert_contains "$doc" "selection" "tools.md: selection の 12 枠を説明する"
+assert_eq "$(printf '%s' "$doc" | grep -c '`fast` は入力時だけ')" "0" \
+  "tools.md: fast の正規化の記述が残らない"
 
 # --- SketchyBar の使用量採取ジョブの読み込み手順が書かれている ---
 # plist を置くだけでは動かない。読み込むまで Claude の週次使用率は更新されない。
