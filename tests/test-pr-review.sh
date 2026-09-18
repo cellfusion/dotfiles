@@ -84,7 +84,7 @@ assert_contains "$skill" 'git -C "$PARENT_ROOT" rev-parse HEAD' \
   "pr-review: 呼び出し元の HEAD を検証する"
 assert_contains "$skill" "paseo.json" "pr-review: runtime の作業ファイルを汚れと見なさない"
 assert_contains "$skill" "create_workspace" "pr-review: Paseo workspace を作る"
-assert_contains "$skill" "list_profiles" "pr-review: Paseo の agent profile を毎回確認する"
+assert_contains "$skill" "agent-config resolve" "pr-review: agent-config resolve を通す"
 assert_contains "$skill" "create_agent" "pr-review: Paseo の agent を起動する"
 assert_contains "$skill" "archive_workspace" "pr-review: Paseo workspace を成功時だけ archive する"
 assert_contains "$skill" "worktree を作り直さない" "pr-review: agent を起動できない理由で worktree を作り直さない"
@@ -104,7 +104,7 @@ assert_contains "$skill" "git worktree" "pr-review: git worktree の経路があ
 assert_contains "$skill" "一次レビュー" "pr-review: 一次レビューを行う"
 assert_contains "$skill" "差分リスク" "pr-review: 差分リスクを評価する"
 assert_contains "$skill" "専門レビュー" "pr-review: リスクに応じて専門レビューを追加する"
-assert_contains "$skill" "profile" "pr-review: 専門レビューの Paseo profile を参照する"
+assert_eq "$(printf '%s' "$skill" | grep -c 'profile')" "0" "pr-review: profile が残らない"
 assert_contains "$skill" "prompt/schema" "pr-review: 専門レビューの prompt/schema 境界を参照する"
 while read -r forbidden; do
   [ -n "$forbidden" ] || continue

@@ -99,4 +99,13 @@ handoff_skill="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/handoff/S
 assert_contains "$handoff_skill" 'herdr を起動してはならない' \
   "handoff: herdr を自分で起動しない"
 
+for tmpl in private_dot_config/claude/CLAUDE.md.tmpl private_dot_config/codex/AGENTS.md.tmpl; do
+  body="$(cat "$CHEZMOI_SOURCE/$tmpl")"
+  assert_eq "$(printf '%s' "$body" | grep -c 'list_profiles')" "0" "$tmpl: list_profiles が残らない"
+  assert_eq "$(printf '%s' "$body" | grep -c 'think_\*')" "0" "$tmpl: think_* が残らない"
+  assert_contains "$body" "agent-config resolve" "$tmpl: agent-config resolve を通す"
+done
+section="$(sed -n '/^## Paseo の子エージェントを作るとき/,/^## /p' "$CHEZMOI_SOURCE/private_dot_config/claude/CLAUDE.md.tmpl")"
+assert_eq "$(printf '%s' "$section" | grep -c 'tier')" "0" "CLAUDE.md.tmpl: 節に tier が残らない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

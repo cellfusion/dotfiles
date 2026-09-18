@@ -122,14 +122,28 @@
 
 ## Paseo の子エージェントを作るとき
 
-`mcp__paseo__create_agent` を呼ぶ前に `mcp__paseo__list_profiles` を呼び、各 profile の `notes` を読んで選ぶ。`notes` には、その profile をどの作業に使うかが書いてある。`profile` という引数は無いので、選んだ profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を `create_agent` へ写す。
+`mcp__paseo__create_agent` を呼ぶ前に `agent-config resolve` を呼び、返る `mad-launch-spec` の
+`provider`、`model`、`modeId`、`thinkingOptionId`、`features` を `create_agent` へ写す。
+provider と model を自分で選ばない。
 
-- 既定は `think_*` である。設計判断・調査・レビューを含め、考える作業はまずこれを選ぶ。
-- `deep_*` はエスカレーション専用である。`think_*` で解けなかったとき、または branch 全体の最終レビューのときだけ選ぶ。名前が「深い」からという理由で選ばない。
-- 実装と task 単位のレビューは `work_*`、指摘の解消判定のような判断の幅が狭い確認は `light_*` を選ぶ。
-- profile 名の接尾辞は AI 環境を表す。親の AI 環境と同じ接尾辞の profile を選び、別の環境の profile を選ばない。
+```bash
+agent-config --input "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json" resolve \
+  --project "$PWD" --role "$ROLE" --provenance "$PROVENANCE" \
+  --complexity "$COMPLEXITY" --round "$ROUND" --snapshot "$SNAPSHOT"
+```
 
-multi-agent-development の delivery は role が tier を決めるので、この選択を親が行わない。
+`--role` は正本の `agentRoles` にある名前を渡す。role が duty を決める。`--complexity` は
+作業の重さで選ぶ。
+
+- `routine` — 判断の幅が狭い確認と、形の決まった作業を渡すとき
+- `standard` — 通常の実装、調査、タスク単位のレビューを渡すとき。既定の値である
+- `complex` — 設計判断を含む作業、branch 全体の最終レビューを渡すとき
+
+exit 0 なら `mad-launch-spec` が出る。exit 4 は候補が尽きたことを表すので、provider と model を
+推測せず、ユーザーへ理由を伝えて止まる。exit 2 は入力または snapshot の不備である。
+
+multi-agent-development の delivery では、子の duty を role が決め、複雑度をプランのタスクの
+`**Complexity:**` が決めるので、親が候補を選ばない。
 
 ## Shell Execution
 
