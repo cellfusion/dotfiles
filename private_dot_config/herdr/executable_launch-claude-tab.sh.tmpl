@@ -19,8 +19,10 @@ set -euo pipefail
 # HERDR_SESSION だけで、AI 環境の変数はサーバを起動したシェル（＝先頭環境）の
 # 値のままである（`ps eww <herdr server pid>` で確認した）。
 #
-# 定義に無いセッション名と HERDR_SESSION 未設定は、agent-environments.zsh と
-# 同じく先頭環境として扱う。
+# 定義に無いセッション名と HERDR_SESSION 未設定は、先頭環境として扱う。herdr は
+# 全 pane に HERDR_SESSION を注入するので、alt+c から届く値は必ず定義済みである。
+# agent-environments.zsh は先頭環境へ落とさないが、この判定はタブを作る前に止める
+# ためだけに使うので、落とす側に倒しても環境は切り替わらない。
 agents=""
 case "${HERDR_SESSION:-}" in
 {{- range $envs }}

@@ -46,10 +46,17 @@ _agent_env_apply() {
 
 # 環境名は AGENT_ENV が正で、HERDR_SESSION は herdr が注入する別名である。
 # Paseo は HERDR_SESSION を持たないので、provider 定義が AGENT_ENV を注入する。
-# 定義の無い名前と、どちらも未設定の場合は先頭環境へ落とす。
-_agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_apply "{{ (index $envs 0).session }}"
+# 定義の無い名前と、どちらも未設定の場合は、どの環境も読み込まない。先頭環境へ
+# 落とすと、指定し忘れがそのまま別の環境での作業になる。
+_agent_env_clear() {
+  unset CLAUDE_CONFIG_DIR CODEX_HOME WRANGLER_HOME CLOUDFLARE_ACCOUNT_ID AGENT_ENV_SESSION
+  export AGENT_ENV_AGENTS=""
+}
+_agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_clear
 
 # この環境が持たないツールを関数で塞ぐ。持っているツールは前段の定義を外す。
+# 環境を解決できなかった場合と、環境がそのツールを持たない場合を、メッセージで
+# 区別する。前者は指定の誤りなので、指定する手段を案内する。
 for _agent_env_tool in claude codex; do
   case " $AGENT_ENV_AGENTS " in
     *" $_agent_env_tool "*)
@@ -57,7 +64,11 @@ for _agent_env_tool in claude codex; do
       ;;
     *)
       eval "\$_agent_env_tool() {
-        print -u2 \"\$0 is not configured for this environment (AGENT_ENV_SESSION=\$AGENT_ENV_SESSION). See ~/.config/chezmoi/private-data.toml\"
+        if [ -z \"\${AGENT_ENV_SESSION-}\" ]; then
+          print -u2 \"\$0: AI 環境を解決できない（AGENT_ENV と HERDR_SESSION のどちらも定義済みの環境名ではない）。agent --provider=<provider-id> で起動するか、AGENT_ENV に環境名を設定して新しいシェルを開く\"
+        else
+          print -u2 \"\$0 is not configured for this environment (AGENT_ENV_SESSION=\$AGENT_ENV_SESSION). See ~/.config/chezmoi/private-data.toml\"
+        fi
         return 1
       }"
       ;;
