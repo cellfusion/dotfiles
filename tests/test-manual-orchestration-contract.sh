@@ -859,6 +859,11 @@ console.log([1, 2, 3].map((round) =>
 assert_eq "$names" "task-a-fix-round-1.json task-a-fix-round-2.json task-a-fix-round-3.json" \
   "review admission: round ごとにファイル名が分かれる"
 
+assert_eq "$(grep -c 'paseo-exporter' "$VALIDATOR")" "0" "validate: paseo-exporter を参照しない"
+assert_contains "$(cat "$VALIDATOR")" "paseo-providers.js" "validate: paseo-providers.js を参照する"
+assert_contains "$(cat "$VALIDATOR")" '--complexity' "validate: resolve に --complexity を渡す"
+assert_contains "$(cat "$VALIDATOR")" "max_rounds must be 4" "validate: max_rounds 4 を要求する"
+
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

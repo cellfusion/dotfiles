@@ -348,11 +348,13 @@ normalize_list_models() {
 
 normalize_launch_success() {
   jq -c '
-    if (keys | sort) != ["environment","featureValues","modeId","model","profileName","provider","status","thinkingOptionId","tier","type","version","warnings"] then error
+    if (keys | sort) != ["complexity","duty","environment","features","modeId","model","provider","requestedComplexity","status","thinkingOptionId","type","version","warnings"] then error
     elif (.version != 1 or .type != "mad-launch-spec" or .status != "ok" or .modeId != "auto") then error
-    elif (any([.profileName,.environment,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0)) then error
-    elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
-    elif (.featureValues | type != "object" or any(to_entries[]; (.value | (type != "boolean" and type != "string" and type != "number")))) then error
+    elif (any([.environment,.duty,.complexity,.requestedComplexity,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0)) then error
+    elif ((.duty as $duty | ["author","implement","review","synthesize"] | index($duty)) == null) then error
+    elif ((.complexity as $complexity | ["routine","standard","complex"] | index($complexity)) == null) then error
+    elif ((.requestedComplexity as $requestedComplexity | ["routine","standard","complex"] | index($requestedComplexity)) == null) then error
+    elif (.features | type != "object" or any(to_entries[]; (.value | (type != "boolean" and type != "string" and type != "number")))) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     else . end
   ' 2>/dev/null
@@ -360,10 +362,12 @@ normalize_launch_success() {
 
 normalize_launch_failure() {
   jq -c '
-    if (keys | sort) != ["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"] then error
+    if (keys | sort) != ["candidates","complexity","duty","environment","reasonCode","requestedComplexity","status","type","version","warnings"] then error
     elif (.version != 1 or .type != "mad-launch-failure" or .status != "unresolved" or .reasonCode != "candidates_exhausted") then error
-    elif (any([.profileName,.environment][]; type != "string" or length == 0)) then error
-    elif ((.tier as $tier | ["deep","think","work","light"] | index($tier)) == null) then error
+    elif (any([.environment,.duty,.complexity,.requestedComplexity][]; type != "string" or length == 0)) then error
+    elif ((.duty as $duty | ["author","implement","review","synthesize"] | index($duty)) == null) then error
+    elif ((.complexity as $complexity | ["routine","standard","complex"] | index($complexity)) == null) then error
+    elif ((.requestedComplexity as $requestedComplexity | ["routine","standard","complex"] | index($requestedComplexity)) == null) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     elif (.candidates | type != "array") then error
     elif (any(.candidates[]; (type != "object" or (keys | sort) != ["model","provider","reasonCode","thinkingOptionId"]))) then error
@@ -382,14 +386,14 @@ mad_assert_launch() {
     "$parent_environment" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
-const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const providers = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-providers.js`)
 const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
 const parentEnvironment = process.argv[5]
-const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const allowlist = providers.featureAllowlistForProviderId(resolved, launch.provider)
 contract.assertMadLaunchSpecV1(launch, allowlist)
 if (parentEnvironment.length > 0 &&
-  exporter.environmentForProviderId(resolved, launch.provider) !== parentEnvironment) {
+  providers.environmentForProviderId(resolved, launch.provider) !== parentEnvironment) {
   process.exit(3)
 }
 NODE
@@ -401,11 +405,11 @@ mad_build_request() {
     "$MAD_ATTEMPT_DIR/launch.json" "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' 2>/dev/null
 const fs = require('node:fs')
 const contract = require(process.argv[2])
-const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const providers = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-providers.js`)
 const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
 const context = JSON.parse(process.env.MAD_CONTEXT_JSON)
-const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const allowlist = providers.featureAllowlistForProviderId(resolved, launch.provider)
 const request = contract.buildMadCreateRequestV1(launch, allowlist, context)
 contract.writeMadCreateRequest0600(request, process.argv[5])
 process.stdout.write(JSON.stringify({
@@ -425,11 +429,11 @@ mad_assert_request_file() {
     "$MAD_ATTEMPT_DIR/mcp-create.json" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
-const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const providers = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-providers.js`)
 const resolved = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
 const requestPath = process.argv[5]
-const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const allowlist = providers.featureAllowlistForProviderId(resolved, launch.provider)
 const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
 contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
 NODE
@@ -443,12 +447,12 @@ mad_prepare_create_marker() {
   node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
-const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const providers = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-providers.js`)
 const attemptDir = process.argv[3]
 const resolved = JSON.parse(fs.readFileSync(`${attemptDir}/resolved-export.json`, 'utf8'))
 const launch = JSON.parse(fs.readFileSync(`${attemptDir}/launch.json`, 'utf8'))
 const requestPath = `${attemptDir}/mcp-create.json`
-const allowlist = exporter.featureAllowlistForProviderId(resolved, launch.provider)
+const allowlist = providers.featureAllowlistForProviderId(resolved, launch.provider)
 const request = contract.assertMadCreateRequestFile0600(requestPath, allowlist)
 contract.assertMadCreateRequestMatchesLaunchV1(request, launch)
 contract.prepareMadCreate0600(
@@ -546,10 +550,10 @@ mad_exercise_create() {
   MAD_FEATURE_ALLOWLIST_JSON="$feature_allowlist" node - "$contract" "$snapshot" "$launch" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')
 const contract = require(process.argv[2])
-const exporter = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-exporter.js`)
+const paseoLaunch = require(`${process.argv[2].slice(0, process.argv[2].lastIndexOf('/'))}/paseo-launch.js`)
 const snapshot = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))
 const launch = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'))
-exporter.assertAvailabilitySnapshot(snapshot)
+paseoLaunch.assertAvailabilitySnapshot(snapshot)
 contract.assertMadLaunchSpecV1(launch, JSON.parse(process.env.MAD_FEATURE_ALLOWLIST_JSON))
 NODE
   validation_status=$?
@@ -580,6 +584,8 @@ mad_exercise_success() {
   local project=""
   local role=""
   local provenance=""
+  local complexity=""
+  local round=""
   local title=""
   local workspace_id=""
   local initial_prompt=""
@@ -599,7 +605,7 @@ mad_exercise_success() {
   local context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
+      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--complexity|--round|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --generator) generator="$2" ;;
@@ -610,6 +616,8 @@ mad_exercise_success() {
           --project) project="$2" ;;
           --role) role="$2" ;;
           --provenance) provenance="$2" ;;
+          --complexity) complexity="$2" ;;
+          --round) round="$2" ;;
           --title) title="$2" ;;
           --workspace-id) workspace_id="$2" ;;
           --initial-prompt) initial_prompt="$2" ;;
@@ -719,8 +727,11 @@ mad_exercise_success() {
     '{operation:"write_snapshot",path:$path,mode:600,regularFile:true}')" ||
     mad_finish_failure snapshot 2 waiting_for_user 0
 
-  resolve_output="$("$generator" --input "$input" resolve --project "$project" --role "$role" \
-    --provenance "$provenance" --snapshot "$attempt_dir/snapshot.json" 2>/dev/null)"
+  resolve_args=(--project "$project" --role "$role" --provenance "$provenance"
+    --snapshot "$attempt_dir/snapshot.json")
+  [ -n "$complexity" ] && resolve_args+=(--complexity "$complexity")
+  [ -n "$round" ] && resolve_args+=(--round "$round")
+  resolve_output="$("$generator" --input "$input" resolve "${resolve_args[@]}" 2>/dev/null)"
   resolve_status=$?
   case "$resolve_status" in
     0)
@@ -729,7 +740,12 @@ mad_exercise_success() {
         mad_finish_failure launch_validation 2 failed 0
       write_private_text "$attempt_dir/launch.json" "$launch_json" ||
         mad_finish_failure launch_validation 2 failed 0
-      mad_add_event "$(jq -cn '{operation:"resolve",exitCode:0,outputType:"mad-launch-spec",stdoutDocuments:1}')" ||
+      mad_add_event "$(printf '%s' "$launch_json" | jq -c --arg role "$role" '{
+        operation:"resolve", exitCode:0, outputType:"mad-launch-spec", stdoutDocuments:1,
+        environment:.environment, role:$role, duty:.duty, complexity:.complexity,
+        requestedComplexity:.requestedComplexity, provider:.provider, model:.model,
+        effort:.thinkingOptionId, features:.features
+      }')" ||
         mad_finish_failure resolve 2 failed 0
       mad_assert_launch
       launch_assert_status=$?
@@ -745,9 +761,23 @@ mad_exercise_success() {
         mad_finish_failure resolve 4 waiting_for_user 0
       write_private_text "$attempt_dir/launch.json" "$launch_json" ||
         mad_finish_failure resolve 4 waiting_for_user 0
+      mad_add_event "$(printf '%s' "$launch_json" | jq -c --arg role "$role" '{
+        operation:"resolve", exitCode:4, outputType:"mad-launch-failure", stdoutDocuments:1,
+        environment:.environment, role:$role, duty:.duty, complexity:.complexity,
+        requestedComplexity:.requestedComplexity, provider:null, model:null,
+        effort:null, features:null
+      }')" || mad_finish_failure resolve 4 waiting_for_user 0
       mad_finish_failure resolve 4 waiting_for_user 0
       ;;
-    *) mad_finish_failure resolve 2 failed 0 ;;
+    *)
+      mad_add_event "$(jq -cn --arg role "$role" --arg environment "${environment:-}" '{
+        operation:"resolve", exitCode:2, outputType:null, stdoutDocuments:0,
+        environment:(if $environment == "" then null else $environment end), role:$role,
+        duty:null, complexity:null, requestedComplexity:null,
+        provider:null, model:null, effort:null, features:null
+      }')" || true
+      mad_finish_failure resolve 2 failed 0
+      ;;
   esac
 
   context_json="$(jq -cn --arg title "$title" --arg workspaceId "$workspace_id" \
