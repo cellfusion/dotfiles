@@ -99,15 +99,29 @@ assert_contains "$(run_env work 'codex 2>&1 >/dev/null')" "work" \
 assert_eq "$(run_env solo 'echo ${+functions[claude]}')" "1" \
   "codex だけの環境では claude を覆う"
 
-# --- 未定義名と未設定は先頭環境へ落ちる。警告は出さない ---
-assert_eq "$(run_env nosuchsession 'echo $AGENT_ENV_SESSION')" "default" \
-  "定義の無いセッション名は先頭環境へ落ちる"
-assert_eq "$(run_env '' 'echo $AGENT_ENV_SESSION')" "default" \
-  "HERDR_SESSION 未設定は先頭環境へ落ちる"
-assert_eq "$(run_env nosuchsession 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude" \
-  "フォールバック後は先頭環境の値になる"
+# --- 解決できない名前と未設定は、どの環境も読み込まない ---
+assert_eq "$(run_env nosuchsession 'echo $AGENT_ENV_SESSION')" "" \
+  "定義の無いセッション名は環境を解決しない"
+assert_eq "$(run_env '' 'echo $AGENT_ENV_SESSION')" "" \
+  "HERDR_SESSION 未設定は環境を解決しない"
+assert_eq "$(run_env nosuchsession 'echo $CLAUDE_CONFIG_DIR')" "" \
+  "解決できないときは先頭環境の値を設定しない"
+assert_eq "$(run_env nosuchsession 'echo $WRANGLER_HOME')" "" \
+  "解決できないときは WRANGLER_HOME も設定しない"
+assert_eq "$(run_env nosuchsession 'echo $AGENT_ENV_AGENTS')" "" \
+  "解決できないときは AGENT_ENV_AGENTS が空になる"
+assert_eq "$(CLAUDE_CONFIG_DIR=/inherited run_env nosuchsession 'echo $CLAUDE_CONFIG_DIR')" "" \
+  "解決できないときは継承した CLAUDE_CONFIG_DIR を消す"
 assert_eq "$(run_env nosuchsession ':')" "" \
-  "フォールバックは警告を出さない"
+  "解決できないこと自体では警告を出さない"
+assert_eq "$(run_env nosuchsession 'echo ${+functions[claude]}${+functions[codex]}')" "11" \
+  "解決できないときは claude と codex の両方を塞ぐ"
+assert_eq "$(run_env nosuchsession 'claude >/dev/null 2>&1; echo $?')" "1" \
+  "解決できないときの claude は非ゼロで終わる"
+assert_contains "$(run_env nosuchsession 'claude 2>&1 >/dev/null')" "agent --provider=" \
+  "解決できないときのメッセージは agent ラッパーでの起動を促す"
+assert_contains "$(run_env nosuchsession 'codex 2>&1 >/dev/null')" "agent --provider=" \
+  "codex 側のメッセージも agent ラッパーでの起動を促す"
 
 # --- AGENT_ENV は HERDR_SESSION より優先する ---
 # Paseo は HERDR_SESSION を注入しない。provider 定義が AGENT_ENV を注入する。
@@ -117,10 +131,10 @@ assert_eq "$(run_env_both work default 'echo $AGENT_ENV_SESSION')" "work" \
   "両方あるとき AGENT_ENV が優先する"
 assert_eq "$(run_env_both '' work 'echo $AGENT_ENV_SESSION')" "work" \
   "AGENT_ENV が空なら HERDR_SESSION を使う"
-assert_eq "$(run_env_both nosuchsession '' 'echo $AGENT_ENV_SESSION')" "default" \
-  "AGENT_ENV が定義に無い名前なら先頭環境へ落ちる"
-assert_eq "$(run_env_both '' '' 'echo $AGENT_ENV_SESSION')" "default" \
-  "どちらも未設定なら先頭環境へ落ちる"
+assert_eq "$(run_env_both nosuchsession '' 'echo $AGENT_ENV_SESSION')" "" \
+  "AGENT_ENV が定義に無い名前なら環境を解決しない"
+assert_eq "$(run_env_both '' '' 'echo $AGENT_ENV_SESSION')" "" \
+  "どちらも未設定なら環境を解決しない"
 assert_eq "$(run_env_both work '' 'echo $CLAUDE_CONFIG_DIR')" "/xdg/claude_work" \
   "AGENT_ENV で解決した環境のパスが使われる"
 assert_eq "$(run_env_both work '' 'echo $CODEX_HOME')" "" \
@@ -139,22 +153,28 @@ assert_eq "$(run_env solo 'echo $CLOUDFLARE_ACCOUNT_ID')" "" \
   "cloudflareAccountId 未指定なら export しない"
 
 # --- 環境定義が無いマシンでも壊れない ---
-assert_eq "$(run_env '' 'echo $AGENT_ENV_SESSION' "$EMPTY_ZSH")" "default" \
+assert_eq "$(run_env default 'echo $AGENT_ENV_SESSION' "$EMPTY_ZSH")" "default" \
   "定義が無い場合は default 環境 1 つとして描画する"
-assert_eq "$(run_env '' 'echo $CLAUDE_CONFIG_DIR' "$EMPTY_ZSH")" "/xdg/claude" \
-  "定義が無い場合も claude は使える"
-assert_eq "$(run_env '' 'echo $AGENT_ENV_AGENTS' "$EMPTY_ZSH")" "claude codex" \
+assert_eq "$(run_env default 'echo $CLAUDE_CONFIG_DIR' "$EMPTY_ZSH")" "/xdg/claude" \
+  "定義が無い場合も default を渡せば claude は使える"
+assert_eq "$(run_env default 'echo $AGENT_ENV_AGENTS' "$EMPTY_ZSH")" "claude codex" \
   "定義が無い場合は claude と codex の両方を持つ"
+assert_eq "$(run_env '' 'echo $AGENT_ENV_AGENTS' "$EMPTY_ZSH")" "" \
+  "定義が無い場合も未設定なら環境を解決しない"
 
 # --- 参照ドキュメントが解決規則と一致している ---
 # Paseo は HERDR_SESSION を注入せず、provider 定義が AGENT_ENV を注入する。
 # 参照ドキュメントが HERDR_SESSION だけを書いていると、環境がずれたときに
 # 読んだ人もエージェントも原因の変数へ辿り着けない。
 ref="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/dev-env/references/herdr.md")"
-assert_contains "$ref" '`AGENT_ENV` → `HERDR_SESSION` → 先頭環境' \
+assert_contains "$ref" '`AGENT_ENV` → `HERDR_SESSION` の順で決まる' \
   "参照ドキュメント: 環境名の解決の優先順位を書いている"
+assert_not_contains "$ref" '→ 先頭環境' \
+  "参照ドキュメント: 先頭環境へ落とす記述が残っていない"
 assert_contains "$ref" "Paseo" \
   "参照ドキュメント: AGENT_ENV を注入する Paseo の provider 定義に触れている"
+assert_contains "$ref" 'agent --provider=' \
+  "参照ドキュメント: 解決できないときの起動方法を書いている"
 
 # --- 環境名がソースに漏れていない ---
 tmpl="$(cat "$CHEZMOI_SOURCE/private_dot_config/zsh/agent-environments.zsh.tmpl")"
