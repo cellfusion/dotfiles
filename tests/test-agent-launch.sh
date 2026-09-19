@@ -88,5 +88,4 @@ assert_eq "$(printf '%s\n' "$managed" | grep -c '^\.local/bin/agent$')" "1" \
 assert_contains "$managed" ".local/share/agent-config/launch-env.js" \
   "distribution: launch-env.js を配る"
 
-printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
-test "$TESTS_FAILED" -eq 0
+assert_summary
