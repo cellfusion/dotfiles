@@ -8,7 +8,7 @@ FIXTURES="$CHEZMOI_SOURCE/tests/fixtures/agent-config"
 MAD_FIXTURES="$FIXTURES/mad"
 MAD_RUNNER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
 MAD_CONTRACT="$SHARE/mad-contract.js"
-GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
+GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_agent-config"
 VALID="$FIXTURES/valid-v1.json"
 SUCCESS_ADAPTER="$MAD_FIXTURES/adapter/fake-success-adapter.sh"
 CREATE_BOUNDARY="$MAD_FIXTURES/boundary/fake-mcp-create-boundary.sh"
@@ -696,7 +696,7 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_eq "$(jq -r --arg role "$role" '.agentRoles[$role].artifactContract' "$VALID")" "mad-attempt-v1" \
     "role map: $role は mad-attempt-v1 を返す"
   env -u AGENT_ENV -u AGENT_ENV_SESSION node "$GENERATOR" --input "$VALID" resolve \
-    --project "$NON_GIT_DIR" --role "$role" \
+    --project "$NON_GIT_DIR" --role "$role" --complexity standard --round 0 \
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
@@ -747,7 +747,7 @@ assert_eq "$(jq -r '.type' "$enumeration_json")" "paseo-provider-enumeration" "e
 assert_eq "$(jq -c '.providerIds' "$enumeration_json")" \
   '["claude","claude-lab","codex","codex-lab","opencode","pi"]' "enumerate: materialized provider ID 全件列挙"
 
-environment_for_provider="$(EXPORTER="$SHARE/paseo-exporter.js" EXPORT_JSON="$export_json" node -e '
+environment_for_provider="$(EXPORTER="$SHARE/paseo-providers.js" EXPORT_JSON="$export_json" node -e '
 const fs = require("node:fs")
 const { environmentForProviderId } = require(process.env.EXPORTER)
 const resolved = JSON.parse(fs.readFileSync(process.env.EXPORT_JSON, "utf8"))
@@ -801,8 +801,8 @@ assert_eq "$unavailable_queried" '[]' "MAD 成功: available でない provider 
 assert_eq "$(stat -f '%HT:%Lp' "$attempt/snapshot.json")" "Regular File:600" "MAD 成功: snapshot は 0600 の regular file"
 assert_eq "$(jq -S . "$attempt/snapshot.json")" "$(jq -S . "$MAD_FIXTURES/snapshot.json")" \
   "MAD 成功: 正規化した snapshot は fixture と一致する"
-assert_eq "$(jq -r '.events[] | select(.operation == "resolve") | "\(.exitCode) \(.outputType) \(.stdoutDocuments)"' "$attempt/call-log.json")" \
-  "0 mad-launch-spec 1" "MAD 成功: resolve は成功し stdout は 1 件"
+assert_eq "$(jq -r '.events[] | select(.operation == "resolve") | "\(.exitCode) \(.outputType) \(.stdoutDocuments) \(.duty) \(.complexity) \(.requestedComplexity) \(.effort)"' "$attempt/call-log.json")" \
+  "0 mad-launch-spec 1 review standard standard high" "call log: resolve event が選択結果を持つ"
 assert_eq "$(jq -c '.events[] | select(.operation == "build_create_request") | [.topLevelKeys, .settingsKeys, .mode, .regularFile, .validatedBeforeWrite]' "$attempt/call-log.json")" \
   '[["title","workspaceId","initialPrompt","notifyOnFinish","provider","settings"],["modeId","thinkingOptionId","features"],600,true,true]' \
   "MAD 成功: request は検証してから 0600 で書く"
@@ -822,7 +822,7 @@ assert_eq "$(test -e "$attempt/wait-evidence.json" && echo yes || echo no)" "no"
   "MAD 成功: create 前に wait を呼ばない"
 
 # fast_mode は正本から launch spec を経て create request の settings.features へ届く。
-assert_eq "$(jq -c '.featureValues' "$attempt/launch.json")" '{"fast_mode":true}' \
+assert_eq "$(jq -c '.features' "$attempt/launch.json")" '{"fast_mode":true}' \
   "MAD 成功: launch spec が Codex の fast_mode true を持つ"
 assert_eq "$(jq -c '.settings.features' "$attempt/mcp-create.json")" '{"fast_mode":true}' \
   "MAD 成功: mcp-create.json の settings.features に fast_mode true を写す"
@@ -878,7 +878,7 @@ assert_eq "$(jq -c . "$attempt/wait-evidence.json")" '{"status":"idle"}' \
 
 # fast_mode:false も同じ経路を通す。true だけを通して false を落とす実装を弾く。
 FALSE_INPUT="$TMP/valid-fast-mode-false.json"
-jq -c '.tiers.work.candidates = [{provider:"claude",model:"sample-think",thinkingOptionId:"high",featureValues:{fast_mode:false}}]' \
+jq -c '.selection.review.standard.candidates = [{provider:"claude",model:"sample-think",effort:"high",features:{fast_mode:false}}]' \
   "$VALID" > "$FALSE_INPUT"
 false_attempt="$TMP/mad-fast-mode-false"
 mkdir -p "$false_attempt"
@@ -890,7 +890,7 @@ out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV -u AGENT_ENV_SESSI
   --initial-prompt 'fixture prompt' --notify-on-finish true --call-log "$false_attempt/call-log.json")"
 assert_eq "$?" "0" "fast_mode false: Claude の候補で request build まで成功する"
 assert_eq "$out" "" "fast_mode false: runner は stdout を出さない"
-assert_eq "$(jq -c '.provider, .featureValues' "$false_attempt/launch.json" | tr '\n' ' ')" \
+assert_eq "$(jq -c '.provider, .features' "$false_attempt/launch.json" | tr '\n' ' ')" \
   '"claude" {"fast_mode":false} ' "fast_mode false: launch spec が false を持つ"
 assert_eq "$(jq -c '.settings.features' "$false_attempt/mcp-create.json")" '{"fast_mode":false}' \
   "fast_mode false: mcp-create.json の settings.features が false を持つ"
@@ -1288,7 +1288,7 @@ exhausted_attempt="$TMP/mad-fail-resolve"
 assert_eq "$(test -f "$exhausted_attempt/launch.json" && echo yes || echo no)" "yes" \
   "MAD exhausted resolve: launch failure を保存する"
 assert_eq "$(jq -c 'keys | sort' "$exhausted_attempt/launch.json")" \
-  '["candidates","environment","profileName","reasonCode","status","tier","type","version","warnings"]' \
+  '["candidates","complexity","duty","environment","reasonCode","requestedComplexity","status","type","version","warnings"]' \
   "MAD exhausted resolve: launch failure の key set"
 assert_eq "$(jq -r '.type' "$exhausted_attempt/launch.json")" "mad-launch-failure" \
   "MAD exhausted resolve: launch failure の discriminator"
@@ -1719,7 +1719,7 @@ mismatch_generator="$TMP/mismatch-generator.sh"
 cat > "$mismatch_generator" <<'GENERATOR_EOF'
 #!/usr/bin/env bash
 set -u
-printf '%s\n' '{"version":1,"type":"mad-launch-spec","status":"ok","profileName":"work_lab","environment":"lab","tier":"work","provider":"claude-lab","model":"sample-think","modeId":"auto","thinkingOptionId":"high","featureValues":{"fast_mode":false},"warnings":[]}'
+printf '%s\n' '{"version":1,"type":"mad-launch-spec","status":"ok","environment":"lab","duty":"review","complexity":"standard","requestedComplexity":"standard","provider":"claude-lab","model":"sample-think","modeId":"auto","thinkingOptionId":"high","features":{"fast_mode":false},"warnings":[]}'
 GENERATOR_EOF
 chmod 700 "$mismatch_generator"
 mismatch_attempt="$TMP/mad-parent-mismatch"
@@ -1809,7 +1809,7 @@ assert_eq "$(jq -c 'keys' "$request_out")" \
 
 # fast_mode を持つ launch でも、値を落とさずに request へ写す。
 fast_mode_launch_file="$TMP/launch-fast-mode.json"
-jq -c '.featureValues = {"fast_mode":true}' "$FIXTURES/launch/success.json" > "$fast_mode_launch_file"
+jq -c '.features = {"fast_mode":true}' "$FIXTURES/launch/success.json" > "$fast_mode_launch_file"
 create_log="$TMP/exercise-create-fast-mode.json"
 request_out="$TMP/exercise-create-fast-mode-request.json"
 bash "$MAD_RUNNER" --exercise-create \
