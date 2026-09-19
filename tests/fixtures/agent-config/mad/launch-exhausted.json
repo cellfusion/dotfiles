@@ -5,8 +5,8 @@
   "reasonCode": "candidates_exhausted",
   "environment": "primary",
   "duty": "implement",
-  "complexity": "standard",
-  "requestedComplexity": "standard",
+  "complexity": "routine",
+  "requestedComplexity": "routine",
   "candidates": [
     {
       "provider": "codex",
@@ -16,7 +16,7 @@
     }
   ],
   "warnings": [
-    "selection slot missing: primary/implement/standard; using common selection",
+    "selection slot missing: primary/implement/routine; using common selection",
     "project remote unavailable; remote routing skipped"
   ]
 }

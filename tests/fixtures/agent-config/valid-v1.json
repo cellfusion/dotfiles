@@ -2,7 +2,7 @@
   "version": 2,
   "defaults": {
     "environment": "primary",
-    "complexity": "standard"
+    "complexity": "routine"
   },
   "providers": {
     "claude": {
@@ -96,7 +96,7 @@
       ],
       "selection": {
         "review": {
-          "standard": {
+          "routine": {
             "candidates": [
               {
                 "provider": "codex",
@@ -172,7 +172,7 @@
   },
   "selection": {
     "author": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -183,7 +183,7 @@
         ],
         "notes": "fixture: 定型の軽い作業に使う"
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -208,10 +208,23 @@
           }
         ],
         "notes": "fixture: think で解けなかったときだけ使う"
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-deep",
+            "effort": "max",
+            "features": {
+              "fast_mode": true
+            }
+          }
+        ],
+        "notes": "fixture: think で解けなかったときだけ使う"
       }
     },
     "implement": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -222,7 +235,7 @@
         ],
         "notes": "fixture: 定型の軽い作業に使う"
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -236,6 +249,19 @@
         "notes": "fixture: 通常の実装とレビューに使う"
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-think",
+            "effort": "high",
+            "features": {
+              "fast_mode": false
+            }
+          }
+        ],
+        "notes": "fixture: 設計判断を伴う作業に使う"
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -250,7 +276,7 @@
       }
     },
     "review": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -261,7 +287,7 @@
         ],
         "notes": "fixture: 定型の軽い作業に使う"
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -286,10 +312,23 @@
           }
         ],
         "notes": "fixture: 設計判断を伴う作業に使う"
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-think",
+            "effort": "high",
+            "features": {
+              "fast_mode": false
+            }
+          }
+        ],
+        "notes": "fixture: 設計判断を伴う作業に使う"
       }
     },
     "synthesize": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -300,7 +339,7 @@
         ],
         "notes": "fixture: 定型の軽い作業に使う"
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -314,6 +353,19 @@
         "notes": "fixture: 通常の実装とレビューに使う"
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-deep",
+            "effort": "max",
+            "features": {
+              "fast_mode": true
+            }
+          }
+        ],
+        "notes": "fixture: think で解けなかったときだけ使う"
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",

@@ -2,7 +2,7 @@
   "version": 2,
   "defaults": {
     "environment": "primary",
-    "complexity": "standard"
+    "complexity": "routine"
   },
   "providers": {
     "claude": {
@@ -37,7 +37,7 @@
   },
   "selection": {
     "author": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -47,7 +47,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "missing",
@@ -58,6 +58,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -69,7 +79,7 @@
       }
     },
     "implement": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -79,7 +89,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "missing",
@@ -90,6 +100,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -101,7 +121,7 @@
       }
     },
     "review": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -111,7 +131,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "missing",
@@ -122,6 +142,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -133,7 +163,7 @@
       }
     },
     "synthesize": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -143,7 +173,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "missing",
@@ -154,6 +184,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",

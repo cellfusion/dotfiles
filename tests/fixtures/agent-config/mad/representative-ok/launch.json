@@ -4,15 +4,15 @@
   "status": "ok",
   "environment": "primary",
   "duty": "implement",
-  "complexity": "standard",
-  "requestedComplexity": "standard",
+  "complexity": "routine",
+  "requestedComplexity": "routine",
   "provider": "codex",
   "model": "sample-work",
   "modeId": "auto",
   "thinkingOptionId": "high",
   "features": {},
   "warnings": [
-    "selection slot missing: primary/implement/standard; using common selection",
+    "selection slot missing: primary/implement/routine; using common selection",
     "project remote unavailable; remote routing skipped"
   ]
 }

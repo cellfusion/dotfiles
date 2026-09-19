@@ -17,8 +17,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 assert_eq "$(jq -r '."$schema"' "$SCHEMA")" "https://json-schema.org/draft/2020-12/schema" "schema: Draft 2020-12"
 assert_eq "$(jq -c '.selection | keys' "$SAMPLE")" '["author","implement","review","synthesize"]' "sample: duty 4 つをちょうど持つ"
-assert_eq "$(jq -c '.selection.implement | keys' "$SAMPLE")" '["complex","routine","standard"]' "sample: 1 duty が複雑度 3 つを持つ"
-assert_eq "$(jq -r '.defaults.complexity' "$SAMPLE")" "standard" "sample: defaults.complexity は standard"
+assert_eq "$(jq -c '.selection.implement | keys' "$SAMPLE")" '["complex","critical","routine","simple"]' "sample: 1 duty が複雑度 4 つを持つ"
+assert_eq "$(jq -r '.defaults.complexity' "$SAMPLE")" "routine" "sample: defaults.complexity は routine"
 assert_eq "$(jq -c '[.agentRoles[].artifactContract] | unique' "$VALID")" '["mad-attempt-v1"]' "fixture: 全 role の artifactContract は mad-attempt-v1"
 assert_eq "$(jq -c '.agentRoles | keys' "$VALID")" '["final-reviewer","implementer","re-reviewer","reviewer","task-reviewer"]' "fixture: delivery role map の 4 役と duty を持たない reviewer"
 
@@ -85,8 +85,8 @@ delete withoutDefault.defaultEnvironment
 const invalid = [
   withoutDefault,
   { ...exported, defaultEnvironment: 'not-an-environment' },
-  { ...exported, selection: { environment: exported.defaultEnvironment, duty: 'review', complexity: 'standard', requestedComplexity: 'standard' } },
-  { ...dispatched, selection: { environment: dispatched.defaultEnvironment, duty: 'review', complexity: 'standard', requestedComplexity: 'standard', modeId: 'auto' } },
+  { ...exported, selection: { environment: exported.defaultEnvironment, duty: 'review', complexity: 'routine', requestedComplexity: 'routine' } },
+  { ...dispatched, selection: { environment: dispatched.defaultEnvironment, duty: 'review', complexity: 'routine', requestedComplexity: 'routine', modeId: 'auto' } },
   { ...exported, providerFamilies: [{ ...exported.providerFamilies[0], provider: 'codex' }] },
   { ...exported, resolutions: [{ ...exported.resolutions[0], candidates: [{ provider: 'codex', model: 'm', effort: 'high', features: {} }] }] },
 ]
@@ -146,9 +146,9 @@ export_json="$(node -e 'const fs=require("node:fs"); const {validateConfig}=requ
 assert_eq "$(printf '%s' "$export_json" | jq -r '.scope')" "export" "catalog: scope は export"
 assert_eq "$(printf '%s' "$export_json" | jq -r '.defaultEnvironment')" "primary" "catalog: defaultEnvironment は defaults.environment"
 assert_eq "$(printf '%s' "$export_json" | jq -r 'has("selection")')" "false" "catalog: export は selection を持たない"
-assert_eq "$(printf '%s' "$export_json" | jq -r '.resolutions | length')" "24" "catalog: 2 environment と 12 枠の組"
-assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .duty == "review" and .complexity == "standard") | .candidates[].family]')" '["codex"]' "catalog: 環境の枠は共通の枠を継承しない"
-assert_eq "$(printf '%s' "$export_json" | jq -r '[.resolutions[] | select(.environment == "lab" and .duty == "review" and .complexity == "standard") | .candidates[].model] | .[0]')" "sample-lab-work" "catalog: 環境の枠の candidate をそのまま使う"
+assert_eq "$(printf '%s' "$export_json" | jq -r '.resolutions | length')" "32" "catalog: 2 environment と 16 枠の組"
+assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .duty == "review" and .complexity == "routine") | .candidates[].family]')" '["codex"]' "catalog: 環境の枠は共通の枠を継承しない"
+assert_eq "$(printf '%s' "$export_json" | jq -r '[.resolutions[] | select(.environment == "lab" and .duty == "review" and .complexity == "routine") | .candidates[].model] | .[0]')" "sample-lab-work" "catalog: 環境の枠の candidate をそのまま使う"
 assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .duty == "author" and .complexity == "complex") | .warnings[]]')" '["selection slot missing: lab/author/complex; using common selection"]' "catalog: 枠欠落の warning は一回だけ"
 assert_eq "$(printf '%s' "$export_json" | jq -c '[.resolutions[] | select(.environment == "lab" and .duty == "author" and .complexity == "complex") | .candidates[].family]')" '["claude"]' "catalog: eligibility で filter する"
 for forbidden in profileName modeId reasonCode providerId paseo-availability-snapshot; do
@@ -165,17 +165,17 @@ dispatch() {
     "$VALIDATOR" "$RESOLVER" "${6:-$VALID}" "$1" "$2" "$3" "${4:-}" "${5:-}"
 }
 
-out="$(dispatch "$NON_GIT_DIR" re-reviewer mad-fix routine)"
+out="$(dispatch "$NON_GIT_DIR" re-reviewer mad-fix simple)"
 assert_eq "$(printf '%s' "$out" | jq -r '.scope')" "dispatch" "dispatch: scope は dispatch"
 assert_eq "$(printf '%s' "$out" | jq -r '.defaultEnvironment')" "primary" "dispatch: defaultEnvironment を持つ"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.duty, .selection.complexity, .selection.requestedComplexity' | tr '\n' ' ')" \
-  "review routine routine " "dispatch: role の duty と渡した複雑度を使う"
+  "review simple simple " "dispatch: role の duty と渡した複雑度を使う"
 
 out="$(dispatch "$NON_GIT_DIR" final-reviewer mad-fix)"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.duty')" "review" "dispatch: role の duty を使う"
 out="$(dispatch "$NON_GIT_DIR" reviewer mad-fix)"
 assert_eq "$(printf '%s' "$out" | jq -r '.selection.duty')" "review" "dispatch: duty 欠落時は review"
-assert_eq "$(printf '%s' "$out" | jq -r '.selection.complexity')" "standard" "dispatch: 複雑度の省略時は defaults.complexity"
+assert_eq "$(printf '%s' "$out" | jq -r '.selection.complexity')" "routine" "dispatch: 複雑度の省略時は defaults.complexity"
 assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(. == "duty missing for role reviewer; using review")) | length')" \
   "1" "dispatch: duty 欠落の warning は一回だけ"
 assert_eq "$(printf '%s' "$out" | jq '[.resolutions[].warnings[]] | map(select(. == "complexity missing; using defaults.complexity")) | length')" \
@@ -404,7 +404,7 @@ assert_eq "$(jq -c '.providers.codex.featureAllowlist' "$VALID")" '{"fast_mode":
   "allowlist: Codex は fast_mode を boolean で宣言する"
 assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$VALID" | tr '\n' ' ')" \
   "{} {} " "allowlist: OpenCode と Pi は空 allowlist だけを持つ"
-assert_eq "$(jq -c '[.resolutions[] | select(.environment == "primary" and .duty == "review" and .complexity == "standard") | .candidates[0].features]' "$export_json")" \
+assert_eq "$(jq -c '[.resolutions[] | select(.environment == "primary" and .duty == "review" and .complexity == "routine") | .candidates[0].features]' "$export_json")" \
   '[{"fast_mode":true}]' "allowlist: Codex の fast_mode true を resolved export へ渡す"
 assert_eq "$(jq -c '[.resolutions[] | select(.environment == "primary" and .duty == "review" and .complexity == "complex") | .candidates[0].features]' "$export_json")" \
   '[{"fast_mode":false}]' "allowlist: Claude の fast_mode false を resolved export へ渡す"
@@ -424,13 +424,13 @@ assert_eq "$(printf '%s' "$fast_mode_launch_false" | jq -c '.features')" '{"fast
   "launch: Claude の fast_mode false を launch spec へ渡す"
 
 launch="$(generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role re-reviewer \
-  --provenance mad-fix --complexity routine --snapshot "$SNAPSHOTS/all-available.json")"
+  --provenance mad-fix --complexity simple --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$?" "0" "launch: 成功は exit 0"
 assert_eq "$(printf '%s' "$launch" | jq -c 'keys|sort')" \
   '["complexity","duty","environment","features","modeId","model","provider","requestedComplexity","status","thinkingOptionId","type","version","warnings"]' \
   "launch: 成功の key set"
 assert_eq "$(printf '%s' "$launch" | jq -r '.modeId,.duty,.complexity,.provider,.model' | tr '\n' ' ')" \
-  "auto review routine codex sample-light " "launch: auto と duty と複雑度と candidate"
+  "auto review simple codex sample-light " "launch: auto と duty と複雑度と candidate"
 assert_eq "$(printf '%s\n' "$launch" | jq -s 'length')" "1" "launch: stdout は JSON 1 件"
 generate --input "$VALID" resolve --project "$NON_GIT_DIR" --role reviewer --provenance mad-fix \
   --snapshot "$SNAPSHOTS/all-available.json" --paseo-config "$TMP/target.json" >/dev/null 2>&1
@@ -619,13 +619,13 @@ const overridden = lab.filter((r) => r.warnings.length === 0)
 console.log(lab.length, overridden.length,
   `${overridden[0].duty}/${overridden[0].complexity}`, overridden[0].candidates[0].model)
 ' "$VALIDATOR" "$RESOLVER" "$SAMPLE")"
-assert_eq "$out" "12 1 implement/standard sample-lab-work" "resolve: 環境の 1 枠だけが差し替わる"
+assert_eq "$out" "16 1 implement/routine sample-lab-work" "resolve: 環境の 1 枠だけが差し替わる"
 
 # 2. 複雑度の引き上げが round 2 で起きる
-for args in "mad-fix 2 complex standard" "mad-fix 1 standard standard" "mad-review 2 standard standard"; do
+for args in "mad-fix 2 complex routine" "mad-fix 1 routine routine" "mad-review 2 routine routine"; do
   set -- $args
   out="$(generate --input "$SAMPLE" resolve --project "$NON_GIT_DIR" --role implementer \
-    --environment primary --provenance "$1" --round "$2" --complexity standard \
+    --environment primary --provenance "$1" --round "$2" --complexity routine \
     --snapshot "$SNAPSHOTS/all-available.json")"
   assert_eq "$(printf '%s' "$out" | jq -r '"\(.complexity) \(.requestedComplexity)"')" "$3 $4" \
     "resolve: $1 round $2 の複雑度"
@@ -671,7 +671,7 @@ out="$(generate --input "$SAMPLE" resolve --project "$NON_GIT_DIR" --role implem
   --snapshot "$SNAPSHOTS/model-unavailable.json")" || status=$?
 assert_eq "$status" "4" "resolve: 候補が尽きたら exit 4"
 assert_eq "$(printf '%s' "$out" | jq -r '"\(.duty) \(.complexity) \(.requestedComplexity)"')" \
-  "implement standard standard" "mad-launch-failure が duty と複雑度を持つ"
+  "implement routine routine" "mad-launch-failure が duty と複雑度を持つ"
 
 # 8. prune-paseo-profiles が managed profile を 2 件とも消し、他の profile と書式を保つ
 PRUNE_TARGET="$TMP/managed-profiles-pair.json"

@@ -19,7 +19,7 @@ const { config } = validateConfig(fs.readFileSync(process.argv[5], "utf8"))
 const materialized = materializePaseoProviders(resolveExport(config))
 const dispatch = resolveDispatch(config, {
   project: process.argv[6], role: "implementer", provenance: "mad-dispatch",
-  complexity: "standard", environment: "primary",
+  complexity: "routine", environment: "primary",
 })
 const snapshot = {
   version: 1, type: "paseo-availability-snapshot",
@@ -34,6 +34,6 @@ console.log(Object.keys(materialized).sort().join(","),
 ' "$SHARE/config-validator.js" "$SHARE/resolver.js" "$SHARE/paseo-providers.js" \
   "$SHARE/paseo-launch.js" "$SHARE/agent-config.sample.json" "$ROOT")"
 assert_eq "$out" \
-  "providers,warnings complexity,duty,environment,features,modeId,model,provider,requestedComplexity,status,thinkingOptionId,type,version,warnings implement standard standard high true" \
+  "providers,warnings complexity,duty,environment,features,modeId,model,provider,requestedComplexity,status,thinkingOptionId,type,version,warnings implement routine routine high true" \
   "paseo-launch: launch spec の 13 key"
 assert_summary

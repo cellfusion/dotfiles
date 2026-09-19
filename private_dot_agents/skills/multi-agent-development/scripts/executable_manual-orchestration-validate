@@ -352,8 +352,8 @@ normalize_launch_success() {
     elif (.version != 1 or .type != "mad-launch-spec" or .status != "ok" or .modeId != "auto") then error
     elif (any([.environment,.duty,.complexity,.requestedComplexity,.provider,.model,.thinkingOptionId][]; type != "string" or length == 0)) then error
     elif ((.duty as $duty | ["author","implement","review","synthesize"] | index($duty)) == null) then error
-    elif ((.complexity as $complexity | ["routine","standard","complex"] | index($complexity)) == null) then error
-    elif ((.requestedComplexity as $requestedComplexity | ["routine","standard","complex"] | index($requestedComplexity)) == null) then error
+    elif ((.complexity as $complexity | ["simple","routine","complex","critical"] | index($complexity)) == null) then error
+    elif ((.requestedComplexity as $requestedComplexity | ["simple","routine","complex","critical"] | index($requestedComplexity)) == null) then error
     elif (.features | type != "object" or any(to_entries[]; (.value | (type != "boolean" and type != "string" and type != "number")))) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     else . end
@@ -366,8 +366,8 @@ normalize_launch_failure() {
     elif (.version != 1 or .type != "mad-launch-failure" or .status != "unresolved" or .reasonCode != "candidates_exhausted") then error
     elif (any([.environment,.duty,.complexity,.requestedComplexity][]; type != "string" or length == 0)) then error
     elif ((.duty as $duty | ["author","implement","review","synthesize"] | index($duty)) == null) then error
-    elif ((.complexity as $complexity | ["routine","standard","complex"] | index($complexity)) == null) then error
-    elif ((.requestedComplexity as $requestedComplexity | ["routine","standard","complex"] | index($requestedComplexity)) == null) then error
+    elif ((.complexity as $complexity | ["simple","routine","complex","critical"] | index($complexity)) == null) then error
+    elif ((.requestedComplexity as $requestedComplexity | ["simple","routine","complex","critical"] | index($requestedComplexity)) == null) then error
     elif (.warnings | type != "array" or any(.[]; type != "string" or contains("://"))) then error
     elif (.candidates | type != "array") then error
     elif (any(.candidates[]; (type != "object" or (keys | sort) != ["model","provider","reasonCode","thinkingOptionId"]))) then error

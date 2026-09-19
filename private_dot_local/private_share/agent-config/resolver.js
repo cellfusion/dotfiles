@@ -210,7 +210,7 @@ function selectEnvironment(config, project, explicitEnvironment, parentEnvironme
   return { environment: config.defaults.environment, warnings }
 }
 
-const ESCALATION = { routine: 'standard', standard: 'complex', complex: 'complex' }
+const ESCALATION = { simple: 'routine', routine: 'complex', complex: 'complex', critical: 'critical' }
 
 function selectDuty(config, role) {
   const roleDuty = config.agentRoles[role].duty

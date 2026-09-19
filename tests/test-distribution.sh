@@ -89,8 +89,8 @@ assert_eq "$(jq -c '.providers.claude.featureAllowlist, .providers.codex.feature
 assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$sample" | tr '\n' ' ')" \
   "{} {} " "distribution: sample は OpenCode と Pi を空 allowlist にする"
 assert_eq "$(jq -c '[.selection | to_entries[] | .value | to_entries[] | .value.candidates[0].features | if has("fast_mode") then .fast_mode else "absent" end] | sort' "$sample")" \
-  '[false,false,false,false,false,true,true,true,"absent","absent","absent","absent"]' \
-  "distribution: sample は 12 selection slot の fast_mode の true と false を示す"
+  '[false,false,false,false,false,false,false,false,true,true,true,true,"absent","absent","absent","absent"]' \
+  "distribution: sample は 16 selection slot の fast_mode の true と false を示す"
 assert_not_contains "$managed" "tests/fixtures" "distribution: test fixture を配らない"
 
 # 配布する adapter は create の境界を持たない。create は公式 MCP tool だけが行う。

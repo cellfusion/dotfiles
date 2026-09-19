@@ -5,8 +5,8 @@
   "reasonCode": "candidates_exhausted",
   "environment": "primary",
   "duty": "implement",
-  "complexity": "standard",
-  "requestedComplexity": "standard",
+  "complexity": "routine",
+  "requestedComplexity": "routine",
   "candidates": [
     {
       "provider": "codex",

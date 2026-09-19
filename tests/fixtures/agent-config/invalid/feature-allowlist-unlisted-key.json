@@ -2,7 +2,7 @@
   "version": 2,
   "defaults": {
     "environment": "primary",
-    "complexity": "standard"
+    "complexity": "routine"
   },
   "providers": {
     "claude": {
@@ -97,7 +97,7 @@
       ],
       "selection": {
         "review": {
-          "standard": {
+          "routine": {
             "candidates": [
               {
                 "provider": "codex",
@@ -172,7 +172,7 @@
   },
   "selection": {
     "author": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -182,7 +182,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -205,10 +205,22 @@
             }
           }
         ]
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-deep",
+            "effort": "max",
+            "features": {
+              "fast_mode": true
+            }
+          }
+        ]
       }
     },
     "implement": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -218,7 +230,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -231,6 +243,18 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-think",
+            "effort": "high",
+            "features": {
+              "fast_mode": false
+            }
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -244,7 +268,7 @@
       }
     },
     "review": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -254,7 +278,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -277,10 +301,22 @@
             }
           }
         ]
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-think",
+            "effort": "high",
+            "features": {
+              "fast_mode": false
+            }
+          }
+        ]
       }
     },
     "synthesize": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "codex",
@@ -290,7 +326,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "codex",
@@ -303,6 +339,18 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "sample-deep",
+            "effort": "max",
+            "features": {
+              "fast_mode": true
+            }
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",

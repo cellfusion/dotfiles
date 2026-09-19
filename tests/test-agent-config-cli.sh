@@ -23,17 +23,17 @@ run() {
     --snapshot "$TMP/snapshot.json" "$@"
 }
 
-out="$(run --provenance mad-fix --round 2 --complexity standard)"
+out="$(run --provenance mad-fix --round 2 --complexity routine)"
 assert_eq "$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.complexity,j.requestedComplexity)})')" \
-  "complex standard" "resolve: mad-fix round 2 で引き上げる"
+  "complex routine" "resolve: mad-fix round 2 で引き上げる"
 
-out="$(run --provenance mad-review --round 2 --complexity standard)"
+out="$(run --provenance mad-review --round 2 --complexity routine)"
 assert_eq "$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.complexity,j.requestedComplexity)})')" \
-  "standard standard" "resolve: mad-review は引き上げない"
+  "routine routine" "resolve: mad-review は引き上げない"
 
 out="$(run --provenance mad-dispatch)"
 assert_eq "$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.complexity,j.warnings.filter(w=>w.includes("complexity missing")).length)})')" \
-  "standard 1" "resolve: --complexity 省略で defaults.complexity に落ちる"
+  "routine 1" "resolve: --complexity 省略で defaults.complexity に落ちる"
 
 status=0
 env -u AGENT_ENV -u AGENT_ENV_SESSION node "$CLI" --input "$SHARE/agent-config.sample.json" >/dev/null 2>&1 || status=$?

@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "properties": {
         "environment": { "type": "string", "minLength": 1 },
-        "complexity": { "const": "standard" }
+        "complexity": { "const": "routine" }
       }
     },
     "providers": {
@@ -78,9 +78,32 @@
       "properties": {
         "author": {
           "type": "object",
-          "required": ["routine", "standard", "complex"],
+          "required": ["simple", "routine", "complex", "critical"],
           "additionalProperties": false,
           "properties": {
+            "simple": {
+              "type": "object",
+              "required": ["candidates"],
+              "additionalProperties": false,
+              "properties": {
+                "notes": { "type": "string", "minLength": 1 },
+                "candidates": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["provider", "model", "effort", "features"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "effort": { "type": "string", "minLength": 1 },
+                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
+                    }
+                  }
+                }
+              }
+            },
             "routine": {
               "type": "object",
               "required": ["candidates"],
@@ -104,7 +127,7 @@
                 }
               }
             },
-            "standard": {
+            "complex": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -127,7 +150,7 @@
                 }
               }
             },
-            "complex": {
+            "critical": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -154,9 +177,32 @@
         },
         "implement": {
           "type": "object",
-          "required": ["routine", "standard", "complex"],
+          "required": ["simple", "routine", "complex", "critical"],
           "additionalProperties": false,
           "properties": {
+            "simple": {
+              "type": "object",
+              "required": ["candidates"],
+              "additionalProperties": false,
+              "properties": {
+                "notes": { "type": "string", "minLength": 1 },
+                "candidates": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["provider", "model", "effort", "features"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "effort": { "type": "string", "minLength": 1 },
+                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
+                    }
+                  }
+                }
+              }
+            },
             "routine": {
               "type": "object",
               "required": ["candidates"],
@@ -180,7 +226,7 @@
                 }
               }
             },
-            "standard": {
+            "complex": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -203,7 +249,7 @@
                 }
               }
             },
-            "complex": {
+            "critical": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -230,9 +276,32 @@
         },
         "review": {
           "type": "object",
-          "required": ["routine", "standard", "complex"],
+          "required": ["simple", "routine", "complex", "critical"],
           "additionalProperties": false,
           "properties": {
+            "simple": {
+              "type": "object",
+              "required": ["candidates"],
+              "additionalProperties": false,
+              "properties": {
+                "notes": { "type": "string", "minLength": 1 },
+                "candidates": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["provider", "model", "effort", "features"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "effort": { "type": "string", "minLength": 1 },
+                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
+                    }
+                  }
+                }
+              }
+            },
             "routine": {
               "type": "object",
               "required": ["candidates"],
@@ -256,7 +325,7 @@
                 }
               }
             },
-            "standard": {
+            "complex": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -279,7 +348,7 @@
                 }
               }
             },
-            "complex": {
+            "critical": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -306,9 +375,32 @@
         },
         "synthesize": {
           "type": "object",
-          "required": ["routine", "standard", "complex"],
+          "required": ["simple", "routine", "complex", "critical"],
           "additionalProperties": false,
           "properties": {
+            "simple": {
+              "type": "object",
+              "required": ["candidates"],
+              "additionalProperties": false,
+              "properties": {
+                "notes": { "type": "string", "minLength": 1 },
+                "candidates": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["provider", "model", "effort", "features"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "effort": { "type": "string", "minLength": 1 },
+                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
+                    }
+                  }
+                }
+              }
+            },
             "routine": {
               "type": "object",
               "required": ["candidates"],
@@ -332,7 +424,7 @@
                 }
               }
             },
-            "standard": {
+            "complex": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -355,7 +447,7 @@
                 }
               }
             },
-            "complex": {
+            "critical": {
               "type": "object",
               "required": ["candidates"],
               "additionalProperties": false,
@@ -400,7 +492,7 @@
                   "type": "object",
                   "additionalProperties": false,
                   "patternProperties": {
-                    "^(routine|standard|complex)$": {
+                    "^(simple|routine|complex|critical)$": {
                       "type": "object",
                       "required": ["candidates"],
                       "additionalProperties": false,

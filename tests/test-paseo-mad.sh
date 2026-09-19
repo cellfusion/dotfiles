@@ -696,7 +696,7 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_eq "$(jq -r --arg role "$role" '.agentRoles[$role].artifactContract' "$VALID")" "mad-attempt-v1" \
     "role map: $role は mad-attempt-v1 を返す"
   env -u AGENT_ENV -u AGENT_ENV_SESSION node "$GENERATOR" --input "$VALID" resolve \
-    --project "$NON_GIT_DIR" --role "$role" --complexity standard --round 0 \
+    --project "$NON_GIT_DIR" --role "$role" --complexity routine --round 0 \
     --provenance mad-dispatch --snapshot "$MAD_FIXTURES/snapshot.json" >/dev/null
   assert_eq "$?" "0" "role map: $role は launch を解決できる"
 done
@@ -802,7 +802,7 @@ assert_eq "$(stat -f '%HT:%Lp' "$attempt/snapshot.json")" "Regular File:600" "MA
 assert_eq "$(jq -S . "$attempt/snapshot.json")" "$(jq -S . "$MAD_FIXTURES/snapshot.json")" \
   "MAD 成功: 正規化した snapshot は fixture と一致する"
 assert_eq "$(jq -r '.events[] | select(.operation == "resolve") | "\(.exitCode) \(.outputType) \(.stdoutDocuments) \(.duty) \(.complexity) \(.requestedComplexity) \(.effort)"' "$attempt/call-log.json")" \
-  "0 mad-launch-spec 1 review standard standard high" "call log: resolve event が選択結果を持つ"
+  "0 mad-launch-spec 1 review routine routine high" "call log: resolve event が選択結果を持つ"
 assert_eq "$(jq -c '.events[] | select(.operation == "build_create_request") | [.topLevelKeys, .settingsKeys, .mode, .regularFile, .validatedBeforeWrite]' "$attempt/call-log.json")" \
   '[["title","workspaceId","initialPrompt","notifyOnFinish","provider","settings"],["modeId","thinkingOptionId","features"],600,true,true]' \
   "MAD 成功: request は検証してから 0600 で書く"
@@ -878,7 +878,7 @@ assert_eq "$(jq -c . "$attempt/wait-evidence.json")" '{"status":"idle"}' \
 
 # fast_mode:false も同じ経路を通す。true だけを通して false を落とす実装を弾く。
 FALSE_INPUT="$TMP/valid-fast-mode-false.json"
-jq -c '.selection.review.standard.candidates = [{provider:"claude",model:"sample-think",effort:"high",features:{fast_mode:false}}]' \
+jq -c '.selection.review.routine.candidates = [{provider:"claude",model:"sample-think",effort:"high",features:{fast_mode:false}}]' \
   "$VALID" > "$FALSE_INPUT"
 false_attempt="$TMP/mad-fast-mode-false"
 mkdir -p "$false_attempt"
@@ -1719,7 +1719,7 @@ mismatch_generator="$TMP/mismatch-generator.sh"
 cat > "$mismatch_generator" <<'GENERATOR_EOF'
 #!/usr/bin/env bash
 set -u
-printf '%s\n' '{"version":1,"type":"mad-launch-spec","status":"ok","environment":"lab","duty":"review","complexity":"standard","requestedComplexity":"standard","provider":"claude-lab","model":"sample-think","modeId":"auto","thinkingOptionId":"high","features":{"fast_mode":false},"warnings":[]}'
+printf '%s\n' '{"version":1,"type":"mad-launch-spec","status":"ok","environment":"lab","duty":"review","complexity":"routine","requestedComplexity":"routine","provider":"claude-lab","model":"sample-think","modeId":"auto","thinkingOptionId":"high","features":{"fast_mode":false},"warnings":[]}'
 GENERATOR_EOF
 chmod 700 "$mismatch_generator"
 mismatch_attempt="$TMP/mad-parent-mismatch"

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "defaults": { "environment": "primary", "complexity": "standard" },
+  "defaults": { "environment": "primary", "complexity": "routine" },
   "providers": {
     "claude": { "displayName": "Claude", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
     "codex": { "displayName": "Codex", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md", "rules"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
@@ -9,29 +9,33 @@
   },
   "selection": {
     "author": {
-      "routine": { "notes": "sample: 定型の文書を書く", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "standard": { "notes": "sample: 通常の spec と plan を書く", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "complex": { "notes": "sample: 設計判断を伴う spec を書く", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
+      "simple": { "notes": "sample: 定型の文書を書く", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+      "routine": { "notes": "sample: 通常の spec と plan を書く", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
+      "complex": { "notes": "sample: 設計判断を伴う spec を書く", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
+      "critical": { "notes": "sample: 前例のない設計を spec に起こす", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     },
     "implement": {
-      "routine": { "notes": "sample: 定型の実装を行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "standard": { "notes": "sample: 通常の実装を行う", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: 難しい実装を行う", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": true } }] }
+      "simple": { "notes": "sample: 文字列の置き換えだけを行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+      "routine": { "notes": "sample: 通常の実装を行う", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
+      "complex": { "notes": "sample: 契約の key set を変える実装を行う", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
+      "critical": { "notes": "sample: 複数の層にまたがる実装を行う", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     },
     "review": {
-      "routine": { "notes": "sample: 指摘の解消を判定する", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "standard": { "notes": "sample: タスクの差分をレビューする", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: branch 全体をレビューする", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
+      "simple": { "notes": "sample: 指摘の解消を判定する", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+      "routine": { "notes": "sample: タスクの差分をレビューする", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
+      "complex": { "notes": "sample: branch 全体をレビューする", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
+      "critical": { "notes": "sample: 取り込み前の最終レビューを行う", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     },
     "synthesize": {
-      "routine": { "notes": "sample: 短い統合を行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "standard": { "notes": "sample: 通常の統合を行う", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "complex": { "notes": "sample: 食い違う結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
+      "simple": { "notes": "sample: 短い統合を行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+      "routine": { "notes": "sample: 通常の統合を行う", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
+      "complex": { "notes": "sample: 食い違う結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
+      "critical": { "notes": "sample: 判断が割れた結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     }
   },
   "environments": {
     "primary": { "providers": ["claude", "codex", "opencode", "pi"], "selection": {} },
-    "lab": { "providers": ["claude", "codex"], "selection": { "implement": { "standard": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
+    "lab": { "providers": ["claude", "codex"], "selection": { "implement": { "routine": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
   },
   "agentRoles": {
     "implementer": { "duty": "implement", "access": "write", "description": "実装と検証を行う", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["implementer"] },

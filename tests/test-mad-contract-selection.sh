@@ -14,7 +14,7 @@ out="$(node -e '
 const c = require(process.argv[1])
 const launch = {
   version: 1, type: "mad-launch-spec", status: "ok", environment: "primary",
-  duty: "implement", complexity: "complex", requestedComplexity: "standard",
+  duty: "implement", complexity: "complex", requestedComplexity: "routine",
   provider: "codex", model: "m", modeId: "auto", thinkingOptionId: "high",
   features: {}, warnings: [],
 }
@@ -22,7 +22,7 @@ c.assertMadLaunchSpecV1(launch, {})
 const log = { version: 1, type: "mad-call-log", events: [{
   seq: 0, operation: "resolve", exitCode: 0, outputType: "mad-launch-spec", stdoutDocuments: 1,
   environment: "primary", role: "implementer", duty: "implement", complexity: "complex",
-  requestedComplexity: "standard", provider: "codex", model: "m", effort: "high", features: {},
+  requestedComplexity: "routine", provider: "codex", model: "m", effort: "high", features: {},
 }] }
 c.assertMadCallLogV1(log)
 let rejected = false

@@ -2,7 +2,7 @@
   "version": 2,
   "defaults": {
     "environment": "primary",
-    "complexity": "standard"
+    "complexity": "routine"
   },
   "providers": {
     "claude": {
@@ -47,7 +47,7 @@
       ],
       "selection": {
         "review": {
-          "standard": {
+          "routine": {
             "candidates": []
           }
         }
@@ -69,7 +69,7 @@
   },
   "selection": {
     "author": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -79,7 +79,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "claude",
@@ -98,10 +98,20 @@
             "features": {}
           }
         ]
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
       }
     },
     "implement": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -111,7 +121,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "claude",
@@ -122,6 +132,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",
@@ -133,7 +153,7 @@
       }
     },
     "review": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -143,7 +163,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "claude",
@@ -162,10 +182,20 @@
             "features": {}
           }
         ]
+      },
+      "critical": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous-think",
+            "effort": "high",
+            "features": {}
+          }
+        ]
       }
     },
     "synthesize": {
-      "routine": {
+      "simple": {
         "candidates": [
           {
             "provider": "claude",
@@ -175,7 +205,7 @@
           }
         ]
       },
-      "standard": {
+      "routine": {
         "candidates": [
           {
             "provider": "claude",
@@ -186,6 +216,16 @@
         ]
       },
       "complex": {
+        "candidates": [
+          {
+            "provider": "claude",
+            "model": "anonymous-deep",
+            "effort": "high",
+            "features": {}
+          }
+        ]
+      },
+      "critical": {
         "candidates": [
           {
             "provider": "claude",

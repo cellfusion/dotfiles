@@ -1,7 +1,7 @@
 'use strict'
 
 const DUTIES = ['author', 'implement', 'review', 'synthesize']
-const COMPLEXITIES = ['routine', 'standard', 'complex']
+const COMPLEXITIES = ['simple', 'routine', 'complex', 'critical']
 const PASEO_FIELDS = ['provider', 'profileName', 'modeId', 'thinkingOptionId', 'featureValues',
   'extends', 'label', 'env', 'reasonCode', 'snapshot', 'providerId']
 const EXPORT_KEYS = ['version', 'type', 'scope', 'defaultEnvironment', 'providerFamilies', 'environments', 'resolutions']
