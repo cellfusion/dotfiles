@@ -10,6 +10,14 @@ plan_file="$1"
 task_number="$2"
 out_file="$3"
 
+case "$task_number" in
+  ''|*[!0-9]*)
+    printf 'usage: %s PLAN_FILE TASK_NUMBER OUTFILE\n' "$0" >&2
+    printf 'task brief: TASK_NUMBER must contain only decimal digits: %s\n' "$task_number" >&2
+    exit 2
+    ;;
+esac
+
 if [ ! -f "$plan_file" ]; then
   printf 'task brief: plan file is not a regular file: %s\n' "$plan_file" >&2
   exit 2

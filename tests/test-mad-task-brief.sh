@@ -109,6 +109,17 @@ else
 fi
 TESTS_RUN=$((TESTS_RUN + 1))
 
+invalid_out="$tmp/invalid-task-number.md"
+status=0
+"$task_brief" "$plan" '2|3' "$invalid_out" >"$stdout" 2>"$stderr" || status=$?
+assert_eq "$status" 2 '非数値の task number は exit 2 である'
+if test ! -e "$invalid_out"; then
+  pass '非数値の task number は出力先を残さない'
+else
+  fail '非数値の task number は出力先を残さない'
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
 status=0
 "$task_brief" "$tmp/no-plan.md" 2 "$tmp/no-plan-out.md" >"$stdout" 2>"$stderr" || status=$?
 assert_eq "$status" 2 '存在しない plan は exit 2 である'
