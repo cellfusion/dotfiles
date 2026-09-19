@@ -111,7 +111,7 @@ HEAD が一致しない場合、または `paseo.json` 以外の変更がある�
 
 1. `create_workspace` を `isolation: "worktree"`、`mode: "checkout-pr"`、`prNumber: PR_NUMBER`、GitHub の `forge`、元 checkout の `projectPath` で呼ぶ。返された review workspace ID と worktree path を JSON から読み、`REVIEW_WS` / `REVIEW_WORKTREE` に保存する。予測で補わない。
 2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とし、理由を `metadata.json` の `delegation` に残す。review workspace と agent workspace を同一にしない。
-3. `agent-config resolve` を `--role reviewer --provenance pr-review --complexity standard` で呼び、返る `provider`、`model`、`modeId`、`thinkingOptionId`、`features` を `create_agent` へ写す。
+3. `agent-config resolve` を `--role reviewer --provenance pr-review --complexity routine` で呼び、返る `provider`、`model`、`modeId`、`thinkingOptionId`、`features` を `create_agent` へ写す。
 4. `REVIEW_WORKTREE` で `git rev-parse HEAD`、`git status --porcelain` を確認する。HEAD が違う場合だけ、Paseo の作法を壊さない形で `gh pr checkout "$PR_NUMBER" --repo "$REPOSITORY" --detach` を worktree 内で行い、再確認する。固定 object の取得と diff package の生成は、下の「固定 revision と diff package」を実行してから行う。
 5. `agent-config resolve` が exit 4 で候補を返さない、agent を read-only 相当で起動できない、または provider discovery に失敗した場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とす。current agent は一次レビューと必要な specialist lens を順に実行する。下位経路へ進むのは `create_workspace` 自体が失敗して `REVIEW_WORKTREE` が空のときだけとする。どちらの場合も理由を `metadata.json` の `delegation` に残す。`agent-config resolve` が返さなかった provider と model を推測して使わない。
 

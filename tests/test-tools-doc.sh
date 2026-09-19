@@ -100,7 +100,7 @@ assert_eq "$(printf '%s' "$doc" | grep -c 'generate-paseo-config')" "0" \
   "tools.md: 旧 CLI 名が残らない"
 assert_eq "$(printf '%s' "$doc" | grep -cE '\"\$MAD_GENERATOR\" (--input [^ ]+ )?(--paseo-config [^ ]+ )?(--diff|--check)?$')" "0" \
   "tools.md: subcommand を付けない呼び出しが残らない"
-assert_contains "$doc" "selection" "tools.md: selection の 12 枠を説明する"
+assert_contains "$doc" "selection" "tools.md: selection の 16 枠を説明する"
 assert_eq "$(printf '%s' "$doc" | grep -c '`fast` は入力時だけ')" "0" \
   "tools.md: fast の正規化の記述が残らない"
 

@@ -45,7 +45,7 @@ snapshot の保存後、親は次の `agent-config resolve` のみで launch を
 
 `$PROVENANCE` に入れる値は子の役目で決める。implement とそれ以外の初回の子は `mad-dispatch`、
 指摘を修正する子は `mad-fix`、再レビューの子は `mad-review` を渡す。`$COMPLEXITY` には
-プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `standard` を入れる。
+プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `routine` を入れる。
 `$ROUND` には review/fix loop のラウンド番号を入れ、review/fix loop の外で起動する子には
 `0` を入れる。`mad-fix` で `$ROUND` が 2 以上のとき、CLI が複雑度を 1 段上げる。
 

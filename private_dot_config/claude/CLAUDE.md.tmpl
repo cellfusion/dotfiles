@@ -135,9 +135,10 @@ agent-config --input "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.jso
 `--role` は正本の `agentRoles` にある名前を渡す。role が duty を決める。`--complexity` は
 作業の重さで選ぶ。
 
-- `routine` — 判断の幅が狭い確認と、形の決まった作業を渡すとき
-- `standard` — 通常の実装、調査、タスク単位のレビューを渡すとき。既定の値である
-- `complex` — 設計判断を含む作業、branch 全体の最終レビューを渡すとき
+- `simple` — 判断の幅が狭い確認と、形の決まった作業を渡すとき
+- `routine` — 通常の実装、調査、タスク単位のレビューを渡すとき。既定の値である
+- `complex` — 設計判断を含む作業を渡すとき
+- `critical` — 取り込み前の最終レビューと、複数の層にまたがる設計変更を渡すとき
 
 exit 0 なら `mad-launch-spec` が出る。exit 4 は候補が尽きたことを表すので、provider と model を
 推測せず、ユーザーへ理由を伝えて止まる。exit 2 は入力または snapshot の不備である。

@@ -63,7 +63,7 @@
 
 **Depends on:** Task 2, Task 3
 
-**Complexity:** standard
+**Complexity:** routine
 
 **Interfaces:**
 - Consumes: [先行タスクから使うもの — 正確なシグネチャ]
@@ -116,17 +116,19 @@ git commit -m "feat: add specific feature"
 
 ### タスクの複雑度
 
-各タスクは `**Depends on:**` の直後に `**Complexity:**` の 1 行を持つ。値は `routine`、
-`standard`、`complex` のいずれかである。親はこの値を `agent-config resolve` の
+各タスクは `**Depends on:**` の直後に `**Complexity:**` の 1 行を持つ。値は `simple`、
+`routine`、`complex`、`critical` のいずれかである。親はこの値を `agent-config resolve` の
 `--complexity` へ渡し、子の provider と model を決める。
 
-- `routine` — 変更の形が既に決まっており、判断の幅が狭い。文字列の置き換え、path の付け替え、
+- `simple` — 変更の形が既に決まっており、判断の幅が狭い。文字列の置き換え、path の付け替え、
   既存の検査の値だけを変えるタスクが当たる
-- `standard` — 1 ファイルから数ファイルの範囲で、既存の設計に沿って実装する。既定の値である
+- `routine` — 1 ファイルから数ファイルの範囲で、既存の設計に沿って実装する。既定の値である
 - `complex` — 設計判断を含む。ファイルの分割、契約の key set の変更、複数の呼び出し元へ
   波及する変更が当たる
+- `critical` — 取り込み前の最終レビュー、複数の層にまたがる設計変更、やり直しの費用が大きい
+  判断を含む
 
-行を書かないタスクは `standard` として扱われる。値を書き間違えると
+行を書かないタスクは `routine` として扱われる。値を書き間違えると
 `paseo-plan-dependency-validate` が exit 2 で拒む。
 
 `Depends on` を書かないタスクは、それより前の全タスク全部に依存するものとして扱われる（＝直列）。安全側には倒れるが、並行の余地は失われる。

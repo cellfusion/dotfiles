@@ -152,9 +152,9 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
    未設定または空文字なら 2 段目を飛ばす。
    親の AI 環境名が `environments` に無い名前のときは、`resolve` が終了コード 2 で終わり
    stdout に JSON を出さない。
-3. 候補は `selection` の 12 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
-   `author`、`implement`、`review`、`synthesize`、複雑度は `routine`、`standard`、`complex` である。
-   12 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、
+3. 候補は `selection` の 16 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
+   `author`、`implement`、`review`、`synthesize`、複雑度は `simple`、`routine`、`complex`、`critical` である。
+   16 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、
    書かなかった枠は共通の `selection` を使う。role の `duty` と候補の順序も保持する。
 4. model と provider の優先順位は各枠の `candidates` 配列の順序にする。先頭から provider の
    `backends` に `paseo` が含まれること、availability、`auto` mode、model、thinking option を確認し、
