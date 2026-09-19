@@ -28,6 +28,7 @@ MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
+MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"
@@ -39,14 +40,19 @@ PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.s
 
 実際に起動する role は `implementer`、`task-reviewer`、`re-reviewer`、`final-reviewer` の 4 つである。role 名、prompt、schema、artifact contract は一致させる。レビュー結果は task 単位、fix 単位、branch 全体の順に対応する role が返す。
 
+plan-auditor は delivery role ではない。delivery role と同じ prompt/schema 命名規則に従う read role だが、implementation の前に使う one-shot gate として別枠で扱う。
+
 ## 共通手順
 
 1. `PASEO_UNIT_GATE`が実在するこのrepositoryだけ、`bash "$PASEO_UNIT_GATE" require unit2-decision.txt continue` を通し、親が必要な run directory と state を用意する。別repositoryでは固有のgateを使う。
-2. 配布された `mad-contract.js` で resolved export と provider enumeration を mode 0600 で作る。
-3. `"$MAD_ADAPTER"` の `list-providers`、available provider ごとの `list-models`、snapshot、`agent-config resolve` の順に実行する。
-4. launch を検証して request を作り、mode 0600 の `mcp-create.json` として書く。`assertMadCreateRequestV1` で再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取ってから、その 6 key をそのまま `mcp__paseo__create_agent` へ渡して一回だけ create する。marker を取れなければ create しない。adapter に create の経路は無い。
-5. accepted response を `{"status":"accepted","childRef":"<safe-id>"}` へ縮約して 0600 の state に保存し、`"$MAD_ADAPTER" wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼んで、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
-6. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
+2. dependency gate と `--waves` を通し、wave 順序を確定する。
+3. dependency gate の後、最初の implementer create 前に `plan-audit` node を同一 run で一回だけ起動する。audit attempt が `ok` でなければ implementer を create しない。plan-auditor の findings が空かつ `decisionRequest` が null のときだけ最初の wave の implementer を create する。
+4. `findings` が一件以上なら全件を一つの decision request に写し、state と phase_state を `waiting_for_user` にして停止する。non-null の `decisionRequest` があれば `question`、`options`、`recommendation`、`confirmed` の4欄を同じファイルへ転記する。同一 run で二度目の plan-audit を起動しない。
+5. 配布された `mad-contract.js` で resolved export と provider enumeration を mode 0600 で作る。
+6. `"$MAD_ADAPTER"` の `list-providers`、available provider ごとの `list-models`、snapshot、`agent-config resolve` の順に実行する。
+7. launch を検証して request を作り、mode 0600 の `mcp-create.json` として書く。`assertMadCreateRequestV1` で再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取ってから、その 6 key をそのまま `mcp__paseo__create_agent` へ渡して一回だけ create する。marker を取れなければ create しない。adapter に create の経路は無い。
+8. accepted response を `{"status":"accepted","childRef":"<safe-id>"}` へ縮約して 0600 の state に保存し、`"$MAD_ADAPTER" wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼んで、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
+9. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
 
 review/fix の scope 外で見つけた重要事項は、同じ loop を延長せず observations に保持して最終 gate で一度だけ user decision を求める。scope 拡張は新しい run で行う。
 
