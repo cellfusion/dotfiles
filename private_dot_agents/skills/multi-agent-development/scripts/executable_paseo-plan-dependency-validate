@@ -18,6 +18,7 @@ function parseTasks(text) {
   if (headings.length === 0) throw new Error('Task 見出しがない')
 
   const tasks = new Map()
+  const warnings = []
   for (let position = 0; position < headings.length; position += 1) {
     const heading = headings[position]
     if (tasks.has(heading.number)) throw new Error('Task 番号が重複する')
@@ -56,14 +57,17 @@ function parseTasks(text) {
     }
     task.dependsOn = [...new Set(task.dependsOn)]
     task.files = [...new Set(task.files)]
-    const COMPLEXITIES = ['routine', 'standard', 'complex']
-    if (task.complexity !== undefined && !COMPLEXITIES.includes(task.complexity)) {
-      throw new Error(`Task ${task.number}: Complexity が routine/standard/complex でない`)
+    const COMPLEXITIES = ['simple', 'routine', 'complex', 'critical']
+    if (task.complexity === 'standard') {
+      warnings.push(`Task ${task.number}: Complexity standard は routine へ読み替えた。simple/routine/complex/critical のいずれかに直すこと`)
+      task.complexity = 'routine'
+    } else if (task.complexity !== undefined && !COMPLEXITIES.includes(task.complexity)) {
+      throw new Error(`Task ${task.number}: Complexity が simple/routine/complex/critical でない`)
     }
     if (task.files.length === 0) throw new Error(`Task ${task.number}: Files がない`)
     tasks.set(task.number, task)
   }
-  return tasks
+  return { tasks, warnings }
 }
 
 function validateDependencies(tasks) {
@@ -111,7 +115,8 @@ function main(argv) {
   if (argv.length !== 1) throw new Error('PLAN_FILE が 1 つ必要である')
   let text
   try { text = fs.readFileSync(argv[0], 'utf8') } catch { throw new Error('plan を読み込めない') }
-  const tasks = parseTasks(text)
+  const { tasks, warnings } = parseTasks(text)
+  for (const warning of warnings) process.stderr.write(`paseo-plan-dependency-validate: ${warning}\n`)
   validateDependencies(tasks)
 }
 
