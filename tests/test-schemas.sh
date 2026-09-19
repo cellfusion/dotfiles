@@ -102,9 +102,15 @@ assert_eq "$top_level_types" '["array","string",["object","null"]]' \
 finding_property_types="$(node -e '
 const schema = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const properties = schema.properties.findings.items.properties;
-process.stdout.write([properties.id.type, properties.planQuote.type, properties.problem.type, properties.question.type].join(","));
+process.stdout.write([
+  properties.id.type,
+  properties.kind.type,
+  properties.planQuote.type,
+  properties.problem.type,
+  properties.question.type
+].join(","));
 ' "$schema_file" 2>/dev/null || true)"
-assert_eq "$finding_property_types" 'string,string,string,string' \
+assert_eq "$finding_property_types" 'string,string,string,string,string' \
   'finding properties の type が正しい'
 
 json_schema="$root/private_dot_agents/skills/_shared/scripts/executable_json-schema"
