@@ -281,5 +281,9 @@ script_rows="$(printf '%s\n' "$doc" | grep -c '| `run_onchange_after_')"
 declared="$(printf '%s\n' "$doc" | sed -n 's/^apply の中で上の表の \([0-9][0-9]*\) 本が番号順に実行される。$/\1/p')"
 assert_eq "$declared" "$script_rows" "docs: 表のスクリプト数と本文の本数が一致する"
 
+assert_contains "$doc" "## agent で AI 環境を指定して起動する" "tools.md: agent ラッパーの節がある"
+assert_contains "$doc" 'agent --provider=<provider-id>' "tools.md: agent ラッパーの使い方を書く"
+assert_contains "$doc" "setup.configDirectoryEnv" "tools.md: ラッパーが設定する変数の出所を書く"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

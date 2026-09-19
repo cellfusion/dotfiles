@@ -203,6 +203,33 @@ flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absol
 stale な provider・directory は自動削除しない。auth と history の有無を利用者が確認した
 うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
 
+## agent で AI 環境を指定して起動する
+
+`~/.local/bin/agent` は AI 環境を指定して AI CLI を起動するラッパーである。
+
+    agent --provider=<provider-id> [引数...]
+
+`<provider-id>` は `~/.config/chezmoi/agent-config.json` から materialize した id で、
+Paseo の provider record の key と同じ名前空間にある。既定環境の provider id は
+provider family の名前そのもの（`claude`）、それ以外の環境は `<family>-<環境名>`
+（`claude-lab`）である。
+
+ラッパーは `AGENT_ENV` に環境名を設定し、family の `setup.configDirectoryEnv` の key
+（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`）へ `setup.directoryPattern` を展開した絶対 path を
+設定してから、family と同じ名前のコマンドを `exec` で起動する。`setup` が `null` の
+family（`opencode`、`pi`）では設定ディレクトリの変数を設定しない。自分のプロセスを
+残さないので、`paseo provider diagnostic` がコマンドを起動して version と auth を読む
+経路でも使える。
+
+正本は `AGENT_CONFIG`（未設定なら `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json`）
+から読む。`--provider` が無い、値が空、重複している、正本に無い id を渡した、正本を
+読めない、のいずれでも終了コード 2 で終わり、使える provider id の一覧を stderr に出す。
+`--` 以降の引数は family のコマンドへそのまま渡す。
+
+zsh は解決できた AI 環境の変数だけを設定する。`AGENT_ENV` も `HERDR_SESSION` も
+定義済みの環境名でないシェルでは `claude` と `codex` が関数で塞がれるので、その場合は
+このラッパーで起動する。
+
 ## core
 
 | ツール | 用途 |
