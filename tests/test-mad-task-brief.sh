@@ -67,6 +67,12 @@ This task must not be copied.
 Task 99 must not be interpreted as a boundary.
 ```
 
+~~~markdown
+### Task 98: tilde-fenced heading
+
+Task 98 must not be interpreted as a boundary.
+~~~
+
 ### Task 2: selected task
 
 target task body
@@ -91,6 +97,17 @@ if test -x "$task_brief"; then
   pass 'source file は実行可能である'
 else
   fail 'source file は実行可能である'
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
+tilde_out="$tmp/tilde-fenced-task.md"
+status=0
+"$task_brief" "$plan" 98 "$tilde_out" >"$stdout" 2>"$stderr" || status=$?
+assert_eq "$status" 3 'チルダ柵内の task は存在しない扱いになる'
+if test ! -e "$tilde_out"; then
+  pass 'チルダ柵内の task は出力先を残さない'
+else
+  fail 'チルダ柵内の task は出力先を残さない'
 fi
 TESTS_RUN=$((TESTS_RUN + 1))
 

@@ -24,7 +24,7 @@ if [ ! -f "$plan_file" ]; then
 fi
 
 if ! awk -v n="$task_number" '
-  /^```/ {
+  /^(```|~~~)/ {
     in_fence = !in_fence
   }
   !in_fence && /^#+[ \t]+Task[ \t]+[0-9]+/ {
