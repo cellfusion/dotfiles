@@ -506,6 +506,9 @@ function existingReviewAdmissions(runDir, task) {
 
 // review/fix child の create 前に、task scope と round 上限を確認して admission を一回だけ発行する。
 // marker の取得に失敗した呼び出しは公式 MCP create へ進めない。
+// `findingIds` は round 0 の review より前に確定する immutable な値であり、round 0 の
+// findings ではない。空配列を fix の拒否理由にすると、round 0 の結果で初めて指摘が出る
+// 通常の経路が成立しない。未解決の指摘は `mad-review-open-findings` が持つ。
 function prepareMadReview0600(runDir, scopePath, phase, node, attempt, taskOverride) {
   const code = 'invalid_mad_review_admission'
   absolutePath(runDir, code, 'mad review run directory')
@@ -544,9 +547,6 @@ function prepareMadReview0600(runDir, scopePath, phase, node, attempt, taskOverr
   }
   if (phase === 're-review' && !admissions.some(({ value }) => value.phase === 'fix' && value.round === round)) {
     fail(code, 're-review は同じ round の fix admission の後でなければならない')
-  }
-  if ((phase === 'fix' || phase === 're-review') && scope.findingIds.length === 0) {
-    fail(code, 'fix/re-review には既存 finding が必要である')
   }
   const admissionPath = reviewAdmissionPath(runDir, scope.task, phase, round)
   const admission = {
@@ -621,6 +621,87 @@ function writeMadReviewObservations0600(value, observationsPath, task) {
   const code = 'invalid_mad_review_observations'
   assertMadReviewObservationsV1(value, task)
   return writeAtomic0600(observationsPath, JSON.stringify(value, null, 2) + '\n', code, 'mad review observations')
+}
+
+function shaPrefixMatches(expected, reported) {
+  return expected.startsWith(reported) || reported.startsWith(expected)
+}
+
+// レビュー役が読んだ範囲を照合する。レビュー役は範囲を自分で調べられないので、親が渡した
+// review package の header と、レビュー役の報告した範囲が一致するかだけが手掛かりになる。
+function checkMadReviewPackageRange0600(packagePath, resultPath) {
+  const code = 'invalid_mad_review_package'
+  absolutePath(packagePath, code, 'mad review package')
+  assertModeIs0600(packagePath, code, 'mad review package')
+  lstatRegularFile(packagePath, code, 'mad review package')
+  let raw
+  try { raw = fs.readFileSync(packagePath, 'utf8') } catch { fail(code, 'mad review package: 読み込めない') }
+  const header = raw.split('\n', 1)[0]
+  const match = /^# Review package: ([0-9a-f]{40})\.\.([0-9a-f]{40})$/.exec(header)
+  if (match === null) fail(code, 'mad review package: header が範囲を示していない')
+  const [, packageBase, packageHead] = match
+  const result = readStrictJson0600(resultPath, code, 'mad review result')
+  for (const field of ['packageBase', 'packageHead']) {
+    const reported = result[field]
+    if (typeof reported !== 'string' || !/^[0-9a-f]{7,40}$/.test(reported)) {
+      fail(code, `mad review result ${field}: 7 文字以上 40 文字以下の小文字 16 進文字列が必要である`)
+    }
+  }
+  if (!shaPrefixMatches(packageBase, result.packageBase)) {
+    fail(code, `mad review result packageBase が範囲と一致しない: 期待 ${packageBase} / 報告 ${result.packageBase}`)
+  }
+  if (!shaPrefixMatches(packageHead, result.packageHead)) {
+    fail(code, `mad review result packageHead が範囲と一致しない: 期待 ${packageHead} / 報告 ${result.packageHead}`)
+  }
+  return { packageBase, packageHead }
+}
+
+const MAD_REVIEW_VERDICT_ROLES = ['task-reviewer', 're-reviewer']
+
+// verdict と findings が食い違うレビュー結果を採用しない。合格と報告しながら重い finding を
+// 並べる結果も、指摘ありと報告しながら findings を空にする結果も、どちらも親が判断できない。
+function checkMadReviewVerdict0600(resultPath, role, openFindingsPath) {
+  const code = 'invalid_mad_review_verdict'
+  if (!MAD_REVIEW_VERDICT_ROLES.includes(role)) fail(code, 'mad review verdict role が不正である')
+  const result = readStrictJson0600(resultPath, code, 'mad review result')
+  if (role === 'task-reviewer') {
+    const findings = result.findings
+    if (!Array.isArray(findings)) fail(code, 'mad review result findings: 配列が必要である')
+    if (result.specVerdict === 'issues' && findings.length === 0) {
+      fail(code, 'mad review verdict: specVerdict が issues なのに findings が空である')
+    }
+    if (result.qualityVerdict === 'needs_fixes' && findings.length === 0) {
+      fail(code, 'mad review verdict: qualityVerdict が needs_fixes なのに findings が空である')
+    }
+    if (result.specVerdict === 'compliant' && result.qualityVerdict === 'approved') {
+      const heavy = findings.filter((finding) => finding && (finding.severity === 'critical' || finding.severity === 'important'))
+      if (heavy.length > 0) {
+        fail(code, `mad review verdict: 合格の verdict に critical/important の finding が ${heavy.length} 件ある`)
+      }
+    }
+    return result
+  }
+  const open = readStrictJson0600(openFindingsPath, code, 'mad review open findings')
+  if (!Array.isArray(open.findings)) fail(code, 'mad review open findings: findings 配列が必要である')
+  const expected = new Set(open.findings.map((finding) => finding && finding.id))
+  const verdicts = result.verdicts
+  if (!Array.isArray(verdicts)) fail(code, 'mad review result verdicts: 配列が必要である')
+  if (expected.size === 0 && verdicts.length !== 0) {
+    fail(code, 'mad review verdict: 未解決の指摘が無いのに verdict がある')
+  }
+  const reported = new Set()
+  for (const verdict of verdicts) {
+    const findingId = verdict && verdict.findingId
+    nonEmptyString(findingId, code, 'mad review verdict findingId')
+    if (reported.has(findingId)) fail(code, `mad review verdict: findingId が重複している: ${findingId}`)
+    reported.add(findingId)
+  }
+  const missing = [...expected].filter((id) => !reported.has(id))
+  const unexpected = [...reported].filter((id) => !expected.has(id))
+  if (missing.length > 0 || unexpected.length > 0) {
+    fail(code, `mad review verdict: findingId の集合が一覧と一致しない: 欠落 [${missing.join(',')}] / 余分 [${unexpected.join(',')}]`)
+  }
+  return result
 }
 
 function assertCreateContext(value) {
@@ -895,6 +976,8 @@ module.exports = {
   reviewAdmissionPath,
   prepareMadReview0600,
   checkMadReviewScope0600,
+  checkMadReviewPackageRange0600,
+  checkMadReviewVerdict0600,
   assertMadReviewObservationsV1,
   assertMadReviewObservationsFile0600,
   writeMadReviewObservations0600,

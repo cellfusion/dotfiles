@@ -1081,6 +1081,97 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-scope" ]; then
   exit $?
 fi
 
+# レビュー役は範囲を自分で調べられない。親が渡した review package の header と、
+# レビュー役が報告した範囲が一致しなければ、そのレビューを採用しない。
+mad_check_review_package() {
+  local share_dir=""
+  local package_file=""
+  local result_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--package-file|--result-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --package-file) package_file="$2" ;;
+          --result-file) result_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown review package option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --package-file "$package_file" || return 2
+  mad_require_non_empty --result-file "$result_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --package-file "$package_file" || return 2
+  mad_require_absolute --result-file "$result_file" || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  node -e 'require(process.argv[1]).checkMadReviewPackageRange0600(process.argv[2], process.argv[3])' \
+    "$share_dir/mad-contract.js" "$package_file" "$result_file" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: review package range does not match the report\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-package" ]; then
+  shift
+  mad_check_review_package "$@"
+  exit $?
+fi
+
+# verdict と findings が食い違うレビュー結果と、渡した指摘を取りこぼした再レビューの
+# 結果を採用しない。
+mad_check_review_verdict() {
+  local share_dir=""
+  local result_file=""
+  local role=""
+  local open_findings_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--result-file|--role|--open-findings-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --result-file) result_file="$2" ;;
+          --role) role="$2" ;;
+          --open-findings-file) open_findings_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown review verdict option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --result-file "$result_file" || return 2
+  mad_require_non_empty --role "$role" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --result-file "$result_file" || return 2
+  case "$role" in
+    task-reviewer) ;;
+    re-reviewer)
+      mad_require_non_empty --open-findings-file "$open_findings_file" || return 2
+      mad_require_absolute --open-findings-file "$open_findings_file" || return 2
+      ;;
+    *) printf 'manual-orchestration-validate: review verdict role must be task-reviewer or re-reviewer\n' >&2; return 2 ;;
+  esac
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  node -e 'require(process.argv[1]).checkMadReviewVerdict0600(process.argv[2], process.argv[3], process.argv[4] || undefined)' \
+    "$share_dir/mad-contract.js" "$result_file" "$role" "$open_findings_file" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: review verdict is inconsistent with its findings\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-verdict" ]; then
+  shift
+  mad_check_review_verdict "$@"
+  exit $?
+fi
+
 # scope 外の重要事項は review/fix loop に戻さず、最終 gate の一回の user decision 用に
 # 検査する。ここでは observation の内容を変更せず、0600 と schema だけを確認する。
 mad_check_review_observations() {
@@ -1232,7 +1323,7 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
 fi
 
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --check-review-package ... | --check-review-verdict ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
