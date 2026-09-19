@@ -14,6 +14,7 @@ mkdir -p "$REPO"
 git -c init.defaultBranch=main -C "$REPO" init --quiet
 git -C "$REPO" config user.email tester@example.com
 git -C "$REPO" config user.name tester
+git -C "$REPO" config commit.gpgsign false
 printf 'one\n' > "$REPO/a.txt"
 git -C "$REPO" add a.txt
 git -C "$REPO" commit --quiet -m 'chore: add a'
