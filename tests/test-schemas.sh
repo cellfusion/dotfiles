@@ -42,6 +42,9 @@ rere_req="$(printf '%s' "$rere" | node -e 'let s="";process.stdin.on("data",c=>s
 for field in verdicts newBreakage outOfScope round head packageBase packageHead; do
   assert_contains "$rere_req" "$field" "re-reviewer: $field は required"
 done
+rere_verdict_req="$(printf '%s' "$rere" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).properties.verdicts.items.required.join(",")))')"
+assert_contains "$rere_verdict_req" "findingId" "re-reviewer: verdict は findingId を required にする"
+assert_contains "$rere" '"findingId"' "re-reviewer: verdict に findingId を持つ"
 
 fin="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "agent-defs/schemas/final-reviewer.json" . }}')"
@@ -50,6 +53,8 @@ fin_req="$(printf '%s' "$fin" | node -e 'let s="";process.stdin.on("data",c=>s+=
 for field in status readyToMerge findings round head packageBase packageHead triage strengths reasoning; do
   assert_contains "$fin_req" "$field" "final-reviewer: $field は required"
 done
+fin_package="$(printf '%s' "$fin" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{const p=JSON.parse(s).properties;console.log(JSON.stringify([p.packageBase.type,p.packageHead.type]))})')"
+assert_eq "$fin_package" '["string","string"]' "final-reviewer: packageBase と packageHead は null を許さない"
 
 for a in implementer task-reviewer re-reviewer final-reviewer; do
   out="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \

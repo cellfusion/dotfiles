@@ -11,8 +11,8 @@
       "type": "array",
       "items": {{ includeTemplate "agent-defs/schemas/_finding-item.json" . }}
     },
-    "packageBase": { "type": ["string", "null"] },
-    "packageHead": { "type": ["string", "null"] },
+    "packageBase": { "type": "string" },
+    "packageHead": { "type": "string" },
     "triage": {
       "type": ["array", "null"],
       "items": {

@@ -9,9 +9,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["finding", "addressed", "evidence"],
+        "required": ["findingId", "finding", "addressed", "evidence"],
         "additionalProperties": false,
         "properties": {
+          "findingId": { "type": "string" },
           "finding": { "type": "string" },
           "addressed": { "type": "boolean" },
           "evidence": { "type": ["string", "null"] }
