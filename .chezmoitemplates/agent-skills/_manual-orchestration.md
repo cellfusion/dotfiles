@@ -51,7 +51,7 @@ snapshot の保存後、親は次の `agent-config resolve` のみで launch を
 
 成功時の stdout は `mad-launch-spec` 一件で exit 0、候補が尽きたときは `mad-launch-failure` 一件で exit 4、入力または snapshot が不正なときは exit 2 である。exit 4 は `waiting_for_user`、exit 2 は `failed` として create を行わない。成功 launch は strict に検査し、`modeId` が `auto` でないもの、allowlist に無い feature、宣言型と違う scalar、整数でない整数 feature を拒否する。
 
-environment は親の AI 環境名も見て決まる。CLI と runner はどちらも `AGENT_ENV_SESSION` を先に読み、未設定または空文字のときだけ `AGENT_ENV` を読む。2 つとも未設定または空文字なら、親の AI 環境名は無いものとして扱う。親の AI 環境名が正本の `environments` に無い名前なら、`resolve` は exit 2 で終わる。runner は create の直前に launch spec の `environment` と親の AI 環境名を比べる。2 つが食い違うときは `mcp-create.json` を書かずに `waiting_for_user` で止まるので、親は `mcp__paseo__create_agent` を呼ばない。
+environment は親の AI 環境名も見て決まる。CLI と runner はどちらも `AGENT_ENV` だけを読む。`AGENT_ENV_SESSION` は参照しない。`AGENT_ENV` は Paseo の provider record が子へ注入する名前なので、Paseo が起動した子では必ず正しい値になる。`AGENT_ENV` が未設定または空文字なら、親の AI 環境名は無いものとして扱う。親の AI 環境名が正本の `environments` に無い名前なら、`resolve` は exit 2 で終わる。runner は create の直前に launch spec の `environment` と親の AI 環境名を比べる。2 つが食い違うときは `mcp-create.json` を書かずに `waiting_for_user` で止まるので、親は `mcp__paseo__create_agent` を呼ばない。
 
 ## create request と state
 

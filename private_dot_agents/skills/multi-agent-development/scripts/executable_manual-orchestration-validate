@@ -380,8 +380,7 @@ normalize_launch_failure() {
 # 契約違反は node の例外で非 0 になる。環境の不一致だけは 3 を返し、
 # 呼び出し側が waiting_for_user と failed を区別できるようにする。
 mad_assert_launch() {
-  local parent_environment="${AGENT_ENV_SESSION-}"
-  [ -n "$parent_environment" ] || parent_environment="${AGENT_ENV-}"
+  local parent_environment="${AGENT_ENV-}"
   node - "$MAD_CONTRACT" "$MAD_ATTEMPT_DIR/resolved-export.json" "$MAD_ATTEMPT_DIR/launch.json" \
     "$parent_environment" <<'NODE' >/dev/null 2>&1
 const fs = require('node:fs')

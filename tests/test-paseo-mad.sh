@@ -1690,7 +1690,7 @@ assert_eq "$(stat -f '%HT:%Lp' "$opaque_attempt/mcp-create.json")" "Regular File
 ALL_AVAILABLE_ADAPTER="$MAD_FIXTURES/adapter/fake-all-available-adapter.sh"
 lab_attempt="$TMP/mad-parent-lab"
 mkdir -p "$lab_attempt"
-out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV AGENT_ENV_SESSION=lab \
+out="$(EXPECTED_PASEO_MAD_SHARE_DIR="$SHARE" env -u AGENT_ENV_SESSION AGENT_ENV=lab \
   bash "$MAD_RUNNER" --exercise-success \
   --generator "$GENERATOR" --share-dir "$SHARE" --input "$VALID" --adapter "$ALL_AVAILABLE_ADAPTER" \
   --attempt-dir "$lab_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
@@ -1724,7 +1724,7 @@ GENERATOR_EOF
 chmod 700 "$mismatch_generator"
 mismatch_attempt="$TMP/mad-parent-mismatch"
 mkdir -p "$mismatch_attempt"
-env -u AGENT_ENV AGENT_ENV_SESSION=primary bash "$MAD_RUNNER" --exercise-success \
+env -u AGENT_ENV_SESSION AGENT_ENV=primary bash "$MAD_RUNNER" --exercise-success \
   --generator "$mismatch_generator" --share-dir "$SHARE" --input "$VALID" --adapter "$SUCCESS_ADAPTER" \
   --attempt-dir "$mismatch_attempt" --project "$NON_GIT_DIR" --role task-reviewer \
   --provenance mad-dispatch --title 'fixture title' --workspace-id fixture-workspace \
@@ -1825,6 +1825,9 @@ assert_contains "$(cat "$CHEZMOI_SOURCE/tests/test-distribution.sh")" \
   '.local/share/agent-config/mad-contract.js' "distribution: MAD の契約 module を配る"
 assert_contains "$(cat "$CHEZMOI_SOURCE/tests/test-distribution.sh")" \
   '.agents/skills/multi-agent-development/scripts/paseo-mcp-adapter' "distribution: adapter を配る"
+
+assert_eq "$(sed -n '/^mad_assert_launch()/,/^}/p' "$MAD_RUNNER" | grep -c 'AGENT_ENV_SESSION')" "0" \
+  "runner: mad_assert_launch に AGENT_ENV_SESSION が残らない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

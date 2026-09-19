@@ -148,9 +148,8 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。environment は
    4 段で決まる。1 段目は明示した `--environment` である。2 段目は親の AI 環境名である。
    3 段目は最初に一致した rule である。どれにも当たらなければ `defaults.environment` を使う。
-   親の AI 環境名は `AGENT_ENV_SESSION` を先に読み、未設定または空文字のときだけ `AGENT_ENV` を
-   読む。2 つとも未設定または空文字なら 2 段目を飛ばす。親の AI 環境名が `environments` に無い
-   名前のときは、`resolve` が終了コード 2 で終わり stdout に JSON を出さない。
+   親の AI 環境名は `AGENT_ENV` だけを読む。`AGENT_ENV_SESSION` は参照しない。`AGENT_ENV` が
+   未設定または空文字なら 2 段目を飛ばす。
 3. 候補は `selection` の 12 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
    `author`、`implement`、`review`、`synthesize`、複雑度は `routine`、`standard`、`complex` である。
    12 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、

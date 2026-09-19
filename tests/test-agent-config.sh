@@ -462,16 +462,19 @@ for invalid_snapshot in malformed invalid-top-level-key providers-models-key-set
   assert_eq "$out" "" "snapshot: $invalid_snapshot は stdout を出さない"
 done
 
-# 親の AI 環境名は AGENT_ENV_SESSION を先に読み、空のときだけ AGENT_ENV を読む。
+# 親の AI 環境名は AGENT_ENV だけで決める。AGENT_ENV_SESSION は参照しない。
 # 実行元の環境を継承しないよう、case ごとに値の設定か env -u を明示する。
+assert_eq "$(sed -n '/^function readParentEnvironment/,/^}/p' "$GENERATE" | grep -c 'AGENT_ENV_SESSION')" "0" \
+  "parent env: readParentEnvironment に AGENT_ENV_SESSION が残らない"
+
 RULE_GIT_ROOT="$TMP/rule-remote"; git init -q "$RULE_GIT_ROOT"
 git -C "$RULE_GIT_ROOT" config remote.origin.url "https://example.test/Org/Repo.git"
 
-out="$(env -u AGENT_ENV AGENT_ENV_SESSION=lab "$GENERATE" --input "$VALID" resolve \
+out="$(env -u AGENT_ENV_SESSION AGENT_ENV=lab "$GENERATE" --input "$VALID" resolve \
   --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
   --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
-  "parent env: AGENT_ENV_SESSION の環境を選ぶ"
+  "parent env: AGENT_ENV の環境を選ぶ"
 assert_eq "$(printf '%s' "$out" | jq -r '.provider')" "codex-lab" \
   "parent env: lab の候補を materialize した provider ID を返す"
 
@@ -481,25 +484,43 @@ out="$(env -u AGENT_ENV -u AGENT_ENV_SESSION "$GENERATE" --input "$VALID" resolv
 assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "primary" \
   "parent env: 2 つとも未設定なら defaults.environment を使う"
 
-out="$(env AGENT_ENV= AGENT_ENV_SESSION= "$GENERATE" --input "$VALID" resolve \
+out="$(env -u AGENT_ENV_SESSION AGENT_ENV= "$GENERATE" --input "$VALID" resolve \
   --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
   --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "primary" \
-  "parent env: 2 つとも空文字なら defaults.environment を使う"
+  "parent env: AGENT_ENV が空文字なら defaults.environment を使う"
 
-out="$(env -u AGENT_ENV AGENT_ENV_SESSION=nosuch "$GENERATE" --input "$VALID" resolve \
+out="$(env -u AGENT_ENV AGENT_ENV_SESSION=lab "$GENERATE" --input "$VALID" resolve \
+  --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
+  --snapshot "$SNAPSHOTS/all-available.json" 2>/dev/null)"
+assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "primary" \
+  "parent env: AGENT_ENV_SESSION だけを設定しても defaults.environment を使う"
+
+out="$(env -u AGENT_ENV AGENT_ENV_SESSION=primary "$GENERATE" --input "$VALID" resolve \
+  --project "$RULE_GIT_ROOT" --role task-reviewer --provenance mad-dispatch \
+  --snapshot "$SNAPSHOTS/all-available.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
+  "parent env: AGENT_ENV_SESSION だけを設定しても rule の環境を使う"
+
+out="$(env AGENT_ENV=lab AGENT_ENV_SESSION=primary "$GENERATE" --input "$VALID" resolve \
+  --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
+  --snapshot "$SNAPSHOTS/all-available.json")"
+assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
+  "parent env: AGENT_ENV_SESSION は AGENT_ENV を上書きしない"
+
+out="$(env -u AGENT_ENV_SESSION AGENT_ENV=nosuch "$GENERATE" --input "$VALID" resolve \
   --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
   --snapshot "$SNAPSHOTS/all-available.json" 2>/dev/null)"
 assert_eq "$?" "2" "parent env: 正本に無い親の環境名は exit 2"
 assert_eq "$out" "" "parent env: 正本に無い親の環境名は stdout を出さない"
 
-out="$(env -u AGENT_ENV AGENT_ENV_SESSION=lab "$GENERATE" --input "$VALID" resolve \
+out="$(env -u AGENT_ENV_SESSION AGENT_ENV=lab "$GENERATE" --input "$VALID" resolve \
   --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
   --environment primary --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "primary" \
   "parent env: --environment は親の環境名より優先する"
 
-out="$(env -u AGENT_ENV AGENT_ENV_SESSION=nosuch "$GENERATE" --input "$VALID" resolve \
+out="$(env -u AGENT_ENV_SESSION AGENT_ENV=nosuch "$GENERATE" --input "$VALID" resolve \
   --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
   --environment primary --snapshot "$SNAPSHOTS/all-available.json" 2>/dev/null)"
 assert_eq "$?" "2" "parent env: --environment があっても親の環境名を検査する"
@@ -510,30 +531,6 @@ out="$(env -u AGENT_ENV -u AGENT_ENV_SESSION "$GENERATE" --input "$VALID" resolv
   --snapshot "$SNAPSHOTS/all-available.json")"
 assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
   "parent env: 親の環境名が無ければ rule の環境を使う"
-
-out="$(env -u AGENT_ENV AGENT_ENV_SESSION=primary "$GENERATE" --input "$VALID" resolve \
-  --project "$RULE_GIT_ROOT" --role task-reviewer --provenance mad-dispatch \
-  --snapshot "$SNAPSHOTS/all-available.json")"
-assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "primary" \
-  "parent env: rule に一致する project でも親の環境名を優先する"
-
-out="$(env AGENT_ENV=primary AGENT_ENV_SESSION=lab "$GENERATE" --input "$VALID" resolve \
-  --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
-  --snapshot "$SNAPSHOTS/all-available.json")"
-assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
-  "parent env: AGENT_ENV_SESSION は AGENT_ENV より優先する"
-
-out="$(env -u AGENT_ENV_SESSION AGENT_ENV=lab "$GENERATE" --input "$VALID" resolve \
-  --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
-  --snapshot "$SNAPSHOTS/all-available.json")"
-assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
-  "parent env: AGENT_ENV_SESSION が未設定なら AGENT_ENV を読む"
-
-out="$(env AGENT_ENV_SESSION= AGENT_ENV=lab "$GENERATE" --input "$VALID" resolve \
-  --project "$NON_GIT_DIR" --role task-reviewer --provenance mad-dispatch \
-  --snapshot "$SNAPSHOTS/all-available.json")"
-assert_eq "$(printf '%s' "$out" | jq -r '.environment')" "lab" \
-  "parent env: AGENT_ENV_SESSION が空文字なら AGENT_ENV を読む"
 
 assert_eq "$(grep -n 'AGENT_ENV' "$RESOLVER" "$EXPORTER" "$SHARE/paseo-launch.js" "$SHARE/paseo-assert.js" | grep 'process\.env')" "" \
   "parent env: 選択・起動・検査 module は process.env から親の環境名を読まない"
