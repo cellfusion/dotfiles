@@ -1,8 +1,0 @@
-claude-headless
-codex-headless
-agent-route
-agent-backend
-subagent-driven-development
-sdd-
-check-usage
-agent-defs/routing.json

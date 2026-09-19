@@ -22,15 +22,6 @@ nvim
 :Lazy clean
 ```
 
-### Tests
-```bash
-# Run every test under tests/
-bash tests/run-tests.sh
-
-# Run one test
-bash tests/test-keybindings.sh
-```
-
 ### Repository Management
 ```bash
 # Commit configuration changes
@@ -55,7 +46,6 @@ git push
 - `.chezmoitemplates/` - templates shared across targets (Brewfile, agent skills, MCP lists)
 - `.chezmoiscripts/` - install scripts run by `chezmoi apply` when a manifest changes
 - `Library/LaunchAgents/` - macOS launch agents
-- `tests/` - shell tests for the templates and docs, not distributed
 
 ### Key Development Integrations
 
@@ -89,7 +79,6 @@ git push
 - Installation runs through `chezmoi apply`. The five scripts in `.chezmoiscripts/` install
   Homebrew packages, mise runtimes, the AI CLIs, npm globals and cargo globals whenever the
   matching manifest changes
-- `bash tests/run-tests.sh` runs the repository's shell tests
 - Tool inventory and install routes are documented in `private_dot_config/docs/tools.md`
 - Dependencies: Homebrew, Neovim, Git, and mise (which supplies node / python / java / pnpm / deno)
 
@@ -112,6 +101,3 @@ git push
 キーバインドを追加・変更・削除したら、`private_dot_config/docs/keybindings.md`
 も同じコミットで更新する。このファイルが skhd / Ghostty / Herdr / Neovim / zsh /
 lazygit の全キーバインドと、層をまたいで奪われるキーの一覧を持っている。
-
-`bash tests/test-keybindings.sh` がドキュメントと設定ファイルの整合を検証する。
-

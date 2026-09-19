@@ -1,6 +1,0 @@
-{
-  "run_id": "representative-run",
-  "node": "plan",
-  "attempt": "ok",
-  "artifact_paths": ["/fixture/plan-result.json"]
-}

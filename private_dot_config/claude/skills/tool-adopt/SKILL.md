@@ -79,4 +79,3 @@ television のカスタムチャンネルを作成する場合:
   mise なら `private_dot_config/mise/config.toml`、npm なら
   `private_dot_config/install/npm-globals.txt`、cargo なら
   `private_dot_config/install/cargo-globals.txt`
-- 表とマニフェストの整合は `bash tests/test-tools-doc.sh` が検証する

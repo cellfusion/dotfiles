@@ -44,12 +44,10 @@ prefix_rule(pattern=["pnpm", "test"], decision="allow")
 prefix_rule(pattern=["pnpm", "lint"], decision="allow")
 prefix_rule(pattern=["pnpm", "build"], decision="allow")
 
-# dotfiles の確認と、このリポジトリのテスト。
+# dotfiles の確認。
 # chezmoi execute-template は入れない。テンプレートの output 関数が任意の外部
 # コマンドを実行でき、allow は sandbox の外での実行まで許すためである。
-# tests/run-tests.sh を回すときは、その中から呼ばれるので承認は要らない。
 prefix_rule(pattern=["chezmoi", "diff"], decision="allow")
-prefix_rule(pattern=["bash", "tests/run-tests.sh"], decision="allow")
 
 # スキルが毎回呼ぶスクリプト。spec と plan の保存先を返す。
 prefix_rule(pattern=["~/.agents/skills/_shared/scripts/agent-docs-dir"], decision="allow")

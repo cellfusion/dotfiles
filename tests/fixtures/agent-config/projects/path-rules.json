@@ -1,6 +1,0 @@
-{
-  "exact": [{ "name": "path-exact", "environment": "lab", "match": { "path": "<PROJECT_ROOT>" } }],
-  "prefix": [{ "name": "path-prefix", "environment": "lab", "match": { "path": "<PROJECT_ROOT>/child" } }],
-  "glob": [{ "name": "path-glob", "environment": "lab", "match": { "path": "<PROJECT_ROOT>/*" } }],
-  "remote-and-path": [{ "name": "path-and-remote", "environment": "lab", "match": { "remote": "example.test/Org/Repo", "path": "<PROJECT_ROOT>" } }]
-}

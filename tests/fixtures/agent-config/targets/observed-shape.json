@@ -1,1 +1,0 @@
-{"daemon":{"type":"object"},"providers":{"type":"object","hasBaseRecord":true,"hasNonPrimaryRecord":true,"allowUnmanagedRecords":true,"base":{"env":"object","extendsAbsent":true},"nonPrimary":{"extends":"string","label":"string","env":"object"}}}

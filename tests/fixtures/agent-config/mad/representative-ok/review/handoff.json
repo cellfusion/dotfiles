@@ -1,6 +1,0 @@
-{
-  "run_id": "representative-run",
-  "node": "review",
-  "attempt": "ok",
-  "artifact_paths": ["/fixture/review-result.json"]
-}

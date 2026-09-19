@@ -18,10 +18,6 @@ docs/**
 _cellfusion
 _cellfusion/**
 
-# テンプレートの検証スクリプト (このリポジトリの検証用であり destDir の tests へは配らない)
-tests
-tests/**
-
 # Herdr runtime state (only config.toml is managed by chezmoi)
 .config/herdr/session.json
 .config/herdr/*.log

@@ -1,1 +1,0 @@
-{"daemon":{"agentProfiles":[{"id":"agent_profile_managed_work_retired","name":"work_retired","provider":"codex-retired","model":"retired-model","modeId":"auto","thinkingOptionId":"high","featureValues":{}}]},"agents":{"providers":{"codex-retired":{"label":"Codex (retired)","extends":"codex","env":{"AGENT_ENV":"retired","CHEZMOI_AGENT_CONFIG_MANAGED":"1"}}}}}

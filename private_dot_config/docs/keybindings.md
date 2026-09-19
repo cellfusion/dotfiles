@@ -251,10 +251,9 @@ Config: `lazygit/config.yml`。**キーバインドのカスタマイズは無�
 キーバインドを変えたらこのファイルも更新する。
 
 1. chezmoi ソース側の設定ファイルを編集する（`~/.config` を直接触らない）
-2. `bash tests/test-keybindings.sh` でドキュメントと設定の整合を確認する
-3. `chezmoi apply`
-4. Herdr の設定を変えた場合は `herdr server reload-config`
-5. skhd の設定を変えた場合は `skhd --restart-service`（`Alt-Shift-;` でも可）
+2. `chezmoi apply`
+3. Herdr の設定を変えた場合は `herdr server reload-config`
+4. skhd の設定を変えた場合は `skhd --restart-service`（`Alt-Shift-;` でも可）
 
 herdr のプラグインは chezmoi の管理外にある。新しいマシンでは上記とは別に
 `herdr plugin install` / `herdr plugin disable` を打つ必要がある（Herdr の節を参照）。

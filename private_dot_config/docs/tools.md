@@ -69,9 +69,7 @@ symlink を張る一覧は 1 か所では決まらない。
 `~/.config/chezmoi/agent-config.json` の `providers.codex.setup.symlinks` が
 JSON 文字列として完全一致しないと検証に落ち、`chezmoi apply` が失敗する。
 `agent-config.json` は chezmoi の管理外なので、`SETUP_TABLE` を変えたら手で
-そろえる。リポジトリ側では `agent-config.sample.json` と
-`tests/fixtures/agent-config/` の各ファイルもそろえる。
-`tests/test-codex-rules.sh` が、この一致を検証する。
+そろえる。リポジトリ側では `agent-config.sample.json` も更新する。
 
 ## 新マシンでの手順
 
@@ -178,8 +176,6 @@ MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
 `MAD_SCRIPTS`配下の4 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
-`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。他のrepositoryでは
-そのrepository固有のgateを使い、無ければこのmigration gateを実行しない。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -418,22 +414,6 @@ snapshot を破棄し、create 後なら Paseo の子を archive して run の 
 直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
 `paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
 ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
-
-実Paseoを起動する代表 MAD run は、待ち時間と API 課金を避けるため廃止している。
-`tests/manual/mad-representative-run.sh` は `--verify-only` だけを受け付け、保存済みの
-匿名 fixture を検査する。実Paseo、MCP、provider CLI、network、課金対象の child は起動しない。
-
-保存済み証跡の検査は次の verify-only 経路を使う。これは承認変数を読まず、adapterを呼ばない。
-
-    bash tests/test-paseo-mad.sh
-    bash tests/manual/mad-representative-run.sh --verify-only \
-      --evidence-dir "$PWD/tests/fixtures/agent-config/mad/representative-ok"
-
-fixture の handoff は `/fixture/*.json` という匿名 placeholder を使い、verify-only が
-一時 directory に 0600 の regular file として解決する。`wait-evidence.json` は `{status}` だけを持ち、
-raw wait response や activity history は証跡に入れない。fixture の mode は Git が保存しない
-ため、単体で別の証跡を検査するときは `find` で列挙した証跡を `chmod 600` にしてから
-実行する。証跡には credential、auth/history、raw response、remote URL を入れない。
 
 ### Paseo プラグイン pr-review
 
