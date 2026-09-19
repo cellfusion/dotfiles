@@ -96,7 +96,7 @@ print_procedure() {
   note '  MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"'
   note '  MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"'
   note '  MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'
-  note '  MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"'
+  note '  MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"'
 
   say "1. Paseo MCP backend を確認する"
   note 'paseo status で daemon に届くことを確かめてから selector を叩く。'

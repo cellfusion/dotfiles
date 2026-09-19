@@ -111,9 +111,9 @@ HEAD が一致しない場合、または `paseo.json` 以外の変更がある�
 
 1. `create_workspace` を `isolation: "worktree"`、`mode: "checkout-pr"`、`prNumber: PR_NUMBER`、GitHub の `forge`、元 checkout の `projectPath` で呼ぶ。返された review workspace ID と worktree path を JSON から読み、`REVIEW_WS` / `REVIEW_WORKTREE` に保存する。予測で補わない。
 2. agent の実行 cwd 用に `create_workspace` を `isolation: "local"`、`projectPath: AGENT_CWD` で呼び、返された ID を `AGENT_WS` に保存する。`AGENT_WS` が作れない場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とし、理由を `metadata.json` の `delegation` に残す。review workspace と agent workspace を同一にしない。
-3. `list_profiles` を毎回呼び、全 profile の `notes` を読んでレビューに適した環境既定 profile を選ぶ。選択 profile の `provider` + `model`、`modeId`、`thinkingOptionId`、`featureValues` を `create_agent` へ materialize する。`profile` という未対応の引数を勝手に渡さない。
+3. `agent-config resolve` を `--role reviewer --provenance pr-review --complexity standard` で呼び、返る `provider`、`model`、`modeId`、`thinkingOptionId`、`features` を `create_agent` へ写す。
 4. `REVIEW_WORKTREE` で `git rev-parse HEAD`、`git status --porcelain` を確認する。HEAD が違う場合だけ、Paseo の作法を壊さない形で `gh pr checkout "$PR_NUMBER" --repo "$REPOSITORY" --detach` を worktree 内で行い、再確認する。固定 object の取得と diff package の生成は、下の「固定 revision と diff package」を実行してから行う。
-5. profile が無い、agent を read-only 相当で起動できない、または provider discovery に失敗した場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とす。current agent は一次レビューと必要な specialist lens を順に実行する。下位経路へ進むのは `create_workspace` 自体が失敗して `REVIEW_WORKTREE` が空のときだけとする。どちらの場合も理由を `metadata.json` の `delegation` に残す。model 名を推測したり、agent profile を自動生成・自動インストールしたりしない。
+5. `agent-config resolve` が exit 4 で候補を返さない、agent を read-only 相当で起動できない、または provider discovery に失敗した場合は、作成済みの `REVIEW_WS` と `REVIEW_WORKTREE` を保持したまま、agent の実行主体だけを current agent に落とす。current agent は一次レビューと必要な specialist lens を順に実行する。下位経路へ進むのは `create_workspace` 自体が失敗して `REVIEW_WORKTREE` が空のときだけとする。どちらの場合も理由を `metadata.json` の `delegation` に残す。`agent-config resolve` が返さなかった provider と model を推測して使わない。
 
 Paseo agent へは `create_agent` の `workspaceId` に `AGENT_WS`、`title` に `pr-review/<PR_NUMBER>/<role>`、`initialPrompt` に後述の agent contract と絶対 path を渡す。agent workspace の cwd は `AGENT_CWD` であり、PR head worktree を project path にしない。一次レビューが完了して成果物を確認してから、必要な specialist を同じ `AGENT_WS` で段階的に起動する。完了通知を待ち、実行中に `list_agents` をポーリングして負荷を増やさない。
 
@@ -226,7 +226,7 @@ test "$AGENT_HEAD_BEFORE" = "$AGENT_HEAD_AFTER"
 test "$AGENT_STATUS_BEFORE" = "$AGENT_STATUS_AFTER"
 ```
 
-比較に失敗した場合は agent の結果を採用せず、`BLOCKED` として worktree と成果物を保持する。Paseo で read-only profile を materialize できない場合、Herdr で read-only 性を確保できない場合も同じ扱いとする。
+比較に失敗した場合は agent の結果を採用せず、`BLOCKED` として worktree と成果物を保持する。解決した provider と model で read-only 相当の agent を起動できない場合、Herdr で read-only 性を確保できない場合も同じ扱いとする。
 
 agent の出力は次の finding 契約に従わせる。実際の path と head 側の行を示せない推測、好み、全面的な書き換え提案は finding にしない。
 
@@ -236,7 +236,7 @@ agent の出力は次の finding 契約に従わせる。実際の path と head
 
 ### specialist trigger
 
-専門 role は base 側で利用できる Paseo profile と現行 role の prompt/schema を確認してから使う。専門レビューを起動できない場合も、その事実を記録する。まず `reviewer` または利用可能な専門 review role を探し、無い role、engine、model を作らない。Paseo では選んだ profile の provider default、Herdr では current runtime kind、その他では current agent を使う。
+専門 role は `agent-config resolve` が返した候補と現行 role の prompt/schema を確認してから使う。専門レビューを起動できない場合も、その事実を記録する。まず `reviewer` または利用可能な専門 review role を探し、無い role、engine、model を作らない。Paseo では解決した provider と model、Herdr では current runtime kind、その他では current agent を使う。
 
 - **security** — auth、session、permission、secret、crypto、network boundary、入力検証、SQL / HTML / shell、serialization、依存 script、ファイル・URL・権限の扱いを変更した場合。OWASP の差分起点の脅威境界で確認する。
 - **tests** — 振る舞い・公開 API・データ変換を変更したのにテストが無い場合、既存テストを変更した場合、境界条件・失敗経路・regression の確認が必要な場合。テスト数ではなく、変更リスクを検証できるかを見る。
@@ -311,7 +311,7 @@ REVIEW_DIR/
   "workspace": {"kind": "paseo", "path": "/absolute/review/worktree", "workspaceId": "ws-123", "agentWorkspaceId": "ws-agent-123", "agentCwd": "/tmp/pr-review-agent-123.x7K9Lm", "owned": true},
   "detected": {"languages": [], "frameworks": [], "architecture": {"name": "unknown", "evidence": []}},
   "specialistReviews": [{"role": "tests", "status": "completed", "reason": "公開 API を変更したため", "artifact": "agents/tests.md"}, {"role": "security", "status": "not_run", "reason": "trigger が無い", "artifact": null}],
-  "delegation": {"agents": "current-agent", "reason": "list_profiles が空を返した"},
+  "delegation": {"agents": "current-agent", "reason": "agent-config resolve が exit 4 で候補を返さなかった"},
   "verdict": "NEEDS_ATTENTION",
   "findingCount": 1,
   "findingIds": ["F-001"],

@@ -31,9 +31,9 @@ printf '%s\n' '{
   "phase_state": "running",
   "next_action": "start review",
   "current_round": 0,
-  "max_rounds": 2,
+  "max_rounds": 4,
   "review_policy": {
-    "max_rounds": 2,
+    "max_rounds": 4,
     "scope_file": "'"$SCOPE"'",
     "out_of_scope_path": "'"$OBSERVATIONS"'"
   },
@@ -174,9 +174,9 @@ printf '%s\n' '{
   "phase_state": "ok",
   "next_action": "final review",
   "current_round": 1,
-  "max_rounds": 2,
+  "max_rounds": 4,
   "review_policy": {
-    "max_rounds": 2,
+    "max_rounds": 4,
     "scope_file": "'"$VALID_SCOPE"'",
     "out_of_scope_path": "'"$VALID_OBSERVATIONS"'"
   },
@@ -219,7 +219,7 @@ chmod 600 "$VALID_RUN/state.json"
 out="$(bash "$RUNNER" "$VALID_RUN" 2>&1)"
 assert_eq "$?" "1" "review guard: 任意の max_rounds を review policy に設定できない"
 assert_contains "$out" "max_rounds" "review guard: 任意の max_rounds を拒否理由に示す"
-jq '.max_rounds = 2' "$VALID_RUN/state.json" > "$VALID_RUN/state.tmp" && mv "$VALID_RUN/state.tmp" "$VALID_RUN/state.json"
+jq '.max_rounds = 4' "$VALID_RUN/state.json" > "$VALID_RUN/state.tmp" && mv "$VALID_RUN/state.tmp" "$VALID_RUN/state.json"
 chmod 600 "$VALID_RUN/state.json"
 
 printf '%s\n' '{"changedFiles":["tests/other.sh"]}' > "$VALID_RUN/nodes/task-8-fix/attempts/a1/result.json"
@@ -246,6 +246,14 @@ jq --arg path "$DECISION" '.decision_request = $path' \
 chmod 600 "$VALID_RUN/state.json"
 out="$(bash "$RUNNER" "$VALID_RUN" 2>&1)"
 assert_eq "$?" "0" "review guard: observation と user decision が揃えば終端を受理する"
+
+out="$(node -e '
+const c = require(process.argv[1])
+console.log(c.MAD_REVIEW_MAX_ROUNDS,
+  JSON.stringify(c.MAD_REVIEW_PHASE_ROUNDS.review),
+  JSON.stringify(c.MAD_REVIEW_PHASE_ROUNDS["re-review"]))
+' "$SHARE_DIR/mad-contract.js")"
+assert_eq "$out" "4 [0,0] [1,3]" "review guard: max_rounds 4 と phase ごとの round 範囲"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

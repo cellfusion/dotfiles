@@ -14,12 +14,9 @@ const AGENT_CONFIG_DIR = AGENT_CONFIG_DIR_CANDIDATES.find((directory) =>
 
 const { validateConfig, ConfigError } = require(path.join(AGENT_CONFIG_DIR, 'config-validator.js'))
 const { resolveDispatch, resolveExport } = require(path.join(AGENT_CONFIG_DIR, 'resolver.js'))
-const {
-  assertAvailabilitySnapshot,
-  materializePaseo,
-  resolvePaseoLaunch,
-} = require(path.join(AGENT_CONFIG_DIR, 'paseo-exporter.js'))
-const { mergeManagedPaseo } = require(path.join(AGENT_CONFIG_DIR, 'raw-json-merge.js'))
+const { assertAvailabilitySnapshot, resolvePaseoLaunch } = require(path.join(AGENT_CONFIG_DIR, 'paseo-launch.js'))
+const { materializePaseoProviders } = require(path.join(AGENT_CONFIG_DIR, 'paseo-providers.js'))
+const { mergeManagedPaseo, removeManagedPaseoProfiles } = require(path.join(AGENT_CONFIG_DIR, 'raw-json-merge.js'))
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -95,62 +92,52 @@ function existingRegularFile(pathname, label) {
 }
 
 function warnMissingFiles(inputPresent, targetPresent) {
-  if (!inputPresent) process.stderr.write('generate-paseo-config: input agent-config.json が存在しないため skip する\n')
-  if (!targetPresent) process.stderr.write('generate-paseo-config: target config.json が存在しないため skip する\n')
+  if (!inputPresent) process.stderr.write('agent-config: input agent-config.json が存在しないため skip する\n')
+  if (!targetPresent) process.stderr.write('agent-config: target config.json が存在しないため skip する\n')
 }
+
+const SUBCOMMANDS = ['resolve', 'write-paseo', 'prune-paseo-profiles']
 
 function parseArgs(argv) {
   const globals = { input: undefined, paseoConfig: undefined }
   let index = 0
   while (index < argv.length) {
     const option = argv[index]
-    if (option === '--input' || option === '--paseo-config') {
-      if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) fail(`${option}: value がない`)
-      const key = option === '--input' ? 'input' : 'paseoConfig'
-      if (globals[key] !== undefined) fail(`${option}: 重複している`)
-      globals[key] = argv[index + 1]
-      index += 2
-      continue
-    }
-    break
+    if (option !== '--input' && option !== '--paseo-config') break
+    if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) fail(`${option}: value がない`)
+    const key = option === '--input' ? 'input' : 'paseoConfig'
+    if (globals[key] !== undefined) fail(`${option}: 重複している`)
+    globals[key] = argv[index + 1]
+    index += 2
   }
 
-  let subcommand
-  if (index < argv.length && argv[index] === 'resolve') {
-    subcommand = 'resolve'
-    index += 1
-  }
+  if (index >= argv.length) fail(`subcommand が必要である (${SUBCOMMANDS.join(', ')})`)
+  const subcommand = argv[index]
+  if (!SUBCOMMANDS.includes(subcommand)) fail(`subcommand ${subcommand}: 不明である`)
+  index += 1
 
-  if (subcommand === undefined) {
+  if (subcommand === 'write-paseo' || subcommand === 'prune-paseo-profiles') {
     let check = false
     let diff = false
     while (index < argv.length) {
-      if (argv[index] === '--check' && !check) {
-        check = true
-        index += 1
-        continue
-      }
-      if (argv[index] === '--diff' && !diff) {
-        diff = true
-        index += 1
-        continue
-      }
+      if (argv[index] === '--check' && !check) { check = true; index += 1; continue }
+      if (argv[index] === '--diff' && !diff) { diff = true; index += 1; continue }
       if (argv[index] === '--input' || argv[index] === '--paseo-config') {
         fail(`${argv[index]}: global option は subcommand より前に置く`)
       }
       fail(`option ${argv[index]}: 不明である`)
     }
     if (check && diff) fail('--check と --diff は同時に指定できない')
-    return { ...globals, check, diff, subcommand: undefined, options: {} }
+    return { ...globals, check, diff, subcommand, options: {} }
   }
 
   const options = {}
+  const allowed = ['--project', '--role', '--provenance', '--snapshot', '--complexity', '--round', '--environment']
   while (index < argv.length) {
     const option = argv[index]
     if (option === '--input' || option === '--paseo-config' || option === '--check') {
       fail(`${option}: global option は subcommand より前に置く`)
     }
-    const allowed = ['--project', '--role', '--provenance', '--snapshot', '--tier', '--environment']
     if (!allowed.includes(option)) fail(`option ${option}: 不明である`)
     const key = option.slice(2)
     if (options[key] !== undefined) fail(`${option}: 重複している`)
@@ -158,7 +145,7 @@ function parseArgs(argv) {
     options[key] = argv[index + 1]
     index += 2
   }
-  return { ...globals, check: false, subcommand, options }
+  return { ...globals, check: false, diff: false, subcommand, options }
 }
 
 function readFile(pathname, option) {
@@ -212,19 +199,8 @@ function writeAtomic(pathname, raw) {
   }
 }
 
-const MANAGED_PROFILE_FIELDS = ['id', 'name', 'provider', 'model', 'modeId', 'thinkingOptionId', 'featureValues', 'notes']
-
 function hasOwn(value, key) {
   return value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)
-}
-
-function existingManagedProfile(profile, materializedProfile) {
-  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null
-  const projected = {}
-  for (const key of MANAGED_PROFILE_FIELDS) {
-    if (hasOwn(profile, key)) projected[key] = profile[key]
-  }
-  return projected
 }
 
 function existingManagedProvider(provider, materializedProvider) {
@@ -250,19 +226,10 @@ function existingManagedProjection(raw, materialized) {
   } catch {
     fail('target: JSON として parse できない')
   }
-  const profiles = isObject(target) && isObject(target.daemon) && Array.isArray(target.daemon.agentProfiles)
-    ? target.daemon.agentProfiles
-    : []
   const providers = isObject(target) && isObject(target.agents) && isObject(target.agents.providers)
     ? target.agents.providers
     : {}
   return {
-    daemon: {
-      agentProfiles: materialized.profiles.map((profile) => existingManagedProfile(
-        profiles.find((entry) => isObject(entry) && entry.id === profile.id),
-        profile,
-      )),
-    },
     agents: {
       providers: Object.fromEntries(Object.entries(materialized.providers).map(([id, provider]) => [
         id,
@@ -299,7 +266,7 @@ function runWrite(args) {
   const targetPath = paths.paseoConfig
   const inputRaw = fs.readFileSync(inputPath, 'utf8')
   const { config } = validateConfig(inputRaw)
-  const materialized = materializePaseo(resolveExport(config))
+  const materialized = materializePaseoProviders(resolveExport(config))
   const targetRaw = fs.readFileSync(targetPath, 'utf8')
   const merged = mergeManagedPaseo(targetRaw, materialized)
   for (const warning of merged.warnings) process.stderr.write(`${warning}\n`)
@@ -312,14 +279,19 @@ function runWrite(args) {
   return 0
 }
 
-// 親の AI 環境名を読む唯一の場所である。AGENT_ENV_SESSION は zsh が解決した名前で、
-// AGENT_ENV は Paseo の provider record が入れる解決前の名前である。
+// 親の AI 環境名を読む唯一の場所である。AGENT_ENV は Paseo の provider record が
+// 子へ注入する名前で、Paseo が起動した子では必ず正しい値になる。zsh が export する
+// AGENT_ENV_SESSION はシェルを起動したディレクトリで決まるため、参照しない。
 function readParentEnvironment() {
-  const session = process.env.AGENT_ENV_SESSION
-  if (typeof session === 'string' && session.length > 0) return session
   const injected = process.env.AGENT_ENV
   if (typeof injected === 'string' && injected.length > 0) return injected
   return undefined
+}
+
+function parseRound(value) {
+  if (value === undefined) return undefined
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) fail('--round: 0 以上の整数が必要である')
+  return Number(value)
 }
 
 function runResolve(args) {
@@ -332,7 +304,8 @@ function runResolve(args) {
     project: args.options.project,
     role: args.options.role,
     provenance: args.options.provenance,
-    tier: args.options.tier,
+    complexity: args.options.complexity,
+    round: parseRound(args.options.round),
     environment: args.options.environment,
     parentEnvironment: readParentEnvironment(),
   })
@@ -349,15 +322,34 @@ function runResolve(args) {
   return launch.status === 'ok' ? 0 : 4
 }
 
+function runPrune(args) {
+  const paths = resolveWritePaths(args)
+  const targetPresent = existingRegularFile(paths.paseoConfig, '--paseo-config')
+  if (!targetPresent) {
+    process.stderr.write('agent-config: target config.json が存在しないため skip する\n')
+    return 0
+  }
+  const targetRaw = fs.readFileSync(paths.paseoConfig, 'utf8')
+  const pruned = removeManagedPaseoProfiles(targetRaw)
+  if (args.check) return pruned.changed ? 1 : 0
+  if (args.diff) {
+    if (pruned.changed) process.stdout.write('--- paseo managed/current\n+++ paseo managed/pruned\n@@\n-managed profiles present\n+managed profiles removed\n')
+    return pruned.changed ? 1 : 0
+  }
+  if (pruned.changed) writeAtomic(paths.paseoConfig, pruned.raw)
+  return 0
+}
+
 function main(argv) {
   const args = parseArgs(argv)
   if (args.subcommand === 'resolve') return runResolve(args)
+  if (args.subcommand === 'prune-paseo-profiles') return runPrune(args)
   return runWrite(args)
 }
 
 try {
   process.exitCode = main(process.argv.slice(2))
 } catch (error) {
-  process.stderr.write(`generate-paseo-config: ${error instanceof Error ? error.message : '失敗した'}\n`)
+  process.stderr.write(`agent-config: ${error instanceof Error ? error.message : '失敗した'}\n`)
   process.exitCode = error && Number.isInteger(error.exitCode) ? error.exitCode : 2
 }

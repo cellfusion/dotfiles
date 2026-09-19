@@ -13,10 +13,12 @@ Paseo は provider 定義が `$AGENT_ENV` を注入する。zsh はその値に�
 ```
 
 `agent-environments.zsh` は chezmoi が生成する 1 ファイルで、全環境の定義を持つ。
-環境名は `AGENT_ENV` → `HERDR_SESSION` → 先頭環境（primary）の順で決まる。
+環境名は `AGENT_ENV` → `HERDR_SESSION` の順で決まる。
 `$AGENT_ENV` が定義済みの環境名なら、`$HERDR_SESSION` の値より優先する。
-定義に無い名前を受け取った場合と、どちらも未設定の場合は先頭環境になる。
-どの場合も警告は出ない。
+どちらも定義済みの環境名でない場合は、どの環境も読み込まない。`CLAUDE_CONFIG_DIR`
+などの変数は設定されず、`claude` と `codex` は同名の関数で塞がれる。環境を指定して
+AI CLI を起動するには `agent --provider=<provider-id>` を使う。読み込みの時点では
+警告を出さない。
 
 Paseo は `HERDR_SESSION` を注入しない。代わりに `~/.paseo/config.json` の
 `agents.providers.<provider>.env.AGENT_ENV` が環境名を伝える。この env は
@@ -91,4 +93,4 @@ mv ~/.config/codex_secondary  ~/.config/codex_<session>
 - ここに書けるのは公開してよい値だけである。chezmoi 管理下なので git に入り、リポジトリは public である。環境を特定する値（環境名、Cloudflare のアカウント ID など）は `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` に置き、テンプレートからはループ変数として参照する。API トークンはどちらにも置かない（`secrets.md` を読む）。
 - `claude -p` や `claude --resume` で起動した場合も `$HERDR_SESSION` は継承される。
 - alt+c の新規タブランチャ（`~/.config/herdr/launch-claude-tab.sh`）も `agents` を見て、claude を持たない環境ではタブを作らずに終わる。判定は `AGENT_ENV_AGENTS` ではなく `$HERDR_SESSION` から行う。`type = "shell"` のキーコマンドは herdr サーバが detached で起動するため、focus 中の pane ではなくサーバの環境を継承し、サーバの `AGENT_ENV_*` はサーバを起動したシェル（＝先頭環境）の値だからである。
-- 解決結果は `echo $AGENT_ENV_SESSION` で確認する。入力側は `echo $AGENT_ENV $HERDR_SESSION` で確認する。両方が空なら先頭環境が読まれている。
+- 解決結果は `echo $AGENT_ENV_SESSION` で確認する。入力側は `echo $AGENT_ENV $HERDR_SESSION` で確認する。`AGENT_ENV_SESSION` が空なら、どの環境も読み込まれていない。

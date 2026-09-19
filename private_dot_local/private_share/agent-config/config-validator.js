@@ -2,7 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { TIERS, SCHEMA_KEYWORDS } = require('./config-types.js')
+const { DUTIES, COMPLEXITIES, SCHEMA_KEYWORDS } = require('./config-types.js')
 
 class ConfigError extends Error {
   constructor(message) {
@@ -191,12 +191,28 @@ function assertConfigEnvName(name) {
 
 function candidateLists(config) {
   const lists = []
-  for (const [tier, definition] of Object.entries(config.tiers)) {
-    lists.push({ location: `tiers.${tier}`, environment: null, tier, candidates: definition.candidates })
+  for (const duty of DUTIES) {
+    for (const complexity of COMPLEXITIES) {
+      lists.push({
+        location: `selection.${duty}.${complexity}`,
+        environment: null,
+        duty,
+        complexity,
+        candidates: config.selection[duty][complexity].candidates,
+      })
+    }
   }
   for (const [environment, definition] of Object.entries(config.environments)) {
-    for (const [tier, tierDefinition] of Object.entries(definition.tiers)) {
-      lists.push({ location: `environments.${environment}.tiers.${tier}`, environment, tier, candidates: tierDefinition.candidates })
+    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
+      for (const [complexity, slot] of Object.entries(byComplexity)) {
+        lists.push({
+          location: `environments.${environment}.selection.${duty}.${complexity}`,
+          environment,
+          duty,
+          complexity,
+          candidates: slot.candidates,
+        })
+      }
     }
   }
   return lists
@@ -255,16 +271,34 @@ function assertSemantics(config) {
     }
   }
 
+  for (const [family, definition] of Object.entries(config.providers)) {
+    if (!Array.isArray(definition.backends) || definition.backends.length === 0) {
+      throw new ConfigError(`providers.${family}: backends が空である`)
+    }
+    if (new Set(definition.backends).size !== definition.backends.length) {
+      throw new ConfigError(`providers.${family}: backends が重複する`)
+    }
+  }
+
+  for (const list of candidateLists(config)) {
+    if (list.candidates.length === 0) continue
+    const hasPaseoCandidate = list.candidates.some((candidate) =>
+      config.providers[candidate.provider].backends.includes('paseo'))
+    if (!hasPaseoCandidate) throw new ConfigError(`${list.location}: backends に paseo を持つ候補が無い`)
+  }
+
   for (const [environment, definition] of Object.entries(config.environments)) {
     for (const provider of definition.providers) {
       if (!Object.prototype.hasOwnProperty.call(config.providers, provider)) {
         throw new ConfigError(`environment ${environment}: 未知の provider ${provider} である`)
       }
     }
-    for (const [tier, tierDefinition] of Object.entries(definition.tiers)) {
-      for (const candidate of tierDefinition.candidates) {
-        if (!definition.providers.includes(candidate.provider)) {
-          throw new ConfigError(`environment ${environment}/${tier}: candidate provider が eligibility にない`)
+    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
+      for (const [complexity, slot] of Object.entries(byComplexity)) {
+        for (const candidate of slot.candidates) {
+          if (!definition.providers.includes(candidate.provider)) {
+            throw new ConfigError(`environment ${environment}/${duty}/${complexity}: candidate provider が eligibility にない`)
+          }
         }
       }
     }
@@ -273,26 +307,26 @@ function assertSemantics(config) {
   for (const list of candidateLists(config)) {
     const providers = new Set()
     for (const candidate of list.candidates) {
-      if (providers.has(candidate.provider)) throw new ConfigError(`${list.location}: provider が同じ tier に重複する`)
+      if (providers.has(candidate.provider)) throw new ConfigError(`${list.location}: provider が同じ枠に重複する`)
       providers.add(candidate.provider)
     }
   }
 
   for (const role of Object.values(config.agentRoles)) {
-    if (role.tier !== undefined && !TIERS.includes(role.tier)) throw new ConfigError('agentRoles: tier が不正である')
+    if (role.duty !== undefined && !DUTIES.includes(role.duty)) throw new ConfigError('agentRoles: duty が不正である')
   }
 
   for (const list of candidateLists(config)) {
     for (const candidate of list.candidates) {
       const definition = config.providers[candidate.provider]
       for (const key of Object.keys(definition.featureAllowlist)) assertFeatureKey(key)
-      for (const key of Object.keys(candidate.featureValues)) {
+      for (const key of Object.keys(candidate.features)) {
         assertFeatureKey(key)
         if (!Object.prototype.hasOwnProperty.call(definition.featureAllowlist, key)) {
-          throw new ConfigError(`${list.location}: featureValues の key ${key} が allowlist にない`)
+          throw new ConfigError(`${list.location}: features の key ${key} が allowlist にない`)
         }
         const expected = definition.featureAllowlist[key]
-        const actual = candidate.featureValues[key]
+        const actual = candidate.features[key]
         const valid = expected === 'boolean'
           ? typeof actual === 'boolean'
           : expected === 'string'
@@ -300,7 +334,7 @@ function assertSemantics(config) {
             : expected === 'integer'
               ? typeof actual === 'number' && Number.isInteger(actual) && Number.isFinite(actual)
               : false
-        if (!valid) throw new ConfigError(`${list.location}: featureValues の scalar 型が allowlist と違う`)
+        if (!valid) throw new ConfigError(`${list.location}: features の scalar 型が allowlist と違う`)
       }
     }
   }

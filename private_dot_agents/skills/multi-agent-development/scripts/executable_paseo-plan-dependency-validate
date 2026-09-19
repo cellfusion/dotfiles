@@ -23,7 +23,7 @@ function parseTasks(text) {
     if (tasks.has(heading.number)) throw new Error('Task 番号が重複する')
     const end = position + 1 < headings.length ? headings[position + 1].index : lines.length
     const block = lines.slice(heading.index + 1, end)
-    const task = { number: heading.number, dependsOn: [], files: [] }
+    const task = { number: heading.number, dependsOn: [], files: [], complexity: undefined }
 
     let inFiles = false
     for (const line of block) {
@@ -32,6 +32,12 @@ function parseTasks(text) {
         const dependencyText = line.split(/\bDepends on\s*:/i)[1]
         const dependencies = [...dependencyText.matchAll(/\bTask\s+(\d+)\b/gi)]
         task.dependsOn.push(...dependencies.map((match) => Number(match[1])))
+        continue
+      }
+      if (/\bComplexity\s*:/i.test(line)) {
+        inFiles = false
+        const match = /\bComplexity\s*:\s*\**\s*([A-Za-z]+)/i.exec(line)
+        task.complexity = match === null ? '' : match[1].toLowerCase()
         continue
       }
       if (/\bFiles\s*:/i.test(line)) {
@@ -50,6 +56,10 @@ function parseTasks(text) {
     }
     task.dependsOn = [...new Set(task.dependsOn)]
     task.files = [...new Set(task.files)]
+    const COMPLEXITIES = ['routine', 'standard', 'complex']
+    if (task.complexity !== undefined && !COMPLEXITIES.includes(task.complexity)) {
+      throw new Error(`Task ${task.number}: Complexity が routine/standard/complex でない`)
+    }
     if (task.files.length === 0) throw new Error(`Task ${task.number}: Files がない`)
     tasks.set(task.number, task)
   }

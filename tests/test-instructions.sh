@@ -99,4 +99,23 @@ handoff_skill="$(cat "$CHEZMOI_SOURCE/private_dot_config/claude/skills/handoff/S
 assert_contains "$handoff_skill" 'herdr を起動してはならない' \
   "handoff: herdr を自分で起動しない"
 
+for tmpl in private_dot_config/claude/CLAUDE.md.tmpl private_dot_config/codex/AGENTS.md.tmpl; do
+  body="$(cat "$CHEZMOI_SOURCE/$tmpl")"
+  assert_eq "$(printf '%s' "$body" | grep -c 'list_profiles')" "0" "$tmpl: list_profiles が残らない"
+  assert_eq "$(printf '%s' "$body" | grep -c 'think_\*')" "0" "$tmpl: think_* が残らない"
+  assert_contains "$body" "agent-config resolve" "$tmpl: agent-config resolve を通す"
+done
+section="$(sed -n '/^## Paseo の子エージェントを作るとき/,/^## /p' "$CHEZMOI_SOURCE/private_dot_config/claude/CLAUDE.md.tmpl")"
+assert_eq "$(printf '%s' "$section" | grep -c 'tier')" "0" "CLAUDE.md.tmpl: 節に tier が残らない"
+
+contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+assert_eq "$(printf '%s' "$contract" | grep -c 'max_rounds: 2')" "0" "契約: max_rounds: 2 が残らない"
+assert_eq "$(printf '%s' "$contract" | grep -c 'max_rounds は 2')" "0" "契約: max_rounds は 2 が残らない"
+assert_eq "$(printf '%s' "$contract" | grep -c 'max_rounds: 4')" "2" "契約: review_policy の 2 か所が 4"
+assert_contains "$contract" "--complexity" "契約: resolve の呼び出し例に --complexity がある"
+assert_contains "$contract" "mad-review" "契約: provenance の使い分けに mad-review がある"
+assert_eq "$(printf '%s' "$contract" | grep -c 'generate-paseo-config')" "0" "契約: 旧 CLI 名が残らない"
+skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+assert_eq "$(printf '%s' "$skill" | grep -c '2 round')" "0" "SKILL: 2 round が残らない"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

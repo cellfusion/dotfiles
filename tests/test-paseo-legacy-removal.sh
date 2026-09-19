@@ -79,7 +79,7 @@ while IFS='|' read -r _ _ disposition replacement _; do
   replacement="$(printf '%s' "$replacement" | sed 's/^ *//; s/ *$//')"
   [ "$disposition" = Delete ] || continue
   case "$replacement" in
-    tests/test-paseo-mad.sh|tests/test-manual-orchestration-contract.sh|tests/test-generate-paseo-config.sh|tests/test-distribution.sh|tests/test-paseo-legacy-removal.sh|tests/test-schemas.sh)
+    tests/test-paseo-mad.sh|tests/test-manual-orchestration-contract.sh|tests/test-agent-config.sh|tests/test-distribution.sh|tests/test-paseo-legacy-removal.sh|tests/test-schemas.sh)
       assert_eq "$(test -f "$CHEZMOI_SOURCE/$replacement" && echo yes || echo no)" "yes" \
         "manifest: Delete の置換 test が実在する"
       ;;
@@ -176,10 +176,20 @@ if [ "$MANIFEST_ONLY" -eq 0 ] && [ "$fixtures_ready" -eq 1 ]; then
 
   FAST_EXCLUDES=("${EXCLUDES[@]}"
     ':!private_dot_local/private_share/agent-config/resolver.js'
-    ':!tests/test-generate-paseo-config.sh'
+    ':!tests/test-agent-config.sh'
     ':!private_dot_config/docs/tools.md')
   fast_matches="$(cd "$CHEZMOI_SOURCE" && git grep -nE '\bfast\b' -- "${FAST_EXCLUDES[@]}" || true)"
   assert_eq "$fast_matches" "" "source: fast は互換入力のコードと test と docs にしか残らない"
+
+  old_cli_excludes=("${EXCLUDES[@]}"
+    ':!tests/test-agent-config-cli.sh' ':!tests/test-instructions.sh'
+    ':!tests/test-manual-scripts.sh' ':!tests/test-tools-doc.sh')
+  leftover="$(cd "$CHEZMOI_SOURCE" && git grep -n 'generate-paseo-config' -- "${old_cli_excludes[@]}" || true)"
+  assert_eq "$leftover" "" "source: generate-paseo-config の生きた参照が残らない"
+  old_module_excludes=("${EXCLUDES[@]}"
+    ':!tests/test-manual-orchestration-contract.sh' ':!tests/test-paseo-launch-split.sh')
+  leftover="$(cd "$CHEZMOI_SOURCE" && git grep -n 'paseo-exporter' -- "${old_module_excludes[@]}" || true)"
+  assert_eq "$leftover" "" "source: paseo-exporter の生きた参照が残らない"
 
   present=""
   while IFS='|' read -r _ source_path _ _; do

@@ -1,1 +1,15 @@
-{"version":1,"type":"mad-launch-spec","status":"ok","profileName":"work_primary","environment":"primary","tier":"work","provider":"codex","model":"sample-work","modeId":"auto","thinkingOptionId":"high","featureValues":{},"warnings":[]}
+{
+  "version": 1,
+  "type": "mad-launch-spec",
+  "status": "ok",
+  "environment": "primary",
+  "duty": "implement",
+  "complexity": "standard",
+  "requestedComplexity": "standard",
+  "provider": "codex",
+  "model": "sample-work",
+  "modeId": "auto",
+  "thinkingOptionId": "high",
+  "features": {},
+  "warnings": []
+}

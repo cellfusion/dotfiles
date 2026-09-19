@@ -3,9 +3,20 @@
   "type": "mad-launch-failure",
   "status": "unresolved",
   "reasonCode": "candidates_exhausted",
-  "profileName": "work_primary",
   "environment": "primary",
-  "tier": "work",
-  "candidates": [{ "provider": "codex", "model": "sample-work-absent", "thinkingOptionId": "high", "reasonCode": "model_unavailable" }],
-  "warnings": ["environment tier missing: primary/work; using common tier", "project remote unavailable; remote routing skipped"]
+  "duty": "implement",
+  "complexity": "standard",
+  "requestedComplexity": "standard",
+  "candidates": [
+    {
+      "provider": "codex",
+      "model": "sample-work-absent",
+      "thinkingOptionId": "high",
+      "reasonCode": "model_unavailable"
+    }
+  ],
+  "warnings": [
+    "selection slot missing: primary/implement/standard; using common selection",
+    "project remote unavailable; remote routing skipped"
+  ]
 }

@@ -14,5 +14,23 @@ for bad in cycle-plan missing-task-plan file-collision-plan; do
   assert_eq "$out" "" "plan validator: $bad は stdout を出さない"
 done
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+{ printf '#%s# Task 1: fixture\n\n' '##'
+  printf '**Files:**\n- Modify: `a.txt`\n\n'
+  printf '**Depends on:** none\n\n'
+  printf '**Complexity:** unknown\n'; } > "$TMP/bad.md"
+status=0
+node "$PLAN_VALIDATE" "$TMP/bad.md" >/dev/null 2>&1 || status=$?
+assert_eq "$status" "2" "plan validate: 未知の Complexity を拒む"
+
+{ printf '#%s# Task 1: fixture\n\n' '##'
+  printf '**Files:**\n- Modify: `a.txt`\n\n'
+  printf '**Depends on:** none\n'; } > "$TMP/absent.md"
+status=0
+node "$PLAN_VALIDATE" "$TMP/absent.md" >/dev/null 2>&1 || status=$?
+assert_eq "$status" "0" "plan validate: Complexity の行が無くても受け入れる"
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

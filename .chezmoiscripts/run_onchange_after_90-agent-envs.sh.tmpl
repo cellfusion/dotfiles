@@ -21,7 +21,7 @@ local_bin_env
 input="$XDG_CONFIG_HOME/chezmoi/agent-config.json"
 target="$HOME/.paseo/config.json"
 agent_config_share="$HOME/.local/share/agent-config"
-generator='generate-paseo-config'
+generator='agent-config'
 
 # target がまだ無い初回 apply では、directory setup も行わず generator の skip に任せる。
 if [ -f "$input" ] && [ -f "$target" ]; then
@@ -52,7 +52,7 @@ if [ -f "$input" ] && [ -f "$target" ]; then
 fi
 
 if command -v mise >/dev/null 2>&1; then
-  mise exec -- "$generator"
+  mise exec -- "$generator" write-paseo
 else
-  "$generator"
+  "$generator" write-paseo
 fi

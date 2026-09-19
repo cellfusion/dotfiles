@@ -71,7 +71,7 @@ assert_not_contains "$managed" "inconsistent state" "managed が inconsistent st
 
 # Paseo の設定生成に必要な CLI と runtime 非依存の契約を配布する。正本は利用者の
 # 秘密領域なので配布しない。
-assert_contains "$managed" ".local/bin/generate-paseo-config" "distribution: 生成 CLI を配る"
+assert_contains "$managed" ".local/bin/agent-config" "distribution: 生成 CLI を配る"
 assert_contains "$managed" ".local/share/agent-config/config-types.js" "distribution: runtime 非依存の契約を配る"
 assert_contains "$managed" ".local/share/agent-config/mad-contract.js" "distribution: MAD の契約 module を配る"
 assert_contains "$managed" ".local/share/agent-config/agent-config.schema.json" "distribution: 公開 schema を配る"
@@ -88,8 +88,9 @@ assert_eq "$(jq -c '.providers.claude.featureAllowlist, .providers.codex.feature
   "distribution: sample は Claude と Codex に fast_mode を宣言する"
 assert_eq "$(jq -c '.providers.opencode.featureAllowlist, .providers.pi.featureAllowlist' "$sample" | tr '\n' ' ')" \
   "{} {} " "distribution: sample は OpenCode と Pi を空 allowlist にする"
-assert_eq "$(jq -c '[.tiers[].candidates[0].featureValues | if has("fast_mode") then .fast_mode else "absent" end] | sort' "$sample")" \
-  '[false,true,true,"absent"]' "distribution: sample は fast_mode の true と false を両方示す"
+assert_eq "$(jq -c '[.selection | to_entries[] | .value | to_entries[] | .value.candidates[0].features | if has("fast_mode") then .fast_mode else "absent" end] | sort' "$sample")" \
+  '[false,false,false,false,false,true,true,true,"absent","absent","absent","absent"]' \
+  "distribution: sample は 12 selection slot の fast_mode の true と false を示す"
 assert_not_contains "$managed" "tests/fixtures" "distribution: test fixture を配らない"
 
 # 配布する adapter は create の境界を持たない。create は公式 MCP tool だけが行う。
@@ -103,7 +104,7 @@ for legacy in private-data.toml setup_paseo_provider list_providers; do
   assert_not_contains "$hook_source" "$legacy" "hook: $legacy を持たない"
 done
 docs="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
-for step in '"$MAD_GENERATOR" resolve' '"$MAD_GENERATOR" --diff' '"$MAD_GENERATOR" --check'; do
+for step in '"$MAD_GENERATOR" resolve' '"$MAD_GENERATOR" write-paseo --diff' '"$MAD_GENERATOR" write-paseo --check'; do
   assert_contains "$docs" "$step" "docs: 移行手順に $step がある"
 done
 assert_contains "$docs" "--paseo-config <absolute-copy>" \

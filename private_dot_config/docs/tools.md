@@ -148,14 +148,17 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。environment は
    4 段で決まる。1 段目は明示した `--environment` である。2 段目は親の AI 環境名である。
    3 段目は最初に一致した rule である。どれにも当たらなければ `defaults.environment` を使う。
-   親の AI 環境名は `AGENT_ENV_SESSION` を先に読み、未設定または空文字のときだけ `AGENT_ENV` を
-   読む。2 つとも未設定または空文字なら 2 段目を飛ばす。親の AI 環境名が `environments` に無い
-   名前のときは、`resolve` が終了コード 2 で終わり stdout に JSON を出さない。
-3. tier は `tiers` または対象 environment の `tiers` に移す。environment tier があればそれを使い、
-   無ければ共通 tier を使う。role の tier と候補の順序も保持する。
-4. model と provider の優先順位は各 tier の `candidates` 配列の順序にする。先頭から provider の
-   availability、`auto` mode、model、thinking option を確認し、最初に成立した候補を使う。
-   `fast` は入力時だけ `light` に正規化されるため、正本には書かない。
+   親の AI 環境名は `AGENT_ENV` だけを読む。`AGENT_ENV_SESSION` は参照しない。`AGENT_ENV` が
+   未設定または空文字なら 2 段目を飛ばす。
+   親の AI 環境名が `environments` に無い名前のときは、`resolve` が終了コード 2 で終わり
+   stdout に JSON を出さない。
+3. 候補は `selection` の 12 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
+   `author`、`implement`、`review`、`synthesize`、複雑度は `routine`、`standard`、`complex` である。
+   12 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、
+   書かなかった枠は共通の `selection` を使う。role の `duty` と候補の順序も保持する。
+4. model と provider の優先順位は各枠の `candidates` 配列の順序にする。先頭から provider の
+   `backends` に `paseo` が含まれること、availability、`auto` mode、model、thinking option を確認し、
+   最初に成立した候補を使う。
 5. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
    family 名をそのまま root `providers` の key にする。v1 ではその family の `setup` は `null`、
    `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
@@ -170,7 +173,7 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
-MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
 `MAD_SCRIPTS`配下の3 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
@@ -183,22 +186,49 @@ global option は subcommand より前に置くため、実際の呼び出しは
 `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> resolve \
 --project <absolute-project> --role <role> --provenance <provenance> --snapshot <absolute-snapshot>` とする。
 
-次に `"$MAD_GENERATOR" --diff` で copy に対する managed projection だけを確認する。明示的な
+次に `"$MAD_GENERATOR" write-paseo --diff` で copy に対する managed projection だけを確認する。明示的な
 copy path を付けた実際の呼び出しは
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --diff` とする。
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo --diff` とする。
 差分が意図どおりなら、同じ明示的な copy path に対して試行 write を行う。
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy>` の後、
-`"$MAD_GENERATOR" --check` を
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> --check` として実行する。
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo` の後、
+`"$MAD_GENERATOR" write-paseo --check` を
+`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo --check` として実行する。
 `--check` が 0 になることを確認するまで実 target へ write しない。0 は一致または成功、1 は差分、
 2 は入力・path・schema などの不備、4 は候補が尽きたことを表す。`--diff` と `--check` は target を
 書き換えない。
 
 copy の `--check` が 0 になった後、利用者が内容を確認して明示承認した場合だけ、同じ正本に対して
-flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-target>` を
+flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-target> write-paseo` を
 実 target へ実行する。実 target の path を省略して既定値へ向ける手順は書かない。legacy との衝突、
-stale な provider・profile・directory は自動削除しない。auth と history の有無を利用者が確認した
+stale な provider・directory は自動削除しない。auth と history の有無を利用者が確認した
 うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
+
+## agent で AI 環境を指定して起動する
+
+`~/.local/bin/agent` は AI 環境を指定して AI CLI を起動するラッパーである。
+
+    agent --provider=<provider-id> [引数...]
+
+`<provider-id>` は `~/.config/chezmoi/agent-config.json` から materialize した id で、
+Paseo の provider record の key と同じ名前空間にある。既定環境の provider id は
+provider family の名前そのもの（`claude`）、それ以外の環境は `<family>-<環境名>`
+（`claude-lab`）である。
+
+ラッパーは `AGENT_ENV` に環境名を設定し、family の `setup.configDirectoryEnv` の key
+（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`）へ `setup.directoryPattern` を展開した絶対 path を
+設定してから、family と同じ名前のコマンドを `exec` で起動する。`setup` が `null` の
+family（`opencode`、`pi`）では設定ディレクトリの変数を設定しない。自分のプロセスを
+残さないので、`paseo provider diagnostic` がコマンドを起動して version と auth を読む
+経路でも使える。
+
+正本は `AGENT_CONFIG`（未設定なら `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json`）
+から読む。`--provider` が無い、値が空、重複している、正本に無い id を渡した、正本を
+読めない、のいずれでも終了コード 2 で終わり、使える provider id の一覧を stderr に出す。
+`--` 以降の引数は family のコマンドへそのまま渡す。
+
+zsh は解決できた AI 環境の変数だけを設定する。`AGENT_ENV` も `HERDR_SESSION` も
+定義済みの環境名でないシェルでは `claude` と `codex` が関数で塞がれるので、その場合は
+このラッパーで起動する。
 
 ## core
 
@@ -358,7 +388,7 @@ wait の raw response は adapter が `{status}` へ縮約し、attempt には 0
 sanitized call log だけを残す。各 JSON 成果物は run の attempt directory にだけ置く。
 snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
 
-review/fix は task ごとに `max_rounds` を 2（初回 review、fix/re-review）へ固定する。
+review/fix は task ごとに `max_rounds` を 4（round 0 の初回 review、round 1 から 3 の fix/re-review）へ固定する。
 review/fix child を create する前に `"$MAD_VALIDATE" --prepare-review` を通し、
 同じ task の scope file と admission marker を使う。scope 外の重要事項は observations に保持し、
 review/fix 中に新しい fix/review や hotfix node を起動しない。最終 gate で一つの decision request に

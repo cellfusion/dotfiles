@@ -8,8 +8,8 @@ CHEZMOI_SOURCE="$(cd "$(dirname "$0")/../.." && pwd -P)"
 FIXTURES="$CHEZMOI_SOURCE/tests/fixtures/agent-config"
 MAD_RUNNER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
 MAD_CONTRACT="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/mad-contract.js"
-MAD_EXPORTER="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/paseo-exporter.js"
-DEFAULT_GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_generate-paseo-config"
+MAD_EXPORTER="$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/paseo-launch.js"
+DEFAULT_GENERATOR="$CHEZMOI_SOURCE/private_dot_local/bin/executable_agent-config"
 DEFAULT_ADAPTER="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter"
 DEFAULT_DECISION_ROOT="$(printf '/Users/%s/docs/cellfusion/dotfiles/orchestration/paseo-agent-config-migration/evidence' cellfusion)"
 VERIFY_ONLY_MODE=0
@@ -187,7 +187,7 @@ contract.assertMadCreateRequestV1(createCall.request, {})
 if (createCall.request.provider !== launch.provider + '/' + launch.model ||
     createCall.request.settings.modeId !== 'auto' ||
     createCall.request.settings.thinkingOptionId !== launch.thinkingOptionId ||
-    !util.isDeepStrictEqual(createCall.request.settings.features, launch.featureValues)) {
+    !util.isDeepStrictEqual(createCall.request.settings.features, launch.features)) {
   process.exit(1)
 }
 NODE

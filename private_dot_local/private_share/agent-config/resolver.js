@@ -3,16 +3,16 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { assertResolvedConfig, TIERS } = require('./config-types.js')
+const { assertResolvedConfig, DUTIES, COMPLEXITIES } = require('./config-types.js')
 const { ConfigError } = require('./config-validator.js')
 
-const PROVENANCE_ALLOWING_TIER_OVERRIDE = ['mad-fix', 'mad-escalation']
 const REMOTE_UNAVAILABLE_WARNING = 'project remote unavailable; remote routing skipped'
 
 function providerFamilies(config) {
   return Object.entries(config.providers).map(([family, definition]) => ({
     family,
     displayName: definition.displayName,
+    backends: [...definition.backends],
     setup: definition.setup,
     featureAllowlist: definition.featureAllowlist,
   }))
@@ -25,36 +25,42 @@ function resolvedEnvironments(config) {
   }))
 }
 
-// notes は採用した tier 定義のものだけを使う。environment tier が notes を持たない
-// ときに共通 tier の notes を借りると、説明と候補の出所がずれる。
-function staticCandidates(config, environment, tier) {
-  const environmentTier = config.environments[environment].tiers[tier]
-  if (environmentTier !== undefined) {
-    return { candidates: environmentTier.candidates, notes: environmentTier.notes, warnings: [] }
+// notes は採用した枠の定義のものだけを使う。環境の枠が notes を持たないときに共通の枠の
+// notes を借りると、説明と候補の出所がずれる。
+function staticCandidates(config, environment, duty, complexity) {
+  const byDuty = config.environments[environment].selection[duty]
+  const slot = byDuty === undefined ? undefined : byDuty[complexity]
+  if (slot !== undefined) {
+    return { candidates: slot.candidates, notes: slot.notes, warnings: [] }
   }
+  const common = config.selection[duty][complexity]
   return {
-    candidates: config.tiers[tier].candidates,
-    notes: config.tiers[tier].notes,
-    warnings: [`environment tier missing: ${environment}/${tier}; using common tier`],
+    candidates: common.candidates,
+    notes: common.notes,
+    warnings: [`selection slot missing: ${environment}/${duty}/${complexity}; using common selection`],
   }
 }
 
 function allStaticResolutions(config) {
   const resolutions = []
   for (const [environment, definition] of Object.entries(config.environments)) {
-    for (const tier of TIERS) {
-      const selected = staticCandidates(config, environment, tier)
-      const candidates = selected.candidates
-        .filter((candidate) => definition.providers.includes(candidate.provider))
-        .map((candidate) => ({
-          family: candidate.provider,
-          model: candidate.model,
-          thinkingOptionId: candidate.thinkingOptionId,
-          featureValues: candidate.featureValues,
-        }))
-      if (candidates.length === 0) throw new ConfigError(`resolution ${environment}/${tier}: candidate がない`)
-      const notes = selected.notes === undefined ? null : selected.notes
-      resolutions.push({ environment, tier, notes, candidates, warnings: selected.warnings })
+    for (const duty of DUTIES) {
+      for (const complexity of COMPLEXITIES) {
+        const selected = staticCandidates(config, environment, duty, complexity)
+        const candidates = selected.candidates
+          .filter((candidate) => definition.providers.includes(candidate.provider))
+          .map((candidate) => ({
+            family: candidate.provider,
+            model: candidate.model,
+            effort: candidate.effort,
+            features: candidate.features,
+          }))
+        if (candidates.length === 0) {
+          throw new ConfigError(`resolution ${environment}/${duty}/${complexity}: candidate がない`)
+        }
+        const notes = selected.notes === undefined ? null : selected.notes
+        resolutions.push({ environment, duty, complexity, notes, candidates, warnings: selected.warnings })
+      }
     }
   }
   return resolutions
@@ -203,24 +209,39 @@ function selectEnvironment(config, project, explicitEnvironment, parentEnvironme
   return { environment: config.defaults.environment, warnings }
 }
 
-function selectTier(config, role, provenance, callerTier) {
+const ESCALATION = { routine: 'standard', standard: 'complex', complex: 'complex' }
+
+function selectDuty(config, role) {
+  const roleDuty = config.agentRoles[role].duty
+  if (roleDuty) return { duty: roleDuty, warnings: [] }
+  return { duty: 'review', warnings: [`duty missing for role ${role}; using review`] }
+}
+
+// 引き上げるのは指摘を修正する実装役だけである。再レビューの子は provenance が
+// mad-review なので、round が 2 以上でも据え置く。
+function selectComplexity(config, provenance, callerComplexity, callerRound) {
   const warnings = []
-  let requested = callerTier
-  if (requested === 'fast') {
-    requested = 'light'
-    warnings.push('compatibility: tier alias normalized to light')
+  let requested
+  if (callerComplexity === undefined) {
+    requested = config.defaults.complexity
+    warnings.push('complexity missing; using defaults.complexity')
+  } else {
+    if (!COMPLEXITIES.includes(callerComplexity)) throw new ConfigError('complexity: 未知の複雑度である')
+    requested = callerComplexity
   }
-  if (requested !== undefined) {
-    if (!PROVENANCE_ALLOWING_TIER_OVERRIDE.includes(provenance)) {
-      throw new ConfigError('tier: caller override は mad-fix と mad-escalation だけである')
+  let round = 0
+  if (callerRound !== undefined) {
+    if (!Number.isInteger(callerRound) || callerRound < 0) throw new ConfigError('round: 0 以上の整数が必要である')
+    round = callerRound
+  }
+  if (provenance === 'mad-fix' && round >= 2) {
+    const escalated = ESCALATION[requested]
+    if (escalated !== requested) {
+      warnings.push(`complexity escalated: ${requested} -> ${escalated} (round ${round})`)
     }
-    if (!TIERS.includes(requested)) throw new ConfigError('tier: 未知の tier である')
-    return { tier: requested, warnings }
+    return { complexity: escalated, requestedComplexity: requested, warnings }
   }
-  const roleTier = config.agentRoles[role].tier
-  if (roleTier) return { tier: roleTier, warnings }
-  warnings.push(`tier missing for role ${role}; using work`)
-  return { tier: 'work', warnings }
+  return { complexity: requested, requestedComplexity: requested, warnings }
 }
 
 function resolveDispatch(config, input) {
@@ -235,15 +256,23 @@ function resolveDispatch(config, input) {
     throw new ConfigError('provenance: 非空 string が必要である')
   }
   const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
-  const { tier, warnings } = selectTier(config, input.role, input.provenance, input.tier)
+  const dutySelection = selectDuty(config, input.role)
+  const complexitySelection = selectComplexity(config, input.provenance, input.complexity, input.round)
+  const warnings = [...dutySelection.warnings, ...complexitySelection.warnings]
   const exported = resolveExport(config)
   const resolution = exported.resolutions.find(
-    (entry) => entry.environment === environmentSelection.environment && entry.tier === tier)
-  if (!resolution) throw new ConfigError('dispatch resolution: environment と tier の組が無い')
+    (entry) => entry.environment === environmentSelection.environment &&
+      entry.duty === dutySelection.duty && entry.complexity === complexitySelection.complexity)
+  if (!resolution) throw new ConfigError('dispatch resolution: environment と duty と complexity の組が無い')
   return assertResolvedConfig({
     ...exported,
     scope: 'dispatch',
-    selection: { environment: environmentSelection.environment, tier },
+    selection: {
+      environment: environmentSelection.environment,
+      duty: dutySelection.duty,
+      complexity: complexitySelection.complexity,
+      requestedComplexity: complexitySelection.requestedComplexity,
+    },
     resolutions: [{
       ...resolution,
       warnings: [...resolution.warnings, ...environmentSelection.warnings, ...warnings],
