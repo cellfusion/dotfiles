@@ -15,7 +15,7 @@ note 'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/ag
 note 'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"'
 note 'MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"'
 note 'MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'
-note 'MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"'
+note 'MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"'
 note 'agent-config.json と ~/.paseo/config.json の copy は絶対 path で渡す。'
 note 'copy は regular file かつ 0600 であることを確認する。'
 
