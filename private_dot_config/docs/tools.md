@@ -172,10 +172,11 @@ MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
+MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の4 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の5 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
