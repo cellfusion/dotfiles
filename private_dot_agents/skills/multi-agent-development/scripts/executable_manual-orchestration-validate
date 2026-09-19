@@ -1475,8 +1475,157 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
   exit $?
 fi
 
+# implementer が commit 後に返した結果を、worktree と immutable な base に対して
+# 読み取り専用で照合する。ここは state、call log、prepared marker を扱わない。
+mad_check_implement_result() {
+  local workdir=""
+  local base=""
+  local round=""
+  local result_file=""
+  local result_json
+  local expected_base_head
+  local current_head
+  local commit_count
+  local actual_names
+  local expected_files
+  local reported_files
+  local subject
+  local conventional_commit_re='^[a-z]+(\([^)]+\))?!?: .+'
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --workdir|--base|--round|--result-file)
+        [ "$#" -ge 2 ] || {
+          printf 'manual-orchestration-validate: %s requires a value\n' "$1" >&2
+          return 2
+        }
+        case "$1" in
+          --workdir) workdir="$2" ;;
+          --base) base="$2" ;;
+          --round) round="$2" ;;
+          --result-file) result_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *)
+        printf 'manual-orchestration-validate: unknown implement result option\n' >&2
+        return 2
+        ;;
+    esac
+  done
+
+  [ -n "$workdir" ] || { printf 'manual-orchestration-validate: --workdir is required\n' >&2; return 2; }
+  [ -n "$base" ] || { printf 'manual-orchestration-validate: --base is required\n' >&2; return 2; }
+  [ -n "$round" ] || { printf 'manual-orchestration-validate: --round is required\n' >&2; return 2; }
+  [ -n "$result_file" ] || { printf 'manual-orchestration-validate: --result-file is required\n' >&2; return 2; }
+  case "$workdir" in
+    /*) ;;
+    *) printf 'manual-orchestration-validate: --workdir must be absolute\n' >&2; return 2 ;;
+  esac
+  case "$result_file" in
+    /*) ;;
+    *) printf 'manual-orchestration-validate: --result-file must be absolute\n' >&2; return 2 ;;
+  esac
+  case "$round" in
+    ''|*[!0-9]*)
+      printf 'manual-orchestration-validate: --round must be a non-negative integer\n' >&2
+      return 2
+      ;;
+  esac
+  [ -d "$workdir" ] && [ ! -L "$workdir" ] || {
+    printf 'manual-orchestration-validate: workdir is not a directory\n' >&2
+    return 2
+  }
+  [ -f "$result_file" ] && [ ! -L "$result_file" ] || {
+    printf 'manual-orchestration-validate: result file is not a regular file\n' >&2
+    return 2
+  }
+
+  result_json="$(jq -c 'if type == "object" then . else error end' "$result_file" 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: implement result must be a JSON object\n' >&2
+    return 2
+  }
+  printf '%s' "$result_json" | jq -e --argjson expected_round "$round" \
+    '(.round | type == "number" and floor == . and . >= 0) and .round == $expected_round' \
+    >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: implement result round is invalid\n' >&2
+    return 2
+  }
+
+  expected_base_head="$(git -C "$workdir" rev-parse --verify --end-of-options "$base^{commit}" 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: base commit is invalid\n' >&2
+    return 2
+  }
+  printf '%s' "$result_json" | jq -e --arg expected_base_head "$expected_base_head" \
+    '.baseHead | type == "string" and length > 0 and . == $expected_base_head' \
+    >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: implement result baseHead does not match base\n' >&2
+    return 2
+  }
+
+  current_head="$(git -C "$workdir" rev-parse --verify --end-of-options HEAD 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: worktree HEAD is unavailable\n' >&2
+    return 2
+  }
+  commit_count="$(git -C "$workdir" rev-list --count "$expected_base_head..$current_head" 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: commit count is unavailable\n' >&2
+    return 2
+  }
+  [ "$commit_count" = 1 ] || {
+    printf 'manual-orchestration-validate: base to HEAD commit count must be 1\n' >&2
+    return 2
+  }
+
+  printf '%s' "$result_json" | jq -e '
+    (.changedFiles | type == "array" and length > 0 and
+      all(.[]; type == "string" and length > 0) and
+      (length == (unique | length)))
+  ' >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: implement result changedFiles must be non-empty and unique\n' >&2
+    return 2
+  }
+  reported_files="$(printf '%s' "$result_json" | jq -c '.changedFiles | sort | unique' 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: implement result changedFiles are invalid\n' >&2
+    return 2
+  }
+
+  actual_names="$(git -C "$workdir" diff --name-only "$expected_base_head..$current_head" 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: changed files are unavailable\n' >&2
+    return 2
+  }
+  expected_files="$(printf '%s\n' "$actual_names" | jq -c -R -s 'split("\n") | map(select(length > 0)) | unique' 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: changed files could not be normalized\n' >&2
+    return 2
+  }
+  [ "$reported_files" = "$expected_files" ] || {
+    printf 'manual-orchestration-validate: implement result changedFiles do not match git diff\n' >&2
+    return 2
+  }
+
+  [ -z "$(git -C "$workdir" status --porcelain --untracked-files=all 2>/dev/null)" ] || {
+    printf 'manual-orchestration-validate: worktree must be clean\n' >&2
+    return 2
+  }
+
+  subject="$(git -C "$workdir" log -1 --format=%s HEAD 2>/dev/null)" || {
+    printf 'manual-orchestration-validate: commit subject is unavailable\n' >&2
+    return 2
+  }
+  [[ "$subject" =~ $conventional_commit_re ]] || {
+    printf 'manual-orchestration-validate: commit subject is not Conventional Commits\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-implement-result" ]; then
+  shift
+  mad_check_implement_result "$@"
+  exit $?
+fi
+
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --check-review-package ... | --check-review-verdict ... | --open-review-findings ... | --advance-review-findings ... | --check-review-cannot-verify ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --check-review-package ... | --check-review-verdict ... | --open-review-findings ... | --advance-review-findings ... | --check-review-cannot-verify ... | --prepare-create ... | --check-implement-result ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
