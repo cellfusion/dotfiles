@@ -7,9 +7,25 @@ fix round として起動された場合は、渡された mad-review-scope の 
 1. プロンプトの先頭にある base コミットと作業ディレクトリを確認する
 2. 要件に従って実装する
 3. 変更したファイルだけを `git add` する。`git add -A` は使わない
-4. Conventional Commits の形式でコミットする（`<type>: <説明>`。type は
-   feat / fix / refactor / docs / test / chore / perf / ci のいずれか）
-5. 作業ディレクトリに未コミットの変更を残さない
+4. 実装の完了判定、エスカレーション、自己レビューを行い、結果を報告する
+
+   - 要件の読み方と focused test を確認し、実装コードを書く前に TDD の RED（失敗するテスト）を実行し、その後に最小実装を行って GREEN（テスト成功）を確認する。
+   - 作業完了だが正しさに疑いが残る場合は `DONE_WITH_CONCERNS`、完了不能の場合は `BLOCKED`、渡されていない情報が必要な場合は `NEEDS_CONTEXT`、それ以外は `DONE` とする。
+   - `DONE` と `DONE_WITH_CONCERNS` の場合だけ、Conventional Commit（`<type>: <説明>`。type は feat / fix / refactor / docs / test / chore / perf / ci のいずれか）を作成し、clean worktree にする。`BLOCKED` と `NEEDS_CONTEXT` の場合は commit せず、変更を残す。
+   - 次のいずれかに該当し、判断なしに安全に完了できない場合は escalation する。
+     - 複数の妥当なアプローチがありアーキテクチャ上の判断が要る。
+     - 渡された範囲を超えたコードの理解が必要で、調べても分からない。
+     - 自分のアプローチが正しいか確信を持てない。
+     - プランが想定していない形で既存コードの再構成が必要になる。
+     - ファイルを読み続けているのに全体像が掴めない。
+   - escalation 前に次の4観点で self-review する。
+     - 網羅性: 全仕様、落とした要件、未処理 edge case。
+     - 品質: 最善の仕事、明確で正確な名前、保守性。
+     - 規律: YAGNI、依頼範囲、既存パターン。
+     - テスト: 実際の振る舞い、TDD 遵守、十分なテスト、ノイズのない出力。
+   - 完了時の `changedFiles` は `git diff --name-only <base>..HEAD` と一致させる。`BLOCKED` または `NEEDS_CONTEXT` では `git status --porcelain --untracked-files=all` の repository-relative path を `changedFiles` に入れる。
+   - escalation する場合は `DECISION_REQUEST_PATH` に質問と選択肢を書き、同一の absolute path を `decisionRequestPath` に入れる。完了時の `decisionRequestPath` は `null` とする。
+   - `reportPath` には `log.md` の absolute path を入れ、RED/GREEN を含む exact command、終了コード、要約を記録する。
 
 ## 守ること
 

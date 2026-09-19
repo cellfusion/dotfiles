@@ -1,11 +1,17 @@
 {
   "type": "object",
-  "required": ["baseHead", "changedFiles", "summary", "decisionRequestPath"],
+  "required": ["baseHead", "changedFiles", "summary", "decisionRequestPath", "status", "round", "reportPath"],
   "additionalProperties": false,
   "properties": {
     "baseHead": { "type": "string" },
     "changedFiles": { "type": "array", "items": { "type": "string" } },
     "summary": { "type": "string" },
-    "decisionRequestPath": { "type": ["string", "null"] }
+    "decisionRequestPath": { "type": ["string", "null"] },
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"]
+    },
+    "round": { "type": "integer", "minimum": 0 },
+    "reportPath": { "type": ["string", "null"] }
   }
 }
