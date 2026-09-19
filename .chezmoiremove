@@ -160,3 +160,10 @@
 .config/opencode/agents/spec-author.md
 .config/opencode/agents/synthesizer.md
 .config/opencode/agents/writer.md
+
+# CLI は agent-config へ改名し、paseo-exporter.js は paseo-launch.js と
+# paseo-providers.js と paseo-assert.js の 3 つへ分けた。source からは消えたが、
+# chezmoi は source に無いファイルを自動では消さないので、配布済みの実体を回収する。
+# 旧 CLI が PATH に残ると、v2 の正本を読めないまま呼び出せてしまう。
+.local/bin/generate-paseo-config
+.local/share/agent-config/paseo-exporter.js
