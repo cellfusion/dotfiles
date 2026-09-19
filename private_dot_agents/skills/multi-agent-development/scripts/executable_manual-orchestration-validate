@@ -232,6 +232,10 @@ write_private_text() {
 }
 
 mad_default_share_dir() {
+  if [ -n "${MAD_SHARE:-}" ]; then
+    printf '%s\n' "$MAD_SHARE"
+    return 0
+  fi
   [ -n "${HOME:-}" ] || return 1
   printf '%s\n' "$HOME/.local/share/agent-config"
 }
@@ -1275,6 +1279,52 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--advance-review-findings" ]; then
   exit $?
 fi
 
+# cannotVerify を解消したことを、記録と round 1 の一覧の対応で確かめる。解消しないまま
+# タスクを閉じると、diff で確かめられなかった要件が記録から消える。
+mad_check_review_cannot_verify() {
+  local share_dir=""
+  local run_dir=""
+  local scope_file=""
+  local result_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --share-dir|--run-dir|--scope-file|--result-file)
+        [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
+        case "$1" in
+          --share-dir) share_dir="$2" ;;
+          --run-dir) run_dir="$2" ;;
+          --scope-file) scope_file="$2" ;;
+          --result-file) result_file="$2" ;;
+        esac
+        shift 2
+        ;;
+      *) printf 'manual-orchestration-validate: unknown cannot verify option\n' >&2; return 2 ;;
+    esac
+  done
+  if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --run-dir "$run_dir" || return 2
+  mad_require_non_empty --scope-file "$scope_file" || return 2
+  mad_require_non_empty --result-file "$result_file" || return 2
+  mad_require_absolute --share-dir "$share_dir" || return 2
+  mad_require_absolute --run-dir "$run_dir" || return 2
+  mad_require_absolute --scope-file "$scope_file" || return 2
+  mad_require_absolute --result-file "$result_file" || return 2
+  [ -d "$run_dir" ] && [ ! -L "$run_dir" ] || return 2
+  [ -f "$share_dir/mad-contract.js" ] && node -e 'require(process.argv[1])' "$share_dir/mad-contract.js" >/dev/null 2>&1 || return 2
+  node -e 'require(process.argv[1]).checkMadReviewCannotVerify0600(process.argv[2], process.argv[3], process.argv[4])' \
+    "$share_dir/mad-contract.js" "$run_dir" "$scope_file" "$result_file" >/dev/null 2>&1 || {
+    printf 'manual-orchestration-validate: cannotVerify items are not resolved\n' >&2
+    return 2
+  }
+  return 0
+}
+
+if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-cannot-verify" ]; then
+  shift
+  mad_check_review_cannot_verify "$@"
+  exit $?
+fi
+
 # scope 外の重要事項は review/fix loop に戻さず、最終 gate の一回の user decision 用に
 # 検査する。ここでは observation の内容を変更せず、0600 と schema だけを確認する。
 mad_check_review_observations() {
@@ -1426,7 +1476,7 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--exercise-create" ]; then
 fi
 
 [ "$#" -eq 1 ] ||
-  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --check-review-package ... | --check-review-verdict ... | --open-review-findings ... | --advance-review-findings ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
+  fail 'usage: manual-orchestration-validate RUN_DIR | --select-backend | --assert-create-request ... | --prepare-review ... | --check-review-scope ... | --write-review-observations ... | --check-review-observations ... | --check-review-package ... | --check-review-verdict ... | --open-review-findings ... | --advance-review-findings ... | --check-review-cannot-verify ... | --prepare-create ... | --exercise-success ... | --exercise-accepted ... | --exercise-create ...'
 run_dir="$1"
 [ -d "$run_dir" ] || fail "$run_dir: run directory does not exist"
 run_dir="$(cd "$run_dir" && pwd -P)"
@@ -1476,6 +1526,8 @@ validate_review_policy() {
   local admission_round
   local attempt_round
   local result_file
+  local review_attempt
+  local review_result
   while IFS= read -r attempt_state; do
     phase="$(jq -r '.phase // empty' "$attempt_state" 2>/dev/null)"
     case "$phase" in
@@ -1548,7 +1600,7 @@ validate_review_policy() {
     [ "$(stat -f '%Lp' "$admission_path" 2>/dev/null)" = 600 ] ||
       fail "$attempt_state: review_admission must be mode 0600"
     jq -e --arg task "$scope_task" --arg phase "$phase" --arg node "$node_id" --arg attempt "$(jq -r '.attempt' "$attempt_state")" \
-      'type == "object" and (keys | sort) == ["attempt","node","phase","round","scopeDigest","task","type","version"] and .version == 1 and .type == "mad-review-admission" and .task == $task and .phase == $phase and .node == $node and .attempt == $attempt and (.round | type == "number" and floor == . and . >= 0 and . < 2) and (.scopeDigest | type == "string" and test("^[0-9a-f]{64}$"))' \
+      'type == "object" and (keys | sort) == ["attempt","node","phase","round","scopeDigest","task","type","version"] and .version == 1 and .type == "mad-review-admission" and .task == $task and .phase == $phase and .node == $node and .attempt == $attempt and (.round | type == "number" and floor == . and . >= 0 and . < 4) and (.scopeDigest | type == "string" and test("^[0-9a-f]{64}$"))' \
       "$admission_path" >/dev/null 2>&1 ||
       fail "$attempt_state: review_admission shape is invalid"
     [ "$(jq -r '.scopeDigest' "$admission_path")" = "$scope_digest" ] ||
@@ -1557,7 +1609,7 @@ validate_review_policy() {
     attempt_round="$(jq -r '.round' "$attempt_state")"
     [ "$attempt_round" = "$admission_round" ] ||
       fail "$attempt_state: review round does not match admission"
-    [ "$attempt_round" -le 1 ] || fail "$attempt_state: review/fix round exceeds hard limit"
+    [ "$attempt_round" -le 3 ] || fail "$attempt_state: review/fix round exceeds hard limit"
     if [ "$phase" = "fix" ]; then
       result_file="$(dirname "$attempt_state")/result.json"
       [ -f "$result_file" ] ||
@@ -1569,6 +1621,18 @@ validate_review_policy() {
         fail "$attempt_state: fix changedFiles exceed the task scope"
     fi
   done < <(find "$run_dir/nodes" -mindepth 4 -maxdepth 4 -type f -path '*/attempts/*/state.json' -print 2>/dev/null)
+
+  # cannotVerify を解消しないままタスクを閉じると、diff で確かめられなかった要件が
+  # 記録から消える。採用した round 0 のレビュー結果だけを見る。
+  review_attempt="$(jq -r --arg node "${scope_task}-review" '.adopted_attempts[$node] // empty' "$run_state")"
+  if [ -n "$review_attempt" ]; then
+    review_result="$run_dir/nodes/${scope_task}-review/attempts/$review_attempt/result.json"
+    if [ -f "$review_result" ] && jq -e 'has("cannotVerify")' "$review_result" >/dev/null 2>&1; then
+      node -e 'require(process.argv[1]).checkMadReviewCannotVerify0600(process.argv[2], process.argv[3], process.argv[4])' \
+        "$(mad_default_share_dir)/mad-contract.js" "$run_dir" "$scope_path" "$review_result" >/dev/null 2>&1 ||
+        fail "$review_result: cannotVerify items are not resolved"
+    fi
+  fi
 }
 jq -e '([.active_nodes[], .completed_nodes[]] | length) == ([.active_nodes[], .completed_nodes[]] | unique | length)' \
   "$run_state" >/dev/null 2>&1 || fail "$run_state: active_nodes and completed_nodes must not overlap"

@@ -422,6 +422,229 @@ for bad_id in F-1 OF0 OF-01; do
   assert_eq "$?" "2" "open findings: id の書式 $bad_id を拒否する"
 done
 
+# --- 設計 6: cannotVerify の解消を強制する ---
+CV_RUN="$TMP/run-cannot-verify"
+CV_OBSERVATIONS="$TMP/cv-observations.json"
+CV_SCOPE="$TMP/cv-scope.json"
+mkdir -p "$CV_RUN/review-cannot-verify"
+printf '%s\n' '{
+  "version": 1,
+  "type": "mad-review-scope",
+  "task": "task-8",
+  "allowedFiles": ["private_dot_local/private_share/agent-config/mad-contract.js"],
+  "findingIds": [],
+  "outOfScopePath": "'"$CV_OBSERVATIONS"'"
+}' > "$CV_SCOPE"
+chmod 600 "$CV_SCOPE"
+printf '%s\n' '{"version":1,"type":"mad-review-observations","task":"task-8","items":[{"id":"O-1","severity":"minor","location":"outside-task","summary":"先送りする項目","source":"task-reviewer"}]}' > "$CV_OBSERVATIONS"
+chmod 600 "$CV_OBSERVATIONS"
+
+write_review_result "$TMP/cv-empty.json" \
+  '{"specVerdict":"compliant","qualityVerdict":"approved","cannotVerify":[],"findings":[]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-empty.json" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify: cannotVerify が空配列なら何も要求しない"
+
+write_review_result "$TMP/cv-nonempty.json" \
+  '{"specVerdict":"compliant","qualityVerdict":"approved","cannotVerify":["再試行の上限","先送りする項目"],"findings":[]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" >/dev/null 2>&1
+assert_eq "$?" "2" "cannot verify: 解消の記録が無ければ拒否する"
+
+write_cannot_verify() {
+  printf '%s\n' "$2" > "$1"
+  chmod 600 "$1"
+}
+CV_RECORD="$CV_RUN/review-cannot-verify/task-8.json"
+write_cannot_verify "$CV_RECORD" \
+  '{"version":1,"type":"mad-review-cannot-verify","task":"task-8","items":[{"item":"再試行の上限","resolution":"confirmed_gap","detail":"spec が要求する再試行の上限が実装に無い","severity":"important","location":"f.js:120"},{"item":"先送りする項目","resolution":"deferred","detail":"この run では解消しない","severity":null,"location":null}]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" >/dev/null 2>&1
+assert_eq "$?" "2" "cannot verify: confirmed_gap があるのに round 1 の一覧が無ければ拒否する"
+
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" --cannot-verify-file "$CV_RECORD" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify: confirmed_gap を round 1 の一覧へ入れる"
+CV_ROUND1="$CV_RUN/review-open-findings/task-8-round-1.json"
+assert_eq "$(jq -r '.findings[0].origin' "$CV_ROUND1")" "cannot-verify" \
+  "cannot verify: 入った finding の origin を cannot-verify にする"
+assert_eq "$(jq -r '.findings[0].originItem' "$CV_ROUND1")" "再試行の上限" \
+  "cannot verify: 入った finding の originItem を記録の item にする"
+assert_eq "$(jq -r '.findings[0].summary' "$CV_ROUND1")" "spec が要求する再試行の上限が実装に無い" \
+  "cannot verify: 入った finding の summary を記録の detail にする"
+assert_eq "$(jq -r '.findings[0].severity' "$CV_ROUND1")" "important" \
+  "cannot verify: 入った finding の severity を記録の severity にする"
+
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify: 記録と一覧が対応していれば受理する"
+
+write_cannot_verify "$CV_RECORD" \
+  '{"version":1,"type":"mad-review-cannot-verify","task":"task-8","items":[{"item":"再試行の上限","resolution":"confirmed_gap","detail":"spec が要求する再試行の上限が実装に無い","severity":"important","location":"f.js:120"},{"item":"先送りする項目","resolution":"deferred","detail":"この run では解消しない","severity":null,"location":null},{"item":"余分な項目","resolution":"satisfied","detail":"別タスクで満たしている","severity":null,"location":null}]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" >/dev/null 2>&1
+assert_eq "$?" "2" "cannot verify: cannotVerify に無い item を持つ記録を拒否する"
+
+write_cannot_verify "$CV_RECORD" \
+  '{"version":1,"type":"mad-review-cannot-verify","task":"task-8","items":[{"item":"再試行の上限","resolution":"confirmed_gap","detail":"spec が要求する再試行の上限が実装に無い","severity":"important","location":"f.js:120"},{"item":"先送りする項目","resolution":"deferred","detail":"この run では解消しない","severity":"minor","location":null}]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$CV_RUN" \
+  --scope-file "$CV_SCOPE" --result-file "$TMP/cv-nonempty.json" >/dev/null 2>&1
+assert_eq "$?" "2" "cannot verify: deferred に severity を書いた記録を拒否する"
+
+DEFER_RUN="$TMP/run-deferred-missing"
+DEFER_OBSERVATIONS="$TMP/defer-observations.json"
+DEFER_SCOPE="$TMP/defer-scope.json"
+mkdir -p "$DEFER_RUN/review-cannot-verify"
+printf '%s\n' '{
+  "version": 1,
+  "type": "mad-review-scope",
+  "task": "task-8",
+  "allowedFiles": ["private_dot_local/private_share/agent-config/mad-contract.js"],
+  "findingIds": [],
+  "outOfScopePath": "'"$DEFER_OBSERVATIONS"'"
+}' > "$DEFER_SCOPE"
+chmod 600 "$DEFER_SCOPE"
+printf '%s\n' '{"version":1,"type":"mad-review-observations","task":"task-8","items":[]}' > "$DEFER_OBSERVATIONS"
+chmod 600 "$DEFER_OBSERVATIONS"
+write_cannot_verify "$DEFER_RUN/review-cannot-verify/task-8.json" \
+  '{"version":1,"type":"mad-review-cannot-verify","task":"task-8","items":[{"item":"先送りする項目","resolution":"deferred","detail":"この run では解消しない","severity":null,"location":null}]}'
+write_review_result "$TMP/cv-deferred.json" \
+  '{"specVerdict":"compliant","qualityVerdict":"approved","cannotVerify":["先送りする項目"],"findings":[]}'
+bash "$RUNNER" --check-review-cannot-verify --share-dir "$SHARE_DIR" --run-dir "$DEFER_RUN" \
+  --scope-file "$DEFER_SCOPE" --result-file "$TMP/cv-deferred.json" >/dev/null 2>&1
+assert_eq "$?" "2" "cannot verify: observations に無い項目を deferred にできない"
+
+# --- 設計 6: run 全体の gate ---
+GATE_RUN="$TMP/run-cannot-verify-gate"
+GATE_SCOPE="$TMP/gate-scope.json"
+GATE_OBSERVATIONS="$TMP/gate-observations.json"
+mkdir -p "$GATE_RUN/review-admissions" "$GATE_RUN/nodes/task-8-review/attempts/a1"
+printf '%s\n' '{
+  "version": 1,
+  "type": "mad-review-scope",
+  "task": "task-8",
+  "allowedFiles": ["private_dot_local/private_share/agent-config/mad-contract.js"],
+  "findingIds": [],
+  "outOfScopePath": "'"$GATE_OBSERVATIONS"'"
+}' > "$GATE_SCOPE"
+chmod 600 "$GATE_SCOPE"
+printf '%s\n' '{
+  "run_id": "run-cannot-verify-gate",
+  "recipe": "implement",
+  "state": "running",
+  "phase": "review",
+  "phase_state": "ok",
+  "next_action": "resolve cannotVerify",
+  "current_round": 0,
+  "max_rounds": 4,
+  "review_policy": {
+    "max_rounds": 4,
+    "scope_file": "'"$GATE_SCOPE"'",
+    "out_of_scope_path": "'"$GATE_OBSERVATIONS"'"
+  },
+  "started_at": "2026-09-14T00:00:00Z",
+  "backend": "paseo-mcp",
+  "backend_reason": "offline fixture",
+  "parent_decision": "bounded review",
+  "active_nodes": [],
+  "completed_nodes": [],
+  "adopted_attempts": {"task-8-review": "a1"},
+  "artifact_paths": [],
+  "base": "master"
+}' > "$GATE_RUN/state.json"
+chmod 600 "$GATE_RUN/state.json"
+GATE_DIGEST="$(shasum -a 256 "$GATE_SCOPE" | cut -d' ' -f1)"
+printf '%s\n' "{\"version\":1,\"type\":\"mad-review-admission\",\"task\":\"task-8\",\"phase\":\"review\",\"node\":\"task-8-review\",\"attempt\":\"a1\",\"round\":0,\"scopeDigest\":\"$GATE_DIGEST\"}" \
+  > "$GATE_RUN/review-admissions/task-8-review-round-0.json"
+chmod 600 "$GATE_RUN/review-admissions/task-8-review-round-0.json"
+GATE_ATTEMPT="$GATE_RUN/nodes/task-8-review/attempts/a1"
+printf '%s\n' 'prompt' > "$GATE_ATTEMPT/prompt.md"
+printf '%s\n' 'log' > "$GATE_ATTEMPT/log.md"
+printf '%s\n' "{\"run_id\":\"run-cannot-verify-gate\",\"node\":\"task-8-review\",\"attempt\":\"a1\",\"artifact_paths\":[\"$GATE_ATTEMPT/result.json\"]}" > "$GATE_ATTEMPT/handoff.json"
+printf '%s\n' "{\"run_id\":\"run-cannot-verify-gate\",\"node\":\"task-8-review\",\"attempt\":\"a1\",\"round\":0,\"state\":\"ok\",\"phase\":\"review\",\"phase_state\":\"ok\",\"next_action\":\"continue\",\"create_accepted\":true,\"child_ref\":\"child-review\",\"backend\":\"paseo-mcp\",\"backend_reason\":\"offline fixture\",\"parent_decision\":\"accepted\",\"review_admission\":\"$GATE_RUN/review-admissions/task-8-review-round-0.json\"}" > "$GATE_ATTEMPT/state.json"
+printf '%s\n' '{"task-8-review":{"workspace_id":"ws-review","cwd":"/tmp/ws-review","branch":"mad/task-8-review","integration":"merged","archived":true}}' > "$GATE_RUN/workspaces.json"
+chmod 600 "$GATE_RUN/workspaces.json" "$GATE_ATTEMPT/state.json" "$GATE_ATTEMPT/handoff.json"
+
+# gate の対象外 1 件目: adopted attempt の result.json が cannotVerify という key を持たない run。
+printf '%s\n' '{"changedFiles":["private_dot_local/private_share/agent-config/mad-contract.js"]}' > "$GATE_ATTEMPT/result.json"
+chmod 600 "$GATE_ATTEMPT/result.json"
+MAD_SHARE="$SHARE_DIR" bash "$RUNNER" "$GATE_RUN" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify gate: result.json が cannotVerify の key を持たない run を受理する"
+
+# cannotVerify が非空で解消の記録が無い run。この result.json は 3 件目でも使う。
+# 3 件目が呼ぶ `--open-review-findings` は `findings` が配列であることを先に要求するので、
+# 空配列を入れておく。1 件目の result.json は `cannotVerify` という key を持たないままにする。
+printf '%s\n' '{"changedFiles":["private_dot_local/private_share/agent-config/mad-contract.js"],"cannotVerify":["再試行の上限"],"findings":[]}' > "$GATE_ATTEMPT/result.json"
+chmod 600 "$GATE_ATTEMPT/result.json"
+out="$(MAD_SHARE="$SHARE_DIR" bash "$RUNNER" "$GATE_RUN" 2>&1)"
+assert_eq "$?" "1" "cannot verify gate: 解消の記録が無い run を ok にしない"
+assert_contains "$out" "cannotVerify" "cannot verify gate: 拒否理由に cannotVerify を示す"
+
+# 記録と round 1 の一覧を揃えた run。
+mkdir -p "$GATE_RUN/review-cannot-verify"
+write_cannot_verify "$GATE_RUN/review-cannot-verify/task-8.json" \
+  '{"version":1,"type":"mad-review-cannot-verify","task":"task-8","items":[{"item":"再試行の上限","resolution":"confirmed_gap","detail":"spec が要求する再試行の上限が実装に無い","severity":"important","location":"f.js:120"}]}'
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$GATE_RUN" \
+  --scope-file "$GATE_SCOPE" --result-file "$GATE_ATTEMPT/result.json" \
+  --cannot-verify-file "$GATE_RUN/review-cannot-verify/task-8.json" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify gate: 記録から round 1 の一覧を作る"
+MAD_SHARE="$SHARE_DIR" bash "$RUNNER" "$GATE_RUN" >/dev/null 2>&1
+assert_eq "$?" "0" "cannot verify gate: 記録と一覧が揃った run を受理する"
+
+# --- 上限 4 に合わせた round 2 の run ---
+ROUND2_RUN="$TMP/run-round-2"
+ROUND2_SCOPE="$TMP/round-2-scope.json"
+ROUND2_OBSERVATIONS="$TMP/round-2-observations.json"
+ROUND2_ATTEMPT="$ROUND2_RUN/nodes/task-8-re-review/attempts/a1"
+mkdir -p "$ROUND2_RUN/review-admissions" "$ROUND2_ATTEMPT"
+printf '%s\n' '{
+  "version": 1,
+  "type": "mad-review-scope",
+  "task": "task-8",
+  "allowedFiles": ["private_dot_local/private_share/agent-config/mad-contract.js"],
+  "findingIds": [],
+  "outOfScopePath": "'"$ROUND2_OBSERVATIONS"'"
+}' > "$ROUND2_SCOPE"
+chmod 600 "$ROUND2_SCOPE"
+printf '%s\n' '{
+  "run_id": "run-round-2",
+  "recipe": "implement",
+  "state": "running",
+  "phase": "re-review",
+  "phase_state": "ok",
+  "next_action": "continue",
+  "current_round": 2,
+  "max_rounds": 4,
+  "review_policy": {
+    "max_rounds": 4,
+    "scope_file": "'"$ROUND2_SCOPE"'",
+    "out_of_scope_path": "'"$ROUND2_OBSERVATIONS"'"
+  },
+  "started_at": "2026-09-14T00:00:00Z",
+  "backend": "paseo-mcp",
+  "backend_reason": "offline fixture",
+  "parent_decision": "bounded review",
+  "active_nodes": ["task-8-re-review"],
+  "completed_nodes": [],
+  "adopted_attempts": {},
+  "artifact_paths": [],
+  "base": "master"
+}' > "$ROUND2_RUN/state.json"
+chmod 600 "$ROUND2_RUN/state.json"
+ROUND2_DIGEST="$(shasum -a 256 "$ROUND2_SCOPE" | cut -d' ' -f1)"
+printf '%s\n' "{\"version\":1,\"type\":\"mad-review-admission\",\"task\":\"task-8\",\"phase\":\"re-review\",\"node\":\"task-8-re-review\",\"attempt\":\"a1\",\"round\":2,\"scopeDigest\":\"$ROUND2_DIGEST\"}" \
+  > "$ROUND2_RUN/review-admissions/task-8-re-review-round-2.json"
+chmod 600 "$ROUND2_RUN/review-admissions/task-8-re-review-round-2.json"
+printf '%s\n' 'prompt' > "$ROUND2_ATTEMPT/prompt.md"
+printf '%s\n' 'log' > "$ROUND2_ATTEMPT/log.md"
+printf '%s\n' "{\"run_id\":\"run-round-2\",\"node\":\"task-8-re-review\",\"attempt\":\"a1\",\"artifact_paths\":[]}" > "$ROUND2_ATTEMPT/handoff.json"
+printf '%s\n' "{\"run_id\":\"run-round-2\",\"node\":\"task-8-re-review\",\"attempt\":\"a1\",\"round\":2,\"state\":\"ok\",\"phase\":\"re-review\",\"phase_state\":\"ok\",\"next_action\":\"continue\",\"create_accepted\":true,\"child_ref\":\"child-re-review\",\"backend\":\"paseo-mcp\",\"backend_reason\":\"offline fixture\",\"parent_decision\":\"accepted\",\"review_admission\":\"$ROUND2_RUN/review-admissions/task-8-re-review-round-2.json\"}" > "$ROUND2_ATTEMPT/state.json"
+printf '%s\n' '{"verdicts":[]}' > "$ROUND2_ATTEMPT/result.json"
+printf '%s\n' '{"task-8-re-review":{"workspace_id":"ws-re-review","cwd":"/tmp/ws-re-review","branch":"mad/task-8-re-review","integration":"merged","archived":true}}' > "$ROUND2_RUN/workspaces.json"
+chmod 600 "$ROUND2_RUN/workspaces.json" "$ROUND2_ATTEMPT/state.json" "$ROUND2_ATTEMPT/handoff.json" "$ROUND2_ATTEMPT/result.json"
+bash "$RUNNER" "$ROUND2_RUN" >/dev/null 2>&1
+assert_eq "$?" "0" "round limit: round 2 の re-review attempt を持つ run を受理する"
+
 RUNAWAY="$TMP/run-runaway"
 RUNAWAY_SCOPE="$TMP/runaway-scope.json"
 mkdir -p "$RUNAWAY/nodes/task-8-hotfix/attempts/a1" "$RUNAWAY/review-admissions"

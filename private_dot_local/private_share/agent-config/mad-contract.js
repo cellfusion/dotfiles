@@ -49,6 +49,8 @@ const MAD_REVIEW_SCOPE_KEYS = ['version', 'type', 'task', 'allowedFiles', 'findi
 const MAD_REVIEW_OPEN_FINDINGS_KEYS = ['version', 'type', 'task', 'round', 'findings']
 const MAD_REVIEW_OPEN_FINDING_KEYS = ['id', 'severity', 'summary', 'location', 'origin', 'originItem']
 const MAD_REVIEW_OPEN_FINDING_ID = /^OF-[1-9][0-9]*$/
+const MAD_REVIEW_CANNOT_VERIFY_KEYS = ['version', 'type', 'task', 'items']
+const MAD_REVIEW_CANNOT_VERIFY_ITEM_KEYS = ['item', 'resolution', 'detail', 'severity', 'location']
 const MAD_REVIEW_ADMISSION_KEYS = ['version', 'type', 'task', 'phase', 'node', 'attempt', 'round', 'scopeDigest']
 const MAD_REVIEW_OBSERVATION_KEYS = ['version', 'type', 'task', 'items']
 const MAD_REVIEW_PHASE_ROUNDS = { review: [0, 0], fix: [1, 3], 're-review': [1, 3] }
@@ -843,8 +845,10 @@ function openMadReviewFindings0600(runDir, scopePath, resultPath, cannotVerifyPa
     })
   }
   if (hasCannotVerify) {
-    const record = readStrictJson0600(cannotVerifyPath, code, 'mad review cannot verify')
-    if (!Array.isArray(record.items)) fail(code, 'mad review cannot verify items: 配列が必要である')
+    const record = assertMadReviewCannotVerifyV1(
+      readStrictJson0600(cannotVerifyPath, code, 'mad review cannot verify'),
+      scope.task
+    )
     for (const item of record.items) {
       if (!item || item.resolution !== 'confirmed_gap') continue
       nonEmptyString(item.item, code, 'mad review cannot verify item')
@@ -933,6 +937,98 @@ function advanceMadReviewFindings0600(runDir, scopePath, round, resultPath) {
     round: round + 1,
     findings,
   })
+}
+
+// diff だけでは検証できなかった要件の解消の記録。`confirmed_gap` は round 1 の一覧の
+// finding になり、`deferred` は最終 gate でユーザーへ確認する observations と対応する。
+function assertMadReviewCannotVerifyV1(value, task) {
+  const code = 'invalid_mad_review_cannot_verify'
+  exactKeys(value, MAD_REVIEW_CANNOT_VERIFY_KEYS, code, 'mad review cannot verify')
+  if (value.version !== 1 || value.type !== 'mad-review-cannot-verify') {
+    fail(code, 'mad review cannot verify: discriminator が不正である')
+  }
+  safeIdentifier(value.task, code, 'mad review cannot verify task')
+  if (task !== undefined && value.task !== task) fail(code, 'mad review cannot verify task が scope と一致しない')
+  if (!Array.isArray(value.items)) fail(code, 'mad review cannot verify items: 配列が必要である')
+  const items = new Set()
+  for (const [index, item] of value.items.entries()) {
+    const label = `mad review cannot verify item[${index}]`
+    exactKeys(item, MAD_REVIEW_CANNOT_VERIFY_ITEM_KEYS, code, label)
+    nonEmptyString(item.item, code, `${label} item`)
+    if (items.has(item.item)) fail(code, `${label} item が重複している`)
+    items.add(item.item)
+    nonEmptyString(item.detail, code, `${label} detail`)
+    if (item.resolution === 'confirmed_gap') {
+      if (!['critical', 'important'].includes(item.severity)) fail(code, `${label} severity が不正である`)
+      nonEmptyString(item.location, code, `${label} location`)
+    } else if (item.resolution === 'satisfied' || item.resolution === 'deferred') {
+      if (item.severity !== null) fail(code, `${label} severity: ${item.resolution} では null が必要である`)
+      if (item.location !== null) fail(code, `${label} location: ${item.resolution} では null が必要である`)
+    } else {
+      fail(code, `${label} resolution が不正である`)
+    }
+  }
+  return value
+}
+
+function madReviewCannotVerifyPath(runDir, task) {
+  return path.join(runDir, 'review-cannot-verify', `${task}.json`)
+}
+
+// cannotVerify を 1 件残らず解消したことを確かめる。解消しないままタスクを閉じると、
+// diff で確かめられなかった要件が誰にも見られずに残る。
+function checkMadReviewCannotVerify0600(runDir, scopePath, reviewResultPath) {
+  const code = 'invalid_mad_review_cannot_verify'
+  absolutePath(runDir, code, 'mad review run directory')
+  const scope = readMadReviewScope0600(scopePath).value
+  const result = readStrictJson0600(reviewResultPath, code, 'mad review result')
+  const cannotVerify = result.cannotVerify
+  if (cannotVerify === null || cannotVerify === undefined) return true
+  if (!Array.isArray(cannotVerify)) fail(code, 'mad review result cannotVerify: 配列か null が必要である')
+  if (cannotVerify.length === 0) return true
+  const record = assertMadReviewCannotVerifyV1(
+    readStrictJson0600(madReviewCannotVerifyPath(runDir, scope.task), code, 'mad review cannot verify'),
+    scope.task
+  )
+  const reported = new Set()
+  for (const entry of cannotVerify) {
+    nonEmptyString(entry, code, 'mad review result cannotVerify item')
+    if (reported.has(entry)) fail(code, `mad review result cannotVerify: 項目が重複している: ${entry}`)
+    reported.add(entry)
+  }
+  const recorded = new Set(record.items.map((item) => item.item))
+  const missing = [...reported].filter((item) => !recorded.has(item))
+  const unexpected = [...recorded].filter((item) => !reported.has(item))
+  if (missing.length > 0 || unexpected.length > 0) {
+    fail(code, `mad review cannot verify: 項目の集合が cannotVerify と一致しない: 欠落 [${missing.join(' / ')}] / 余分 [${unexpected.join(' / ')}]`)
+  }
+  const deferred = record.items.filter((item) => item.resolution === 'deferred')
+  if (deferred.length > 0) {
+    const observations = assertMadReviewObservationsFile0600(scope.outOfScopePath, scope.task)
+    const summaries = new Set(observations.items.map((item) => item.summary))
+    for (const item of deferred) {
+      if (!summaries.has(item.item)) {
+        fail(code, `mad review cannot verify: deferred の項目が observations に無い: ${item.item}`)
+      }
+    }
+  }
+  const gaps = record.items.filter((item) => item.resolution === 'confirmed_gap')
+  if (gaps.length === 0) return true
+  const list = readMadReviewOpenFindings0600(runDir, scope.task, 1)
+  const fromCannotVerify = list.findings.filter((finding) => finding.origin === 'cannot-verify')
+  for (const gap of gaps) {
+    const matched = fromCannotVerify.filter((finding) => finding.originItem === gap.item)
+    if (matched.length !== 1) {
+      fail(code, `mad review cannot verify: confirmed_gap に対応する finding がちょうど 1 件でない: ${gap.item}`)
+    }
+  }
+  const gapItems = new Set(gaps.map((gap) => gap.item))
+  for (const finding of fromCannotVerify) {
+    if (!gapItems.has(finding.originItem)) {
+      fail(code, `mad review cannot verify: 記録に無い originItem を持つ finding がある: ${finding.originItem}`)
+    }
+  }
+  return true
 }
 
 function assertCreateContext(value) {
@@ -1212,6 +1308,8 @@ module.exports = {
   assertMadReviewOpenFindingsV1,
   openMadReviewFindings0600,
   advanceMadReviewFindings0600,
+  assertMadReviewCannotVerifyV1,
+  checkMadReviewCannotVerify0600,
   assertMadReviewObservationsV1,
   assertMadReviewObservationsFile0600,
   writeMadReviewObservations0600,
