@@ -37,4 +37,19 @@ const c = call("mad-review", 2)
 console.log(a.complexity, a.requestedComplexity, b.complexity, c.complexity)
 ' "$SHARE/config-validator.js" "$SHARE/resolver.js" "$SHARE/agent-config.sample.json" "$ROOT")"
 assert_eq "$escalated" "complex standard standard standard" "resolver: round 2 の mad-fix だけ引き上げる"
+omitted="$(node -e '
+const fs = require("node:fs")
+const { validateConfig } = require(process.argv[1])
+const { resolveExport } = require(process.argv[2])
+const raw = JSON.parse(fs.readFileSync(process.argv[3], "utf8"))
+delete raw.environments.lab.selection
+const { config } = validateConfig(JSON.stringify(raw))
+const exported = resolveExport(config)
+const lab = exported.resolutions.filter((r) => r.environment === "lab")
+const one = lab.find((r) => r.duty === "implement" && r.complexity === "standard")
+console.log(lab.length, one.candidates[0].model, one.warnings.length)
+' "$SHARE/config-validator.js" "$SHARE/resolver.js" "$SHARE/agent-config.sample.json")"
+assert_eq "$omitted" "12 sample-work 1" \
+  "resolver: 環境の selection 省略は共通の枠へ落ちる"
+
 assert_summary
