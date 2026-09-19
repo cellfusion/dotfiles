@@ -219,4 +219,4 @@ function setupDirectories(config, options) {
   for (const link of plan.links) createRelativeLink(link)
 }
 
-module.exports = { setupDirectories }
+module.exports = { setupDirectories, expandDirectoryPattern }

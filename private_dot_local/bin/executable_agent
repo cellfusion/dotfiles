@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# AI 環境を指定して AI CLI を起動する。
+#   agent --provider=<provider-id> [引数...]
+# <provider-id> は agent-config.json から materialize した id で、Paseo の provider
+# record の key と同じ名前空間にある。既定環境は family 名そのまま（claude）、それ
+# 以外は <family>-<環境名>（claude-lab）である。
+# 解決した環境変数を設定したあと exec で AI CLI に置き換わる。自分のプロセスは
+# 残さない。paseo provider diagnostic が version と auth を読む経路で使うため、
+# 標準入出力も終了コードもそのまま通す。
+set -eu
+
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+share=""
+for candidate in "$self_dir/../share/agent-config" "$self_dir/../private_share/agent-config"; do
+  if [ -f "$candidate/launch-env.js" ]; then
+    share="$(cd "$candidate" && pwd)"
+    break
+  fi
+done
+if [ -z "$share" ]; then
+  printf 'agent: launch-env.js を見つけられない\n' >&2
+  exit 2
+fi
+
+usage_error() {
+  printf 'agent: %s\n' "$1" >&2
+  printf 'agent: 使い方: agent --provider=<provider-id> [引数...]\n' >&2
+  ids="$(node "$share/launch-env.js" --list 2>/dev/null || true)"
+  if [ -n "$ids" ]; then
+    printf 'agent: 使える provider id: %s\n' "$(printf '%s' "$ids" | tr '\n' ' ')" >&2
+  fi
+  exit 2
+}
+
+provider=""
+provider_seen=0
+forward=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --)
+      shift
+      forward+=("$@")
+      break
+      ;;
+    --provider=*)
+      [ "$provider_seen" -eq 0 ] || usage_error '--provider は 1 回だけ指定する'
+      provider_seen=1
+      provider="${1#--provider=}"
+      ;;
+    --provider)
+      [ "$provider_seen" -eq 0 ] || usage_error '--provider は 1 回だけ指定する'
+      provider_seen=1
+      [ "$#" -ge 2 ] || usage_error '--provider に値がない'
+      provider="$2"
+      shift
+      ;;
+    *)
+      forward+=("$1")
+      ;;
+  esac
+  shift
+done
+
+[ "$provider_seen" -eq 1 ] || usage_error '--provider が要る'
+[ -n "$provider" ] || usage_error '--provider の値が空である'
+
+# 解決に失敗したときの説明は launch-env.js が stderr へ出す。
+if ! assignments="$(node "$share/launch-env.js" "$provider")"; then
+  exit 2
+fi
+
+binary=""
+while IFS=' ' read -r kind key value; do
+  case "$kind" in
+    binary) binary="$key" ;;
+    env) export "$key=$value" ;;
+    *)
+      printf 'agent: launch-env.js の出力が不正である\n' >&2
+      exit 2
+      ;;
+  esac
+done <<EOF
+$assignments
+EOF
+
+if [ -z "$binary" ]; then
+  printf 'agent: 起動する CLI が決まらない\n' >&2
+  exit 2
+fi
+
+exec "$binary" ${forward[@]+"${forward[@]}"}
