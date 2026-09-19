@@ -279,11 +279,10 @@ function runWrite(args) {
   return 0
 }
 
-// 親の AI 環境名を読む唯一の場所である。AGENT_ENV_SESSION は zsh が解決した名前で、
-// AGENT_ENV は Paseo の provider record が入れる解決前の名前である。
+// 親の AI 環境名を読む唯一の場所である。AGENT_ENV は Paseo の provider record が
+// 子へ注入する名前で、Paseo が起動した子では必ず正しい値になる。zsh が export する
+// AGENT_ENV_SESSION はシェルを起動したディレクトリで決まるため、参照しない。
 function readParentEnvironment() {
-  const session = process.env.AGENT_ENV_SESSION
-  if (typeof session === 'string' && session.length > 0) return session
   const injected = process.env.AGENT_ENV
   if (typeof injected === 'string' && injected.length > 0) return injected
   return undefined
