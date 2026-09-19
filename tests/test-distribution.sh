@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Task 4 の plan-auditor と task-brief の配布対象を検証する。
+set -u
+
+TESTS_RUN=0
+TESTS_FAILED=0
+
+pass() {
+  printf '  ok: %s\n' "$1"
+}
+
+fail() {
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  printf '  FAIL: %s\n' "$1" >&2
+}
+
+assert_contains() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  case "$1" in
+    *"$2"*) pass "$3" ;;
+    *) fail "$3 (missing: $2)" ;;
+  esac
+}
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+managed="$(chezmoi managed --source "$root" 2>/dev/null || true)"
+
+assert_contains "$managed" '.agents/agent-defs/prompts/plan-auditor.md' \
+  'plan-auditor prompt を配る'
+assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
+  'plan-auditor schema を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
+  'task-brief を配る'
+
+printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+test "$TESTS_FAILED" -eq 0

@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "required": ["findings", "summary", "decisionRequest"],
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "taskNumbers", "planQuote", "problem", "question"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["contradiction", "constraint-conflict", "review-standard-violation"]
+          },
+          "taskNumbers": { "type": "array", "items": { "type": "integer" } },
+          "planQuote": { "type": "string" },
+          "problem": { "type": "string" },
+          "question": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" },
+    "decisionRequest": {{ includeTemplate "agent-defs/schemas/_decision-request.json" . }}
+  }
+}
