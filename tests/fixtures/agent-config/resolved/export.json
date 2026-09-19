@@ -4,16 +4,421 @@
   "scope": "export",
   "defaultEnvironment": "primary",
   "providerFamilies": [
-    { "family": "claude", "displayName": "Claude", "setup": null, "featureAllowlist": {} },
-    { "family": "codex", "displayName": "Codex", "setup": null, "featureAllowlist": {} },
-    { "family": "opencode", "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
-    { "family": "pi", "displayName": "Pi", "setup": null, "featureAllowlist": {} }
+    {
+      "family": "claude",
+      "displayName": "Claude",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "codex",
+      "displayName": "Codex",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "opencode",
+      "displayName": "OpenCode",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "pi",
+      "displayName": "Pi",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    }
   ],
   "environments": [
-    { "name": "primary", "eligibleFamilies": ["claude", "codex", "opencode", "pi"] },
-    { "name": "lab", "eligibleFamilies": ["claude", "codex"] }
+    {
+      "name": "primary",
+      "eligibleFamilies": [
+        "claude",
+        "codex",
+        "opencode",
+        "pi"
+      ]
+    },
+    {
+      "name": "lab",
+      "eligibleFamilies": [
+        "claude",
+        "codex"
+      ]
+    }
   ],
   "resolutions": [
-    { "environment": "primary", "tier": "work", "notes": "fixture: 通常の実装とレビューに使う", "candidates": [{ "family": "codex", "model": "sample-work", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
+    {
+      "environment": "primary",
+      "duty": "author",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "author",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "author",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "implement",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "implement",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "implement",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "review",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "review",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "review",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "synthesize",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "synthesize",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "primary",
+      "duty": "synthesize",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "author",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "author",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "author",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "implement",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "implement",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "implement",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "review",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "review",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-lab-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "review",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "synthesize",
+      "complexity": "routine",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-light",
+          "effort": "medium",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "synthesize",
+      "complexity": "standard",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "codex",
+          "model": "sample-work",
+          "effort": "high",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "environment": "lab",
+      "duty": "synthesize",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    }
   ]
 }

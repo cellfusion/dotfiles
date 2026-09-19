@@ -280,6 +280,13 @@ function assertSemantics(config) {
     }
   }
 
+  for (const list of candidateLists(config)) {
+    if (list.candidates.length === 0) continue
+    const hasPaseoCandidate = list.candidates.some((candidate) =>
+      config.providers[candidate.provider].backends.includes('paseo'))
+    if (!hasPaseoCandidate) throw new ConfigError(`${list.location}: backends に paseo を持つ候補が無い`)
+  }
+
   for (const [environment, definition] of Object.entries(config.environments)) {
     for (const provider of definition.providers) {
       if (!Object.prototype.hasOwnProperty.call(config.providers, provider)) {

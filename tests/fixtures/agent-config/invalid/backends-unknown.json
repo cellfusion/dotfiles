@@ -59,7 +59,7 @@
         "fast_mode": "boolean"
       },
       "backends": [
-        "paseo"
+        "other"
       ]
     },
     "opencode": {

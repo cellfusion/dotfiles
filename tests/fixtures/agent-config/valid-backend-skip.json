@@ -67,7 +67,7 @@
       "setup": null,
       "featureAllowlist": {},
       "backends": [
-        "paseo"
+        "other"
       ]
     },
     "pi": {
@@ -225,15 +225,18 @@
       "standard": {
         "candidates": [
           {
+            "provider": "opencode",
+            "model": "sample-skip",
+            "effort": "high",
+            "features": {}
+          },
+          {
             "provider": "codex",
             "model": "sample-work",
             "effort": "high",
-            "features": {
-              "fast_mode": true
-            }
+            "features": {}
           }
-        ],
-        "notes": "fixture: 通常の実装とレビューに使う"
+        ]
       },
       "complex": {
         "candidates": [

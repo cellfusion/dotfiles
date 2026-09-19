@@ -4,17 +4,82 @@
   "scope": "dispatch",
   "defaultEnvironment": "primary",
   "providerFamilies": [
-    { "family": "claude", "displayName": "Claude", "setup": null, "featureAllowlist": {} },
-    { "family": "codex", "displayName": "Codex", "setup": null, "featureAllowlist": {} },
-    { "family": "opencode", "displayName": "OpenCode", "setup": null, "featureAllowlist": {} },
-    { "family": "pi", "displayName": "Pi", "setup": null, "featureAllowlist": {} }
+    {
+      "family": "claude",
+      "displayName": "Claude",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "codex",
+      "displayName": "Codex",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "opencode",
+      "displayName": "OpenCode",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    },
+    {
+      "family": "pi",
+      "displayName": "Pi",
+      "backends": [
+        "paseo"
+      ],
+      "setup": null,
+      "featureAllowlist": {}
+    }
   ],
   "environments": [
-    { "name": "primary", "eligibleFamilies": ["claude", "codex", "opencode", "pi"] },
-    { "name": "lab", "eligibleFamilies": ["claude", "codex"] }
+    {
+      "name": "primary",
+      "eligibleFamilies": [
+        "claude",
+        "codex",
+        "opencode",
+        "pi"
+      ]
+    },
+    {
+      "name": "lab",
+      "eligibleFamilies": [
+        "claude",
+        "codex"
+      ]
+    }
   ],
   "resolutions": [
-    { "environment": "lab", "tier": "think", "notes": null, "candidates": [{ "family": "claude", "model": "sample-think", "thinkingOptionId": "high", "featureValues": {} }], "warnings": [] }
+    {
+      "environment": "lab",
+      "duty": "author",
+      "complexity": "complex",
+      "notes": null,
+      "candidates": [
+        {
+          "family": "claude",
+          "model": "sample-deep",
+          "effort": "max",
+          "features": {}
+        }
+      ],
+      "warnings": []
+    }
   ],
-  "selection": { "environment": "lab", "tier": "think" }
+  "selection": {
+    "environment": "lab",
+    "duty": "author",
+    "complexity": "complex",
+    "requestedComplexity": "complex"
+  }
 }

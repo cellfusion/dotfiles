@@ -58,9 +58,7 @@
       "featureAllowlist": {
         "fast_mode": "boolean"
       },
-      "backends": [
-        "paseo"
-      ]
+      "backends": []
     },
     "opencode": {
       "displayName": "OpenCode",
