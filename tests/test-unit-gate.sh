@@ -115,7 +115,7 @@ assert_eq "$concurrent_value" "yes" "decision: concurrent target は完全な de
 assert_private_regular_file "$CONCURRENT_TARGET" "decision: concurrent target は 0600 regular file"
 
 OBSERVED_CONFIG="$TMP/observed-paseo-config.json"
-printf '%s\n' '{"daemon":{"agentProfiles":[{"id":"profile","name":"profile","provider":"base","model":"model","thinkingOptionId":"high"}]},"agents":{"providers":{"base":{"env":{}},"derived":{"extends":"base","label":"Derived","env":{}}}}}' > "$OBSERVED_CONFIG"
+printf '%s\n' '{"daemon":{},"agents":{"providers":{"base":{"env":{}},"derived":{"extends":"base","label":"Derived","env":{}}}}}' > "$OBSERVED_CONFIG"
 OBSERVED_VICTIM="$TMP/observed-shape-victim.json"
 OBSERVED_TMP_VICTIM="$TMP/observed-shape-tmp-victim.json"
 printf 'keep-observed-victim\n' > "$OBSERVED_VICTIM"
@@ -134,7 +134,7 @@ assert_eq "$(cat "$OBSERVED_TMP_VICTIM")" "keep-observed-tmp-victim" \
   "observe: fixed tmp symlink の参照先を変更しない"
 assert_private_regular_file "$OBSERVED_TARGET" "observe: observed shape は 0600 regular file"
 assert_eq "$(cat "$TMP/observe.stdout")" "" "observe: observed shape を stdout に出さない"
-jq -e '.daemon.type == "object" and .profile.requiredKeys == ["id","model","name","provider","thinkingOptionId"]' \
+jq -e '.daemon.type == "object" and .providers.type == "object"' \
   "$OBSERVED_TARGET" >/dev/null
 assert_eq "$?" "0" "observe: 匿名 shape fixture を記録する"
 
@@ -161,6 +161,10 @@ assert_eq "$(cat "$OBSERVED_TARGET")" "old observed fixture" \
   "observe: atomic write failure で existing fixture を残す"
 assert_eq "$(find "$(dirname "$OBSERVED_TARGET")" -maxdepth 1 -name '.observed-shape.json.tmp.*' -print)" "" \
   "observe: atomic write failure で temp を残さない"
+
+# grep の対象が自分自身なので、この 2 行が持つ目印の文字列で自分の行を外す。
+profile_shape_hits="$(grep -n 'agentProfiles\|\.profile\.' "$0" | grep -v 'unit gate: managed profile の shape' || true)"
+assert_eq "$profile_shape_hits" "" "unit gate: managed profile の shape 検査が残らない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
