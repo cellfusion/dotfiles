@@ -108,6 +108,12 @@ done
 section="$(sed -n '/^## Paseo の子エージェントを作るとき/,/^## /p' "$CHEZMOI_SOURCE/private_dot_config/claude/CLAUDE.md.tmpl")"
 assert_eq "$(printf '%s' "$section" | grep -c 'tier')" "0" "CLAUDE.md.tmpl: 節に tier が残らない"
 
+plan_criteria="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-defs/_criteria-plan.md")"
+assert_contains "$plan_criteria" '`standard` は `routine` へ読み替え' \
+  "plan criteria: standard の互換読み替えを説明する"
+assert_contains "$plan_criteria" "stderr に warning" \
+  "plan criteria: standard の読み替え warning を説明する"
+
 contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
 assert_eq "$(printf '%s' "$contract" | grep -c 'max_rounds: 2')" "0" "契約: max_rounds: 2 が残らない"
 assert_eq "$(printf '%s' "$contract" | grep -c 'max_rounds は 2')" "0" "契約: max_rounds は 2 が残らない"

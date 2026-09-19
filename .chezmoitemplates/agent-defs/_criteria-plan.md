@@ -131,6 +131,9 @@ git commit -m "feat: add specific feature"
 行を書かないタスクは `routine` として扱われる。値を書き間違えると
 `paseo-plan-dependency-validate` が exit 2 で拒む。
 
+旧い `standard` は `routine` へ読み替え、stderr に warning を出す互換入力である。新しい
+plan では `simple`、`routine`、`complex`、`critical` のいずれかへ更新する。
+
 `Depends on` を書かないタスクは、それより前の全タスク全部に依存するものとして扱われる（＝直列）。安全側には倒れるが、並行の余地は失われる。
 
 依存の検証は `~/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate PLAN_FILE` が行う。循環、存在しないタスク参照、同じ wave でのファイル重複を検出する。
