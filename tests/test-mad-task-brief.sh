@@ -111,6 +111,33 @@ else
 fi
 TESTS_RUN=$((TESTS_RUN + 1))
 
+mixed_plan="$tmp/mixed-fence-plan.md"
+mixed_out="$tmp/mixed-fenced-task.md"
+cat > "$mixed_plan" <<'PLAN'
+# Mixed fence plan
+
+```markdown
+~~~
+### Task 97: still fenced heading
+
+Task 97 must remain inside the backtick fence.
+```
+
+### Task 2: selected task
+
+target task body
+PLAN
+
+status=0
+"$task_brief" "$mixed_plan" 97 "$mixed_out" >"$stdout" 2>"$stderr" || status=$?
+assert_eq "$status" 3 '異種の柵は開始済みの code fence を閉じない'
+if test ! -e "$mixed_out"; then
+  pass 'mixed fence 内の task は出力先を残さない'
+else
+  fail 'mixed fence 内の task は出力先を残さない'
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
 status=0
 "$task_brief" "$plan" 2>/dev/null || status=$?
 assert_eq "$status" 2 '引数不足は exit 2 である'
