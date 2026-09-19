@@ -129,7 +129,7 @@ assert_eq "$(git -c core.excludesFile="$global_ignore" check-ignore --no-index \
   "global gitignore が任意階層の paseo.json を無視する"
 
 # MAD の Paseo-only adapter と plan validator を配る。
-for s in paseo-mcp-adapter paseo-plan-dependency-validate; do
+for s in paseo-mcp-adapter paseo-plan-dependency-validate review-bundle; do
   assert_contains "$managed" ".agents/skills/multi-agent-development/scripts/$s" \
     "MAD: $s を共有パスへ配る"
 done
@@ -145,6 +145,16 @@ assert_contains "$(cat "$review_validator")" "--check-review-observations" \
   "MAD review guard: observation check CLI を配る"
 assert_contains "$(cat "$review_validator")" "--write-review-observations" \
   "MAD review guard: observation writer CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-package" \
+  "MAD review guard: review package の範囲照合 CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-verdict" \
+  "MAD review guard: verdict 整合 CLI を配る"
+assert_contains "$(cat "$review_validator")" "--open-review-findings" \
+  "MAD review guard: round 1 の一覧を作る CLI を配る"
+assert_contains "$(cat "$review_validator")" "--advance-review-findings" \
+  "MAD review guard: 次のラウンドの一覧を作る CLI を配る"
+assert_contains "$(cat "$review_validator")" "--check-review-cannot-verify" \
+  "MAD review guard: cannotVerify の解消を検査する CLI を配る"
 assert_contains "$(cat "$review_contract")" "prepareMadReview0600" \
   "MAD review guard: admission contract を配る"
 

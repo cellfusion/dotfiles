@@ -173,10 +173,11 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の3 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の4 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。他のrepositoryでは
 そのrepository固有のgateを使い、無ければこのmigration gateを実行しない。
 
@@ -395,6 +396,18 @@ review/fix 中に新しい fix/review や hotfix node を起動しない。最�
 まとめてユーザーへ確認し、scope 拡張は新しい run として開始する。
 observations は `--write-review-observations` で atomic 0600 に保存し、
 `--check-review-observations` で最終 gate 前に検査する。
+
+レビュー役へ渡す review package は `"$MAD_REVIEW_BUNDLE"` が組み立て、attempt の
+`review-package.diff` に mode 0600 で置く。1 行目の `# Review package: <base>..<head>` は
+40 桁の sha 2 つであり、レビュー役が正しい範囲を見たかを機械的に確認する手掛かりになる。
+レビュー結果を採用する前に `--check-review-package` で範囲を照合し、
+`--check-review-verdict` で verdict と findings の整合を確かめる。
+round 0 の結果を採用したら `cannotVerify` を 1 件ずつ解消して
+`<run-dir>/review-cannot-verify/<task>.json` に記録し、`--open-review-findings` で
+`<run-dir>/review-open-findings/<task>-round-1.json` を作り、
+`--check-review-cannot-verify` で記録と一覧の対応を検査する。
+round `N` の再レビューの結果からは `--advance-review-findings` で round `N+1` の一覧を作る。
+未解決の指摘を親が散文で引き継がない。
 
 `--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と

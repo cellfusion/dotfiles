@@ -83,6 +83,20 @@ assert_contains "$doc" '--write-review-observations' \
   "docs: scope外 observation を atomic 保存する"
 assert_contains "$doc" '--check-review-observations' \
   "docs: scope外 observation を最終 gate 前に検査する"
+assert_contains "$doc" 'MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"' \
+  "docs: review package の組み立て path を書く"
+assert_contains "$doc" '--check-review-package' \
+  "docs: レビュー役が見た範囲を照合する"
+assert_contains "$doc" '--check-review-verdict' \
+  "docs: verdict と findings の整合を検査する"
+assert_contains "$doc" '--open-review-findings' \
+  "docs: round 1 の未解決の指摘の一覧を作る"
+assert_contains "$doc" '--advance-review-findings' \
+  "docs: 次のラウンドの一覧をコードに計算させる"
+assert_contains "$doc" '--check-review-cannot-verify' \
+  "docs: cannotVerify の解消をタスクを閉じる前に検査する"
+assert_not_contains "$doc" '配下の3 script' \
+  "docs: MAD script の数を実際の数に合わせる"
 assert_contains "$doc" 'scope 外の重要事項' \
   "docs: scope外の重要事項を observations に保留する"
 assert_contains "$doc" '新しい fix/review や hotfix node を起動しない' \
