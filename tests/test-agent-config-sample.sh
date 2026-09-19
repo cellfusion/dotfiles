@@ -21,3 +21,4 @@ console.log(sample.version, schema.properties.version.const, sample.defaults.com
   sample.defaults.tier === undefined, sample.agentRoles.implementer.duty)
 ' "$SHARE/agent-config.sample.json" "$SHARE/agent-config.schema.json")"
 assert_eq "$out" "2 2 standard true implement" "agent-config sample: v2 の selection と duty"
+assert_summary

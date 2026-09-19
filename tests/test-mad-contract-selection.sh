@@ -32,3 +32,4 @@ try {
 console.log("ok", rejected)
 ' "$SHARE/mad-contract.js")"
 assert_eq "$out" "ok true" "mad-contract: resolve event の 12 key"
+assert_summary

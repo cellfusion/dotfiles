@@ -41,3 +41,4 @@ try {
 }
 ' "$SHARE/config-validator.js" "$SHARE/agent-config.sample.json" 2>/dev/null || status=$?
 assert_eq "$status" "0" "config-validator: environment の selection 省略を受け入れる"
+assert_summary

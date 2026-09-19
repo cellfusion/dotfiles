@@ -36,3 +36,4 @@ console.log(Object.keys(materialized).sort().join(","),
 assert_eq "$out" \
   "providers,warnings complexity,duty,environment,features,modeId,model,provider,requestedComplexity,status,thinkingOptionId,type,version,warnings implement standard standard high true" \
   "paseo-launch: launch spec の 13 key"
+assert_summary

@@ -55,3 +55,4 @@ const pruned = removeManagedPaseoProfiles(raw)
 console.log(pruned.changed, JSON.parse(pruned.raw).daemon.agentProfiles.length)
 ' "$SHARE/raw-json-merge.js")"
 assert_eq "$all_managed" "true 0" "raw-json-merge: すべて managed なら空配列にする"
+assert_summary

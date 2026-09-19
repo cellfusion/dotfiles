@@ -11,3 +11,4 @@ console.log(t.DUTIES.join(","), t.COMPLEXITIES.join(","), t.PASEO_FIELDS.include
 ' "$SHARE/config-types.js")"
 assert_eq "$out" "author,implement,review,synthesize routine,standard,complex true true" \
   "config-types: DUTIES と COMPLEXITIES と PASEO_FIELDS"
+assert_summary
