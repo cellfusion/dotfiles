@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# profile の生成をやめた後、~/.paseo/config.json に残った managed profile を回収する。
+# 取り除く profile が無いときは何も書き換えないので、再実行しても害は無い。
+#
+# manifest hash: {{ list
+    (include "private_dot_local/private_share/agent-config/raw-json-merge.js")
+    (include "private_dot_local/bin/executable_agent-config")
+    | join "" | sha256sum }}
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+local_bin_env
+
+if command -v mise >/dev/null 2>&1; then
+  mise exec -- agent-config prune-paseo-profiles
+else
+  agent-config prune-paseo-profiles
+fi

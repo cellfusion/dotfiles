@@ -17,8 +17,9 @@ assert_not_contains "$script_body" "{{" "未展開のテンプレート構文が
 assert_not_contains "$script_body" "private-data.toml" "hook: 旧 private-data 経路を持たない"
 assert_not_contains "$script_body" "setup_paseo_provider" "hook: 旧 provider 書き込みを持たない"
 assert_contains "$script_body" "setupDirectories" "hook: directory setup を呼ぶ"
-assert_contains "$script_body" "generate-paseo-config" "hook: 生成 CLI を呼ぶ"
-assert_eq "$(grep -c 'generate-paseo-config' "$SCRIPT")" "1" "hook: CLI の呼び出しは一回だけ"
+assert_contains "$script_body" "agent-config" "hook: 生成 CLI を呼ぶ"
+assert_eq "$(grep -c "^generator='agent-config'\$" "$SCRIPT")" "1" "hook: generator の宣言は一つだけ"
+assert_eq "$(grep -c '"\$generator" write-paseo' "$SCRIPT")" "2" "hook: CLI の呼び出しは mise の有無の 2 分岐だけ"
 
 fake_home="$fixture/home"
 xdg="$fixture/config"
@@ -38,14 +39,14 @@ mkdir -p "$xdg/claude/agents" "$xdg/claude/commands" "$xdg/claude/skills" \
 for name in CLAUDE.md settings.json; do : > "$xdg/claude/$name"; done
 : > "$xdg/codex/AGENTS.md"
 
-cat > "$fake_bin/generate-paseo-config" <<'EOF'
+cat > "$fake_bin/agent-config" <<'EOF'
 #!/usr/bin/env bash
 set -eu
-printf '%s\n' "$#" > "$CALLS"
-[ "$#" -eq 0 ]
+printf '%s' "$*" > "$CALLS"
+[ "$*" = 'write-paseo' ]
 [ -L "$XDG_CONFIG_HOME/claude_lab/agents" ]
 EOF
-chmod +x "$fake_bin/generate-paseo-config"
+chmod +x "$fake_bin/agent-config"
 cat > "$fake_bin/mise" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -61,7 +62,7 @@ node_bin="$(dirname "$(command -v node)")"
 if HOME="$fake_home" XDG_CONFIG_HOME="$xdg" CALLS="$calls" PATH="$node_bin:/usr/bin:/bin" \
   bash "$SCRIPT" >/dev/null 2>&1; then hook_status=0; else hook_status=$?; fi
 assert_eq "$hook_status" "0" "hook: setup 成功後に CLI を一回呼ぶ"
-assert_eq "$(cat "$calls")" "0" "hook: CLI に引数を渡さない"
+assert_eq "$(cat "$calls")" "write-paseo" "agent-envs: write-paseo を 1 回渡す"
 assert_eq "$(readlink "$xdg/claude_lab/agents")" "../claude/agents" "hook: setup が相対 symlink を作る"
 
 rm -f "$xdg/claude_lab/agents"
@@ -80,7 +81,11 @@ if HOME="$fake_home" XDG_CONFIG_HOME="$xdg" CALLS="$calls" PATH="$node_bin:/usr/
   bash "$SCRIPT" >/dev/null 2>&1; then skip_status=0; else skip_status=$?; fi
 assert_eq "$skip_status" "0" "hook: target が無ければ skip する"
 assert_eq "$(test -e "$fake_home/.paseo/config.json" && echo yes || echo no)" "no" "hook: target が無いとき config を作らない"
-assert_eq "$(cat "$calls")" "0" "hook: skip 時も CLI を一回呼ぶ"
+assert_eq "$(cat "$calls")" "write-paseo" "agent-envs: write-paseo を 1 回渡す"
+
+script="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_91-paseo-managed-profiles.sh.tmpl")"
+assert_contains "$script" "agent-config prune-paseo-profiles" "91: prune-paseo-profiles を呼ぶ"
+assert_contains "$script" "raw-json-merge.js" "91: manifest hash に raw-json-merge.js を入れる"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
