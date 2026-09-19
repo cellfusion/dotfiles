@@ -39,18 +39,14 @@ BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。
+`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。組み立ては MAD と同じ `review-bundle` に任せる。同じコミット範囲へ 2 回目の依頼を出すと同じパスへ書くので、この呼び出しだけが `--force` を渡す。`review-bundle` は `--out` の親ディレクトリを、無いときだけ作って mode 0700 にする。`agent-docs-dir reviews` が返すディレクトリは既にあるので、この呼び出しで mode が変わることはない。
 
 ```bash
 REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
 OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
-{
-  echo "# Review package: ${BASE_SHA}..${HEAD_SHA}"
-  echo; echo "## Commits"; git log --oneline "${BASE_SHA}..${HEAD_SHA}"
-  echo; echo "## Files changed"; git diff --stat "${BASE_SHA}..${HEAD_SHA}"
-  echo; echo "## Diff"; git diff -U10 "${BASE_SHA}..${HEAD_SHA}"
-} > "$OUT"
-echo "$OUT"
+~/.agents/skills/multi-agent-development/scripts/review-bundle \
+  --cwd "$(git rev-parse --show-toplevel)" \
+  --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT" --force
 ```
 
 **2. レビューを依頼する**

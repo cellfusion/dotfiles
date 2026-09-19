@@ -27,6 +27,7 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"

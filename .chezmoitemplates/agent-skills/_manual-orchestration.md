@@ -13,6 +13,7 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
+MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
@@ -147,7 +148,7 @@ MAD の delivery role は次の 4 役である。各 role は同名の `agent-de
 
 review/fix loop は task ごとに **max_rounds は 4** とする。round `0` は task-reviewer の初回 review、round `1` から `3` は同じ task scope の fix と re-review であり、4 ラウンドで解決しない finding、または新しい hotfix node はこの run で扱わない。上限到達時は `unresolved` として停止し、新しい fix/review を起動しない。
 
-親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 4`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。
+親は review 開始前に mode `0600` の `mad-review-scope` を一つ作る。scope は `task`、repository-relative な `allowedFiles`、初回 review が扱う `findingIds`、最終確認へ渡す絶対 `outOfScopePath` だけを持つ。run state の `review_policy` は `max_rounds: 4`、scope file、out-of-scope observations path を固定し、fix の `changedFiles` は `allowedFiles` の部分集合でなければならない。`findingIds` は round 0 の review を始める前に確定する immutable な値であり、round 0 の review が出した finding ではない。親が round 0 より前に指す finding を持たないなら空配列にする。round 0 以降の未解決の指摘は `mad-review-open-findings` が持つ。
 
 review/fix child を create する前に、必ず次を実行する。
 
@@ -158,6 +159,63 @@ review/fix child を create する前に、必ず次を実行する。
 ```
 
 fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review --node "$TASK_ID-re-review"` とし、同じ scope marker を使う。admission が失敗したら `mcp__paseo__create_agent` を呼ばない。親は fix 後に `"$MAD_VALIDATE" --check-review-scope --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"` を実行し、scope 外なら fix を採用しない。
+
+レビュー child を create する前に、親は review package を組み立てる。組み立ては 1 本のスクリプトに任せ、header の形が 2 か所で食い違わないようにする。
+
+```bash
+"$MAD_REVIEW_BUNDLE" \
+  --cwd "$WORKSPACE_CWD" --base "$PACKAGE_BASE" --head "$PACKAGE_HEAD" \
+  --out "$ATTEMPT_DIR/review-package.diff"
+```
+
+`PACKAGE_BASE` と `PACKAGE_HEAD` は役ごとに次で決める。MAD の親は `--force` を渡さない。attempt directory は round ごとに分かれるので、既存ファイルがあることは範囲の取り違えを意味する。
+
+- round 0 の `task-reviewer` は、run state が持つ確定した `base` を `PACKAGE_BASE`、実装役が commit した後の `HEAD` を `PACKAGE_HEAD` とする
+- round 1 から 3 の `re-reviewer` は、そのラウンドの fix を始める直前の `HEAD` を `PACKAGE_BASE`、fix を commit した後の `HEAD` を `PACKAGE_HEAD` とする。`HEAD~1` を使わない。1 ラウンドが複数の commit になったとき、最後の commit 以外が範囲から外れる
+- `final-reviewer` は、run state が持つ確定した `base` を `PACKAGE_BASE`、全 task 完了後の `HEAD` を `PACKAGE_HEAD` とする
+
+親は `task-reviewer`、`re-reviewer`、`final-reviewer` の 3 つの結果を採用する前に、`--check-review-package` で範囲を検査する。`task-reviewer` と `re-reviewer` の結果には、範囲に加えて `--check-review-verdict` で verdict も検査する。`final-reviewer` の結果は範囲だけを検査する。`--check-review-verdict` が受け付ける `--role` は `task-reviewer` と `re-reviewer` の 2 つだけであり、`final-reviewer` を渡すと exit 2 で拒む。検査のいずれかが失敗したらその結果を採用せず、attempt を `failed` にする。
+
+```bash
+"$MAD_VALIDATE" --check-review-package \
+  --package-file "$ATTEMPT_DIR/review-package.diff" --result-file "$RESULT_FILE"
+"$MAD_VALIDATE" --check-review-verdict \
+  --result-file "$RESULT_FILE" --role task-reviewer
+```
+
+`re-reviewer` の結果には、`--check-review-verdict` へ `--role re-reviewer --open-findings-file "$RUN_DIR/review-open-findings/$TASK_ID-round-$ROUND.json"` を渡す。`final-reviewer` の結果には `--check-review-package` だけを実行する。
+
+round 0 のレビュー結果を採用したあと、親は次の 4 段階を順に行う。順序を入れ替えない。第 3 段階より先に第 4 段階を呼ぶと、一覧がまだ無いので検査が失敗する。
+
+1. `--check-review-package` と `--check-review-verdict --role task-reviewer` で round 0 の結果を検査して採用する
+2. `cannotVerify` を 1 件ずつ解消し、`<run-dir>/review-cannot-verify/<task>.json` を mode 0600 で書く。`resolution` は `confirmed_gap`、`satisfied`、`deferred` のいずれかとし、`deferred` の `item` は `outOfScopePath` の observations の `items[].summary` に同じ文字列が無ければならない
+3. round 1 の未解決の指摘の一覧を作る
+
+```bash
+"$MAD_VALIDATE" --open-review-findings \
+  --run-dir "$RUN_DIR" --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE" \
+  --cannot-verify-file "$RUN_DIR/review-cannot-verify/$TASK_ID.json"
+```
+
+`--cannot-verify-file` は round 0 の結果の `cannotVerify` が非空のときだけ渡す。
+
+4. 記録と一覧の対応を検査する
+
+```bash
+"$MAD_VALIDATE" --check-review-cannot-verify \
+  --run-dir "$RUN_DIR" --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE"
+```
+
+未解決の指摘の一覧は `<run-dir>/review-open-findings/<task>-round-<round>.json` に mode 0600 で置く。`findings` が空配列のときも一覧を必ず書き、fix ループへ入らなかった判断を記録に残す。一覧が空なら親は fix ラウンドの admission を取らず、そのタスクを閉じる。指摘の `id` は `OF-` から始める書式とし、同じ task で一度使った `id` を別の指摘へ割り当てない。
+
+round `N` の `re-reviewer` の結果を採用したら、次のラウンドの一覧を親ではなくコードに計算させる。
+
+```bash
+"$MAD_VALIDATE" --advance-review-findings \
+  --run-dir "$RUN_DIR" --scope-file "$SCOPE_FILE" --result-file "$RESULT_FILE" --round "$ROUND"
+```
+
+親が未解決の指摘を散文で引き継がない。summary の言い換えで指摘が記録から失われる。
 
 spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad-review-observations` として `outOfScopePath` に 0600 で保持する。review/fix 中はそれを理由に新しい fix/review を起動しない。最終 gate で一度だけ decision request に列挙し、ユーザーが scope 拡張を承認した場合は元 run を再利用せず、新しい task/run として開始する。
 
@@ -208,7 +266,7 @@ child の role、prompt、schema、workspace を決めた後、親は `mcp-creat
 
 `implement` と `spike` は child ごとに Paseo workspace を先に作る。workspace は `isolation: worktree`、`mode: branch-off`、呼び出し元 path、`mad/<run-id>/<node-id>` の branch、確定した base を持つ。返った `workspaceId` を create request に渡し、absolute `cwd` と branch を `workspaces.json` に記録する。workspace は node ごとに一つであり、既存の台帳 entry を別 ID で上書きしない。
 
-レビュー child には worktree の中身を直接読ませず、親が `git -C <cwd> diff <base>...HEAD` の出力を attempt の `diff.patch` に保存し、その絶対 path だけを渡す。diff の取得は workspace archive より前に行う。取得失敗は run を `failed` とし、空の diff は親が判断する。workspace の integration は `pending`、`merged`、`declined` のいずれかで、`declined` には理由を残す。integration の判断後にだけ archive し、`archived: true` を台帳へ書く。
+レビュー child には worktree の中身を直接読ませず、親が `"$MAD_REVIEW_BUNDLE"` を呼んで attempt の `review-package.diff` を作り、その絶対 path だけを渡す。review package の組み立ては workspace archive より前に行う。組み立ての失敗は run を `failed` とし、空の diff は親が判断する。workspace の integration は `pending`、`merged`、`declined` のいずれかで、`declined` には理由を残す。integration の判断後にだけ archive し、`archived: true` を台帳へ書く。
 
 ## recipe と判断要求
 

@@ -157,7 +157,7 @@ validate_workspaces() {
     jq -e --arg node "$node_id" '.[$node].archived | type == "boolean"' "$workspaces" >/dev/null 2>&1 ||
       fail "$workspaces: $node_id archived must be a boolean"
     # archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
-    # しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+    # しないと、上限で切られた review-package.diff しか残らない実装が復元できなくなる。
     jq -e --arg node "$node_id" '.[$node].integration | IN("pending", "merged", "declined")' \
       "$workspaces" >/dev/null 2>&1 ||
       fail "$workspaces: $node_id integration must be one of pending, merged, declined"

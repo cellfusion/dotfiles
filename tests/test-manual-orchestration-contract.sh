@@ -669,7 +669,7 @@ mk_recipe_run_with_node() {
   fi
 }
 
-# 実装役の attempt に diff.patch を置く。親は workspaces.json の cwd から diff を取るので、
+# 実装役の attempt に review-package.diff を置く。親は workspaces.json の cwd から package を取るので、
 # 台帳と base も付ける。
 mk_attempt_with_diff() {
   local run_dir="$1"
@@ -694,7 +694,7 @@ mk_attempt_with_diff() {
     '+++ b/src/app.ts' \
     '@@ -1 +1 @@' \
     '-old' \
-    '+new' > "$run_dir/nodes/$node_id/attempts/$attempt_id/diff.patch"
+    '+new' > "$run_dir/nodes/$node_id/attempts/$attempt_id/review-package.diff"
 }
 
 # 改稿役の attempt に before/ を置く。改稿前の対象ファイルはここへ複製する。
@@ -713,14 +713,14 @@ mk_attempt_with_before() {
 # 置き、後段には絶対パスだけを渡す。
 mk_attempt_with_diff "$RUN/with-diff" "implement-1" "a1"
 assert_contains "$(validate_run "$RUN/with-diff")" "valid manual orchestration run" \
-  "validator: attempt の diff.patch を受け入れる"
+  "validator: attempt の review-package.diff を受け入れる"
 
-# diff.patch は attempt の中に置く。node 直下は既存の規約どおり拒否する。
+# review-package.diff は attempt の中に置く。node 直下は既存の規約どおり拒否する。
 mk_attempt_with_diff "$RUN/diff-at-node" "implement-1" "a1"
-mv "$RUN/diff-at-node/nodes/implement-1/attempts/a1/diff.patch" \
-   "$RUN/diff-at-node/nodes/implement-1/diff.patch"
+mv "$RUN/diff-at-node/nodes/implement-1/attempts/a1/review-package.diff" \
+   "$RUN/diff-at-node/nodes/implement-1/review-package.diff"
 assert_contains "$(validate_run "$RUN/diff-at-node" 2>&1)" "node artifacts must be under attempts/" \
-  "validator: node 直下の diff.patch を拒否する"
+  "validator: node 直下の review-package.diff を拒否する"
 
 # refine は改稿前のファイルを attempt の before/ へ退避する。
 mk_attempt_with_before "$RUN/with-before" "revise-1" "a1"
@@ -762,7 +762,7 @@ assert_contains "$(validate_run "$RUN/review-no-workspaces")" "valid manual orch
   "validator: worktree を作らない recipe に台帳と base を要求しない"
 
 # archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
-# しないと、上限で切られた diff.patch しか残らない実装が復元できなくなる。
+# しないと、上限で切られた review-package.diff しか残らない実装が復元できなくなる。
 set_integration() {
   local dir="$1"
   shift

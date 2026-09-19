@@ -58,7 +58,8 @@ for mad_path_contract in \
   'AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"' \
   'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"' \
   'MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"' \
-  'MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"'; do
+  'MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"' \
+  'MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"'; do
   assert_contains "$mad_contract" "$mad_path_contract" \
     "path contract: $mad_path_contract を初期化する"
 done
@@ -78,6 +79,8 @@ assert_contains "$out" 'MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"' \
 multi_agent_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
 assert_contains "$multi_agent_skill" 'PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"' \
   "path contract: MAD skill がrepository gate pathを初期化する"
+assert_contains "$multi_agent_skill" 'MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"' \
+  "path contract: MAD skill が review bundle path を初期化する"
 
 # review/fix は固定上限と immutable scope を持つ。scope 外の重要事項は loop に戻さず、
 # 最終 gate の一回の user decision へ送る。
@@ -87,7 +90,13 @@ for review_guard_step in \
   "scope 外" \
   "out-of-scope" \
   "最終 gate" \
-  "新しい fix/review を起動しない"; do
+  "新しい fix/review を起動しない" \
+  '"$MAD_REVIEW_BUNDLE"' \
+  "--check-review-package" \
+  "--check-review-verdict" \
+  "--open-review-findings" \
+  "--advance-review-findings" \
+  "--check-review-cannot-verify"; do
   assert_contains "$mad_contract" "$review_guard_step" \
     "review guard: 共通契約に $review_guard_step を明記する"
 done
@@ -179,6 +188,19 @@ for script in tests/manual/herdr-smoke.sh tests/manual/mad-orchestration-smoke.s
 done
 assert_eq "$(grep -c 'agentProfiles' "$CHEZMOI_SOURCE/tests/manual/paseo-unit-gate.sh")" "0" \
   "paseo-unit-gate: agentProfiles の shape 検査が残らない"
+
+# MAD が attempt へ置くレビュー入力は、header とコミット一覧を含む review package であり、
+# 素の diff ではない。名前も中身に合わせる。
+legacy_diff_pattern="diff"
+legacy_diff_pattern="${legacy_diff_pattern}\\."
+legacy_diff_pattern="${legacy_diff_pattern}patch"
+mad_leftover="$(cd "$CHEZMOI_SOURCE" && git grep -l "$legacy_diff_pattern" -- \
+  ':!.chezmoitemplates/agent-skills/pr-review/SKILL.md' ':!tests/test-pr-review.sh' || true)"
+assert_eq "$mad_leftover" "" "review package: MAD 側に ${legacy_diff_pattern} という名前が残らない"
+assert_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")" \
+  "review-bundle" "review package: レビュー依頼も review-bundle を呼ぶ"
+assert_not_contains "$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/requesting-code-review/SKILL.md")" \
+  "git log --oneline" "review package: レビュー依頼に inline の組み立てを残さない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
