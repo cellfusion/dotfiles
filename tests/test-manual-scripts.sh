@@ -11,7 +11,7 @@ for script in tests/manual/herdr-smoke.sh tests/test-schemas.sh; do
 done
 
 # Paseo catalog、launch、承認 gate を順に出す。
-for step in "list-providers" "list-models" "generate-paseo-config" "mcp__paseo__create_agent"; do
+for step in "list-providers" "list-models" "agent-config" "mcp__paseo__create_agent"; do
   assert_contains "$out" "$step" "smoke: $step を案内する"
 done
 assert_contains "$out" "0600" "smoke: artifact の権限を示す"
@@ -83,7 +83,7 @@ assert_contains "$multi_agent_skill" 'PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJE
 # 最終 gate の一回の user decision へ送る。
 for review_guard_step in \
   '"$MAD_VALIDATE" --prepare-review' \
-  "max_rounds は 2" \
+  "max_rounds は 4" \
   "scope 外" \
   "out-of-scope" \
   "最終 gate" \
@@ -172,6 +172,13 @@ assert_not_contains "$suite_files" "mad-orchestration-smoke" \
 mad_help="$(bash "$mad_smoke" --help 2>&1)"
 assert_contains "$mad_help" "--dry-run" "mad smoke: --help が dry-run を案内する"
 assert_contains "$mad_help" "--report" "mad smoke: --help が実行済み run の検証方法を案内する"
+
+for script in tests/manual/herdr-smoke.sh tests/manual/mad-orchestration-smoke.sh \
+  tests/manual/mad-representative-run.sh tests/manual/paseo-unit-gate.sh; do
+  assert_eq "$(grep -c 'generate-paseo-config' "$CHEZMOI_SOURCE/$script")" "0" "$script: 旧 CLI 名が残らない"
+done
+assert_eq "$(grep -c 'agentProfiles' "$CHEZMOI_SOURCE/tests/manual/paseo-unit-gate.sh")" "0" \
+  "paseo-unit-gate: agentProfiles の shape 検査が残らない"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

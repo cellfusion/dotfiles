@@ -33,7 +33,7 @@ record() {
 run_unit1() {
   local suite_output suite_rc summary failed
 
-  suite_output="$(bash tests/test-generate-paseo-config.sh 2>&1)"
+  suite_output="$(bash tests/test-agent-config.sh 2>&1)"
   suite_rc=$?
   printf '%s\n' "$suite_output"
   [ "$suite_rc" -eq 0 ] || return "$suite_rc"
@@ -67,13 +67,6 @@ observe_paseo_shape() {
     return $?
   fi
   if ! jq -e '
-    def profile_shape:
-      type == "object" and
-      ((keys - ["featureValues","id","modeId","model","name","provider","thinkingOptionId"]) | length) == 0 and
-      ((["id","model","name","provider","thinkingOptionId"] - keys) | length) == 0 and
-      ([.id,.name,.provider,.model,.thinkingOptionId] | all(type == "string" and length > 0)) and
-      ((has("modeId") | not) or (.modeId | type == "string" and length > 0)) and
-      ((has("featureValues") | not) or (.featureValues | type == "object"));
     def base_record:
       type == "object" and has("env") and (.env | type == "object") and (has("extends") | not);
     def non_primary_record:
@@ -81,9 +74,7 @@ observe_paseo_shape() {
       has("label") and (.label | type == "string") and has("env") and (.env | type == "object");
     . as $paseo |
     (.daemon | type == "object") and (.agents | type == "object") and
-    (.daemon.agentProfiles | type == "array" and length > 0) and
     (.agents.providers | type == "object" and length > 0) and
-    (all(.daemon.agentProfiles[]; profile_shape)) and
     (all(.agents.providers | to_entries[] | .value; type == "object")) and
     (any(.agents.providers | to_entries[] | .value; base_record)) and
     (any(.agents.providers | to_entries[] | .value; non_primary_record)) and
@@ -104,7 +95,7 @@ observe_paseo_shape() {
   fi
   local observed_shape_path observed_shape
   observed_shape_path="$CHEZMOI_SOURCE/tests/fixtures/agent-config/targets/observed-shape.json"
-  printf -v observed_shape '%s\n' '{"daemon":{"type":"object"},"daemonAgentProfiles":{"type":"array","nonEmpty":true},"profile":{"requiredKeys":["id","model","name","provider","thinkingOptionId"],"optionalKeys":["modeId","featureValues"],"optionalKeyTypes":{"modeId":"string","featureValues":"object"},"additionalProperties":false},"providers":{"type":"object","hasBaseRecord":true,"hasNonPrimaryRecord":true,"allowUnmanagedRecords":true,"base":{"env":"object","extendsAbsent":true},"nonPrimary":{"extends":"string","label":"string","env":"object"}}}'
+  printf -v observed_shape '%s\n' '{"daemon":{"type":"object"},"providers":{"type":"object","hasBaseRecord":true,"hasNonPrimaryRecord":true,"allowUnmanagedRecords":true,"base":{"env":"object","extendsAbsent":true},"nonPrimary":{"extends":"string","label":"string","env":"object"}}}'
   _write_unit_gate_private_file "$observed_shape_path" "$observed_shape"
 }
 
@@ -203,7 +194,7 @@ case "${1:-}" in
     require_unit_decision "$EVIDENCE/$2" "$3"
     ;;
   observe) observe_paseo_shape ;;
-  record-unit2) record unit2-decision.txt bash -c 'bash tests/test-generate-paseo-config.sh \
+  record-unit2) record unit2-decision.txt bash -c 'bash tests/test-agent-config.sh \
     && bash tests/test-agent-env-script.sh \
     && bash tests/test-distribution.sh \
     && bash tests/test-no-private-identifiers.sh' ;;
