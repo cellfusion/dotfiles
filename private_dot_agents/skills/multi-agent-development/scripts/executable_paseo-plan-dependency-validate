@@ -8,10 +8,31 @@ function fail(message) {
   process.exitCode = 2
 }
 
+function fenceMarker(line) {
+  const match = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+  if (match === null) return null
+  return { character: match[1][0], length: match[1].length, suffix: match[2] }
+}
+
+function closesFence(line, fence) {
+  const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line)
+  return match !== null && match[1][0] === fence.character && match[1].length >= fence.length
+}
+
 function parseTasks(text) {
   const lines = text.split(/\r?\n/)
   const headings = []
+  let fence = null
   for (let index = 0; index < lines.length; index += 1) {
+    if (fence !== null) {
+      if (closesFence(lines[index], fence)) fence = null
+      continue
+    }
+    const marker = fenceMarker(lines[index])
+    if (marker !== null) {
+      fence = marker
+      continue
+    }
     const match = /^#{1,6}\s+Task\s+(\d+)\b/i.exec(lines[index])
     if (match !== null) headings.push({ index, number: Number(match[1]) })
   }
@@ -24,12 +45,24 @@ function parseTasks(text) {
     if (tasks.has(heading.number)) throw new Error('Task 番号が重複する')
     const end = position + 1 < headings.length ? headings[position + 1].index : lines.length
     const block = lines.slice(heading.index + 1, end)
-    const task = { number: heading.number, dependsOn: [], files: [], complexity: undefined }
+    const task = { number: heading.number, dependsOn: [], hasDependsOn: false, files: [], complexity: undefined }
 
     let inFiles = false
+    let blockFence = null
     for (const line of block) {
+      if (blockFence !== null) {
+        if (closesFence(line, blockFence)) blockFence = null
+        continue
+      }
+      const marker = fenceMarker(line)
+      if (marker !== null) {
+        blockFence = marker
+        inFiles = false
+        continue
+      }
       if (/\bDepends on\s*:/i.test(line)) {
         inFiles = false
+        task.hasDependsOn = true
         const dependencyText = line.split(/\bDepends on\s*:/i)[1]
         const dependencies = [...dependencyText.matchAll(/\bTask\s+(\d+)\b/gi)]
         task.dependsOn.push(...dependencies.map((match) => Number(match[1])))
@@ -67,7 +100,13 @@ function parseTasks(text) {
     if (task.files.length === 0) throw new Error(`Task ${task.number}: Files がない`)
     tasks.set(task.number, task)
   }
-  return { tasks, warnings }
+  const taskNumbers = [...tasks.keys()].sort((a, b) => a - b)
+  for (const task of tasks.values()) {
+    if (!task.hasDependsOn) {
+      task.dependsOn = taskNumbers.filter((number) => number < task.number)
+    }
+  }
+  return { tasks, warnings, hasAnyDependsOn: [...tasks.values()].some((task) => task.hasDependsOn) }
 }
 
 function validateDependencies(tasks) {
@@ -94,7 +133,8 @@ function validateDependencies(tasks) {
   for (const number of tasks.keys()) visit(number)
 
   const waves = new Map()
-  for (const task of tasks.values()) {
+  const orderedTasks = [...tasks.values()].sort((left, right) => left.number - right.number)
+  for (const task of orderedTasks) {
     const wave = depth.get(task.number)
     if (!waves.has(wave)) waves.set(wave, [])
     waves.get(wave).push(task)
@@ -109,15 +149,25 @@ function validateDependencies(tasks) {
       }
     }
   }
+  return waves
 }
 
 function main(argv) {
-  if (argv.length !== 1) throw new Error('PLAN_FILE が 1 つ必要である')
+  const showWaves = argv[0] === '--waves'
+  const planArguments = showWaves ? argv.slice(1) : argv
+  if (planArguments.length !== 1) throw new Error('PLAN_FILE が 1 つ必要である')
   let text
-  try { text = fs.readFileSync(argv[0], 'utf8') } catch { throw new Error('plan を読み込めない') }
-  const { tasks, warnings } = parseTasks(text)
+  try { text = fs.readFileSync(planArguments[0], 'utf8') } catch { throw new Error('plan を読み込めない') }
+  const { tasks, warnings, hasAnyDependsOn } = parseTasks(text)
   for (const warning of warnings) process.stderr.write(`paseo-plan-dependency-validate: ${warning}\n`)
-  validateDependencies(tasks)
+  const waves = validateDependencies(tasks)
+  if (showWaves) {
+    if (!hasAnyDependsOn) process.stderr.write('warning: Depends on の宣言が無いため直列とみなす\n')
+    for (const [depth, waveTasks] of waves) {
+      const taskNumbers = waveTasks.map((task) => task.number).sort((left, right) => left - right)
+      process.stdout.write(`wave ${depth + 1}: ${taskNumbers.join(' ')}\n`)
+    }
+  }
 }
 
 try {
