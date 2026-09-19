@@ -82,7 +82,9 @@ provider_codex() {
   case "$session_reset" in ''|*[!0-9]*) session_pct=-; session_reset=-;; esac
 
   cache_put "$cache_key" "$(jq -n --arg p "$pct" --arg r "$reset" --argjson ts "$(date +%s)" \
-    '{ts:$ts, used_pct:$p, resets_at:$r}')" || :
+    --arg sp "$session_pct" --arg sr "$session_reset" \
+    '{ts:$ts, used_pct:$p, resets_at:$r}
+     + (if $sp == "-" or $sr == "-" then {} else {session_pct:$sp, session_resets_at:$sr} end)')" || :
   printf '%s\t%s\tok\t%s\t%s' "$pct" "$reset" "$session_pct" "$session_reset"
 }
 

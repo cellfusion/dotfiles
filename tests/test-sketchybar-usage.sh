@@ -143,6 +143,9 @@ rm -f "$fixture_home/.cache/sketchybar-usage/default-codex.json"
 assert_eq "$(HOME="$fixture_home" "$USAGE_SH" codex "$fixture_home/.config/codex/sessions" default-codex)" \
   "$(printf '31\t%s\tok\t31\t1700000000' "$primary_reset")" "週次と5時間の両方があれば週次側が選ばれる"
 
+assert_eq "$(jq -c '[.session_pct, .session_resets_at]' "$fixture_home/.cache/sketchybar-usage/default-codex.json")" \
+  '["31","1700000000"]' "Codexの5時間値をキャッシュへ保存する"
+
 # 5時間側の used_percent または resets_at が欠けていても、欠損した値を
 # もう一方の値として扱わず、両方を - にする。
 session_pct_only_log='{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":31.0,"window_minutes":300},"secondary":{"used_percent":31.0,"window_minutes":10080,"resets_at":4102444800}}}}'
@@ -289,7 +292,7 @@ TXT
 
 parsed_usage="$(printf '%s\n' "$usage_text" | "$COLLECT_SH" parse)"
 assert_eq "$parsed_usage" \
-  "$(printf '42\t%s\t13\t%s' "$usage_expect" "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
+  "$(printf '42\t%s\t13\t%s\ttrue' "$usage_expect" "$usage_expect")" "採取: 週次の使用率とリセット時刻を取り出す"
 
 # 5 時間の窓（Current session）の値も出力に入るので、含むかどうかでは
 # 判定できない。週次が 1 項目目に来ることで見る。Fable の行は拾わない。
@@ -304,7 +307,7 @@ hour_day="$(LC_ALL=C date -r "$hour_expect" '+%b %d')"
 hour_time="$(LC_ALL=C date -r "$hour_expect" '+%I' | sed 's/^0//')$(LC_ALL=C date -r "$hour_expect" '+%p' | tr '[:upper:]' '[:lower:]')"
 week_only=$(printf 'Current week (all models): 42%% used · resets %s at %s (Asia/Tokyo)' "$hour_day" "$hour_time")
 assert_eq "$(printf '%s\n' "$week_only" | "$COLLECT_SH" parse)" \
-  "$(printf '42\t%s\t-\t-' "$hour_expect")" "採取: 分を省いた書き方のリセット時刻を読む"
+  "$(printf '42\t%s\t-\t-\tfalse' "$hour_expect")" "採取: 分を省いた書き方のリセット時刻を読む"
 
 # 5 時間の行が無くても採取全体は落とさない。上の assert は出力しか見ていない。
 printf '%s\n' "$week_only" | "$COLLECT_SH" parse >/dev/null
@@ -340,6 +343,10 @@ assert_not_contains "$(cat "$fixture_home/.cache/sketchybar-usage/week-only-clau
   "採取: 5 時間の値が無ければキャッシュに session_pct を書かない"
 
 kept_cache=$(cat "$fixture_home/.cache/sketchybar-usage/default-claude.json")
+assert_eq "$(jq -r '.session_limit_enabled' "$fixture_home/.cache/sketchybar-usage/default-claude.json")" "true" "正常な5時間行は制限あり"
+assert_eq "$(jq -r '.session_limit_enabled' "$fixture_home/.cache/sketchybar-usage/week-only-claude.json")" "false" "5時間行なしは制限なし"
+printf '%s\nCurrent session: unreadable\n' "$week_only" | HOME="$fixture_home" "$COLLECT_SH" record unknown-claude
+assert_eq "$(jq -r '.session_limit_enabled' "$fixture_home/.cache/sketchybar-usage/unknown-claude.json")" "null" "5時間行の解析失敗は判定不明"
 printf '%s\n' "$no_week" | HOME="$fixture_home" "$COLLECT_SH" record default-claude
 record_rc=$?
 assert_eq "$record_rc" "1" "採取: 取れなかった環境では失敗を返す"
@@ -449,13 +456,28 @@ assert_contains "$usage_plist" '<string>com.cellfusion.sketchybar-usage-claude</
   "plist: Label を固定する"
 assert_contains "$usage_plist" '/.config/sketchybar/helpers/usage_collect_claude.sh' \
   "plist: 採取スクリプトを実行する"
-assert_contains "$usage_plist" '<key>StartInterval</key>' "plist: 定期実行にする"
-assert_contains "$usage_plist" '<integer>900</integer>' "plist: 15 分ごとに実行する"
+assert_contains "$usage_plist" '<key>Disabled</key>' "旧 plist: 無効化する"
+assert_contains "$usage_plist" '<true/>' "旧 plist: 無効フラグを立てる"
+assert_not_contains "$usage_plist" '<key>StartInterval</key>' "旧 plist: 定期実行を止める"
 assert_contains "$usage_plist" 'sketchybar-usage-claude.err.log' "plist: 失敗を記録する"
 plist_file="$(mktemp)"
 printf '%s\n' "$usage_plist" > "$plist_file"
 plutil -lint "$plist_file" >/dev/null 2>&1
 assert_eq "$?" "0" "plist: plutil の検査を通る"
+rm -f "$plist_file"
+
+common_plist="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" --config "$cfg" --config-format toml \
+  < "$CHEZMOI_SOURCE/Library/LaunchAgents/com.cellfusion.agent-usage.plist.tmpl")"
+assert_contains "$common_plist" '<string>com.cellfusion.agent-usage</string>' \
+  "共通 plist: Label を固定する"
+assert_contains "$common_plist" '/.local/lib/agent-usage/collect.sh' \
+  "共通 plist: 共通 collector を実行する"
+assert_contains "$common_plist" '<key>StartInterval</key>' "共通 plist: 定期実行にする"
+assert_contains "$common_plist" '<integer>60</integer>' "共通 plist: 1 分ごとに実行する"
+plist_file="$(mktemp)"
+printf '%s\n' "$common_plist" > "$plist_file"
+plutil -lint "$plist_file" >/dev/null 2>&1
+assert_eq "$?" "0" "共通 plist: plutil の検査を通る"
 rm -f "$plist_file"
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

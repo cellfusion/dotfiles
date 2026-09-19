@@ -283,7 +283,7 @@ local function update_popup(spec)
 end
 
 local function update()
-	sbar.exec("$CONFIG_DIR/helpers/usage.sh", function(result)
+	sbar.exec("$CONFIG_DIR/helpers/usage_common.sh", function(result)
 		parse_records(result)
 		for _, spec in ipairs(agent_specs) do
 			local item = items_by_key[spec.environment .. "\t" .. spec.agent]

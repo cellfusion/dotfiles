@@ -1,0 +1,11 @@
+#!/bin/sh
+# 共通の収集結果だけを読む。収集や履歴走査は行わない。
+set -u
+reader="$HOME/.local/lib/agent-usage/sketchybar.sh"
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+{{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
+{{- range $env := $envs }}
+{{- range $agent := $env.agents }}
+sh "$reader" {{ $env.session | quote }} {{ $agent | quote }} {{ $env.label | quote }}
+{{- end }}
+{{- end }}

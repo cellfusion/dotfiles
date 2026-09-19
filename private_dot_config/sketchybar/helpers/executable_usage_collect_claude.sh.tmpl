@@ -80,8 +80,13 @@ parse_usage() {
   # 5 時間が読めなくても週次の採取は成功させる。
   session_line=$(printf '%s\n' "$input" | grep -m1 'Current session:')
   session=$(usage_fields "$session_line") || session=$(printf -- '-\t-')
-
-  printf '%s\t%s' "$week" "$session"
+  session_enabled=null
+  if [ -z "$session_line" ]; then
+    session_enabled=false
+  elif [ "$session" != "$(printf -- '-\t-')" ]; then
+    session_enabled=true
+  fi
+  printf '%s\t%s\t%s' "$week" "$session" "$session_enabled"
 }
 
 # 標準入力を parse して、キャッシュを書き換える。失敗したら前の値を残す。
@@ -94,6 +99,7 @@ record_usage() {
   reset=$(printf '%s' "$values" | cut -f2)
   spct=$(printf '%s' "$values" | cut -f3)
   sreset=$(printf '%s' "$values" | cut -f4)
+  session_enabled=$(printf '%s' "$values" | cut -f5)
   [ -n "$pct" ] && [ -n "$reset" ] || return 1
   [ -n "$spct" ] || spct=-
   [ -n "$sreset" ] || sreset=-
@@ -101,8 +107,8 @@ record_usage() {
   mkdir -p "$CACHE_DIR" 2>/dev/null || return 1
   cache_file="$CACHE_DIR/$cache_key.json"
   jq -n --argjson ts "$(date +%s)" --arg p "$pct" --arg r "$reset" \
-        --arg sp "$spct" --arg sr "$sreset" \
-    '{ts:$ts, used_pct:$p, resets_at:$r}
+        --arg sp "$spct" --arg sr "$sreset" --argjson se "$session_enabled" \
+    '{ts:$ts, used_pct:$p, resets_at:$r, session_limit_enabled:$se}
      + (if $sp == "-" or $sr == "-" then {} else {session_pct:$sp, session_resets_at:$sr} end)' \
     > "$cache_file.tmp" 2>/dev/null || return 1
   mv "$cache_file.tmp" "$cache_file" 2>/dev/null || return 1

@@ -1,3 +1,13 @@
+## 共通収集への移行（2026-09-19）
+
+新構成では `com.cellfusion.agent-usage` が1分間隔で共通収集を実行する。Claude の `/usage` は15分間隔、履歴は追記分だけを集計する。Paseo と `usage_common.sh` は `~/.cache/agent-usage/limits.json` を読む。
+
+収集プログラムと読み取りアダプターは `paseo_usage_plugin` の `npm run build:collector` で準備し、同リポジトリの `docs/operations.md` に従って `~/.local/lib/agent-usage/` へ配置する。配置前に新ジョブを有効にしない。
+
+`chezmoi apply` だけでは読み込み済みの旧ジョブは停止しない。明示的な許可を得て旧 `com.cellfusion.sketchybar-usage-claude` を bootout し、新ジョブを bootstrap する。旧スクリプトと未反映の5時間対応は保持するが、新構成からは呼ばない。
+
+以下は旧構成の説明である。
+
 # SketchyBar の Claude 使用量を launchd で採取する
 
 SketchyBar の usage ウィジェットは、AI 環境ごとに Claude と Codex の使用率を出す。
@@ -45,7 +55,11 @@ $0.03 かかるため、定期実行の経路としては選んでいない。
    1:20am (Asia/Tokyo)` の行からは、5 時間制限の使用率とリセット時刻を取り出す。
    2 つの行は同じ書式なので、`usage_fields` が両方を扱う。
 3. `~/.cache/sketchybar-usage/<環境名>-claude.json` へ
-   `{ts, used_pct, resets_at, session_pct, session_resets_at}` を書く。
+   `{ts, used_pct, resets_at, session_pct, session_resets_at, session_limit_enabled}` を書く。
+
+`session_limit_enabled` は `Current session:` の正常解析時に `true`、行が無い場合に
+`false`、行があるが解析できない場合に `null` となる。これは採取した出力に基づく判定であり、
+契約プランの照会ではない。古いキャッシュでキーが欠ける場合も判定不明として扱う。
 
 `Current session:` の行だけが読めなかったときは、週次の値でキャッシュを書き、
 `session_pct` と `session_resets_at` のキーを書かない。`session_pct` を持たない
