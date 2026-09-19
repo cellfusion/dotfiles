@@ -91,6 +91,22 @@ process.stdout.write(`${property.type}:${property.items.type}`);
 ' "$schema_file" 2>/dev/null || true)"
 assert_eq "$task_numbers_type" 'array:integer' 'taskNumbers が integer array である'
 
+top_level_types="$(node -e '
+const schema = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const properties = schema.properties;
+process.stdout.write(JSON.stringify([properties.findings.type, properties.summary.type, properties.decisionRequest.type]));
+' "$schema_file" 2>/dev/null || true)"
+assert_eq "$top_level_types" '["array","string",["object","null"]]' \
+  'top-level properties の type が正しい'
+
+finding_property_types="$(node -e '
+const schema = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const properties = schema.properties.findings.items.properties;
+process.stdout.write([properties.id.type, properties.planQuote.type, properties.problem.type, properties.question.type].join(","));
+' "$schema_file" 2>/dev/null || true)"
+assert_eq "$finding_property_types" 'string,string,string,string' \
+  'finding properties の type が正しい'
+
 json_schema="$root/private_dot_agents/skills/_shared/scripts/executable_json-schema"
 valid_status=0
 node - "$schema_file" "$json_schema" <<'NODE' || valid_status=$?

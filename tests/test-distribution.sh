@@ -32,5 +32,12 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
 
+for role in implementer task-reviewer re-reviewer final-reviewer; do
+  assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
+    "MAD delivery role: prompts/$role.md を配る"
+  assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
+    "MAD delivery role: schemas/$role.json を配る"
+done
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
