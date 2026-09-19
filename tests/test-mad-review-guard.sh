@@ -124,8 +124,9 @@ assert_eq "$(jq -r '.items[0].id' "$OBSERVATIONS")" "O-1" \
   "review guard: scope 外の観測を最終 gate 用に保持する"
 
 # --- 設計 3: review package の範囲を照合する ---
-PKG_BASE="1111111111111111111111111111111111111111"
-PKG_HEAD="2222222222222222222222222222222222222222"
+PKG_BASE="$(printf '1%.0s' {1..40})"
+PKG_HEAD="$(printf '2%.0s' {1..40})"
+PKG_OTHER="$(printf '3%.0s' {1..40})"
 PACKAGE="$TMP/review-package.diff"
 {
   printf '# Review package: %s..%s\n' "$PKG_BASE" "$PKG_HEAD"
@@ -151,7 +152,7 @@ bash "$RUNNER" --check-review-package --share-dir "$SHARE_DIR" \
 assert_eq "$?" "0" "review package: 短縮 sha を先頭一致で受理する"
 
 write_review_result "$TMP/pkg-wrong-base.json" \
-  "{\"packageBase\":\"3333333333333333333333333333333333333333\",\"packageHead\":\"$PKG_HEAD\"}"
+  "{\"packageBase\":\"$PKG_OTHER\",\"packageHead\":\"$PKG_HEAD\"}"
 bash "$RUNNER" --check-review-package --share-dir "$SHARE_DIR" \
   --package-file "$PACKAGE" --result-file "$TMP/pkg-wrong-base.json" >/dev/null 2>&1
 assert_eq "$?" "2" "review package: base が違う報告を拒否する"
