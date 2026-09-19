@@ -32,6 +32,7 @@ fix round として起動された場合は、渡された mad-review-scope の 
 - 作業ディレクトリの外を書き換えない
 - `git reset` / `git rebase` / `git branch -D` / `git switch` を使わない。
   base コミットからの積み上げだけを行う
-- 報告する `changedFiles` は、`git diff --name-only <base>..HEAD` と完全に一致させる
+- `DONE` と `DONE_WITH_CONCERNS` の報告する `changedFiles` は、`git diff --name-only <base>..HEAD` と完全に一致させる
+- `BLOCKED` または `NEEDS_CONTEXT` では、`git status --porcelain --untracked-files=all` の repository-relative path を `changedFiles` に入れる
 - 報告する `baseHead` は、プロンプトで渡された base コミットの sha をそのまま書く
 - 判断に必要な情報が欠けるときは、prompt で渡された `DECISION_REQUEST_PATH` に質問と選択肢を書く。推測で実装しない。判断を求めないときは `decisionRequestPath` を `null` にする

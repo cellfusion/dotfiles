@@ -272,6 +272,19 @@ assert_contains "$step_four" 'repository-relative' 'blocked/context の変更一
 assert_contains "$step_four" 'RED' 'TDD の RED を要求する'
 assert_contains "$step_four" 'GREEN' 'TDD の GREEN を要求する'
 
+safeguards="$(printf '%s\n' "$implementer_prompt" | awk '/^## 守ること$/{f=1} f')"
+assert_contains "$safeguards" '`DONE` と `DONE_WITH_CONCERNS`' \
+  '守ることの committed diff 規則を DONE 系に限定する'
+assert_contains "$safeguards" 'BLOCKED' \
+  '守ることの retained worktree 規則が BLOCKED を対象にする'
+assert_contains "$safeguards" 'NEEDS_CONTEXT' \
+  '守ることの retained worktree 規則が NEEDS_CONTEXT を対象にする'
+assert_contains "$safeguards" 'git status --porcelain --untracked-files=all' \
+  '守ることの blocked/context 規則が status paths を使う'
+assert_not_contains "$safeguards" \
+  '- 報告する `changedFiles` は、`git diff --name-only <base>..HEAD` と完全に一致させる' \
+  '守ることに無条件の committed diff 規則を残さない'
+
 for condition in \
   '複数の妥当なアプローチ' \
   'アーキテクチャ上の判断' \
