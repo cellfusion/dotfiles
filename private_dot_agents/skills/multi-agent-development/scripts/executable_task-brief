@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -u
+
+if [ "$#" -ne 3 ]; then
+  printf 'usage: %s PLAN_FILE TASK_NUMBER OUTFILE\n' "$0" >&2
+  exit 2
+fi
+
+plan_file="$1"
+task_number="$2"
+out_file="$3"
+
+if [ ! -f "$plan_file" ]; then
+  printf 'task brief: plan file is not a regular file: %s\n' "$plan_file" >&2
+  exit 2
+fi
+
+if ! awk -v n="$task_number" '
+  /^```/ {
+    in_fence = !in_fence
+  }
+  !in_fence && /^#+[ \t]+Task[ \t]+[0-9]+/ {
+    in_task = ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)"))
+  }
+  in_task { print }
+' "$plan_file" > "$out_file"; then
+  rm -f "$out_file"
+  exit 2
+fi
+
+if [ ! -s "$out_file" ]; then
+  rm -f "$out_file"
+  exit 3
+fi
+
+chmod 600 "$out_file" || {
+  rm -f "$out_file"
+  exit 2
+}
+
+line_count="$(wc -l < "$out_file" | tr -d ' ')"
+printf 'wrote %s: %s lines\n' "$out_file" "$line_count"
