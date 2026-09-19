@@ -81,14 +81,14 @@ cd "$path"
 herdr で作った worktree は人間が入れる workspace になり、そこで動くエージェントの作業ツリーと進捗が外から見える。ハーネス側のツールで作った worktree は端末を持たないので、これを先に使う。
 
 - **`--workspace` を必ず付ける。** 省くとユーザーがフォーカスしている workspace が基準になる
-- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。1a で作るこの worktree 自体は下の「ディレクトリの決定」と ignore の確認は要らない。ただし SDD の波は `.worktrees/` を使うので、`git check-ignore` は Step 2 の前に 1 度通す
+- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。1a で作るこの worktree 自体は下の「ディレクトリの決定」と ignore の確認は要らない。ただし MAD の波は `.worktrees/` を使うので、`git check-ignore` は Step 2 の前に 1 度通す
 - `path` か `ws` が空か `null` なら委譲は成立しない。`ws` が非空なら `herdr worktree remove --workspace "$ws" --force` で片付けてから 1b へ落ちる。`ws` が空か `null` なら片付けられないので、その旨も添えて報告してから 1b へ落ちる
 
-報告にはパスとブランチに加えて workspace ID も載せる。下の「`.worktrees/` の ignore を確認する（SDD 用）」を済ませてから Step 2 へ進む。
+報告にはパスとブランチに加えて workspace ID も載せる。下の「`.worktrees/` の ignore を確認する（MAD 用）」を済ませてから Step 2 へ進む。
 
 ### 1b. ネイティブの worktree ツール
 
-`EnterWorktree` のようなツール、`/worktree` コマンド、`--worktree` フラグが使えるならそれを使う。下の「`.worktrees/` の ignore を確認する（SDD 用）」を済ませてから Step 2 へ進む。
+`EnterWorktree` のようなツール、`/worktree` コマンド、`--worktree` フラグが使えるならそれを使う。下の「`.worktrees/` の ignore を確認する（MAD 用）」を済ませてから Step 2 へ進む。
 
 ネイティブツールは配置・ブランチ作成・後始末を自分で管理する。ネイティブツールがあるのに `git worktree add` を使うと、ハーネスから見えない状態を作ることになる。
 
