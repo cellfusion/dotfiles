@@ -38,3 +38,4 @@ assert_eq "$(printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",d=>s
 status=0
 env -u AGENT_ENV -u AGENT_ENV_SESSION node "$CLI" --input "$SHARE/agent-config.sample.json" >/dev/null 2>&1 || status=$?
 assert_eq "$status" "2" "subcommand 無しは exit 2"
+assert_summary

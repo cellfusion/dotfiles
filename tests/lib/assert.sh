@@ -49,3 +49,9 @@ render_template() {
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
     "{{ includeTemplate \"$1\" (merge (dict \"tool\" \"$2\") .) }}"
 }
+
+# run-tests.sh が集計に使う行を出し、失敗があれば非ゼロで終わる。
+assert_summary() {
+  printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
+  test "$TESTS_FAILED" -eq 0
+}

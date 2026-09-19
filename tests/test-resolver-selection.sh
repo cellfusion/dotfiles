@@ -37,3 +37,4 @@ const c = call("mad-review", 2)
 console.log(a.complexity, a.requestedComplexity, b.complexity, c.complexity)
 ' "$SHARE/config-validator.js" "$SHARE/resolver.js" "$SHARE/agent-config.sample.json" "$ROOT")"
 assert_eq "$escalated" "complex standard standard standard" "resolver: round 2 の mad-fix だけ引き上げる"
+assert_summary
