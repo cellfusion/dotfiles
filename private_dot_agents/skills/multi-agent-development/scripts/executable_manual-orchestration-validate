@@ -1486,7 +1486,6 @@ mad_check_implement_result() {
   local expected_base_head
   local current_head
   local commit_count
-  local actual_names
   local expected_files
   local reported_files
   local subject
@@ -1567,6 +1566,10 @@ mad_check_implement_result() {
     printf 'manual-orchestration-validate: worktree HEAD is unavailable\n' >&2
     return 2
   }
+  git -C "$workdir" merge-base --is-ancestor "$expected_base_head" "$current_head" 2>/dev/null || {
+    printf 'manual-orchestration-validate: base commit must be an ancestor of HEAD\n' >&2
+    return 2
+  }
   commit_count="$(git -C "$workdir" rev-list --count "$expected_base_head..$current_head" 2>/dev/null)" || {
     printf 'manual-orchestration-validate: commit count is unavailable\n' >&2
     return 2
@@ -1589,11 +1592,11 @@ mad_check_implement_result() {
     return 2
   }
 
-  actual_names="$(git -C "$workdir" diff --name-only "$expected_base_head..$current_head" 2>/dev/null)" || {
-    printf 'manual-orchestration-validate: changed files are unavailable\n' >&2
-    return 2
-  }
-  expected_files="$(printf '%s\n' "$actual_names" | jq -c -R -s 'split("\n") | map(select(length > 0)) | unique' 2>/dev/null)" || {
+  expected_files="$(
+    set -o pipefail
+    git -C "$workdir" diff --name-only -z "$expected_base_head..$current_head" 2>/dev/null |
+      jq -c -R -s 'split("\u0000") | map(select(length > 0)) | sort | unique' 2>/dev/null
+  )" || {
     printf 'manual-orchestration-validate: changed files could not be normalized\n' >&2
     return 2
   }
