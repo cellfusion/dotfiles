@@ -12,7 +12,7 @@ MAD は親が Paseo MCP の agent を起動・監視し、フェーズごとに�
 
 ## lifecycle
 
-`research`、`decide`、`debate`、`fanout`、`review`、`triage` は独立 child を並列に起動し、親が全 child の state と handoff を確認してから統合役を起動する。`spec`、`plan`、`implement`、`refine` は親が round と approval を管理する。`delivery` は spec、plan、implement、review、final-review を順に進める。各境界で親だけが user decision、retry、停止を state に記録する。task の review/fix は `--prepare-review` を通す bounded loop（初回 review + fix/re-review の2 round）であり、admission なしの再実行や hotfix node の追加をしない。
+`research`、`decide`、`debate`、`fanout`、`review`、`triage` は独立 child を並列に起動し、親が全 child の state と handoff を確認してから統合役を起動する。`spec`、`plan`、`implement`、`refine` は親が round と approval を管理する。`delivery` は spec、plan、implement、review、final-review を順に進める。各境界で親だけが user decision、retry、停止を state に記録する。task の review/fix は `--prepare-review` を通す bounded loop（round `0` の初回 review、round `1` から `3` の fix と re-review）であり、admission なしの再実行や hotfix node の追加をしない。
 
 すべての child は同じ `paseo-mcp` backend、Paseo provider/model discovery、`mad-attempt-v1` artifact contract を使う。作成、待機、停止、workspace 操作は Paseo MCP の機能だけで行う。child の prompt、result、handoff、state は絶対 path で受け渡し、raw response や秘密情報を親の会話や log に出さない。
 
@@ -27,7 +27,7 @@ AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-co
 MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
-MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/generate-paseo-config}"
+MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"
 ```
@@ -42,7 +42,7 @@ PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.s
 
 1. `PASEO_UNIT_GATE`が実在するこのrepositoryだけ、`bash "$PASEO_UNIT_GATE" require unit2-decision.txt continue` を通し、親が必要な run directory と state を用意する。別repositoryでは固有のgateを使う。
 2. 配布された `mad-contract.js` で resolved export と provider enumeration を mode 0600 で作る。
-3. `"$MAD_ADAPTER"` の `list-providers`、available provider ごとの `list-models`、snapshot、`"$MAD_GENERATOR" resolve` の順に実行する。
+3. `"$MAD_ADAPTER"` の `list-providers`、available provider ごとの `list-models`、snapshot、`agent-config resolve` の順に実行する。
 4. launch を検証して request を作り、mode 0600 の `mcp-create.json` として書く。`assertMadCreateRequestV1` で再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取ってから、その 6 key をそのまま `mcp__paseo__create_agent` へ渡して一回だけ create する。marker を取れなければ create しない。adapter に create の経路は無い。
 5. accepted response を `{"status":"accepted","childRef":"<safe-id>"}` へ縮約して 0600 の state に保存し、`"$MAD_ADAPTER" wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼んで、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
 6. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
