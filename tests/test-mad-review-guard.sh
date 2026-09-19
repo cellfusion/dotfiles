@@ -288,6 +288,140 @@ bash "$RUNNER" --prepare-review --share-dir "$SHARE_DIR" --run-dir "$EMPTY_RUN" 
   --phase fix --node task-9-fix --attempt a1 --scope-file "$EMPTY_SCOPE" >/dev/null 2>&1
 assert_eq "$?" "0" "review guard: findingIds が空の scope で fix admission を受理する"
 
+# --- 設計 5: 未解決の指摘をラウンドごとの成果物にする ---
+OPEN_RUN="$TMP/run-open-findings"
+OPEN_SCOPE="$TMP/open-scope.json"
+mkdir -p "$OPEN_RUN"
+printf '%s\n' '{
+  "version": 1,
+  "type": "mad-review-scope",
+  "task": "task-8",
+  "allowedFiles": ["private_dot_local/private_share/agent-config/mad-contract.js"],
+  "findingIds": [],
+  "outOfScopePath": "'"$TMP/open-observations.json"'"
+}' > "$OPEN_SCOPE"
+chmod 600 "$OPEN_SCOPE"
+
+write_review_result "$TMP/round0-mixed.json" \
+  '{"specVerdict":"issues","qualityVerdict":"needs_fixes","cannotVerify":null,"findings":[{"severity":"critical","summary":"c1","location":"f.js:1","fix":null,"planMandated":false},{"severity":"minor","summary":"m1","location":"f.js:2","fix":null,"planMandated":false},{"severity":"important","summary":"i1","location":"f.js:3","fix":null,"planMandated":null}]}'
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$OPEN_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/round0-mixed.json" >/dev/null 2>&1
+assert_eq "$?" "0" "open findings: round 0 の結果から round 1 の一覧を作る"
+ROUND1="$OPEN_RUN/review-open-findings/task-8-round-1.json"
+assert_eq "$(jq -r '[.findings[].id] | join(",")' "$ROUND1")" "OF-1,OF-2" \
+  "open findings: critical と important に OF-1 から順に id を振る"
+assert_eq "$(jq -r '[.findings[].summary] | join(",")' "$ROUND1")" "c1,i1" \
+  "open findings: severity minor の finding を一覧へ入れない"
+assert_eq "$(jq -r '[.findings[].origin] | unique | join(",")' "$ROUND1")" "review-finding" \
+  "open findings: review の指摘は origin を review-finding にする"
+assert_eq "$(jq -r '.round' "$ROUND1")" "1" "open findings: 一覧の round を 1 にする"
+assert_eq "$(stat -f '%Lp' "$ROUND1")" "600" "open findings: 一覧を mode 0600 で書く"
+
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$OPEN_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/round0-mixed.json" >/dev/null 2>&1
+assert_eq "$?" "2" "open findings: 同じパスへの 2 回目の書き込みを拒否する"
+
+PLAN_RUN="$TMP/run-plan-mandated"
+mkdir -p "$PLAN_RUN"
+write_review_result "$TMP/round0-plan.json" \
+  '{"specVerdict":"issues","qualityVerdict":"approved","cannotVerify":[],"findings":[{"severity":"critical","summary":"c1","location":"f.js:1","fix":null,"planMandated":true}]}'
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$PLAN_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/round0-plan.json" >/dev/null 2>&1
+assert_eq "$?" "2" "open findings: planMandated の finding を含む結果を拒否する"
+assert_eq "$([ -e "$PLAN_RUN/review-open-findings/task-8-round-1.json" ] && printf yes || printf no)" "no" \
+  "open findings: planMandated で拒否したとき一覧を作らない"
+
+EMPTY_LIST_RUN="$TMP/run-empty-list"
+mkdir -p "$EMPTY_LIST_RUN"
+write_review_result "$TMP/round0-clean.json" \
+  '{"specVerdict":"compliant","qualityVerdict":"approved","cannotVerify":null,"findings":[{"severity":"minor","summary":"m1","location":"f.js:2","fix":null,"planMandated":false}]}'
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$EMPTY_LIST_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/round0-clean.json" >/dev/null 2>&1
+assert_eq "$?" "0" "open findings: 重い指摘が 0 件でも空配列の一覧を書いて成功する"
+assert_eq "$(jq -r '.findings | length' "$EMPTY_LIST_RUN/review-open-findings/task-8-round-1.json")" "0" \
+  "open findings: 空の一覧は findings を空配列にする"
+
+MISSING_CV_RUN="$TMP/run-missing-cannot-verify"
+mkdir -p "$MISSING_CV_RUN"
+write_review_result "$TMP/round0-cv.json" \
+  '{"specVerdict":"compliant","qualityVerdict":"approved","cannotVerify":["再試行の上限を diff から確認できない"],"findings":[]}'
+bash "$RUNNER" --open-review-findings --share-dir "$SHARE_DIR" --run-dir "$MISSING_CV_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/round0-cv.json" >/dev/null 2>&1
+assert_eq "$?" "2" "open findings: cannotVerify が非空なのに解消の記録が無ければ拒否する"
+
+# --- 設計 5: ラウンドを進める ---
+ADVANCE_RUN="$TMP/run-advance"
+mkdir -p "$ADVANCE_RUN/review-open-findings"
+write_round_list() {
+  printf '%s\n' "$2" > "$1"
+  chmod 600 "$1"
+}
+write_round_list "$ADVANCE_RUN/review-open-findings/task-8-round-1.json" \
+  '{"version":1,"type":"mad-review-open-findings","task":"task-8","round":1,"findings":[{"id":"OF-1","severity":"critical","summary":"c1","location":"f.js:1","origin":"review-finding","originItem":null},{"id":"OF-2","severity":"important","summary":"i1","location":"f.js:3","origin":"cannot-verify","originItem":"再試行の上限"}]}'
+write_review_result "$TMP/rere-round1.json" \
+  '{"verdicts":[{"findingId":"OF-1","finding":"c1","addressed":true,"evidence":"fixed"},{"findingId":"OF-2","finding":"i1","addressed":false,"evidence":"f.js:9"}],"newBreakage":[{"severity":"important","summary":"n1","location":"g.js:1","fix":null,"planMandated":false},{"severity":"minor","summary":"n2","location":"g.js:2","fix":null,"planMandated":false}]}'
+bash "$RUNNER" --advance-review-findings --share-dir "$SHARE_DIR" --run-dir "$ADVANCE_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/rere-round1.json" --round 1 >/dev/null 2>&1
+assert_eq "$?" "0" "advance findings: round 1 の結果から round 2 の一覧を作る"
+ROUND2="$ADVANCE_RUN/review-open-findings/task-8-round-2.json"
+assert_eq "$(jq -r '[.findings[].id] | join(",")' "$ROUND2")" "OF-2,OF-3" \
+  "advance findings: 未解消の id を引き継ぎ、newBreakage に未使用の番号を振る"
+assert_eq "$(jq -r '.findings[0].summary' "$ROUND2")" "i1" \
+  "advance findings: 引き継いだ指摘の summary を前のラウンドの値のままにする"
+assert_eq "$(jq -r '.findings[0].severity' "$ROUND2")" "important" \
+  "advance findings: 引き継いだ指摘の severity を前のラウンドの値のままにする"
+assert_eq "$(jq -r '.findings[0].location' "$ROUND2")" "f.js:9" \
+  "advance findings: evidence が非空なら location に使う"
+assert_eq "$(jq -r '.findings[0].origin' "$ROUND2")" "cannot-verify" \
+  "advance findings: 引き継いだ指摘の origin を写す"
+assert_eq "$(jq -r '.findings[0].originItem' "$ROUND2")" "再試行の上限" \
+  "advance findings: 引き継いだ指摘の originItem を写す"
+assert_eq "$(jq -r '[.findings[].summary] | join(",")' "$ROUND2")" "i1,n1" \
+  "advance findings: newBreakage の minor を一覧へ入れない"
+assert_eq "$(jq -r '.round' "$ROUND2")" "2" "advance findings: 一覧の round を 2 にする"
+assert_eq "$(stat -f '%Lp' "$ROUND2")" "600" "advance findings: 一覧を mode 0600 で書く"
+
+bash "$RUNNER" --advance-review-findings --share-dir "$SHARE_DIR" --run-dir "$ADVANCE_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/rere-round1.json" --round 1 >/dev/null 2>&1
+assert_eq "$?" "2" "advance findings: 同じパスへの 2 回目の書き込みを拒否する"
+
+REWRITE_RUN="$TMP/run-rewrite"
+mkdir -p "$REWRITE_RUN/review-open-findings"
+write_round_list "$REWRITE_RUN/review-open-findings/task-8-round-1.json" \
+  '{"version":1,"type":"mad-review-open-findings","task":"task-8","round":1,"findings":[{"id":"OF-1","severity":"critical","summary":"original summary","location":"f.js:1","origin":"review-finding","originItem":null}]}'
+write_review_result "$TMP/rere-rewrite.json" \
+  '{"verdicts":[{"findingId":"OF-1","finding":"rewritten summary","addressed":false,"evidence":null}],"newBreakage":[]}'
+bash "$RUNNER" --advance-review-findings --share-dir "$SHARE_DIR" --run-dir "$REWRITE_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/rere-rewrite.json" --round 1 >/dev/null 2>&1
+assert_eq "$?" "0" "advance findings: summary を書き換えた結果でも一覧を作る"
+assert_eq "$(jq -r '.findings[0].summary' "$REWRITE_RUN/review-open-findings/task-8-round-2.json")" "original summary" \
+  "advance findings: re-reviewer が書き換えた summary を採らない"
+assert_eq "$(jq -r '.findings[0].location' "$REWRITE_RUN/review-open-findings/task-8-round-2.json")" "f.js:1" \
+  "advance findings: evidence が空なら前のラウンドの location を使う"
+
+LIMIT_RUN="$TMP/run-round-limit"
+mkdir -p "$LIMIT_RUN/review-open-findings"
+write_round_list "$LIMIT_RUN/review-open-findings/task-8-round-3.json" \
+  '{"version":1,"type":"mad-review-open-findings","task":"task-8","round":3,"findings":[{"id":"OF-1","severity":"critical","summary":"c1","location":"f.js:1","origin":"review-finding","originItem":null}]}'
+write_review_result "$TMP/rere-round3.json" \
+  '{"verdicts":[{"findingId":"OF-1","finding":"c1","addressed":false,"evidence":null}],"newBreakage":[]}'
+bash "$RUNNER" --advance-review-findings --share-dir "$SHARE_DIR" --run-dir "$LIMIT_RUN" \
+  --scope-file "$OPEN_SCOPE" --result-file "$TMP/rere-round3.json" --round 3 >/dev/null 2>&1
+assert_eq "$?" "2" "advance findings: 上限に達した run の次のラウンドを作らない"
+
+# --- 設計 5: id の書式を強制する ---
+for bad_id in F-1 OF0 OF-01; do
+  bad_run="$TMP/run-bad-id-$bad_id"
+  mkdir -p "$bad_run/review-open-findings"
+  write_round_list "$bad_run/review-open-findings/task-8-round-1.json" \
+    "{\"version\":1,\"type\":\"mad-review-open-findings\",\"task\":\"task-8\",\"round\":1,\"findings\":[{\"id\":\"$bad_id\",\"severity\":\"critical\",\"summary\":\"c1\",\"location\":\"f.js:1\",\"origin\":\"review-finding\",\"originItem\":null}]}"
+  write_review_result "$TMP/rere-bad-$bad_id.json" \
+    "{\"verdicts\":[{\"findingId\":\"$bad_id\",\"finding\":\"c1\",\"addressed\":false,\"evidence\":null}],\"newBreakage\":[]}"
+  bash "$RUNNER" --advance-review-findings --share-dir "$SHARE_DIR" --run-dir "$bad_run" \
+    --scope-file "$OPEN_SCOPE" --result-file "$TMP/rere-bad-$bad_id.json" --round 1 >/dev/null 2>&1
+  assert_eq "$?" "2" "open findings: id の書式 $bad_id を拒否する"
+done
+
 RUNAWAY="$TMP/run-runaway"
 RUNAWAY_SCOPE="$TMP/runaway-scope.json"
 mkdir -p "$RUNAWAY/nodes/task-8-hotfix/attempts/a1" "$RUNAWAY/review-admissions"

@@ -46,6 +46,9 @@ const MAD_POST_CREATE_OPERATIONS = ['create_agent', 'wait_agent', 'stop_agent', 
 // 上限は protocol の値であり、親が任意の max_rounds を設定して回避できないようにする。
 const MAD_REVIEW_MAX_ROUNDS = 4
 const MAD_REVIEW_SCOPE_KEYS = ['version', 'type', 'task', 'allowedFiles', 'findingIds', 'outOfScopePath']
+const MAD_REVIEW_OPEN_FINDINGS_KEYS = ['version', 'type', 'task', 'round', 'findings']
+const MAD_REVIEW_OPEN_FINDING_KEYS = ['id', 'severity', 'summary', 'location', 'origin', 'originItem']
+const MAD_REVIEW_OPEN_FINDING_ID = /^OF-[1-9][0-9]*$/
 const MAD_REVIEW_ADMISSION_KEYS = ['version', 'type', 'task', 'phase', 'node', 'attempt', 'round', 'scopeDigest']
 const MAD_REVIEW_OBSERVATION_KEYS = ['version', 'type', 'task', 'items']
 const MAD_REVIEW_PHASE_ROUNDS = { review: [0, 0], fix: [1, 3], 're-review': [1, 3] }
@@ -681,9 +684,10 @@ function checkMadReviewVerdict0600(resultPath, role, openFindingsPath) {
     }
     return result
   }
-  const open = readStrictJson0600(openFindingsPath, code, 'mad review open findings')
-  if (!Array.isArray(open.findings)) fail(code, 'mad review open findings: findings 配列が必要である')
-  const expected = new Set(open.findings.map((finding) => finding && finding.id))
+  const open = assertMadReviewOpenFindingsV1(
+    readStrictJson0600(openFindingsPath, code, 'mad review open findings')
+  )
+  const expected = new Set(open.findings.map((finding) => finding.id))
   const verdicts = result.verdicts
   if (!Array.isArray(verdicts)) fail(code, 'mad review result verdicts: 配列が必要である')
   if (expected.size === 0 && verdicts.length !== 0) {
@@ -702,6 +706,233 @@ function checkMadReviewVerdict0600(resultPath, role, openFindingsPath) {
     fail(code, `mad review verdict: findingId の集合が一覧と一致しない: 欠落 [${missing.join(',')}] / 余分 [${unexpected.join(',')}]`)
   }
   return result
+}
+
+// 未解決の指摘の一覧の形を確かめる。`id` は `OF-` から始める書式に固定し、`mad-review-scope`
+// の `findingIds` と名前空間を分ける。`safeIdentifier` だけでは `OF0` も `x-1` も通るので、
+// 書式の検査を重ねる。空配列を許すため `assertUniqueNonEmptyStrings` は使わない。
+function assertMadReviewOpenFindingsV1(value, task, round) {
+  const code = 'invalid_mad_review_open_findings'
+  exactKeys(value, MAD_REVIEW_OPEN_FINDINGS_KEYS, code, 'mad review open findings')
+  if (value.version !== 1 || value.type !== 'mad-review-open-findings') {
+    fail(code, 'mad review open findings: discriminator が不正である')
+  }
+  safeIdentifier(value.task, code, 'mad review open findings task')
+  if (task !== undefined && value.task !== task) fail(code, 'mad review open findings task が scope と一致しない')
+  if (!Number.isInteger(value.round) || value.round < 1 || value.round >= MAD_REVIEW_MAX_ROUNDS) {
+    fail(code, 'mad review open findings round が範囲外である')
+  }
+  if (round !== undefined && value.round !== round) fail(code, 'mad review open findings round が期待と一致しない')
+  if (!Array.isArray(value.findings)) fail(code, 'mad review open findings findings: 配列が必要である')
+  const ids = new Set()
+  for (const [index, finding] of value.findings.entries()) {
+    const label = `mad review open finding[${index}]`
+    exactKeys(finding, MAD_REVIEW_OPEN_FINDING_KEYS, code, label)
+    safeIdentifier(finding.id, code, `${label} id`)
+    if (!MAD_REVIEW_OPEN_FINDING_ID.test(finding.id)) fail(code, `${label} id: OF-<1 以上の整数> が必要である`)
+    if (ids.has(finding.id)) fail(code, `${label} id が重複している`)
+    ids.add(finding.id)
+    if (!['critical', 'important'].includes(finding.severity)) fail(code, `${label} severity が不正である`)
+    nonEmptyString(finding.summary, code, `${label} summary`)
+    nonEmptyString(finding.location, code, `${label} location`)
+    if (!['review-finding', 'cannot-verify'].includes(finding.origin)) fail(code, `${label} origin が不正である`)
+    if (finding.origin === 'cannot-verify') {
+      nonEmptyString(finding.originItem, code, `${label} originItem`)
+    } else if (finding.originItem !== null) {
+      fail(code, `${label} originItem: review-finding では null が必要である`)
+    }
+  }
+  return value
+}
+
+function madReviewOpenFindingsDirectory(runDir) {
+  return path.join(runDir, 'review-open-findings')
+}
+
+function madReviewOpenFindingsPath(runDir, task, round) {
+  return path.join(madReviewOpenFindingsDirectory(runDir), `${task}-round-${round}.json`)
+}
+
+function readMadReviewOpenFindings0600(runDir, task, round) {
+  const code = 'invalid_mad_review_open_findings'
+  const listPath = madReviewOpenFindingsPath(runDir, task, round)
+  const value = readStrictJson0600(listPath, code, 'mad review open findings')
+  return assertMadReviewOpenFindingsV1(value, task, round)
+}
+
+// その task で一度使った `id` を別の指摘へ割り当てない。ラウンドの途中で解消した指摘の
+// 番号も再利用しないので、既に書いた一覧すべてから最大の番号を取る。
+function highestMadReviewFindingNumber(runDir, task) {
+  const directory = madReviewOpenFindingsDirectory(runDir)
+  let entries
+  try { entries = fs.readdirSync(directory) } catch { return 0 }
+  let highest = 0
+  for (const entry of entries) {
+    if (!new RegExp(`^${task}-round-[0-9]+\\.json$`).test(entry)) continue
+    let parsed
+    try { parsed = JSON.parse(fs.readFileSync(path.join(directory, entry), 'utf8')) } catch { continue }
+    if (!parsed || !Array.isArray(parsed.findings)) continue
+    for (const finding of parsed.findings) {
+      const match = finding && typeof finding.id === 'string' ? MAD_REVIEW_OPEN_FINDING_ID.exec(finding.id) : null
+      if (match === null) continue
+      const number = Number(finding.id.slice(3))
+      if (number > highest) highest = number
+    }
+  }
+  return highest
+}
+
+function writeMadReviewOpenFindings0600(runDir, list) {
+  const code = 'invalid_mad_review_open_findings'
+  assertMadReviewOpenFindingsV1(list, list.task, list.round)
+  const directory = madReviewOpenFindingsDirectory(runDir)
+  try { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }) } catch { fail(code, 'mad review open findings: ディレクトリを作れない') }
+  const listPath = madReviewOpenFindingsPath(runDir, list.task, list.round)
+  let descriptor
+  try { descriptor = fs.openSync(listPath, 'wx', 0o600) } catch { fail(code, 'mad review open findings: 一覧は既に存在する') }
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify(list, null, 2) + '\n', 'utf8')
+    fs.fsyncSync(descriptor)
+    fs.closeSync(descriptor)
+  } catch (error) {
+    try { fs.closeSync(descriptor) } catch {}
+    try { fs.unlinkSync(listPath) } catch {}
+    fail(code, `mad review open findings: 書き込みに失敗した (${error && error.code ? error.code : 'I/O'})`)
+  }
+  fs.chmodSync(listPath, 0o600)
+  fsyncDirectory(directory)
+  return listPath
+}
+
+// round 0 の結果と `cannotVerify` の解消の記録から round 1 の一覧を作る。プランと衝突する
+// 指摘はユーザーの判断事項なので、1 件でもあれば一覧を作らずに失敗する。
+function openMadReviewFindings0600(runDir, scopePath, resultPath, cannotVerifyPath) {
+  const code = 'invalid_mad_review_open_findings'
+  absolutePath(runDir, code, 'mad review run directory')
+  const scope = readMadReviewScope0600(scopePath).value
+  const result = readStrictJson0600(resultPath, code, 'mad review result')
+  if (!Array.isArray(result.findings)) fail(code, 'mad review result findings: 配列が必要である')
+  const cannotVerify = result.cannotVerify
+  if (cannotVerify !== null && cannotVerify !== undefined && !Array.isArray(cannotVerify)) {
+    fail(code, 'mad review result cannotVerify: 配列か null が必要である')
+  }
+  const hasCannotVerify = Array.isArray(cannotVerify) && cannotVerify.length > 0
+  if (!hasCannotVerify && cannotVerifyPath !== null && cannotVerifyPath !== undefined && cannotVerifyPath !== '') {
+    fail(code, 'mad review: cannotVerify が空なのに解消の記録が渡された')
+  }
+  if (hasCannotVerify && (cannotVerifyPath === null || cannotVerifyPath === undefined || cannotVerifyPath === '')) {
+    fail(code, 'mad review: cannotVerify が非空なのに解消の記録が渡されていない')
+  }
+  if (result.findings.some((finding) => finding && finding.planMandated === true)) {
+    fail(code, 'mad review: planMandated の finding は fix ループへ入れられない')
+  }
+  const findings = []
+  let number = 0
+  for (const finding of result.findings) {
+    if (!finding || (finding.severity !== 'critical' && finding.severity !== 'important')) continue
+    nonEmptyString(finding.summary, code, 'mad review finding summary')
+    nonEmptyString(finding.location, code, 'mad review finding location')
+    number += 1
+    findings.push({
+      id: `OF-${number}`,
+      severity: finding.severity,
+      summary: finding.summary,
+      location: finding.location,
+      origin: 'review-finding',
+      originItem: null,
+    })
+  }
+  if (hasCannotVerify) {
+    const record = readStrictJson0600(cannotVerifyPath, code, 'mad review cannot verify')
+    if (!Array.isArray(record.items)) fail(code, 'mad review cannot verify items: 配列が必要である')
+    for (const item of record.items) {
+      if (!item || item.resolution !== 'confirmed_gap') continue
+      nonEmptyString(item.item, code, 'mad review cannot verify item')
+      nonEmptyString(item.detail, code, 'mad review cannot verify detail')
+      nonEmptyString(item.location, code, 'mad review cannot verify location')
+      if (!['critical', 'important'].includes(item.severity)) fail(code, 'mad review cannot verify severity が不正である')
+      number += 1
+      findings.push({
+        id: `OF-${number}`,
+        severity: item.severity,
+        summary: item.detail,
+        location: item.location,
+        origin: 'cannot-verify',
+        originItem: item.item,
+      })
+    }
+  }
+  return writeMadReviewOpenFindings0600(runDir, {
+    version: 1,
+    type: 'mad-review-open-findings',
+    task: scope.task,
+    round: 1,
+    findings,
+  })
+}
+
+// round N の再レビューの結果から round N+1 の一覧を作る。`severity` と `summary` は round N の
+// 一覧の値をそのまま写す。再レビュー役は指摘を判定するだけで severity を付け直さないので、
+// 写し直すと元の較正が失われる。引き継ぎは `id` だけで行い、`summary` の文字列一致で
+// 絞り込まない。
+function advanceMadReviewFindings0600(runDir, scopePath, round, resultPath) {
+  const code = 'invalid_mad_review_open_findings'
+  absolutePath(runDir, code, 'mad review run directory')
+  if (!Number.isInteger(round)) fail(code, 'mad review round: 整数が必要である')
+  if (round + 1 >= MAD_REVIEW_MAX_ROUNDS) fail(code, 'mad review: 上限に達した run は次のラウンドの一覧を作らない')
+  const scope = readMadReviewScope0600(scopePath).value
+  const previous = readMadReviewOpenFindings0600(runDir, scope.task, round)
+  const result = readStrictJson0600(resultPath, code, 'mad review result')
+  if (!Array.isArray(result.verdicts)) fail(code, 'mad review result verdicts: 配列が必要である')
+  const newBreakage = result.newBreakage === null || result.newBreakage === undefined ? [] : result.newBreakage
+  if (!Array.isArray(newBreakage)) fail(code, 'mad review result newBreakage: 配列か null が必要である')
+  const byId = new Map(previous.findings.map((finding) => [finding.id, finding]))
+  const seen = new Set()
+  const findings = []
+  for (const verdict of result.verdicts) {
+    const findingId = verdict && verdict.findingId
+    nonEmptyString(findingId, code, 'mad review verdict findingId')
+    if (seen.has(findingId)) fail(code, `mad review verdict: findingId が重複している: ${findingId}`)
+    seen.add(findingId)
+    if (!byId.has(findingId)) fail(code, `mad review verdict: 一覧に無い findingId である: ${findingId}`)
+    if (typeof verdict.addressed !== 'boolean') fail(code, 'mad review verdict addressed: boolean が必要である')
+    if (verdict.addressed) continue
+    const carried = byId.get(findingId)
+    const evidence = typeof verdict.evidence === 'string' && verdict.evidence.length > 0 ? verdict.evidence : carried.location
+    findings.push({
+      id: carried.id,
+      severity: carried.severity,
+      summary: carried.summary,
+      location: evidence,
+      origin: carried.origin,
+      originItem: carried.originItem,
+    })
+  }
+  for (const missing of byId.keys()) {
+    if (!seen.has(missing)) fail(code, `mad review verdict: 判定されていない findingId がある: ${missing}`)
+  }
+  let number = highestMadReviewFindingNumber(runDir, scope.task)
+  for (const breakage of newBreakage) {
+    if (!breakage || (breakage.severity !== 'critical' && breakage.severity !== 'important')) continue
+    nonEmptyString(breakage.summary, code, 'mad review newBreakage summary')
+    nonEmptyString(breakage.location, code, 'mad review newBreakage location')
+    number += 1
+    findings.push({
+      id: `OF-${number}`,
+      severity: breakage.severity,
+      summary: breakage.summary,
+      location: breakage.location,
+      origin: 'review-finding',
+      originItem: null,
+    })
+  }
+  return writeMadReviewOpenFindings0600(runDir, {
+    version: 1,
+    type: 'mad-review-open-findings',
+    task: scope.task,
+    round: round + 1,
+    findings,
+  })
 }
 
 function assertCreateContext(value) {
@@ -978,6 +1209,9 @@ module.exports = {
   checkMadReviewScope0600,
   checkMadReviewPackageRange0600,
   checkMadReviewVerdict0600,
+  assertMadReviewOpenFindingsV1,
+  openMadReviewFindings0600,
+  advanceMadReviewFindings0600,
   assertMadReviewObservationsV1,
   assertMadReviewObservationsFile0600,
   writeMadReviewObservations0600,
