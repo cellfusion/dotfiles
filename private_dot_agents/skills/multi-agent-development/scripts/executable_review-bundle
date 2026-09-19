@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# レビュー役へ渡す review package を組み立てる。レビュー役は Bash を持たないので、
+# 自分で範囲を調べられない。header に 40 桁の sha を 2 つ書いて、親が渡した範囲と
+# レビュー役が報告した範囲を後から照合できるようにする。
+set -u
+
+fail() {
+  printf 'review-bundle: %s\n' "$1" >&2
+  exit 2
+}
+
+cwd=""
+base=""
+head_revision=""
+out=""
+force=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --cwd|--base|--head|--out)
+      [ "$#" -ge 2 ] || fail "option value is required"
+      case "$1" in
+        --cwd) cwd="$2" ;;
+        --base) base="$2" ;;
+        --head) head_revision="$2" ;;
+        --out) out="$2" ;;
+      esac
+      shift 2
+      ;;
+    --force)
+      force=1
+      shift
+      ;;
+    *) fail "unknown option" ;;
+  esac
+done
+
+[ -n "$cwd" ] || fail "--cwd is required"
+[ -n "$base" ] || fail "--base is required"
+[ -n "$head_revision" ] || fail "--head is required"
+[ -n "$out" ] || fail "--out is required"
+case "$cwd" in /*) ;; *) fail "--cwd must be an absolute path" ;; esac
+case "$out" in /*) ;; *) fail "--out must be an absolute path" ;; esac
+[ -d "$cwd" ] || fail "--cwd is not a directory"
+git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1 || fail "--cwd is not a git repository"
+
+base_sha="$(git -C "$cwd" rev-parse --verify --quiet "${base}^{commit}")" ||
+  fail "--base cannot be resolved to a commit"
+head_sha="$(git -C "$cwd" rev-parse --verify --quiet "${head_revision}^{commit}")" ||
+  fail "--head cannot be resolved to a commit"
+[ "${#base_sha}" -eq 40 ] || fail "--base did not resolve to a 40 character sha"
+[ "${#head_sha}" -eq 40 ] || fail "--head did not resolve to a 40 character sha"
+
+git -C "$cwd" merge-base --is-ancestor "$base_sha" "$head_sha" ||
+  fail "--base must be an ancestor of --head"
+
+if [ -e "$out" ] && [ "$force" -eq 0 ]; then
+  fail "--out already exists; pass --force to overwrite"
+fi
+
+# 親ディレクトリは、無いときだけ作って mode を絞る。`agent-docs-dir reviews` が返す
+# ディレクトリは他の成果物とも共有しているので、呼び出しのたびに mode を書き換えない。
+out_dir="$(dirname "$out")"
+if [ ! -d "$out_dir" ]; then
+  mkdir -p "$out_dir" || fail "--out parent directory cannot be created"
+  chmod 700 "$out_dir" || fail "--out parent directory mode cannot be set"
+fi
+
+temporary="$out.tmp.$$"
+rm -f "$temporary"
+if ! (
+  umask 077
+  {
+    printf '# Review package: %s..%s\n' "$base_sha" "$head_sha"
+    printf '\n## Commits\n'
+    git -C "$cwd" log --oneline "$base_sha..$head_sha" || exit 1
+    printf '\n## Files changed\n'
+    git -C "$cwd" diff --stat "$base_sha..$head_sha" || exit 1
+    printf '\n## Diff\n'
+    git -C "$cwd" diff -U10 "$base_sha..$head_sha" || exit 1
+  } > "$temporary"
+); then
+  rm -f "$temporary"
+  fail "review package cannot be written"
+fi
+
+chmod 600 "$temporary" || { rm -f "$temporary"; fail "review package mode cannot be set"; }
+mv -f "$temporary" "$out" || { rm -f "$temporary"; fail "review package cannot be moved into place"; }
+printf '%s\n' "$out"
+exit 0
