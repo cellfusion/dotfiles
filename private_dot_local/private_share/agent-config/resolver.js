@@ -28,7 +28,8 @@ function resolvedEnvironments(config) {
 // notes は採用した枠の定義のものだけを使う。環境の枠が notes を持たないときに共通の枠の
 // notes を借りると、説明と候補の出所がずれる。
 function staticCandidates(config, environment, duty, complexity) {
-  const byDuty = config.environments[environment].selection[duty]
+  const override = config.environments[environment].selection
+  const byDuty = override === undefined ? undefined : override[duty]
   const slot = byDuty === undefined ? undefined : byDuty[complexity]
   if (slot !== undefined) {
     return { candidates: slot.candidates, notes: slot.notes, warnings: [] }
