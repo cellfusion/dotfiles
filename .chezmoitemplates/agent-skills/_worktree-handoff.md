@@ -65,7 +65,7 @@ herdr agent prompt "<agent-name>" "<指示>" --wait --timeout 120000
 - worktree は用意済みなので、新しく worktree を切らないこと
 - この worktree のブランチ名
 
-**タイムアウトは失敗ではない。** 委譲先が SDD を回し始めるのを `--wait` は待つので、`--timeout 120000` に達すること自体はよく起こる。timeout で返ってきても worktree は消さず、7 へ進む。
+**タイムアウトは失敗ではない。** 委譲先が MAD を回し始めるのを `--wait` は待つので、`--timeout 120000` に達すること自体はよく起こる。timeout で返ってきても worktree は消さず、7 へ進む。
 
 ### 7. 報告して待機する
 

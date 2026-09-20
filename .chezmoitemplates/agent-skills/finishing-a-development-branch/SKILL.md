@@ -171,7 +171,7 @@ git worktree remove "$WORKTREE_PATH"
 git worktree prune  # 古い登録の掃除
 ```
 
-SDD の ledger・brief・report・review package は `~/docs/<owner>/<repo>/sdd/<plan-basename>/` にある。リポジトリの作業ツリーの外なので、worktree を消しても残る。写し取る作業は要らない。
+MAD の run directory はリポジトリの作業ツリーの外にあるので、worktree を消しても残る。写し取る作業は要らない。
 
 **`$HERDR_ENV` が `1` で、`WORKTREE_PATH` が `~/.herdr/worktrees/` の下にある場合**: herdr が workspace として作った worktree である。先に workspace を畳んでから worktree を消す。
 
