@@ -1,63 +1,63 @@
 ---
 name: handoff
 description: >-
-  context 逼迫時に、新しい herdr pane でクリーンな後継 Claude セッションを起動し、
-  引き継ぎドキュメントを渡して作業を継続させる手順。
-  context 使用率が目安 60% を超えたとき、または auto-compact / context 上限の警告が出たときに使う。
-  HERDR_ENV=1 のときのみ有効。
+  Procedure for spawning a clean successor Claude session in a new herdr pane when context
+  pressure increases, passing a handoff document to continue work seamlessly.
+  Use when context consumption exceeds ~60%, or when auto-compact / context limit warnings appear.
+  Only valid when HERDR_ENV=1.
 ---
 
 # Session Handoff
 
-context が逼迫してきたら、劣化する前に**新しい herdr pane でクリーンな後継セッションを起動し、引き継ぎドキュメントを渡してバトンを渡す**。以降の作業は後継セッションが継続し、現行セッションは終了する。
+When context pressure mounts, hand over the baton before quality degrades by **launching a clean successor session in a new herdr pane, passing a handoff document**. The successor session continues subsequent tasks, and the current session terminates.
 
-## 前提と起動判断
+## Prerequisites and Initiation Criteria
 
-- **前提**: herdr 管理下（`HERDR_ENV=1`）のときのみ。未設定なら通常の auto-compact に任せ、この手順は実行しない。Paseo を含め、`HERDR_ENV` が `1` でない環境で herdr を起動してはならない
-- **目安: context 使用率が約 60% を超えたと判断したとき**。ただし Claude は正確な使用率を取得できないため、これは自己判断の目安。**auto-compact / context 上限の警告が出たら、それは確実に「今やるべき」タイミング**
-- 逼迫していても、**現在の atomic な作業ステップの途中では引き継がない**。編集途中なら区切りまで完了させるか、未コミット変更を引き継ぎドキュメントに明記してから行う
+- **Prerequisite**: Only active under herdr management (`HERDR_ENV=1`). If unset, rely on standard auto-compact and do not run this procedure. Never start herdr in environments where `HERDR_ENV` is not `1`, including Paseo.
+- **Rule of thumb: when context usage is judged to exceed approximately 60%**. Since Claude cannot obtain exact token usage numbers, this is a heuristic self-assessment. **If auto-compact or context limit warnings appear, it is definitely the time to hand off immediately**.
+- Even under pressure, **never hand off in the middle of an atomic work step**. If editing, complete up to a clean boundary or document uncommitted modifications explicitly in the handoff document before proceeding.
 
-## 手順
+## Procedure
 
-1. **引き継ぎドキュメントをファイルに書く**（argv に詰めない）。保存先は `~/.config/claude/handoffs/`（初回は `mkdir -p`）、ファイル名 `handoff-$(date +%Y%m%d-%H%M%S).md`。絶対パスを後続 3 で渡す。**self-contained** であること — 後継セッションはこの会話の記憶を持たず、CLAUDE.md・メモリファイル・この引き継ぎドキュメントだけが頼り。最低限:
-   - タスクの目的 / ゴール
-   - 完了済みの内容
-   - 次にやるステップ（順序付き）
-   - 関連ファイルパス・重要な関数（`file_path:line`）
-   - 決定事項とその理由 / 却下した選択肢
-   - ハマりポイント・注意
-   - git 状態（branch、未コミット/stash の有無）
-   - 関連メモリ（`[[name]]`）へのリンク
-   - **skip-permissions で無人継続するため、破壊的・不可逆操作は「要ユーザー確認」と明記**して後継の暴走を防ぐ
+1. **Write the handoff document to disk** (do not pass it via argv). Save to `~/.config/claude/handoffs/` (run `mkdir -p` if not present), named `handoff-$(date +%Y%m%d-%H%M%S).md`. Pass the absolute path in step 3. It must be **self-contained** — the successor has no memory of this conversation and relies solely on CLAUDE.md, memory files, and this handoff document. Minimum contents:
+   - Task objective / goal
+   - Completed work
+   - Next steps (ordered)
+   - Relevant file paths and critical functions (`file_path:line`)
+   - Decisions and rationale / rejected alternatives
+   - Pitfalls / warnings
+   - Git state (branch, uncommitted changes / stash)
+   - Links to relevant memories (`[[name]]`)
+   - **Because execution continues unattended with skip-permissions, explicitly label destructive/irreversible actions as "Requires user confirmation"** to prevent unintended actions.
 
-2. **自分の pane の隣に新規 pane を作る**（`$HERDR_PANE_ID` 基準・同じ cwd）。`--current` は使わない（ユーザーのフォーカス pane 基準になり別ワークスペースに開くため）:
+2. **Create a new pane next to your own pane** (based on `$HERDR_PANE_ID`, same cwd). Do not use `--current` (which targets the user's focused pane and opens in a different workspace):
 
    ```bash
    herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus
-   # 返る pane_id を <new_pane> とする
+   # Let the returned pane_id be <new_pane>
    ```
 
-3. **後継セッションを起動**（`CLAUDE_CONFIG_DIR` は `HERDR_SESSION` から zshrc で解決されるため、同一セッション内の新規 pane でも維持される。無人継続なので skip フラグは明示する）:
+3. **Launch the successor session** (`CLAUDE_CONFIG_DIR` is resolved from `HERDR_SESSION` via zshrc, preserving it in a new pane within the same session. Explicitly provide the skip flag for unattended continuation):
 
    ```bash
-   herdr pane run <new_pane> "claude --dangerously-skip-permissions 'まず <引き継ぎドキュメントの絶対パス> を読み、そこに書かれたタスクを引き継いで続行せよ'"
+   herdr pane run <new_pane> "claude --dangerously-skip-permissions 'Read <absolute path to handoff document> first, take over the tasks documented there, and proceed'"
    ```
 
-4. **後継が起動したことを検証してから**現行を閉じる（起動失敗時は絶対に閉じない＝データ喪失防止）:
+4. **Verify the successor has started** before closing the current pane (never close if launch failed, preventing data loss):
 
    ```bash
-   herdr pane wait-output <new_pane> --match "<claude 起動プロンプトの目印>" --timeout 60000
-   # もしくは herdr agent wait <new_pane> --until idle --timeout 60000
+   herdr pane wait-output <new_pane> --match "<claude prompt marker>" --timeout 60000
+   # or herdr agent wait <new_pane> --until idle --timeout 60000
    ```
 
-5. 検証 OK なら**現行セッションを終了**（自分の pane を閉じる＝現行 claude プロセス終了）:
+5. If verification succeeds, **terminate the current session** (close your own pane, exiting the current claude process):
 
    ```bash
    herdr pane close "$HERDR_PANE_ID"
    ```
 
-## ガードレール
+## Guardrails
 
-- **後継の起動確認が取れるまで現行を閉じない**。確認できなければ閉じずにユーザーへ報告する
-- **起動直後の即再ハンドオフを避ける**。後継はハンドオフ直後に再度ハンドオフせず、最低 1 つの実作業ステップを完了してから次の逼迫判断を行う（連鎖は意図的だが空回りを防ぐ）
-- 後継も CLAUDE.md を継承するので、再び逼迫すれば同様に引き継ぐ（意図的な連鎖）
+- **Do not close current pane until successor launch is confirmed**. If unconfirmed, keep open and report to user.
+- **Avoid immediate re-handoff right after launch**. Successor must not immediately hand off again; complete at least one concrete work step before re-evaluating context pressure (chaining is intentional, but looping without progress must be prevented).
+- Successor inherits CLAUDE.md, so if context fills up again, it will hand off in the same manner (intentional chaining).

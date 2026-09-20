@@ -1,147 +1,141 @@
 ---
 name: verification-before-completion
 description: >-
-  完了・修正済み・テスト通過を主張する直前、コミットや PR 作成の前に使う。
-  主張を証明する検証コマンドを実行し、出力を確認してから主張する。
-  主張より先に証拠を置く。
+  Use right before claiming completion, fixes, or test passage, and before committing or creating PRs.
+  Execute verification commands proving claims, confirm output, and only then assert results.
+  Place evidence before assertion.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# 完了を主張する前に検証する
+# Verify Before Claiming Completion
 
-## 概要
+## Overview
 
-**中核**: 主張より先に証拠を置く。常に。
+**Core**: Put evidence before assertion. Always.
 
-**この規則の字面を破ることは、この規則の精神を破ることである。**
+**Breaking the letter of this rule breaks the spirit of this rule.**
 
-## 鉄則
+## Iron Rule
 
 ```
-新しい検証の証拠なしに完了を主張しない
+Never claim completion without fresh evidence of verification
 ```
 
-そのメッセージの中で検証コマンドを実行していないなら、通ると主張できない。
+If you have not run a verification command within the current turn, you cannot claim it passes.
 
 ## Gate Function
 
 ```
-何らかの状態を主張する前、または満足を表明する前に:
+Before asserting any status or expressing satisfaction:
 
-1. 特定する: この主張を証明するコマンドは何か
-2. 実行する: そのコマンドを完全な形で（新しく、省略せずに）実行する
-3. 読む: 出力全体を読み、終了コードを確認し、失敗数を数える
-4. 検証する: 出力は主張を裏付けているか
-   - いいえ: 実際の状態を証拠付きで述べる
-   - はい: 証拠を添えて主張する
-5. そこで初めて主張する
+1. Identify: What command proves this claim?
+2. Execute: Run that command completely (freshly, unabbreviated)
+3. Read: Read the full output, verify exit code, and count failures
+4. Verify: Does the output substantiate the claim?
+   - No: State the actual situation accompanied by evidence
+   - Yes: Make the claim accompanied by the evidence
+5. Only then assert the claim
 
-どれかを飛ばした時点で、検証ではなく虚偽である
+Skipping any step constitutes falsification, not verification
 ```
 
-## 誰が検証を実行するか
+## Who Executes Verification
 
-Gate Function の 2（実行する）と 3（読む）は、親が自分で行っても、子に委譲してもよい。1（特定
-する）、4（検証する）、5（主張する）は親が行う。
+Steps 2 (Execute) and 3 (Read) of the Gate Function may be performed by the parent directly or delegated to a child. Steps 1 (Identify), 4 (Verify), and 5 (Assert) are always performed by the parent.
 
-- **検証コマンドが数個で、出力が短い** — 親が自分で実行する。`/verify` がこれに当たる
-- **検証が長い、または出力が大きい** — 子に委譲する。MAD の `review` recipe を使い、実行させる
-  コマンドと要件の絶対パスを渡す。子は実行したコマンド、終了コード、出力、要件ごとの根拠を
-  検証記録に書き、その絶対パスを返す
+- **Few verification commands with brief output** — Parent runs them directly. `/verify` is an example.
+- **Lengthy verification or voluminous output** — Delegate to a child using MAD's `review` recipe, passing commands and requirements paths. The child records executed commands, exit codes, output, and rationale per requirement into a verification record, returning its absolute path.
 
-子に委譲した場合も、親は検証記録の終了コードと失敗数を読む。**子が「成功した」と報告したこと
-自体は証拠にならない。** 記録に終了コードと出力が無ければ、検証は行われていない。
+Even when delegating to a child, the parent inspects exit codes and failure counts from the verification record. **A child's report that it "succeeded" is not evidence.** Without exit codes and command outputs in the record, verification did not occur.
 
-## よくある失敗
+## Common Pitfalls
 
-| 主張 | 必要な証拠 | 不十分なもの |
+| Claim | Required Evidence | Insufficient Evidence |
 |---|---|---|
-| テストが通る | テストコマンドの出力: 失敗 0 件 | 前回の実行、「通るはず」 |
-| lint がきれい | lint の出力: エラー 0 件 | 部分的な確認、外挿 |
-| ビルドが通る | ビルドコマンド: 終了コード 0 | lint が通ったこと、ログが良さそうなこと |
-| バグが直った | 元の症状のテスト: 通る | コードを変えたので直ったはず |
-| リグレッションテストが効く | red-green を確認した | 1 回通ったこと |
-| エージェントが完了した | VCS の差分に変更がある | エージェントの「成功」報告 |
-| 子が検証した | 検証記録の終了コードと出力 | 子の「検証した」という報告 |
-| 要件を満たした | 1 行ずつのチェックリスト | テストが通ること |
+| Tests pass | Test command output: 0 failures | Prior run, "should pass" |
+| Clean lint | Lint output: 0 errors | Partial check, extrapolation |
+| Build passes | Build command: exit code 0 | Passing lint, "logs look good" |
+| Bug fixed | Test reproducing original symptom: passes | "Should be fixed since code changed" |
+| Regression test works | Confirmed red-green | Passed once |
+| Agent completed | Changes visible in VCS diff | Agent's "success" message |
+| Child verified | Verification record exit code & output | Child's claim that it verified |
+| Requirements met | Line-by-line checklist verification | "Tests are green" |
 
-このプロジェクトでは `/verify` が検証コマンド一式（ビルド、型チェック、lint、テスト、デバッグ文の監査）をまとめて実行する。何を実行すべきか迷ったらこれを使う。
+In this project, `/verify` runs the full verification suite (build, typecheck, lint, test, debug audit). When uncertain what to run, use `/verify`.
 
-## 赤信号 — 止まる
+## Red Flags — Stop
 
-- 「はず」「たぶん」「〜のようだ」を使っている
-- 検証の前に満足を表明している（「完了」「うまくいった」など）
-- 検証せずにコミット・push・PR を作ろうとしている
-- エージェントの成功報告を信じている
-- 部分的な検証に頼っている
-- 「今回だけ」と考えている
-- 疲れていて終わらせたい
-- **検証を実行せずに成功を含意する言い回しをしている**
+- Using "should", "probably", "seems to"
+- Expressing satisfaction before verification ("done", "works great", etc.)
+- Attempting to commit, push, or open a PR without verifying
+- Trusting agent success reports blindly
+- Relying on partial verification
+- Thinking "just this once"
+- Fatigued and wanting to wrap up
+- **Using phrasing implying success without running verification**
 
-## 正当化への対処
+## Handling Rationalizations
 
-| 言い訳 | 実際 |
+| Rationalization | Reality |
 |---|---|
-| 「もう動くはず」 | 検証を実行する |
-| 「自信がある」 | 自信は証拠ではない |
-| 「今回だけ」 | 例外は無い |
-| 「lint が通った」 | lint はコンパイラではない |
-| 「エージェントが成功と言った」 | 独立に検証する |
-| 「疲れている」 | 疲労は理由にならない |
-| 「部分的な確認で十分」 | 部分は何も証明しない |
-| 「言い方を変えたので規則は当たらない」 | 字面ではなく精神 |
+| "Should work by now" | Run verification |
+| "I'm confident" | Confidence is not evidence |
+| "Just this once" | No exceptions |
+| "Lint passed" | Linters are not compilers |
+| "Agent said success" | Verify independently |
+| "I'm tired" | Fatigue is not an excuse |
+| "Partial check is enough" | Partial checks prove nothing |
+| "Phrased differently, so rule doesn't apply" | Obey the spirit, not just the letter |
 
-## 型
+## Patterns
 
-**テスト**
-
-```
-✅ [テストコマンドを実行] [34/34 pass を確認] 「全テストが通る」
-❌ 「これで通るはず」「正しそう」
-```
-
-**リグレッションテスト（TDD の red-green）**
+**Tests**
 
 ```
-✅ 書く → 実行（pass）→ 修正を戻す → 実行（必ず fail）→ 修正を戻す → 実行（pass）
-❌ 「リグレッションテストを書いた」（red-green の確認なし）
+✅ [Run test command] [Verify 34/34 passed] "All tests pass"
+❌ "This should pass now", "Looks correct"
 ```
 
-**ビルド**
+**Regression Tests (TDD red-green)**
 
 ```
-✅ [ビルドを実行] [終了コード 0 を確認] 「ビルドが通る」
-❌ 「lint が通った」（lint はコンパイルを確認しない）
+✅ Write -> run (pass) -> revert fix -> run (must fail) -> reapply fix -> run (pass)
+❌ "Wrote regression test" (without verifying red-green)
 ```
 
-**要件**
+**Build**
 
 ```
-✅ プランを読み直す → チェックリストを作る → 1 つずつ確認 → 抜けか完了を報告
-❌ 「テストが通ったのでフェーズ完了」
+✅ [Run build] [Verify exit code 0] "Build succeeds"
+❌ "Lint passed" (linting does not verify compilation)
 ```
 
-**エージェントへの委譲**
+**Requirements**
 
 ```
-✅ エージェントが成功を報告 → VCS の差分を確認 → 変更を検証 → 実際の状態を報告
-❌ エージェントの報告を信じる
+✅ Re-read plan -> build checklist -> verify item by item -> report gaps or completion
+❌ "Tests pass, so phase is complete"
 ```
 
-## いつ適用するか
+**Agent Delegation**
 
-**常に、次の前に**:
+```
+✅ Agent reports success -> inspect VCS diff -> verify changes -> report actual state
+❌ Trusting agent report at face value
+```
 
-- 成功・完了を意味するあらゆる表現
-- 満足のあらゆる表明
-- 作業状態についてのあらゆる肯定的な発言
-- コミット、PR 作成、タスク完了
-- 次のタスクへ移る
-- エージェントへ委譲する
+## When to Apply
 
-**規則が当たる対象**:
+**Always, prior to**:
+- Any statement expressing success or completion
+- Any expression of satisfaction
+- Any affirmative statement about work status
+- Commits, PR creation, task completion
+- Advancing to the next task
+- Delegating to an agent
 
-- 正確な言い回し
-- 言い換えや同義語
-- 成功の含意
-- 完了・正しさを示唆するあらゆる伝達
+**Scope of the rule**:
+- Exact phrasing
+- Paraphrases and synonyms
+- Implied success
+- Any communication suggesting completion or correctness

@@ -1,71 +1,71 @@
-## 承認 gate
+## Approval Gate
 {{ $worktree := false }}
 {{- if hasKey . "worktree" }}
 {{- $worktree = .worktree }}
 {{- end }}
 
-プレビューを開いたら、[ask-user] で承認を取る。
+Once the preview is open, obtain approval using `[ask-user]`.
 {{ if .issue }}
-gate を出す前に `gh repo view` を実行する。終了ステータスが 0 でなければ（`gh` が無い、未認証、GitHub remote が無い）、**issue 系の 2 つを選択肢から外し、「承認&継続」「承認のみ」の 2 択にする**。判定コマンドの出力はユーザーに見せない。
+Execute `gh repo view` before presenting the gate. If the exit status is non-zero (`gh` missing, unauthenticated, or no GitHub remote), **drop the two issue options and present only "Approve & Proceed" and "Approve only"**. Do not expose the check command's output to the user.
 {{ end }}
 {{- if $worktree }}
-gate を出す前に次の 2 つを確認する。どちらかが失敗したら、**worktree の選択肢を外して「承認&継続」「承認のみ」の 2 択にする**。判定コマンドの出力はユーザーに見せない。
+Verify the following two conditions before presenting the gate. If either fails, **remove the worktree option and present only "Approve & Proceed" and "Approve only"**. Do not expose the check command's output to the user.
 
 ```bash
 test "${HERDR_ENV:-}" = 1
 git rev-parse --git-dir
 ```
 {{ end }}
-- 質問: 「{{ .artifact }} を `<path>` に書いた。この内容で{{ .nextLabel }}に進んでよいか」
-- 選択肢:
+- Question: "{{ .artifact }} written to `<path>`. May I proceed to {{ .nextLabel }} with this content?"
+- Options:
 {{- if $worktree }}
-  - **承認&worktree で委譲** — worktree を新しい workspace として切り、そこで起動した Claude セッションに{{ .nextLabel }}を渡す（herdr 管理下のときだけ出す）
+  - **Approve & Delegate via worktree** — Create worktree as a new workspace and pass {{ .nextLabel }} to a Claude session started there (only shown under herdr management)
 {{- end }}
-  - **承認&継続** — {{ .nextLabel }}へ進む
-  - **承認のみ** — {{ .artifact }} を `~/docs/<owner>/<repo>/` に残してここで終わる
+  - **Approve & Proceed** — Advance to {{ .nextLabel }}
+  - **Approve only** — Keep {{ .artifact }} in `~/docs/<owner>/<repo>/` and end here
 {{- if .issue }}
-  - **承認&継続（issue化）** — issue を立てて番号を追記し、{{ .nextLabel }}へ進む（`gh` が使えるときだけ出す）
-  - **承認（issue化）** — issue を立てて番号を追記し、ここで終わる（`gh` が使えるときだけ出す）
+  - **Approve & Proceed (Create Issue)** — Create issue, record issue number, and advance to {{ .nextLabel }} (only shown when `gh` is available)
+  - **Approve (Create Issue)** — Create issue, record issue number, and end here (only shown when `gh` is available)
 {{- end }}
 
-**修正は選択肢に出さない。** 直したい点は「その他」の自由入力で受け取る。**中止も選択肢に出さない。** 何も選ばずに閉じられたら、そこで止める。
+**Do not include modification options.** Edits are accepted via free-form input ("Other"). **Do not include cancellation options.** If closed without selection, halt there.
 
-どれを選んでも、処理に入る前にファイルを読み直して手編集を取り込む。
+Regardless of selection, re-read the file before processing to incorporate manual edits.
 
 {{- if $worktree }}
-### 承認&worktree で委譲
+### Approve & Delegate via worktree
 
-下の「worktree へ委譲する」節に従う。
+Follow the "Delegating to Worktree" section below.
 {{ end }}
-### 承認&継続
+### Approve & Proceed
 
-ファイルの絶対パスを次へ渡し、下の引き継ぎ節に従って進む。
+Pass the absolute file path and proceed according to the handoff section below.
 
-### 承認のみ
+### Approve only
 
-{{ .artifact }} は `~/docs/<owner>/<repo>/` に残る。次のスキルは起動しない。ファイルの絶対パスを最終報告して終了する。
+{{ .artifact }} remains in `~/docs/<owner>/<repo>/`. Do not launch the next skill. Report the file's absolute path and finish.
 {{ if .issue }}
-### issue 化を伴う分岐
+### Issue Creation Branches
 
-「承認&継続（issue化）」と「承認（issue化）」はどちらも次の手順を踏む。
+Both "Approve & Proceed (Create Issue)" and "Approve (Create Issue)" execute the following steps:
 
-1. `gh issue create --title "<ファイルの H1 見出し>" --body-file "<ファイルの絶対パス>"` を実行する。本文はファイル全文をそのまま渡す（タイトルと H1 が重複するが加工しない）
-2. 失敗したら、ファイルには何も追記せず、失敗内容を報告して承認 gate に戻る
-3. 成功したら、H1 見出しの直後に次の 1 行を挿入する。同じ形式の行が既にあるなら置き換える（再 issue 化で行が積み上がらないようにする）
+1. Run `gh issue create --title "<File H1 Title>" --body-file "<Absolute Path to File>"`. Pass the entire file body directly (do not trim title duplication with H1).
+2. If it fails, do not modify the file; report failure and return to approval gate.
+3. If it succeeds, insert the following line immediately following the H1 heading. If a line of this format already exists, replace it (preventing line duplication on re-issue creation):
 
    ```markdown
    > Issue: [#123](https://github.com/owner/repo/issues/123)
    ```
 
-4. ファイルは削除しない。`~/docs/<owner>/<repo>/` に残したままにする
-5. issue の番号と URL を報告する
+4. Do not delete the file. Keep it in `~/docs/<owner>/<repo>/`.
+5. Report the issue number and URL.
 
-そのうえで、「承認&継続（issue化）」なら下の引き継ぎ節に従って進み、issue 番号も次へ伝える。「承認（issue化）」ならファイルの絶対パスと issue 番号を最終報告して終了する。
+Then, for "Approve & Proceed (Create Issue)", advance according to the handoff section below, passing the issue number forward. For "Approve (Create Issue)", report the absolute file path and issue number, then terminate.
 {{ end }}
-### その他（自由入力）
+### Other (Free-form Input)
 
-修正指示として扱う。内容を反映し、self-review からやり直して、プレビューと承認 gate をもう一度通す。
+Treat as modification instructions. Apply requested changes, re-run self-review, and present preview and approval gate once more.
 
-### 何も選ばれなかった場合
+### If Nothing Selected
 
-中止として扱い、そこで止める。ファイルは `~/docs/<owner>/<repo>/` に残したままにする。
+Treat as cancellation and halt execution. Keep file in `~/docs/<owner>/<repo>/`.

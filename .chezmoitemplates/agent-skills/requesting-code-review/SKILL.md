@@ -1,45 +1,42 @@
 ---
 name: requesting-code-review
 description: >-
-  作業の区切り、大きめの機能の実装後、merge 前にレビューを依頼するときに使う。
-  レビューする子には評価のために精密に組み立てた文脈だけを渡し、
-  自分の context を調整のために温存する。
+  Use when requesting reviews at task boundaries, after substantial feature implementation,
+  or before merging. Provide review children with only precisely crafted context for evaluation,
+  preserving your own context for coordination.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# コードレビューを依頼する
+# Requesting Code Review
 
-MAD の `review` recipe を使って、問題が波及する前に捕まえる。レビュー側には**評価のために
-精密に組み立てた文脈**を渡す。あなたのセッション履歴は渡さない。
+Use MAD's `review` recipe to catch issues before they propagate. Provide reviewers with **precisely assembled context tailored for evaluation**. Do not pass your session history.
 
-**中核**: 早く、こまめにレビューする。
+**Core**: Review early and frequently.
 
-## いつ依頼するか
+## When to Request
 
-**必須**:
+**Mandatory**:
+- After each task in `multi-agent-development`
+- After completing a substantial feature
+- Before merging into main
 
-- multi-agent-development の各 task の後
-- 大きめの機能を完了した後
-- main へ merge する前
+**Optional but recommended**:
+- When stuck (to gain a fresh perspective)
+- Before refactoring (to capture a baseline)
+- After fixing an intricate bug
 
-**任意だが有用**:
+## How to Request
 
-- 詰まったとき（視点を変える）
-- リファクタリングの前（現状の基準を取る）
-- 込み入ったバグを直した後
+**1. Consolidate diff into a file**
 
-## 依頼のしかた
-
-**1. diff をファイルにまとめる**
-
-レビュアーの context に diff を 1 回の Read で載せる。review package は次の手順で作る。
+Load the diff into the reviewer's context with a single Read. Build the review package with:
 
 ```bash
-BASE_SHA=$(git merge-base master HEAD)   # または対象範囲の起点
+BASE_SHA=$(git merge-base master HEAD)   # or base of target range
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-`agent-docs-dir reviews` が返すディレクトリに正本を作る。`/tmp` を使わないのは、レビューが終わったあとも正本を読み返せる場所に残すためである。組み立ては MAD と同じ `review-bundle` に任せる。同じコミット範囲へ 2 回目の依頼を出すと同じパスへ書くので、この呼び出しだけが `--force` を渡す。`review-bundle` は `--out` の親ディレクトリを、無いときだけ作って mode 0700 にする。`agent-docs-dir reviews` が返すディレクトリは既にあるので、この呼び出しで mode が変わることはない。
+Create the authoritative file in the directory returned by `agent-docs-dir reviews`. Avoid `/tmp` so that the authoritative package remains readable even after review completes. Assembly is delegated to `review-bundle`, matching MAD. Because requesting a second review over the same commit range targets the same path, only this call passes `--force`. `review-bundle` creates the parent directory of `--out` with mode 0700 if missing. Since the directory returned by `agent-docs-dir reviews` already exists, its mode is not modified.
 
 ```bash
 REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
@@ -49,30 +46,25 @@ OUT="$REVIEWS/review-${BASE_SHA:0:7}..${HEAD_SHA:0:7}.diff"
   --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT" --force
 ```
 
-**2. レビューを依頼する**
+**2. Request review**
 
-MAD の `review` recipe を使う。呼び方は `multi-agent-development` スキルが持つ。
+Use MAD's `review` recipe. Invocation details reside in the `multi-agent-development` skill.
 
-どちらの経路でも、渡すのは次の 4 つだけである。セッション履歴を渡さない。
+Across both routes, pass only these 4 items (never pass session history):
+- Overview of what was implemented
+- Absolute path to plan or requirements (or a concise summary if unavailable)
+- Absolute path to review package
+- List of deferred or parked findings (if any)
 
-- 何を実装したかの概要
-- プランまたは要件の絶対パス（無ければ要件を数行で）
-- review package の絶対パス
-- 先送りされた指摘や park された指摘のリスト（あれば）
+MAD's `review` spawns perspective-specific `reviewer` instances in parallel, synthesized by `review-synthesizer` into actionable findings. The synthesized outcome is `approved` only when zero critical or important findings remain.
 
-MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` が採用可能な指摘へ
-統合する。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
-
-review package も plan もリポジトリの作業ツリーの外にある。子は呼び出し元の作業ディレクトリの
-外を読めない engine 設定でも動く必要があるので、渡す前に `<repo-root>/.agent-review/` の下の
-一意なディレクトリへ複製し、複製先の絶対パスを渡す。
+Both the review package and plan reside outside the working tree. Because child agents must function in engine configurations that disallow reading outside cwd, copy them into a unique directory under `<repo-root>/.agent-review/` before passing, providing the copied absolute paths:
 
 ```bash
-# 要件ファイルの正本。plan なら agent-docs-dir plans の下にある
+# Source requirements file; if plan, resides under agent-docs-dir plans
 REQ_SRC="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)/PLAN.md"
 
-# 子は cwd の外を読めないので、リポジトリ内へ複製してから渡す。
-# root は従来の内容を残し、実行ごとの一意なサブディレクトリだけを消す。
+# Children cannot read outside cwd; stage into repository before passing
 STAGE_ROOT="$(git rev-parse --show-toplevel)/.agent-review"
 mkdir -p "$STAGE_ROOT"
 if [ ! -e "$STAGE_ROOT/.gitignore" ]; then
@@ -81,50 +73,44 @@ fi
 STAGE="$(mktemp -d "$STAGE_ROOT/run.XXXXXX")"
 cleanup() { rm -rf -- "$STAGE"; }
 trap cleanup EXIT
-# trap は成功しても失敗しても、一意な複製先だけを消す。
+# Trap removes unique staged directory on exit regardless of success or failure
 cp "$OUT" "$STAGE/"
 cp "$REQ_SRC" "$STAGE/"
 STAGED_REVIEW="$STAGE/$(basename "$OUT")"
 STAGED_REQ="$STAGE/$(basename "$REQ_SRC")"
 ```
 
-要件をファイルではなく文字列で渡すときは、`STAGED_REQ` の代わりに概要と要件を数行にまとめた
-文字列を子へ渡す。複製が要るのは review package だけになる。
+If passing requirements as text rather than a file, supply the summary text directly instead of `STAGED_REQ`. Only the review package requires staging.
 
-`.agent-review/` に置く `.gitignore` は自己無視である。global の gitignore が無い環境でも複製が
-コミットに混ざらないようにする。削除できずに残っても、自己無視が効くので `git status` には
-出ない。
+`.gitignore` inside `.agent-review/` ignores everything inside. Even in environments without global gitignore, staged copies will not accidentally enter commits. Even if cleanup fails, it will not appear in `git status`.
 
-**3. フィードバックに対応する**
+**3. Address feedback**
 
-- Critical は直ちに直す。直すのは子である。親は指摘と review package の絶対パスを MAD の
-  `implement` recipe へ渡す
-- Important は次へ進む前に直す。渡すものと経路は Critical と同じにする
-- Minor は記録して後で扱う
-- レビュアーが誤っていれば技術的な根拠を添えて押し返す
+- Fix Critical findings immediately. Fixes are performed by child agents; parent passes findings and review package path to MAD's `implement` recipe.
+- Fix Important findings before proceeding. Route and payload match Critical.
+- Record Minor findings for later handling.
+- If the reviewer is mistaken, push back with technical rationale.
 
-**親は Critical と Important を自分で直さない。** 親が書いた修正は独立したレビュアーの判定を
-受けない。修正の diff とテスト出力も親の会話に残り、以降のターンで毎回読み直される。
+**The parent must not fix Critical and Important findings directly.** Fixes written by the parent do not receive independent reviewer evaluation. The fix diff and test logs would also persist in parent context, re-read on every subsequent turn.
 
-受け取り方の作法は receiving-code-review を使う。
+Follow `receiving-code-review` for receiving etiquette.
 
-## よくある言い訳
+## Common Rationalizations
 
-| 言い訳 | 実際 |
+| Rationalization | Reality |
 |---|---|
-| 「レビュアーを立てず自分で diff を見る」 | あなたは調整役である。diff をインラインで読むと、その diff は以降のターンで毎回読み直され、調整に使える context が減る。レビュアー subagent を立てれば、diff と評価はそちらの context に載り、返ってくるのは指摘だけになる |
-| 「レビュアーには自分のセッション履歴が要る」 | 精密に組み立てた文脈を渡す。履歴は渡さない。そうすればレビュアーは思考過程ではなく成果物を見る |
-| 「単純だからレビューは省く」 | 単純な変更が壊すものは単純ではない |
+| "Inspect diff myself without a reviewer" | You are the coordinator. Reading diffs inline burdens your context across all subsequent turns, leaving less room for coordination. Spawning a reviewer subagent confines the diff and evaluation to their context, returning only the findings |
+| "Reviewer needs my session history" | Pass precisely assembled context. Omit history. The reviewer evaluates the artifact, not your thought process |
+| "Too simple to need review" | What simple changes break is rarely simple |
 
-## してはならないこと
+## Prohibited Behaviors
 
-- Critical を無視する
-- Important を直さずに進む
-- 妥当な技術的指摘と言い争う
-- 特定の問題を指摘するなとレビュアーに指示する
+- Ignoring Critical findings
+- Advancing without fixing Important findings
+- Arguing with valid technical feedback
+- Instructing reviewers not to raise specific issues
 
-**レビュアーが誤っている場合**:
-
-- 技術的な根拠を添えて押し返す
-- 動作を証明するコードやテストを示す
-- 説明を求める
+**When a reviewer is incorrect**:
+- Push back with technical rationale
+- Provide tests or code demonstrating behavior
+- Ask for clarification

@@ -1,25 +1,25 @@
 ---
 name: using-git-worktrees
 description: >-
-  実装プランの実行前や、現在のワークスペースから隔離したい機能開発の前に使う。
-  既に隔離されているかを検出し、必要なら worktree を作って
-  依存インストールとベースラインテストまで済ませる。
+  Use before executing an implementation plan or developing features in isolation
+  from the current workspace. Detects whether the session is already isolated, creates
+  a worktree if necessary, and completes dependency installation and baseline tests.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# 隔離ワークスペースを用意する
+# Setting Up an Isolated Workspace
 
-## 概要
+## Overview
 
-実装は隔離されたワークスペースで行う。ハーネスに worktree 用のツールがあればそれを使い、無いときだけ `git worktree` に落とす。
+Perform implementations in an isolated workspace. If the harness provides worktree management tools, prefer those; fall back to `git worktree` only when unavailable.
 
-**中核**: まず既に隔離されているかを検出する。次にネイティブツールを使う。最後に git へ落とす。ハーネスと喧嘩しない。
+**Core**: First detect if already isolated. Next use native tools. Finally fall back to git. Never fight the harness.
 
-**開始時に宣言する**: 「using-git-worktrees を使って隔離ワークスペースを用意する」
+**Announce at start**: "Preparing isolated workspace using using-git-worktrees."
 
-## Step 0: 既に隔離されているかを検出する
+## Step 0: Detect Existing Isolation
 
-**何かを作る前に、今いる場所が既に隔離ワークスペースかを確認する。**
+**Before creating anything, verify whether the current directory is already an isolated workspace.**
 
 ```bash
 GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
@@ -27,49 +27,49 @@ GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
 BRANCH=$(git branch --show-current)
 ```
 
-**submodule ガード**: `GIT_DIR != GIT_COMMON` は submodule の中でも真になる。「既に worktree にいる」と結論する前に submodule でないことを確認する。
+**Submodule guard**: `GIT_DIR != GIT_COMMON` evaluates to true inside submodules as well. Before concluding "already in a worktree", verify it is not a submodule:
 
 ```bash
-# パスが返るなら worktree ではなく submodule。通常リポジトリとして扱う
+# If a path returns, this is a submodule, not a worktree. Treat as normal repository
 git rev-parse --show-superproject-working-tree 2>/dev/null
 ```
 
-**`GIT_DIR != GIT_COMMON`（かつ submodule でない）場合**: 既に linked worktree の中にいる。もう 1 つ worktree を作ってはならない。下の herdr の確認と報告を済ませてから Step 2 へ進む。
+**If `GIT_DIR != GIT_COMMON` (and not a submodule)**: You are already inside a linked worktree. Do not create another worktree. Perform herdr verification and reporting below before advancing to Step 2.
 
-**herdr 管理下（`$HERDR_ENV` が `1`）の場合**、その worktree が workspace として開かれているかも確認する。開かれていない worktree は端末を持たず、中で動くエージェントの作業が人間から見えない。`herdr worktree list` が失敗したらこの確認を飛ばして先へ進む。
+**Under herdr management (`$HERDR_ENV` is `1`)**: Verify whether that worktree is opened as a workspace. An unopened worktree lacks a terminal, making agent actions invisible to humans. If `herdr worktree list` fails, skip this check and proceed.
 
 ```bash
 ws=$(herdr worktree list --cwd "$(pwd -P)" \
   | jq -r --arg p "$(pwd -P)" '.result.worktrees[] | select(.path == $p) | .open_workspace_id // empty')
 ```
 
-`ws` が空なら、workspace として開く。
+If `ws` is empty, open it as a workspace:
 
 ```bash
 out=$(herdr worktree open --path "$(pwd -P)" --no-focus)
 ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
 ```
 
-既に開かれていた場合は `herdr worktree list` から取った `ws` をそのまま使う。
+If already opened, reuse `ws` obtained from `herdr worktree list`.
 
-`$HERDR_ENV` が `1` でないときはこの確認を丸ごと飛ばす。
+If `$HERDR_ENV` is not `1`, skip this check entirely.
 
-ブランチの状態と併せて報告する。herdr 管理下なら workspace ID（`$ws`）も添える。
+Report along with branch state. Under herdr management, include workspace ID (`$ws`):
 
-- ブランチ上: 「既に隔離ワークスペース `<path>`（ブランチ `<name>`、workspace `<id>`）にいる」
-- detached HEAD: 「既に隔離ワークスペース `<path>` にいる（detached HEAD、外部管理）。ブランチ作成は finish 時に行う」
+- On branch: "Already in isolated workspace `<path>` (branch `<name>`, workspace `<id>`)."
+- Detached HEAD: "Already in isolated workspace `<path>` (detached HEAD, managed externally). Branch creation deferred to finish step."
 
-報告が済んだら Step 2 へ進む。
+Once reported, advance to Step 2.
 
-**`GIT_DIR == GIT_COMMON`（または submodule）の場合**: 通常のチェックアウトにいる。Step 1 へ進む。
+**If `GIT_DIR == GIT_COMMON` (or a submodule)**: You are in a normal checkout. Advance to Step 1.
 
-## Step 1: 隔離ワークスペースを作る
+## Step 1: Create Isolated Workspace
 
-手段は 3 つ。この順に試す。
+Try the 3 methods in this order of precedence:
 
-### 1a. herdr の worktree（herdr 管理下では最優先）
+### 1a. Herdr Worktree (Top priority under herdr management)
 
-`$HERDR_ENV` が `1` なら、これを最初に試す。
+If `$HERDR_ENV` is `1`, try this first:
 
 ```bash
 out=$(herdr worktree create --workspace "$HERDR_WORKSPACE_ID" --branch "<branch>" --base HEAD --no-focus)
@@ -78,48 +78,48 @@ ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
 cd "$path"
 ```
 
-herdr で作った worktree は人間が入れる workspace になり、そこで動くエージェントの作業ツリーと進捗が外から見える。ハーネス側のツールで作った worktree は端末を持たないので、これを先に使う。
+Worktrees created via herdr become workspaces accessible to humans, allowing external visibility of the working tree and agent progress. Because worktrees created via harness tools lack terminals, prefer herdr worktrees first.
 
-- **`--workspace` を必ず付ける。** 省くとユーザーがフォーカスしている workspace が基準になる
-- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。1a で作るこの worktree 自体は下の「ディレクトリの決定」と ignore の確認は要らない
-- `path` か `ws` が空か `null` なら委譲は成立しない。`ws` が非空なら `herdr worktree remove --workspace "$ws" --force` で片付けてから 1b へ落ちる。`ws` が空か `null` なら片付けられないので、その旨も添えて報告してから 1b へ落ちる
+- **Always pass `--workspace`.** If omitted, the user's currently focused workspace becomes the reference.
+- **Do not pass `--path`.** herdr creates it under `~/.herdr/worktrees/<repo>/<branch>`. Worktrees created in 1a do not need the directory determination or ignore checks below.
+- If `path` or `ws` is empty or `null`, delegation failed. If `ws` is non-empty, clean up with `herdr worktree remove --workspace "$ws" --force` before falling back to 1b. If `ws` is empty or `null`, cleanup cannot proceed; report and fall back to 1b.
 
-報告にはパスとブランチに加えて workspace ID も載せる。Step 2 へ進む。
+Include path, branch, and workspace ID in report. Advance to Step 2.
 
-### 1b. ネイティブの worktree ツール
+### 1b. Native Worktree Tools
 
-`EnterWorktree` のようなツール、`/worktree` コマンド、`--worktree` フラグが使えるならそれを使う。Step 2 へ進む。
+If tools like `EnterWorktree`, `/worktree` command, or `--worktree` flag are available, use them. Advance to Step 2.
 
-ネイティブツールは配置・ブランチ作成・後始末を自分で管理する。ネイティブツールがあるのに `git worktree add` を使うと、ハーネスから見えない状態を作ることになる。
+Native tools manage placement, branch creation, and cleanup internally. Using `git worktree add` when native tools are present creates state invisible to the harness.
 
-1b が使えないときだけ 1c へ進む。
+Advance to 1c only when 1b is unavailable.
 
-### 1c. git worktree で作る
+### 1c. Create with git worktree
 
-#### ディレクトリの決定
+#### Directory Determination
 
-この優先順で決める。ユーザーの明示指定が常に最優先。
+Decide in this order of precedence. Explicit user instruction is always highest priority:
 
-1. **指示に worktree ディレクトリの指定があるか確認する**。あれば聞かずにそれを使う
-2. **プロジェクト内の既存 worktree ディレクトリを探す**:
+1. **Check if instructions specify a worktree directory**. If so, use it without asking.
+2. **Search for existing worktree directories in the project**:
    ```bash
-   ls -d .worktrees 2>/dev/null     # 優先（隠しディレクトリ）
-   ls -d worktrees 2>/dev/null      # 代替
+   ls -d .worktrees 2>/dev/null     # Preferred (hidden directory)
+   ls -d worktrees 2>/dev/null      # Alternative
    ```
-   見つかればそれを使う。両方あれば `.worktrees` を採る
-3. **他に手掛かりが無ければ**、プロジェクトルートの `.worktrees/` を既定にする
+   If found, use it. If both exist, choose `.worktrees`.
+3. **If no other hints exist**, default to `.worktrees/` at repository root.
 
-#### 安全確認（プロジェクト内ディレクトリの場合のみ）
+#### Safety Check (Only for in-project directories)
 
-**1c で worktree を作る前に、そのディレクトリが ignore されていることを必ず確認する**:
+**Before creating a worktree in 1c, always verify the directory is ignored**:
 
 ```bash
 git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/dev/null
 ```
 
-**ignore されていない場合**: `.gitignore` に追加してコミットしてから進む。worktree の中身がまるごとリポジトリに入るのを防ぐため。
+**If not ignored**: Add to `.gitignore` and commit before proceeding, preventing the entire worktree contents from entering the repository.
 
-#### 作成
+#### Creation
 
 ```bash
 path="$LOCATION/$BRANCH_NAME"
@@ -127,11 +127,11 @@ git worktree add "$path" -b "$BRANCH_NAME"
 cd "$path"
 ```
 
-**sandbox で失敗した場合**: `git worktree add` が権限エラーで落ちたら、sandbox に阻まれたので現在のディレクトリで作業する旨をユーザーに伝える。セットアップとベースラインテストはその場で行う。
+**On sandbox failure**: If `git worktree add` fails due to permission errors, inform the user that sandbox restrictions prevent worktree creation, and proceed in the current directory. Perform setup and baseline tests in place.
 
-## Step 2: プロジェクトのセットアップ
+## Step 2: Project Setup
 
-**リポジトリに `.config/wt.toml` があるなら worktrunk に任せる。** 追跡外ファイルのコピー（`.worktreeinclude` に基づく）と依存インストールがそこに書かれている。
+**If the repository has `.config/wt.toml`, delegate to worktrunk.** Unversioned file copying (based on `.worktreeinclude`) and dependency installation are defined there:
 
 ```bash
 if [ -f "$(git rev-parse --show-toplevel)/.config/wt.toml" ] && command -v wt >/dev/null 2>&1; then
@@ -139,9 +139,9 @@ if [ -f "$(git rev-parse --show-toplevel)/.config/wt.toml" ] && command -v wt >/
 fi
 ```
 
-`wt hook pre-start` は worktree を誰が作ったかを問わず動く。herdr で作っても `git worktree add` で作っても同じ結果になる。**`pre-` を使う。** `post-` は背後で走って即座に戻るので、Step 3 のベースラインテストがセットアップ未完了の作業ツリーに当たる。
+`wt hook pre-start` works regardless of who created the worktree (herdr or `git worktree add`). **Use `pre-start`.** `post-start` runs in background and returns immediately, causing Step 3's baseline tests to run against an incomplete setup.
 
-**`.config/wt.toml` が無いリポジトリ**では、検出して該当するものを実行する。
+**For repositories without `.config/wt.toml`**, detect and run appropriate setup commands:
 
 ```bash
 if [ -f package.json ]; then npm install; fi
@@ -151,62 +151,60 @@ if [ -f pyproject.toml ]; then poetry install; fi
 if [ -f go.mod ]; then go mod download; fi
 ```
 
-`.env` などの追跡外ファイルが要るのに毎回手で配っているなら、リポジトリに `.worktreeinclude` と `.config/wt.toml` を置くようユーザーに提案する。以降その手作業は消える。
+If untracked files like `.env` are required but manually distributed each time, suggest adding `.worktreeinclude` and `.config/wt.toml` to the repository.
 
-## Step 3: ベースラインを確認する
+## Step 3: Check Baseline
 
-ワークスペースがきれいな状態から始まることをテストで確認する。
+Verify the workspace starts from a clean state by running tests:
 
 ```bash
 npm test / cargo test / pytest / go test ./...
 ```
 
-**失敗した場合**: 失敗内容を報告し、進めるか調べるかをユーザーに確認する。
+**If tests fail**: Report failures and ask the user whether to proceed or investigate.
 
-**通った場合**: 準備完了を報告する。
+**If tests pass**: Report readiness:
 
 ```
 worktree: <full-path>
-テスト: <N> passed, 0 failed
-<feature-name> の実装を開始できる
+tests: <N> passed, 0 failed
+Ready to begin implementing <feature-name>
 ```
 
-テストが存在しないプロジェクト（dotfiles、設定リポジトリなど）では、テストの代わりに `git status` がきれいであることを確認する。
+In projects without tests (dotfiles, configuration repositories, etc.), verify that `git status` is clean instead.
 
-## chezmoi リポジトリでの注意
+## Notes for Chezmoi Repositories
 
-`chezmoi apply` はチェックアウトしているブランチではなく、**chezmoi の source directory（`chezmoi source-path` が返すパス、既定は `~/.local/share/chezmoi`）を読む**。worktree（例 `~/.local/share/chezmoi/.worktrees/feat-x`）で編集しても、そのままでは apply に反映されない。
+`chezmoi apply` reads the **chezmoi source directory (path returned by `chezmoi source-path`, defaults to `~/.local/share/chezmoi`)**, not the checked-out branch. Edits in a worktree (e.g. `~/.local/share/chezmoi/.worktrees/feat-x`) will not be reflected in `chezmoi apply` directly.
 
-- worktree で実装し、コミットまで済ませる
-- メインチェックアウトへマージしてから `chezmoi diff` / `chezmoi apply` で反映する（apply はユーザーの明示許可を得てから）
+- Implement and commit in the worktree.
+- Merge into the main checkout before reflecting via `chezmoi diff` / `chezmoi apply` (apply requires explicit user confirmation).
 
-この順序を守らないと、動作確認したつもりが古い内容を apply することになる。
+## Quick Reference
 
-## 早見表
-
-| 状況 | 対応 |
+| Situation | Action |
 |---|---|
-| 既に linked worktree の中 | 作成しない（Step 0） |
-| worktree の中だが workspace として開かれていない | `herdr worktree open` で開く（Step 0） |
-| submodule の中 | 通常リポジトリとして扱う（Step 0 のガード） |
-| herdr 管理下（`HERDR_ENV=1`） | `herdr worktree create` で作る（Step 1a） |
-| ネイティブ worktree ツールあり | それを使う（Step 1b） |
-| ネイティブツール無し | git worktree で作る（Step 1c） |
-| `.worktrees/` がある | それを使う（ignore を確認） |
-| `worktrees/` がある | それを使う（ignore を確認） |
-| 両方ある | `.worktrees/` を採る |
-| どちらも無い | 指示を確認し、既定は `.worktrees/` |
-| ディレクトリが ignore されていない | `.gitignore` に追加してコミット |
-| 作成が権限エラー | sandbox とみなし現ディレクトリで作業 |
-| ベースラインテストが落ちる | 失敗を報告して判断を仰ぐ |
+| Already inside linked worktree | Do not create (Step 0) |
+| Inside worktree but not open as workspace | Open via `herdr worktree open` (Step 0) |
+| Inside submodule | Treat as standard repo (Step 0 guard) |
+| Under herdr management (`HERDR_ENV=1`) | Create via `herdr worktree create` (Step 1a) |
+| Native worktree tool available | Use native tool (Step 1b) |
+| No native tools | Create with git worktree (Step 1c) |
+| `.worktrees/` exists | Use it (verify ignore) |
+| `worktrees/` exists | Use it (verify ignore) |
+| Both exist | Choose `.worktrees/` |
+| Neither exists | Check instructions; default is `.worktrees/` |
+| Directory not ignored | Add to `.gitignore` and commit |
+| Creation permission error | Assume sandbox restriction and work in current dir |
+| Baseline tests fail | Report failures and ask for guidance |
 
-## よくある言い訳
+## Common Rationalizations
 
-| 言い訳 | 実際 |
+| Rationalization | Reality |
 |---|---|
-| 「見るからに worktree ではない」 | Step 0 を実行する。ハーネスが作った隔離も submodule も目視では判別できない |
-| 「`git worktree add` でも同じものができる」 | できるのは作業ツリーだけで、端末が無い。中で動くエージェントの作業は人間から見えない |
-| 「`git worktree add` のほうが早い」 | ネイティブツールは配置・ブランチ・後始末を管理する。迂回するとハーネスから見えない状態が残る |
-| 「worktree ディレクトリはどうせ ignore 済みだ」 | `git check-ignore` を実行する。ignore されていなければツリー全部がリポジトリに入る |
-| 「新しいワークスペースだからベースラインは通る」 | 汚れたベースラインは以降のすべての失敗を曖昧にする。先に実行する |
-| 「chezmoi リポジトリでも worktree で apply できる」 | apply は source directory を読む。マージしてからでないと反映されない |
+| "Doesn't look like a worktree" | Run Step 0. Neither harness isolation nor submodules can be reliably identified by sight |
+| "`git worktree add` creates the same thing" | Only creates a working tree without a terminal. Agent progress remains invisible to humans |
+| "`git worktree add` is faster" | Native tools manage placement, branching, and cleanup. Bypassing leaves untracked state in the harness |
+| "Worktree directories are already ignored anyway" | Run `git check-ignore`. If not ignored, the entire worktree tree enters the repository |
+| "Clean workspace so baseline will pass" | A polluted baseline obscures all subsequent failures. Run baseline tests first |
+| "Chezmoi repositories can apply from worktrees" | Apply reads the source directory. Changes are reflected only after merging into main checkout |

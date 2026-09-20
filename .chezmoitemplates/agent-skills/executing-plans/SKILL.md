@@ -1,84 +1,81 @@
 ---
 name: executing-plans
 description: >-
-  実装が小さく、MAD を使わなくてよい実装プランを、このセッションで直列に実行するときに使う。
-  並列にできるタスクを持つプランや worktree の隔離が要るプランは
-  multi-agent-development のほうが適する。
-  タスクの区切りでレビューを挟みながらタスクを順に消化する。
+  Use when executing small implementation plans that do not require MAD serially within
+  this session. Plans with parallelizable tasks or requiring worktree isolation are better
+  suited for multi-agent-development. Consumes tasks sequentially, reviewing diffs at task boundaries.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# プランを直列に実行する
+# Executing Plans Serially
 
-## 概要
+## Overview
 
-プランを読み、批判的にレビューし、全タスクを実行し、完了を報告する。
+Read the plan, review it critically, execute all tasks, and report completion.
 
-**開始時に宣言する**: 「executing-plans を使ってこのプランを実装する」
+**Announce at start**: "Implementing this plan using executing-plans."
 
-**先に確認する**: このプランは実装が小さく、MAD を使わなくてよいか。次のどれかに当たるなら
-multi-agent-development のほうが適する。
+**Check first**: Is this plan small enough not to require MAD? If any of the following apply, `multi-agent-development` is more appropriate:
 
-- 依存が無く並列にできるタスクが 2 つ以上ある
-- 同時に書くタスクがあり、worktree の隔離が要る
-- タスクごとに独立したレビュアーの gate を掛けたい
+- Two or more tasks have no dependencies and can run in parallel
+- Tasks write simultaneously, requiring worktree isolation
+- Independent reviewer gates are desired for each task
 
-どれにも当たらないなら、このスキルで直列に実行する。子は立てない。親が実装し、タスクの区切りで
-自分で diff を見返す。
+If none apply, execute sequentially using this skill. Do not spawn child agents. The parent implements directly and reviews diffs at task boundaries.
 
-## 手順
+## Steps
 
-### Step 1: プランを読んでレビューする
+### Step 1: Read and Review Plan
 
-1. 隔離ワークスペースを用意する（using-git-worktrees）
-2. プランファイルを読む
-3. 批判的にレビューする。プランへの疑問や懸念を洗い出す
-4. 懸念があれば、着手前にユーザーへ提起する
-5. 無ければタスクごとに todo を作って進む
+1. Prepare isolated workspace (using-git-worktrees)
+2. Read plan file
+3. Review critically. Identify ambiguities or concerns
+4. If concerns exist, raise them with the user before starting
+5. Otherwise, create todos per task and proceed
 
-### Step 2: タスクを実行する
+### Step 2: Execute Tasks
 
-各タスクについて:
+For each task:
 
-1. todo を in_progress にする
-2. 各ステップをその通りに実行する（プランは一口大のステップに割られている）
-3. 指定された検証を実行する
-4. todo を完了にする
+1. Mark todo as `in_progress`
+2. Follow each step as written (plans are divided into bite-sized steps)
+3. Run specified verifications
+4. Mark todo as completed
 
-タスクの区切りごとに、そのタスクの diff を自分で見返す。spec 準拠（欠落・余分・誤解）とテストの実効性を確認する。ここが multi-agent-development の review recipe を使わない場合のレビューになる。
+At each task boundary, inspect that task's diff. Verify spec compliance (omissions, extras, misunderstandings) and test effectiveness. This replaces the review recipe from multi-agent-development.
 
-### Step 3: 開発を完了する
+### Step 3: Finish Development
 
-全タスクの完了と検証が済んだら:
+Once all tasks are completed and verified:
 
-- 宣言する:「finishing-a-development-branch を使ってこの作業を完了する」
-- finishing-a-development-branch を起動し、テスト確認・選択肢の提示・選択の実行まで通す
+- Announce: "Completing this work using finishing-a-development-branch."
+- Launch `finishing-a-development-branch`, running through test verification, presenting options, and executing the chosen action.
 
-## 止まって聞くべきとき
+## When to Stop and Ask
 
-**次のときは直ちに実行を止める**:
+**Halt execution immediately when**:
 
-- ブロッカーに当たった（依存が無い、テストが落ちる、指示が不明瞭）
-- プランに着手を妨げる致命的な欠落がある
-- 指示の意味が分からない
-- 検証が繰り返し失敗する
+- Hitting blockers (missing dependencies, broken tests, unclear instructions)
+- Plan has critical gaps preventing commencement
+- Meaning of instructions is unclear
+- Verifications fail repeatedly
 
-**推測せずに確認する。**
+**Confirm rather than guess.**
 
-## 前の段階に戻るとき
+## When to Return to Prior Steps
 
-**Step 1 のレビューに戻る条件**:
+**Return to Step 1 review when**:
 
-- ユーザーのフィードバックを受けてプランが更新された
-- 根本的なアプローチを考え直す必要がある
+- Plan is updated in response to user feedback
+- Fundamental approach needs reconsideration
 
-**ブロッカーを力任せに突破しない。** 止まって聞く。
+**Never brute-force through blockers.** Stop and ask.
 
-## 要点
+## Key Takeaways
 
-- プランをまず批判的にレビューする
-- プランのステップをその通りに実行する
-- 検証を飛ばさない
-- 詰まったら止まる。推測しない
-- ユーザーの明示的な同意なしに main / master で実装を始めない
-- 実装が想定より大きいと分かったら止まる。multi-agent-development へ切り替えるかをユーザーに聞く
+- Review plan critically first
+- Follow plan steps as written
+- Do not skip verifications
+- Stop when stuck; never speculate
+- Never begin implementation on main / master without explicit user approval
+- If implementation proves larger than anticipated, stop and ask user whether to switch to multi-agent-development

@@ -1,52 +1,47 @@
-## プレビュー
+## Preview
 
-self-review を通したら、承認 gate を出す**前**に対象ファイルを閲覧できる状態にする。開くかどうかはユーザーに聞かない。
+Once self-review passes, make target files viewable **before** presenting the approval gate. Do not ask the user whether to open.
 
-環境で経路が分かれる。上から順に判定し、最初に当たった経路だけを実行する。
+Routing depends on the environment. Evaluate in order and execute only the first matching path:
 
-| 条件 | 経路 |
+| Condition | Route |
 |---|---|
-| `$PASEO_AGENT_ID` が非空 | 下の「Paseo のファイルリンクを出す」 |
-| `$HERDR_ENV` が `1` | 下の「herdr の別タブで開く」 |
-| どちらでもない | この節を丸ごと飛ばし、そのまま承認 gate へ進む |
+| `$PASEO_AGENT_ID` is non-empty | "Display Paseo File Link" below |
+| `$HERDR_ENV` is `1` | "Open in Herdr Tab" below |
+| Neither | Skip this section entirely and proceed directly to the approval gate |
 
-`PASEO_AGENT_ID` を先に見る。両方が立つ場合、ユーザーが見ているのは Paseo の画面である。
+Evaluate `PASEO_AGENT_ID` first. When both are present, the user is looking at Paseo's interface.
 
-### Paseo のファイルリンクを出す
+### Display Paseo File Link
 
 ```bash
-[specを閲覧する](/絶対パス/spec.md)
+[View spec](/absolute/path/spec.md)
 ```
 
-Paseoでは端末作成、`glow`実行、プレビュー失敗時の代替端末起動を行わない。planの場合はリンク文字列を`planを閲覧する`にする。
+In Paseo, do not create terminals, run `glow`, or launch alternative terminals upon preview failure. For plans, use `[View plan](/absolute/path/plan.md)`.
 
-### herdr の別タブで開く
+### Open in Herdr Tab
 
 ```bash
 ws=$(herdr pane get "$HERDR_PANE_ID" | jq -r '.result.pane.workspace_id')
 pane=$(herdr tab create --workspace "$ws" --cwd "$PWD" --focus | jq -r '.result.root_pane.pane_id')
-herdr pane run "$pane" '${EDITOR:-nvim} "<ファイルの絶対パス>"; exit'
+herdr pane run "$pane" '${EDITOR:-nvim} "<absolute-path-to-file>"; exit'
 ```
 
-上の `pane get` → `tab create --workspace` → `pane run` の3コマンドは、1つのプレビュー操作として扱う。stderr または tool error を確認し、初回実行が `PermissionDenied`、`Permission denied`、`Operation not permitted` のいずれかで失敗した場合だけ、Herdr の session socket が sandbox 外にある可能性があるため `[retry-outside-sandbox]` で同じプレビューコマンドを 1 回だけ再実行する。`justification` を書く runtime では、そのコマンドを sandbox の外で実行する理由として「Herdr の現在セッションへ接続し、成果物を新規タブで開くため」と書く。
+Treat the 3 commands above (`pane get` -> `tab create --workspace` -> `pane run`) as a single preview operation. Inspect stderr or tool errors. Only if initial execution fails with `PermissionDenied`, `Permission denied`, or `Operation not permitted` (since Herdr session sockets may reside outside the sandbox), retry the identical preview command exactly once with `[retry-outside-sandbox]`. In runtimes requiring `justification`, state: "Connect to current Herdr session to open artifact in a new tab."
 
-- 再実行の範囲は、初回にどこまで成功したかで変える。`pane` が空または `null` のとき（`pane get` または `tab create` 自体が失敗した）は `ws` と `pane` を取り直し、3コマンドをやり直す。`pane` に非空の値が取れているとき（`herdr pane run` だけが失敗した）は、その `ws` と `pane` をそのまま使い `herdr pane run` だけを再実行する。`tab create` をやり直すとタブが2つ作られ、1つ目に `; exit` が走らないまま孤立する
-- sandbox 外の再実行も失敗した場合、または permission denied 以外で失敗した場合は再試行せず、プレビュー失敗を 1 行で伝えて承認 gate へ進む
+- Adjust retry scope based on what succeeded initially. If `pane` is empty or `null` (`pane get` or `tab create` itself failed), reacquire `ws` and `pane` and retry all 3 commands. If `pane` holds a non-empty value (only `herdr pane run` failed), reuse that `ws` and `pane` and retry only `herdr pane run`. Retrying `tab create` creates duplicate tabs and leaves the first orphaned without running `; exit`.
+- If retrying outside the sandbox also fails, or failure was not due to permission denied, do not retry further; report preview failure in one line and advance to the approval gate.
 
-- **`--workspace` を必ず付ける。** 省くとユーザーがフォーカスしている workspace にタブが作られ、自分が動いている workspace とは別の場所に開くことがある。workspace ID は `$HERDR_PANE_ID` から `herdr pane get` で引き、`--workspace` に渡す
-- エディタは `$EDITOR` を使う。未設定なら `nvim` に落とす。`herdr pane run` に渡す文字列は**シングルクォートで囲み**、`${EDITOR:-nvim}` を pane 側の shell に展開させる。ダブルクォートで囲むと自分の側で展開してしまう
-- **末尾の `; exit` を省かない。** これが無いとエディタを終了しても shell が残り、空の pane がタブに残り続ける
-- `--focus` を付けてユーザーの視線をプレビュータブへ移す
-- パスは絶対パスで渡し、ダブルクォートで囲む
-- `herdr tab create` が permission denied 以外で失敗したら（`pane` が空か `null`）、その旨を 1 行で伝えてプレビューなしで承認 gate へ進む。失敗を理由に作業を止めない
+- **Always pass `--workspace`.** If omitted, the tab may open in whatever workspace the user currently focuses, opening outside your workspace. Derive workspace ID from `$HERDR_PANE_ID` via `herdr pane get` and pass it to `--workspace`.
+- Editor defaults to `$EDITOR`, falling back to `nvim` if unset. Wrap the string passed to `herdr pane run` in **single quotes** so `${EDITOR:-nvim}` expands within the target pane's shell. Double quotes expand it locally in the agent shell.
+- **Do not omit trailing `; exit`.** Without this, the shell persists after exiting the editor, leaving empty orphaned panes.
+- Pass `--focus` to direct user attention to the preview tab.
+- Pass the file path as an absolute path enclosed in double quotes.
+- If `herdr tab create` fails for reasons other than permission denied (`pane` is empty or `null`), state this in one line and proceed to approval gate without preview. Never halt workflow because of preview failure.
 
-タブはユーザーがエディタを終了した時点で閉じる。`; exit` によって、エディタが終わると pane の shell も終わり、pane が消えてタブも消える。**自分から閉じる系のコマンドを呼んではならない。** ユーザーが読んでいる最中や編集中に閉じると入力が失われる。
+The tab closes automatically when the user exits the editor. Due to `; exit`, closing the editor terminates the pane's shell, removing the pane and tab. **Never invoke tab-closing commands autonomously.** Closing while the user is reading or editing leads to lost input.
 
-### 共通の注意
+### Common Guidelines
 
-herdr の経路では、エディタは編集可で開く。読み取り専用のフラグは付けない。
-ユーザーはその場で本文を直せる。Paseo の経路では `glow` が編集できないため、
-手編集は起きない。どちらの経路でも、**承認 gate の応答を受け取ったら、
-issue 化・次スキルへの引き継ぎのどれを行う前にも必ずファイルを読み直す。**
-自分が書いた内容ではなく、読み直した内容が正となる。読み直して自分の認識と
-食い違っていたら、その差分を 1-2 行で報告してから続行する。
+In the Herdr route, editors open in editable mode. Do not add read-only flags. The user can make immediate inline edits. In the Paseo route, `glow` is read-only, so manual edits do not occur. In both routes, **always re-read the file after receiving the approval gate response before creating issues or handing off to subsequent skills.** The re-read content is authoritative over what the agent initially wrote. If re-reading reveals discrepancies with the agent's prior perception, report differences in 1-2 lines before proceeding.

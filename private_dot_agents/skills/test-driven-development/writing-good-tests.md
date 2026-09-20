@@ -1,146 +1,146 @@
-# 良いテストを書く
+# Writing Good Tests
 
-**読むタイミング**: テストを書く・変更するとき、mock を足すとき、テスト用の cleanup / ヘルパーを足すとき。
+**When to read**: When writing or modifying tests, adding mocks, or introducing test cleanup/helpers.
 
-## 概要
+## Overview
 
-テストは特定の破壊を捕まえるために存在する。ここに書くことはすべて 2 つの原則から出ている。
+Tests exist to catch specific regressions and breakages. Everything written here derives from two core principles:
 
 ```
-1. すべてのテストは、自分が捕まえる破壊を名指しできる
-2. すべてのテストは、実物を動かす
+1. Every test can name the breakage it catches
+2. Every test runs real code
 ```
 
-厳密な TDD は両方を自然に生む。先に書いて実物に対して失敗を見たテストは、既に失敗できることを証明している。mock を得るのは、実際の依存が遅いか外部だと判明したときだけになる。
+Disciplined TDD naturally produces both. A test written first that fails against real code has already proven its ability to fail. Mocks are introduced only when an actual dependency is demonstrated to be slow or external.
 
-## 原則 1: 捕まえる破壊を名指しする
+## Principle 1: Name the Breakage to Catch
 
-テスト本体を書く前に答える: **どの実装変更がこのテストを失敗させるべきか。そしてその変更はバグか、それとも意思決定か。**
+Answer before writing the test body: **Which implementation change should cause this test to fail? And is that change a bug, or an intentional decision?**
 
-テストが存在意義を得るのは、誤った分岐、抜けた副作用、誤った引数、境界条件、壊れた contract を捕まえるときである。
+Tests gain their reason for existence by catching incorrect branching, missed side effects, invalid arguments, edge cases, and broken contracts.
 
-**期待値は独立に導く。** リテラルと手で確かめた fixture を使う。リテラルの `want` を持つ table-driven テストが最良の形である。テスト対象のコード（やそのヘルパー）が計算した期待値は、そのコードが何をしていても通る。
+**Derive expectations independently.** Use literals and hand-verified fixtures. Table-driven tests with literal `want` fields represent the gold standard. Expectations computed by the code under test (or its helpers) will pass regardless of what the code actually does.
 
 ```typescript
-// ❌ 鏡の assertion: 同じ builder が両辺を計算する。常に真
+// ❌ Mirror assertion: same builder computes both sides. Always true
 const expected = buildSearchQuery({ tag: 'urgent' });
 expect(buildSearchQuery({ tag: 'urgent' })).toBe(expected);
 
-// ✅ 手で導いたリテラル
+// ✅ Hand-derived literal
 expect(buildSearchQuery({ tag: 'urgent' })).toBe('tag:"urgent"');
 ```
 
-**変更検知器を書かない。** 意図的な決定（定数の値、メッセージの正確な文言、private な構造）でしか失敗しないテストは、設計変更のたびに鳴り、バグには眠ったままになる。決定に依存する**振る舞い**をテストする。`expect(MAX_RETRIES).toBe(5)` ではなく「失敗する呼び出しが 5 回再試行され、6 回目は起きない」。
+**Do not write change detectors.** Tests that fail only on intentional decisions (constant values, exact message phrasing, private data structures) fire on every design iteration while sleeping through actual bugs. Test the **behavior** that depends on the decision. Instead of `expect(MAX_RETRIES).toBe(5)`, verify that "a failing call is retried 5 times, and a 6th retry does not occur."
 
-**テキストではなく振る舞い。** スクリプトやスキルや設定が特定の行を含むことを assert しても、ソースがソースであることしか証明しない。スクリプトは制御された入力に対して実行し、出力・副作用・終了コードを assert する。エージェントへの指示文書は、それを読むエージェントの振る舞いでテストする。人間向けの散文はテストしない。
+**Assert on behavior, not source text.** Asserting that a script, skill, or configuration contains specific lines only proves that the source code is what it is. Run scripts against controlled inputs and assert on output, side effects, and exit codes. Test agent instruction documents via the behavior of the agents that read them. Do not write tests that inspect human prose.
 
-**フレームワークではなく自分のコード。** 自分のコードが境界で結ぶ contract をテストする。登録するルート、発行するクエリ、生成するペイロード。上流の仕組みはその保守者がテストするもの（典型例: 登録したハンドラをルーターが呼ぶことの assert。それはフレームワークのテストであって自分のテストではない）。上流の挙動に本当に驚かされたときだけ、その前提を名指しする狭い characterization テストを 1 本書く。
+**Test your code, not the framework.** Test the contracts your code establishes at its boundaries: registered routes, issued queries, generated payloads. Upstream mechanics are tested by their own maintainers (e.g., asserting that a router invokes a registered handler tests the framework, not your application). Only when genuinely surprised by upstream behavior should you write a single narrow characterization test naming that assumption.
 
-同じ境界は自分のコードの内側にも適用される。コンストラクタ、getter、定数、素通しの転送がテストに値するのは、検証・正規化・既定値・導出・強制・副作用のいずれかがあるときだけである。それ以外は、それらに依存する最初の consumer から見える結果を assert する。
+The same boundaries apply internally within your own code. Constructors, getters, constants, and pass-through forwarding deserve tests only when validation, normalization, defaults, derivation, enforcement, or side effects are present. Otherwise, assert the observable results from the first consumer that depends on them.
 
 ### Gate Function
 
 ```
-テスト本体を書く前に:
-  このテストを失敗させる実装変更を名指しする。
+Before writing the test body:
+  Name the implementation change that should make this test fail.
 
-  名指しできない          → 観測可能な振る舞いを軸に設計し直す
-  「ソースが変わった」     → 成果物を実行して効果を assert する
-  意図的な決定だけ        → 変更検知器。決定に依存する振る舞いをテストする
+  Cannot name one        -> Redesign around observable behavior
+  "The source changed"   -> Execute the artifact and assert its effect
+  Intentional decisions  -> Change detector. Test the behavior depending on the decision
 
-  期待値がテスト対象のコードを使わずに導かれていることを確認する。
-  コードのロジックやヘルパーを再利用しているなら:
-    リテラルか手で確かめた fixture に置き換える
+  Verify expectations are derived without using code under test.
+  If reusing code logic or helpers:
+    Replace with literals or hand-verified fixtures
 ```
 
-## 原則 2: 実物を動かす
+## Principle 2: Run the Real Thing
 
-**mock に assertion を与えない。** mock への assertion は mock があれば通り、無ければ落ちる。コンポーネントについて何も言っていない。実際のコンポーネントの振る舞いを assert する。mock 自体を確認したいなら、unmock するか assertion を消す。
+**Do not assert on mocks.** Assertions on mocks pass if the mock is present and fail if absent, saying nothing about the actual component. Assert on the real component's behavior. If you want to verify the mock itself, either unmock it or remove the assertion.
 
 ```typescript
-// ✅ 実際の振る舞い
+// ✅ Real behavior
 expect(screen.getByRole('navigation')).toBeInTheDocument();
 
-// ❌ mock の存在確認
+// ❌ Verifying mock presence
 expect(screen.getByTestId('sidebar-mock')).toBeInTheDocument();
 ```
 
-**正しい層で mock する。** 置き換える前に実際のメソッドの副作用をすべて把握する。遅い操作・外部の操作を mock し、テストが依存しているものは実物のままにする。迷ったら、まず実装に対してテストを走らせ、実際に何が起きる必要があるかを観察する。
+**Mock at the right layer.** Identify all side effects of real methods before replacing them. Mock slow or external operations, leaving dependencies the test relies on intact. When uncertain, run tests against the real implementation first to observe what actually needs to happen.
 
 ```typescript
-// ❌ 重複検出が読む config の書き込みまで mock が飲み込む
+// ❌ Mock swallows config writes needed by duplicate detection
 vi.mock('ToolCatalog', () => ({
   discoverAndCacheTools: vi.fn().mockResolvedValue(undefined)
 }));
 
-// ✅ 遅いサーバー起動だけ mock し、config の書き込みは実物のまま
+// ✅ Mock only the slow server launch; keep config writes real
 vi.mock('MCPServerManager');
 ```
 
-**double は具体的にする。** 引数・呼び出し回数・順序が contract の一部なら assert する。何でも受け付ける fake は何も検証しない。分岐（成功・エラー・不正）ごとに fixture か spy を分け、誤った分岐が期待を満たせないようにする。
+**Make test doubles specific.** Assert arguments, call counts, and ordering if they are part of the contract. Fakes that accept anything verify nothing. Separate fixtures or spies for each branch (success, error, invalid) so incorrect branches cannot satisfy expectations.
 
-**実データを完全に写す。** mock は現実に存在する構造をすべて（ドキュメント化された全フィールド）写す。テストが読むフィールドだけにしない。部分的な mock は、下流が省いたフィールドを読んだときに黙って壊れる。テストは通り、統合が壊れる。
+**Mirror real data completely.** Mocks must reflect full real-world structures (all documented fields), not just the fields the test happens to read. Partial mocks break silently when downstream code reads omitted fields. Tests pass, but integration fails.
 
-**実装クラスは実装メソッドだけを持つ。** テストだけが必要とする cleanup はテストユーティリティに置く。実装クラスの `destroy()` にしない。「このメソッドはテストからしか呼ばれないか」「このクラスはこのリソースのライフサイクルを所有しているか」を問う。答えが違うならテストユーティリティへ。
+**Implementation classes own only implementation methods.** Place cleanup needed solely by tests in test utilities, not in `destroy()` on implementation classes. Ask: "Is this method called only from tests?" "Does this class own the resource lifecycle?" If the answer is no, move it to test utilities.
 
-**複雑な mock より実物を選ぶ。** mock のセットアップがテストのロジックより大きくなる、実物にあるメソッドが mock に足りない、mock を変えるとテストが壊れる。そうなったら実物を使う統合テストに切り替える。
+**Prefer real objects over complex mocks.** When mock setup grows larger than test logic, when real methods are missing from mocks, or when tweaking mocks breaks unrelated tests, switch to integration tests using real implementations.
 
 ### Gate Function
 
 ```
-mock やテストヘルパーを足す前に:
-  実際のメソッドの副作用を列挙する。テストが依存するものは実物のまま残し、
-  その下にある遅い層・外部層を mock する。
+Before adding mocks or test helpers:
+  Enumerate side effects of the real method. Keep what tests depend on real,
+  and mock the slow or external layer underneath.
 
-  mock のレスポンスは実際の構造を完全に写す。
+  Mock responses must completely mirror real structures.
 
-  テストからしか呼ばれないメソッドはテストユーティリティに置く。
+  Methods called only by tests belong in test utilities.
 
-  mock 自体に assert しようとしていないか?
-    unmock するか assertion を消す。
+  Are you trying to assert on the mock itself?
+    Unmock it or remove the assertion.
 ```
 
-## テストは実装と一緒に出す
+## Deliver Tests with Implementation
 
-TDD のサイクル（失敗するテスト → 最小の実装 → リファクタ）が「完了」の定義である。その振る舞いに必要なテストだけを出す。自明なコードと人間向けの散文にテストは要らない。手続きを満たすために書いたテストは、以後ずっと保守コストを生む。
+The TDD cycle (failing test -> minimal implementation -> refactor) defines "done." Deliver only the tests required for that behavior. Obvious code and human-facing prose do not need tests. Tests written solely to satisfy a procedural quota generate permanent maintenance debt.
 
 ## Mutation Check
 
-終える前に、頭の中で実装コードを変異させる。現実的な変異ごとに、少なくとも 1 本のテストが落ちるべきである。
+Before finishing, mentally mutate the implementation code. For every realistic mutation, at least one test should fail:
 
-- 定数や引数を間違える
-- 分岐のハンドラを間違える
-- 状態変更や副作用を落とす
-- 空またはデフォルトを返す
-- ゼロ・空・nil・未認可・不正入力の検証を落とす
+- Wrong constants or arguments
+- Incorrect branch handlers
+- Dropped state changes or side effects
+- Returning empty or default values
+- Dropped validation for zero, empty, nil, unauthorized, or invalid input
 
-何も捕まえない変異は、その振る舞いが保護されていないか、テストがトートロジーであることを示す。
+Mutations caught by nothing indicate unverified behavior or tautological tests.
 
-## 早見表
+## Quick Reference
 
-| こうするとき | こうする |
+| When doing this | Do this |
 |---|---|
-| テストを書く | 捕まえる破壊を名指しする。意思決定ではなくバグを |
-| 期待値を作る | 手で導く。テスト対象のコードで作らない |
-| スクリプトや文書をテストする | 実行する。テキストを grep しない |
-| 依存をテストしたくなる | 自分の境界の contract をテストする |
-| mock された要素に assert したくなる | 実物をテストするか unmock する |
-| メソッドを mock しようとする | 副作用を把握し、遅い層・外部層で mock する |
-| mock のレスポンスを作る | 実際の構造を完全に写す |
-| テストだけが使う cleanup が要る | テストユーティリティに置く |
-| mock のセットアップが膨らむ | 実物を使う統合テストに切り替える |
-| テストファイルを書き終える | Mutation Check を回す |
+| Writing tests | Name the breakage to catch: bugs, not design decisions |
+| Creating expectations | Derive by hand; never compute with code under test |
+| Testing scripts or docs | Execute them; do not grep source text |
+| Tempted to test dependencies | Test contracts at your own boundaries |
+| Tempted to assert on mocks | Test real behavior or unmock |
+| Mocking a method | Identify side effects; mock at the slow/external layer |
+| Crafting mock responses | Mirror real structures completely |
+| Cleanup needed only by tests | Place in test utilities |
+| Mock setup explodes | Switch to integration tests using real objects |
+| Finishing test files | Run a mental mutation check |
 
-## 危険信号
+## Red Flags
 
-- セットアップと assertion が同じオブジェクトを共有し、等価が保証されている
-- panic・crash・セレクタ欠落でしか失敗しえない
-- 意図的な変更のたびに落ち、偶発的な破壊では落ちない
-- 期待値がループや builder やヘルパーの裏に隠れている
-- ソーステキストを grep している、または削除したシンボルが削除されたままであることを assert している
-- フレームワークだけが残っても意味を持つテスト
-- カバレッジのために存在し、副作用も結果も確認していない
-- `*-mock` の test ID を確認している、または mock を外すと落ちる
-- テストファイルからしか呼ばれないメソッドがある
-- mock のセットアップがテストの半分以上を占める、または mock が必要な理由を説明できない
-- 「念のため」の mock
+- Setup and assertion share the same object, guaranteeing equality
+- Test can fail only via panic, crash, or missing selector
+- Fails on intentional changes, but sleeps through accidental breakages
+- Expectations hidden behind loops, builders, or helpers
+- Grepping source text, or asserting that deleted symbols remain deleted
+- Test remains meaningful even if only the framework remains
+- Exists solely for code coverage, checking neither side effects nor results
+- Verifying `*-mock` test IDs, or fails when removing a mock
+- Methods called exclusively from test files
+- Mock setup accounts for more than half the test, or mock necessity cannot be explained
+- "Just in case" mocks
