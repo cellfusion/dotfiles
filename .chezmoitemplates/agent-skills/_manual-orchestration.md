@@ -49,7 +49,7 @@ node -e 'const c=require(process.argv[1]); c.writeProviderEnumeration0600(proces
   "$MAD_SHARE/mad-contract.js" "$RUN_DIR/resolved-export.json" "$RUN_DIR/provider-enumeration.json"
 ```
 
-`provider-enumeration.json` の provider ID 集合だけを discovery の入力にする。親は adapter の `list-providers` を一回呼び、列挙集合と `available: true` の集合の積集合に対して `list-models --provider <id>` を一回ずつ呼ぶ。未選択の provider に model discovery を行わない。adapter は discovery と wait/stop の transport と応答の strict な形の境界であり、親は raw response、account metadata、credential、URL を保存しない。adapter は create の subcommand を持たない。
+`provider-enumeration.json` の provider ID 集合だけを discovery の入力にする。親は adapter の `list-providers` を一回呼び、列挙集合と `available: true` の集合の積集合に対して `list-models --provider <id>` を一回ずつ呼ぶ。未選択の provider に model discovery を行わない。adapter は discovery と wait/stop の transport と応答の strict な形の境界であり、親は raw response、account metadata、credential、URL を保存しない。create は backend の親境界で一回だけ行い、CLI backend では adapter の `create-agent` をその境界から呼ぶ。
 
 各 response を検査してから、mode 0600 の regular file として保存する。`mad-contract.js` の `writeAvailabilitySnapshot0600` は列挙集合を snapshot の入力集合にし、available でない provider の models を空配列にする。snapshot が不正、欠落、書き込み失敗のときは create を行わず、run の `state` と `phase_state` を `waiting_for_user` にする。
 

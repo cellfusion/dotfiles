@@ -16,7 +16,7 @@ function safeId(value) {
 function parseJson(raw, label) {
   try {
     const value = JSON.parse(raw)
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object required')
+    if (value === null || typeof value !== 'object') throw new Error('object or array required')
     return value
   } catch {
     fail(`${label} is invalid`, 1)
@@ -32,6 +32,9 @@ function paseo(args) {
 const MODE_LABELS = {
   'Auto mode': 'auto',
   'Default Permissions': 'auto',
+  'Auto-review': 'auto-review',
+  'Always Ask': 'default',
+  'Accept File Edits': 'acceptEdits',
   'Full Access': 'full-access',
   'Plan Mode': 'plan',
   'Bypass': 'bypassPermissions',

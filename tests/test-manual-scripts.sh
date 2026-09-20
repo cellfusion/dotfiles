@@ -5,6 +5,13 @@ set -u
 
 mad_contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
 mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+mad_validator="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
+assert_eq "$(MANUAL_ORCHESTRATION_PASEO_CLI_AVAILABLE=1 bash "$mad_validator" --select-backend)" \
+  '{"backend":"paseo-cli","backend_reason":"Paseo CLI available"}' \
+  'backend: CLI is preferred when available'
+assert_eq "$(MANUAL_ORCHESTRATION_PASEO_MCP_AVAILABLE=1 bash "$mad_validator" --select-backend)" \
+  '{"backend":"paseo-mcp","backend_reason":"Paseo MCP available"}' \
+  'backend: MCP remains an explicit fallback'
 
 assert_before() {
   TESTS_RUN=$((TESTS_RUN + 1))
