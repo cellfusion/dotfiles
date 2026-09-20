@@ -205,7 +205,9 @@ post-commit check が成功した後、親は outcome audit を一件だけ作�
 
 ## role dispatch boundary
 
-MAD の role catalog は `~/.agents/agent-defs/prompts`、`~/.agents/agent-defs/schemas`、正本の `agentRoles` で構成する。Paseo child は `agent-config resolve` で role を解決し、prompt と schema の absolute path を `initialPrompt` に渡す。provider 固有の `~/.config/<tool>/agents` wrapper はこの catalog の代替ではなく、native runtime から直接起動する role にだけ使う。MAD の親は provider wrapper の有無を理由に別 backendへ切り替えない。
+MAD の role catalog は `~/.agents/agent-defs/prompts`、`~/.agents/agent-defs/schemas`、正本の `agentRoles` で構成する。Paseo child は `agent-config resolve` で role を解決し、prompt と schema の absolute path を `initialPrompt` に渡す。native runtimeでも同じprompt/schemaを使い、roleごとの定義を複製しない。
+
+native roleの配布先はClaude Codeが`~/.config/claude/agents`、Codexが`$CODEX_HOME/agents`、Piが`$PI_CODING_AGENT_DIR/agents`である。Piは同じディレクトリのsubagent extensionを使って別processを起動する。OpenCode用のnative wrapperはMAD catalogには追加しない。MADの親はprovider wrapperの有無を理由に別backendへ切り替えない。
 
 ## delivery role map
 

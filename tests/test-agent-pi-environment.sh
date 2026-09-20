@@ -23,7 +23,7 @@ configValue.providers.pi.setup = {
     primary: '$HOME/.pi/agent',
     nonPrimary: '$HOME/.pi/agent-<environment>',
   },
-  symlinks: [],
+  symlinks: ['agents', 'extensions'],
   preservedMutable: [],
   existingPathPolicy: 'reject-real-or-wrong-symlink',
 }

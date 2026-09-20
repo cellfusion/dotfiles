@@ -1,60 +1,60 @@
 # Pre-Commit Review
 
-コミット前のローカルコードレビューを実行します。セキュリティ脆弱性とコード品質を重点的にチェックします。
+Executes local pre-commit code review, focusing on security vulnerabilities and code quality.
 
-## 手順
+## Steps
 
-### 1. 変更の取得
+### 1. Collect Changes
 
-`git diff --cached` でステージングされた変更を取得してください。
-ステージングされた変更がない場合は `git diff` で未ステージの変更を対象にします。
+Fetch staged changes using `git diff --cached`.
+If no changes are staged, target unstaged changes via `git diff`.
 
-### 2. セキュリティチェック
+### 2. Security Check
 
-以下の観点で変更をレビューしてください：
+Review changes across the following criteria:
 
-#### シークレット・認証情報
-- ハードコードされたパスワード、APIキー、トークン
-- `.env` ファイルや認証情報ファイルのコミット
-- プライベートキーや証明書の混入
+#### Secrets and Credentials
+- Hardcoded passwords, API keys, or tokens
+- Committing `.env` or credential files
+- Leaking private keys or certificates
 
-#### インジェクション脆弱性
-- SQL インジェクション（プレースホルダ未使用のクエリ）
-- コマンドインジェクション（ユーザー入力のシェル実行）
-- XSS（サニタイズ未実施の出力）
-- パストラバーサル（ユーザー入力のファイルパス使用）
+#### Injection Vulnerabilities
+- SQL injection (queries without parameterized placeholders)
+- Command injection (executing shell commands with unescaped user input)
+- XSS (rendering unsanitized user output)
+- Path traversal (using raw user input in file paths)
 
-#### その他
-- 安全でない暗号化（MD5, SHA1 for passwords）
-- CORS の過度な許可
-- デバッグモードの本番残留
-- 新規依存の既知脆弱性（lockfile 差分に新パッケージがあれば確認）
+#### Other Security Concerns
+- Insecure cryptography (e.g. MD5, SHA1 for passwords)
+- Overly permissive CORS configurations
+- Lingering debug flags/modes intended for development
+- Known vulnerabilities in newly introduced dependencies (check lockfile diffs)
 
-### 3. コード品質チェック
+### 3. Code Quality Check
 
-#### エラーハンドリング
-- 空の catch ブロック
-- エラーの握りつぶし（silent failures）
-- 不適切なフォールバック
+#### Error Handling
+- Empty catch blocks
+- Silent error suppression (swallowing exceptions)
+- Inappropriate or masking fallbacks
 
-#### コードの健全性
-- 未使用の import / 変数
-- TODO / FIXME / HACK コメント（意図的か確認）
-- マジックナンバー
-- 過度に複雑な条件分岐
+#### Code Health
+- Unused imports / variables
+- Lingering TODO / FIXME / HACK comments (confirm intentionality)
+- Magic numbers
+- Overly complex conditional branching
 
-### 4. レポート出力
+### 4. Output Report
 
 ```
 ## Pre-Commit Review
 
 ### Security Issues
-- [CRITICAL] ファイル:行 - 説明
-- [WARNING] ファイル:行 - 説明
+- [CRITICAL] file:line - description
+- [WARNING] file:line - description
 
 ### Code Quality
-- [ISSUE] ファイル:行 - 説明
-- [SUGGESTION] ファイル:行 - 説明
+- [ISSUE] file:line - description
+- [SUGGESTION] file:line - description
 
 ### Summary
 - Security: N critical, M warnings
@@ -62,6 +62,6 @@
 - Verdict: PASS / NEEDS ATTENTION / BLOCK
 ```
 
-`CRITICAL` なセキュリティ問題がある場合は `BLOCK` を返し、コミットしないよう警告してください。
+If there are `CRITICAL` security issues, return `BLOCK` and strongly advise against committing.
 
 $ARGUMENTS

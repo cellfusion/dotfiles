@@ -2,56 +2,53 @@
 
 ## Response Style
 
-- 常体（だ・である）で簡潔に。
-- 不要な前置き・相槌・要約は書かない。目的の確認や結果を左右する選択に必要な質問は書く。
-- コード変更の説明は 1 行以内。理由は聞かれたら書く。
+- Concise and direct.
+- No unnecessary pleasantries, filler, or unsolicited summaries. Ask clarifying questions only when necessary to confirm objectives or choose between consequential outcomes.
+- Keep explanations of code changes to 1 line or fewer; provide rationale only when asked.
 
 ## Conventional Commits
 
-`<type>: <description>` 形式。スコープは任意（`feat(auth): add login endpoint`）。
+Format: `<type>: <description>`. Scope is optional (`feat(auth): add login endpoint`).
 
-type: `feat` 新機能 / `fix` バグ修正 / `refactor` 動作を変えない再構成 / `docs` ドキュメントのみ / `test` テストの追加・更新 / `chore` 雑務 / `perf` パフォーマンス改善 / `ci` CI/CD
+type: `feat` new feature / `fix` bug fix / `refactor` refactoring without behavior change / `docs` documentation only / `test` test changes / `chore` maintenance / `perf` performance / `ci` CI/CD
 
-- type と description は小文字、件名は 72 文字以内
-- 命令形を使う（"add feature"、"added feature" ではない）
-- 1 コミット 1 論理変更
+- Lowercase type and description; subject within 72 characters
+- Use imperative mood ("add feature", not "added feature")
+- 1 commit per logical change
 
-## MCP ツール
+## MCP Tools
 
-code mode では MCP ツールが通常のツール一覧に並ばない。`exec` の JS サンドボックスから `tools.mcp__<サーバー名>__<ツール名>` の形で呼ぶ。
+In code mode, MCP tools do not appear in the standard tool listing. Invoke them from the `exec` JS sandbox using `tools.mcp__<server>__<tool>`.
 
-- Paseo のスキル（`~/.agents/skills/paseo/SKILL.md`）は `list_agents` のような素の名前で書いてあるが、実際の呼び名は `tools.mcp__paseo__list_agents` である。
-- Paseo を操作するときは、`paseo` CLI より MCP ツールを先に使う。
-- 使えるツール名が分からないときは、`exec` で `Object.keys(tools)` を出して確認する。ツール一覧に無いことを理由に「MCP が使えない」と答えない。
+- Paseo skills (`~/.agents/skills/paseo/SKILL.md`) list bare names like `list_agents`, but the actual invocation name is `tools.mcp__paseo__list_agents`.
+- When operating Paseo, prefer MCP tools over the `paseo` CLI.
+- If unsure of available tool names, inspect via `Object.keys(tools)` in `exec`. Never claim "MCP is unavailable" simply because tools do not appear in the default tool list.
 
-## Paseo の子エージェントを作るとき
+## Spawning Paseo Child Agents
 
-`create_agent` の前に `agent-config resolve` を呼び、返る `mad-launch-spec` の `provider`、
-`model`、`modeId`、`thinkingOptionId`、`features` を写す。provider と model を自分で選ばない。
+Before calling `create_agent`, invoke `agent-config resolve` and copy the returned `mad-launch-spec` properties (`provider`, `model`, `modeId`, `thinkingOptionId`, `features`). Never select provider and model manually.
 
-- `--role` は正本の `agentRoles` にある名前を渡す。role が duty を決める。
-- `--complexity` は作業の重さで選ぶ。判断の幅が狭い確認は `simple`、通常の実装と調査と
-  タスク単位のレビューは `routine`、設計判断を含む作業は `complex`、取り込み前の最終レビューと
-  複数の層にまたがる設計変更は `critical`。
-- exit 4 は候補が尽きたことを表す。provider と model を推測せず、ユーザーへ理由を伝えて止まる。
-- 環境は CLI が決める。`--environment` を渡さなければ親の AI 環境名を使う。
+- Pass `--role` matching names in authoritative `agentRoles`. Role dictates duty.
+- Choose `--complexity` based on task weight: `simple` for narrow checks, `routine` for standard implementation, investigation, and task reviews, `complex` for architectural decisions, `critical` for final reviews before integration and multi-layer structural changes.
+- Exit code 4 signifies candidates are exhausted; do not speculate, report reason to user and stop.
+- Environment is determined by CLI; defaults to parent's AI environment if `--environment` is omitted.
 
 ## Chezmoi
 
-- `~/.config` 配下を変更するときは、実体を直接編集せず `~/.local/share/chezmoi/` の対応するソースを編集する。
-- 編集前に `chezmoi diff` を実行する。未反映差分が今回の対象と重なる場合は、作業を止めてユーザーへ確認する。
-- `chezmoi apply` はユーザーの明示的な許可なしに実行しない。
+- When modifying files under `~/.config`, never edit them directly; edit the corresponding source under `~/.local/share/chezmoi/`.
+- Run `chezmoi diff` before editing. If uncommitted changes overlap with current tasks, halt and confirm with user.
+- Never execute `chezmoi apply` without explicit user permission.
 
 ## Communication and Decision Gates
 
-- 目的と結論を先に示し、その後に理由、制約、手順を説明する。
-- 内部用語・略語は、最初に出す箇所で一文で定義する。
-- `確認済みの事実`、`制約`、`提案`、`未確認` を明示的に分ける。提案を決定済みとして扱わない。
-- 「推奨」と書かれた案、急いでいるという依頼、無回答、暗黙の同意を、設計選択や外部操作の承認と解釈しない。
-- 依頼文で決まっていない選択があり、推測すると挙動、外部への影響、または取り消しにくさが変わる場合だけ、影響とリスクを添えた選択肢を提示して一問だけユーザーに確認する。確認が必要な場合は回答が来るまで、設計変更・子 agent 起動・外部 endpoint 呼出し・apply・commit・削除を行わない。
-- 子 agent が質問した場合は、質問、選択肢、理由を省略せずユーザーへ転送する。親が代わりに選ばない。
-- ツールや外部操作の前に、`何をするか / なぜ必要か / 何が変わるか / 何を変えないか` を一度示す。
-- 進捗報告では、現在の段階、止まっている理由、変更の有無、次の判断者を明記する。短くしても因果関係を削らない。
-- 完了報告では、実施済み、検証済み、未検証、残課題、変更ファイル、commit を分けて記載する。
+- State objective and conclusion first, followed by rationale, constraints, and steps.
+- Define internal terminology and acronyms in a single sentence at first occurrence.
+- Explicitly distinguish `Verified Facts`, `Constraints`, `Proposals`, and `Unconfirmed Items`. Never treat proposals as decided.
+- Never interpret recommendations, urgency, silence, or implicit consent as approval for design choices or external operations.
+- If an undecided choice exists and guessing alters behavior, external impact, or reversibility, present options with impact and risk, asking exactly one question. Halt design changes, child agent launches, external endpoint calls, applies, commits, or deletions until answered.
+- When child agents ask questions, forward questions, options, and reasons to user verbatim; parent must not choose on their behalf.
+- Before tools or external actions, state once: `What to do / Why needed / What changes / What does not change`.
+- In progress updates, state current phase, blockers, changes made, and next decision maker.
+- In completion reports, separate completed, verified, unverified, open items, modified files, and commits.
 
 {{ includeTemplate "agent-skills/_workflow-table.md" (merge (dict "tool" "codex") .) }}

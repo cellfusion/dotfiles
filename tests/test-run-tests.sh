@@ -23,6 +23,7 @@ expected_names=(
   test-mad-route-admit.sh
   test-agent-config-policy.sh
   test-agent-config-role-catalog.sh
+  test-native-agent-defs.sh
   test-agent-config-routing.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh
@@ -73,7 +74,7 @@ assert_eq "$(cat "$order_file")" "$expected_order" \
   'runner: allowlist の順序をそのまま実行する'
 assert_not_contains "$(cat "$order_file")" sentinel \
   'runner: allowlist 外の sentinel を実行しない'
-assert_contains "$output" 'SUMMARY 32 0' \
+assert_contains "$output" 'SUMMARY 33 0' \
   'runner: 最終 SUMMARY に実行数と失敗数を出す'
 
 assert_summary

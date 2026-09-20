@@ -15,6 +15,7 @@ tests=(
   test-mad-route-admit.sh
   test-agent-config-policy.sh
   test-agent-config-role-catalog.sh
+  test-native-agent-defs.sh
   test-agent-config-routing.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh

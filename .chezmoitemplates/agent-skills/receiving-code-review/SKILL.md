@@ -1,227 +1,218 @@
 ---
 name: receiving-code-review
 description: >-
-  コードレビューの指摘を受け取ったとき、提案を実装する前に使う。
-  指摘が不明瞭・技術的に疑わしいときは特に使う。
-  同調も盲目的な実装もせず、検証してから動く。
+  Use when receiving code review feedback before implementing suggestions.
+  Especially critical when feedback is ambiguous or technically questionable.
+  Verify before acting; neither sycophantically agree nor blindly implement.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# レビューの受け取り方
+# Receiving Code Review
 
-## 概要
+## Overview
 
-コードレビューは技術的な評価であって、感情的な演技ではない。
+Code review is a technical evaluation, not an emotional performance.
 
-**中核**: 実装する前に検証する。仮定する前に聞く。社交的な心地よさより技術的な正しさ。
+**Core**: Verify before implementing. Ask before assuming. Technical correctness over social comfort.
 
-## 応答の型
-
-```
-レビュー指摘を受け取ったら:
-
-1. 読む: 反応せずに指摘を最後まで読む
-2. 理解する: 要求を自分の言葉で言い直す（できなければ聞く）
-3. 検証する: コードベースの実態と突き合わせる
-4. 評価する: このコードベースにとって技術的に妥当か
-5. 応答する: 技術的な確認、または根拠のある反論
-6. 実装する: 1 件ずつ、それぞれテストする
-```
-
-## 何を子に委譲するか
-
-親が持つのは、指摘の受領、不明瞭な指摘をユーザーへ確認すること、押し返すかどうかの判断、
-ユーザーの過去の決定と衝突する場合の相談、実装の順序決定である。
-
-次の 3 つは子に委譲する。
-
-- **指摘をコードベースと突き合わせる検証** — `researcher` roleをPaseo経由で呼ぶ。親は
-  `agent-config resolve --role researcher` でlaunchを解決し、子には指摘の本文と、読ませたい
-  ファイルの絶対パスを渡す。子は確認できたことと確認できなかったことを分けて返す
-- **使用箇所の確認** — 下の「ちゃんと実装しろ」に対する YAGNI 確認で使う。同じ`researcher`
-  roleを使う。native provider wrapperの有無を理由に別backendへ切り替えない
-- **修正の実装** — MAD の `implement` recipe を使う。指摘、review package、対象ファイルの絶対
-  パスを渡す。子が TDD と再レビューを担う
-
-親は修正を自分で書かない。親が書いた修正は独立したレビュアーの判定を受けない。修正の diff と
-テスト出力も親の会話に残り、以降のターンで毎回読み直される。
-
-## 禁止する応答
-
-**書いてはならない**:
-
-- 「おっしゃる通りです」
-- 「良い指摘ですね」「素晴らしいフィードバックです」
-- 「では実装します」（検証の前に）
-
-**代わりに**:
-
-- 技術的な要求を言い直す
-- 明確化の質問をする
-- 誤っているなら技術的な根拠で押し返す
-- そのまま作業を始める（言葉より行動）
-
-## 不明瞭な指摘の扱い
+## Response Pattern
 
 ```
-不明瞭な項目が 1 つでもあるなら:
-  止まる — まだ何も実装しない
-  不明瞭な項目について確認する
+When receiving review feedback:
 
-理由: 項目どうしが関連していることがある。部分的な理解は誤った実装になる
+1. Read: Read the feedback to the end without reacting
+2. Understand: Restate the requirement in your own words (ask if unable)
+3. Verify: Check against the reality of the codebase
+4. Evaluate: Is this technically sound for this codebase?
+5. Respond: Technical confirmation, or reasoned pushback
+6. Implement: One item at a time, testing each
 ```
 
-例:
+## What to Delegate to Children
+
+The parent handles receiving findings, clarifying ambiguous items with the user, deciding whether to push back, consulting on conflicts with prior user decisions, and ordering implementation.
+
+Delegate the following 3 tasks to children:
+
+- **Verifying findings against codebase** — Invoke the `researcher` role through Paseo or the native role path. Resolve it through `agent-config` when using Paseo. Pass finding text and absolute paths of files to read. The child returns what was confirmed vs. what could not be confirmed.
+- **Call site verification** — Used for YAGNI checks against "implement it properly" requests. Invoke the same `researcher` role. Do not switch backends merely because a provider-native wrapper is unavailable.
+- **Implementing fixes** — Use MAD's `implement` recipe. Pass findings, review package, and absolute paths to target files. The child executes TDD and re-review.
+
+The parent must not write fixes directly. Fixes written by the parent do not undergo independent reviewer judgment, and the diffs and test logs remain in parent context, re-read on every subsequent turn.
+
+## Prohibited Responses
+
+**Never write**:
+- "You're absolutely right"
+- "Great point!", "Awesome feedback!"
+- "I will implement that right away" (before verification)
+
+**Instead**:
+- Restate the technical requirement
+- Ask clarifying questions
+- Push back with technical rationale if incorrect
+- Begin working directly (actions over words)
+
+## Handling Ambiguous Feedback
 
 ```
-ユーザー: 「1-6 を直して」
-1,2,3,6 は理解した。4,5 が不明瞭。
+If even a single item is ambiguous:
+  Stop — do not implement anything yet
+  Ask for clarification on the ambiguous item
 
-❌ 誤り: 1,2,3,6 を今実装し、4,5 は後で聞く
-✅ 正しい: 「1,2,3,6 は理解した。4 と 5 は着手前に確認したい」
+Rationale: Items are often interdependent. Partial understanding produces buggy code
 ```
 
-## 出どころ別の扱い
-
-### ユーザーから
-
-- **信頼する** — 理解したうえで実装する
-- スコープが不明瞭なら**それでも聞く**
-- 同調の言葉を書かない
-- 行動へ飛ぶか、技術的な確認だけを返す
-
-### 外部レビュアーから
+Example:
 
 ```
-実装する前に:
-  1. このコードベースにとって技術的に正しいか
-  2. 既存の機能を壊さないか
-  3. 現在の実装にはそうしている理由がないか
-  4. すべてのプラットフォーム・バージョンで成立するか
-  5. レビュアーは全体の文脈を把握しているか
+User: "Fix items 1 through 6"
+Understood: 1, 2, 3, 6. Ambiguous: 4, 5.
 
-提案が誤っていると思うなら:
-  技術的な根拠を添えて押し返す
-
-簡単に検証できないなら:
-  そう言う。「X が無いと検証できない。調べるか、聞くか、進めるか」
-
-ユーザーの過去の決定と衝突するなら:
-  先にユーザーと相談する
+❌ Wrong: Implement 1, 2, 3, 6 now and ask about 4, 5 later
+✅ Right: "Understood 1, 2, 3, and 6. Before starting, I would like to clarify 4 and 5."
 ```
 
-**方針**: 外部からのフィードバックは、懐疑的に、しかし丁寧に確認する。
+## Handling by Source
 
-## 「ちゃんと実装しろ」に対する YAGNI 確認
+### From User
 
-```
-レビュアーが「きちんと実装すべき」と言ってきたら:
-  実際の使用箇所をコードベースで grep する
+- **Trust** — Implement once understood
+- If scope is ambiguous, **still ask**
+- Omit agreeable fluff
+- Jump directly to action or return only technical confirmation
 
-  使われていない: 「このエンドポイントは呼ばれていない。削除でよいか（YAGNI）」
-  使われている:   きちんと実装する
-```
-
-## 実装の順序
+### From External Reviewer
 
 ```
-複数項目のフィードバックに対して:
-  1. 不明瞭なものを先に確認する
-  2. そのうえでこの順に実装させる
-     - ブロッカー（破壊、セキュリティ）
-     - 単純な修正（typo、import）
-     - 込み入った修正（リファクタリング、ロジック）
-  3. 各修正を個別に子へ渡し、それぞれテストさせる
-  4. リグレッションが無いことを子に確認させる
+Before implementing:
+  1. Is this technically sound for this codebase?
+  2. Does this break existing functionality?
+  3. Is there an intentional historical reason for the current implementation?
+  4. Does this hold across all supported platforms/versions?
+  5. Does the reviewer possess full context?
+
+If you believe the suggestion is wrong:
+  Push back with technical rationale
+
+If you cannot easily verify:
+  Say so: "Cannot verify without X. Should we investigate, ask, or proceed?"
+
+If it conflicts with prior user decisions:
+  Consult with the user first
 ```
 
-## 押し返してよいとき
+**Policy**: Treat external feedback with constructive skepticism, verifying thoroughly and politely.
 
-- 提案が既存の機能を壊す
-- レビュアーが全体の文脈を持っていない
-- YAGNI に反する（使われていない機能）
-- このスタックでは技術的に誤っている
-- 互換性のための経緯がある
-- ユーザーのアーキテクチャ上の決定と衝突する
-
-**押し返し方**:
-
-- 防御的にならず技術的な根拠で書く
-- 具体的な質問をする
-- 動いているテストやコードを示す
-- アーキテクチャに関わるならユーザーを巻き込む
-
-**声に出して押し返しにくいと感じたら**: その緊張を名指ししたうえで、見えている問題をユーザーに伝える。
-
-## 指摘が正しいときの確認
+## YAGNI Check for "Implement It Properly"
 
 ```
-✅ 「直した。<何を変えたか>」
-✅ 「<具体的な問題> を <場所> で直した」
-✅ そのまま直してコードで示す
+When a reviewer asks to "properly implement" something:
+  Grep the codebase for actual call sites
 
-❌ 「おっしゃる通りです」
-❌ 「良い指摘ですね」
-❌ 「気づいてくれてありがとう」
-❌ 感謝の表明全般
+  Unused: "This endpoint has no callers. Can we delete it instead (YAGNI)?"
+  Used:   Implement it properly
 ```
 
-**なぜ感謝を書かないか**: 行動が示す。直せばよい。コード自体がフィードバックを受け取った証拠になる。
-
-**「ありがとう」と書きかけたら**: 消す。代わりに何を直したかを書く。
-
-## 押し返しが誤っていたとき
+## Implementation Order
 
 ```
-✅ 「確認した。<X> は <Y> だった。実装する」
-✅ 「検証した。指摘が正しい。自分の理解が <理由> で誤っていた。直す」
-
-❌ 長い謝罪
-❌ なぜ押し返したかの弁明
-❌ 過剰な説明
+For multi-item feedback:
+  1. Clarify ambiguous items first
+  2. Have children implement in this order:
+     - Blockers (breakages, security vulnerabilities)
+     - Simple fixes (typos, imports)
+     - Involved changes (refactoring, logic updates)
+  3. Pass each fix individually to children, having them test each
+  4. Have children verify no regressions occurred
 ```
 
-事実として訂正し、先へ進む。
+## When to Push Back
 
-## よくある誤り
+- Suggestion breaks existing functionality
+- Reviewer lacks overall architectural context
+- Violates YAGNI (unused functionality)
+- Technically incorrect for this technology stack
+- Historical compatibility requirements exist
+- Conflicts with user's architectural decisions
 
-| 誤り | 対処 |
+**How to push back**:
+- State technical rationale without defensiveness
+- Ask specific, focused questions
+- Point to working tests or code
+- Involve the user if architectural decisions are impacted
+
+**If you feel hesitant to push back**: Name that tension explicitly and present the observed technical conflict to the user.
+
+## Confirming Valid Findings
+
+```
+✅ "Fixed. <What was changed>"
+✅ "Resolved <specific issue> in <location>"
+✅ Fix directly and demonstrate with code
+
+❌ "You are completely right"
+❌ "Good catch!"
+❌ "Thank you for noticing"
+❌ Expressions of gratitude in general
+```
+
+**Why omit gratitude**: Actions speak. Fixing the issue is sufficient proof of having received the feedback.
+
+**If you catch yourself typing "thank you"**: Erase it. State what was fixed instead.
+
+## When Pushback was Mistaken
+
+```
+✅ "Verified. <X> was indeed <Y>. Implementing now."
+✅ "Tested and confirmed. Finding was correct; my previous understanding was incorrect due to <reason>. Fixing."
+
+❌ Long apologies
+❌ Defending why you initially pushed back
+❌ Excessive explanations
+```
+
+State the factual correction and move forward.
+
+## Common Mistakes
+
+| Mistake | Remedy |
 |---|---|
-| 同調の言葉 | 要求を言い直すか、そのまま動く |
-| 盲目的な実装 | 先にコードベースと突き合わせる |
-| まとめて実装しテストしない | 1 件ずつ、それぞれテストする |
-| レビュアーが正しいと決めつける | 何かを壊さないか確認する |
-| 押し返しを避ける | 心地よさより技術的な正しさ |
-| 部分的な実装 | 先に全項目を明確にする |
-| 検証できないまま進む | 制約を述べて指示を仰ぐ |
-| 自分で修正を書く | 親が書いた修正は独立したレビュアーの判定を受けず、diff とテスト出力が親の会話に残る。子へ渡す |
+| Agreeable fluff | Restate technical requirement or proceed silently |
+| Blind implementation | Verify against codebase first |
+| Implementing in bulk without testing | Implement and test one item at a time |
+| Assuming reviewer is always right | Verify it doesn't break existing features |
+| Avoiding pushback | Technical correctness over social comfort |
+| Partial implementation | Clarify all items before starting |
+| Proceeding without verification | State constraints and request guidance |
+| Writing fixes yourself | Fixes written by parent lack independent reviewer gates and bloat context; pass to children |
 
-## 例
+## Examples
 
-**同調（悪い）**
-
-```
-レビュアー: 「レガシーコードを削除して」
-❌ 「おっしゃる通りです。すぐ削除します」
-```
-
-**技術的な検証（良い）**
+**Sycophancy (Bad)**
 
 ```
-レビュアー: 「レガシーコードを削除して」
-✅ 「確認した。ビルドターゲットは 10.15+ で、この API は 13+ が要る。
-   後方互換のためレガシー側が要る。現在の実装は bundle ID が誤っているので、
-   それを直すか、13 未満のサポートを落とすかを決めたい」
+Reviewer: "Delete this legacy code"
+❌ "You're absolutely right. Deleting immediately."
 ```
 
-**YAGNI（良い）**
+**Technical Verification (Good)**
 
 ```
-レビュアー: 「DB と日付フィルタと CSV エクスポート付きのメトリクスを実装して」
-✅ 「コードベースを grep した。このエンドポイントを呼んでいる箇所が無い。
-   削除でよいか（YAGNI）。それとも見落としている使用箇所があるか」
+Reviewer: "Delete this legacy code"
+✅ "Checked. The build target is 10.15+, while this newer API requires 13+.
+   The legacy path is required for backward compatibility. The current implementation
+   has an invalid bundle ID, so we should either fix that or decide to drop pre-13 support."
 ```
 
-## GitHub のスレッド返信
+**YAGNI (Good)**
 
-インラインのレビューコメントに返すときは、トップレベルの PR コメントではなくそのスレッドに返信する（`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies`）。
+```
+Reviewer: "Implement metrics with DB persistence, date filters, and CSV export"
+✅ "Grepped the codebase. This endpoint has no callers.
+   Can we remove it instead (YAGNI), or is there an intended caller I missed?"
+```
+
+## GitHub Thread Replies
+
+When replying to inline review comments, reply directly to the review thread rather than posting a top-level PR comment (`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies`).

@@ -1,27 +1,27 @@
-# シークレットの取り扱い
+# Secret Handling
 
-原則として、トークンを平文でファイルに置かない。1Password から取る。
+As a general rule, never store tokens in plain text in files. Retrieve them from 1Password.
 
-## 方式の使い分け
+## Choosing the Method
 
-| 方式 | いつ使うか | 例 |
+| Method | When to Use | Example |
 |---|---|---|
-| shell plugin | 対応 CLI を叩くとき（既定） | `wrangler`, `aws`, `stripe` |
-| `op run --env-file` | 複数の環境変数をまとめて注入するとき。plugin 未対応のツール | `op run --env-file=.env -- pnpm dev` |
-| `op read` | 単発で 1 つの値が欲しいとき | `curl -H "Authorization: Bearer $(op read op://...)"` |
-| `op inject` | テンプレートから設定ファイルを生成するとき | `op inject -i config.tpl -o config.json` |
+| Shell plugin | When invoking supported CLIs (Default) | `wrangler`, `aws`, `stripe` |
+| `op run --env-file` | Injecting multiple environment variables at once; tools not supported by plugins | `op run --env-file=.env -- pnpm dev` |
+| `op read` | When needing a one-off value | `curl -H "Authorization: Bearer $(op read op://...)"` |
+| `op inject` | Generating config files from templates | `op inject -i config.tpl -o config.json` |
 
-迷ったら shell plugin を使う。値が環境変数にもファイルにも残らないため、最も漏れにくい。
+When in doubt, use shell plugins. The values do not linger in environment variables or files, making it the most leak-resistant approach.
 
-## shell plugin（既定）
+## Shell Plugin (Default)
 
-`~/.op/plugins.sh` で `wrangler` / `aws` / `stripe` を設定済みである。CLI を叩くだけで認証が挟まる。
+`wrangler`, `aws`, and `stripe` are configured in `~/.op/plugins.sh`. Authentication is intercepted simply by invoking the CLI.
 
-対応 CLI かどうかは `op plugin list` で確認する。ディレクトリ単位の割り当て方法は `cloudflare.md` に書いた。
+Check whether a CLI is supported using `op plugin list`. Directory-specific assignment methods are detailed in `cloudflare.md`.
 
 ## op run --env-file
 
-`.env` には参照だけを書き、値は書かない。
+Write only references in `.env`, never the raw values:
 
 ```
 CLOUDFLARE_API_TOKEN=op://Vault/item/field
@@ -32,19 +32,19 @@ DATABASE_URL=op://Vault/item/field
 op run --env-file=.env -- pnpm dev
 ```
 
-この `.env` は参照しか含まないのでコミットできる。ただし vault 名と item 名が公開される点は許容する必要がある。
+Since this `.env` contains only references, it can be committed. However, be aware that vault and item names will be visible.
 
 ## op read
 
-シェルの 1 行で値が欲しいときだけ使う。変数に代入せずその場で展開し、シェル履歴とプロセス一覧に値を残さない。
+Use only when a value is needed in a single shell command line. Expand it in place without assigning to a persistent variable so that the value does not linger in shell history or process listings.
 
 ## op inject
 
-生成したファイルには平文の値が入る。`.gitignore` に追加し、使い終わったら削除する。
+Generated files will contain plain text values. Add them to `.gitignore` and delete them once finished.
 
-## やってはいけないこと
+## Things Never to Do
 
-- `export CLOUDFLARE_API_TOKEN=<値>` を zshrc や `herdr-sessions/*.zsh` に書く。これらは chezmoi 管理下なので git に入る。
-- `.env` に実際の値を書く。
-- `wrangler secret put` の値をコマンドライン引数に直書きする。シェル履歴に残る。
-- エージェントが `op read` の結果を応答本文に出力する。値がセッションログに残る。
+- Writing `export CLOUDFLARE_API_TOKEN=<value>` in zshrc or `herdr-sessions/*.zsh`. These are managed by chezmoi and tracked in git.
+- Writing actual secret values into `.env`.
+- Hardcoding the value for `wrangler secret put` as a command line argument (persists in shell history).
+- Outputting `op read` results in agent response bodies (persists in session logs).

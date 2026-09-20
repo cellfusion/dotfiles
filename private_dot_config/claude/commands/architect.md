@@ -1,46 +1,46 @@
 # Architect
 
-実装計画を立案します。planner エージェントを使用して体系的に計画を作成します。
+Formulates implementation plans. Systematically designs the plan using the planner agent.
 
-## 手順
+## Steps
 
-### 1. 要件の再確認
+### 1. Requirements Clarification
 
-ユーザーの要件を整理し、以下を明確にしてください：
-- 何を達成したいか（ゴール）
-- 制約条件（技術スタック、パフォーマンス、互換性）
-- スコープ（含むもの・含まないもの）
+Organize the user's requirements and clarify:
+- Desired outcome (goal)
+- Constraints (tech stack, performance, compatibility)
+- Scope (in-scope vs. out-of-scope)
 
-不明点があればユーザーに質問してください。
+Ask the user if there are any ambiguities.
 
-### 2. planner エージェントに委譲
+### 2. Delegate to Planner Agent
 
-planner エージェントを起動し、以下の分析を依頼してください：
-- 既存コードベースの関連部分の調査
-- 影響範囲の特定
-- 実装アプローチの比較検討
+Launch the planner agent and request the following analysis:
+- Investigation of relevant parts of the existing codebase
+- Scope-of-impact identification
+- Comparative evaluation of implementation approaches
 
-### 3. リスク評価
+### 3. Risk Assessment
 
-各アプローチについて以下を評価：
-- **技術的リスク**: 未知の技術、複雑な統合、パフォーマンス懸念
-- **スコープリスク**: 要件の曖昧さ、スコープクリープの可能性
-- **依存リスク**: 外部ライブラリ、API、他チームへの依存
+Evaluate each approach across:
+- **Technical Risk**: Unfamiliar technologies, complex integrations, performance concerns
+- **Scope Risk**: Ambiguous requirements, scope creep risks
+- **Dependency Risk**: Dependencies on external libraries, APIs, or other teams
 
-### 4. フェーズ分解
+### 4. Phase Breakdown
 
-実装を小さなフェーズに分解してください：
+Decompose the implementation into small phases:
 
 ```
-## Phase N: タイトル
-- 目標:
-- 変更ファイル:
-- 推定コミット数:
-- 依存: Phase X（あれば）
+## Phase N: Title
+- Goal:
+- Files to change:
+- Estimated commit count:
+- Dependencies: Phase X (if any)
 ```
 
-### 5. ユーザー確認
+### 5. User Confirmation
 
-計画を提示し、ユーザーの承認を待ってください。承認なしに実装を開始しないこと。
+Present the plan and await user approval. Do not begin implementation without explicit approval.
 
 $ARGUMENTS

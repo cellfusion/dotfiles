@@ -1,65 +1,58 @@
-# Cloudflare のマルチアカウント運用
+# Multi-Account Operations for Cloudflare
 
-複数の Cloudflare アカウントを使い分けている。切り替えは 2 つのレイヤーで行う。
+Multiple Cloudflare accounts are utilized across projects. Switching occurs across two distinct layers:
 
-| レイヤー | 決めること | 設定の単位 |
+| Layer | Decision | Configuration Scope |
 |---|---|---|
-| 1Password shell plugin | どの API トークンで認証するか | プロジェクトディレクトリ |
-| `CLOUDFLARE_ACCOUNT_ID` | どのアカウントを操作するか | herdr セッション |
+| 1Password shell plugin | Which API token to authenticate with | Project directory |
+| `CLOUDFLARE_ACCOUNT_ID` | Which account to operate against | herdr session |
 
-両方が揃って初めて意図したアカウントに繋がる。片方だけ切り替えると、トークンとアカウント ID が食い違って `wrangler` が認証エラーを返す。
+Both must be aligned to successfully interact with the intended account. If only one is changed, a mismatch between the token and account ID causes `wrangler` to return an authentication error.
 
-## 1. 認証（1Password shell plugin）
+## 1. Authentication (1Password shell plugin)
 
-`~/.op/plugins.sh` で `wrangler` は `op plugin run -- wrangler` にエイリアスされている。トークンを環境変数に置かず、コマンドを実行するたびに 1Password から取る。
+In `~/.op/plugins.sh`, `wrangler` is aliased to `op plugin run -- wrangler`. Rather than keeping tokens in environment variables, each command execution pulls the token from 1Password.
 
-プロジェクトごとに使うトークンを割り当てる。
+Assign the token to use per project:
 
 ```bash
-cd <プロジェクトのルート>
+cd <project-root>
 op plugin init wrangler
-# 「Use automatically when in this directory or subdirectories」を選ぶ
+# Select "Use automatically when in this directory or subdirectories"
 ```
 
-これでそのディレクトリと配下では該当アカウントのトークンが自動で使われる。
+The assigned account's token will now automatically be used in that directory and its subdirectories.
 
-- 割り当て済みの item は `~/.op/plugins/used_items/wrangler.json` に記録される。
-- `op plugin inspect wrangler` と `op plugin clear wrangler` は対話 IO を要求するため、エージェントの Bash ツールからは実行できない。ユーザーに `! op plugin inspect wrangler` の実行を依頼する。
+- Configured items are tracked in `~/.op/plugins/used_items/wrangler.json`.
+- `op plugin inspect wrangler` and `op plugin clear wrangler` require interactive I/O and cannot be executed directly from an agent's Bash tool. Ask the user to run `! op plugin inspect wrangler`.
 
-## 2. 対象アカウント（AI 環境）
+## 2. Target Account (AI Environment)
 
-`CLOUDFLARE_ACCOUNT_ID` と `WRANGLER_HOME` を AI 環境（`$HERDR_SESSION`）単位で
-切り替える。定義は `~/.config/chezmoi/private-data.toml` の `[[data.environments]]` に
-あり、配列の先頭が primary である。
+`CLOUDFLARE_ACCOUNT_ID` and `WRANGLER_HOME` switch per AI environment (`$HERDR_SESSION`). Definitions reside in `[[data.environments]]` of `~/.config/chezmoi/private-data.toml`, where the first item is primary.
 
-| 環境 | CLOUDFLARE_ACCOUNT_ID の出どころ | WRANGLER_HOME |
+| Environment | Source of CLOUDFLARE_ACCOUNT_ID | WRANGLER_HOME |
 |---|---|---|
-| 先頭（primary） | `[[data.environments]]` 1 つ目の `cloudflareAccountId` | `~/.config/.wrangler` |
-| 2 つ目以降 | それぞれの `cloudflareAccountId` | `~/.config/.wrangler-<session>` |
+| First (primary) | `cloudflareAccountId` of 1st `[[data.environments]]` | `~/.config/.wrangler` |
+| Second onward | Respective `cloudflareAccountId` | `~/.config/.wrangler-<session>` |
 
-`WRANGLER_HOME` を分けているのは、wrangler のログイン状態やキャッシュがアカウント間で
-混ざらないようにするためである。
+`WRANGLER_HOME` is isolated so that wrangler login state and caches do not mix across accounts.
 
-配布されたファイルは `~/.config/zsh/agent-environments.zsh` にある。その元は chezmoi
-ソースの `private_dot_config/zsh/agent-environments.zsh.tmpl` で、アカウント ID も
-環境名もテンプレートには直書きせず `private-data.toml` から埋める。環境の追加手順は
-`herdr.md` を読む。
+The distributed file is at `~/.config/zsh/agent-environments.zsh`. Its source is chezmoi's `private_dot_config/zsh/agent-environments.zsh.tmpl`, where account IDs and environment names are populated from `private-data.toml` rather than hardcoded. Refer to `herdr.md` for steps on adding environments.
 
-## 新しいアカウントを足す
+## Adding a New Account
 
-1. 1Password に API トークンの item を作る。
-2. そのアカウントで使うプロジェクトディレクトリに移動し、`op plugin init wrangler` を実行する。
-3. `~/.config/chezmoi/private-data.toml` の対象の `[[data.environments]]` ブロックに
-   `cloudflareAccountId` を書く。新しい環境ごと足すならブロックを 1 つ増やす。
-   ここはリポジトリの外なので、ID も環境名もリポジトリに入らない。
-4. `chezmoi init` を実行して `chezmoi.toml` を再生成する。
-5. `chezmoi apply` はユーザーが実行する。
+1. Create an API token item in 1Password.
+2. Navigate to the project directory used with that account, and run `op plugin init wrangler`.
+3. Add `cloudflareAccountId` in the corresponding `[[data.environments]]` block of `~/.config/chezmoi/private-data.toml`. If adding a whole new environment, add a new block.
+   Because this is outside the repository, neither IDs nor environment names enter version control.
+4. Run `chezmoi init` to regenerate `chezmoi.toml`.
+5. `chezmoi apply` is executed by the user.
 
-## デプロイ前の確認
+## Pre-Deployment Verification
 
 ```bash
 echo $CLOUDFLARE_ACCOUNT_ID
 wrangler whoami
 ```
 
-`wrangler whoami` は 1Password の認証（Touch ID）を要求する。エージェントの Bash ツールから実行すると生体認証のプロンプトで止まるため、ユーザーに `!` 付きで実行してもらう。
+`wrangler whoami` prompts for 1Password biometric authentication (Touch ID). Because executing this from an agent's Bash tool hangs on the biometric prompt, ask the user to run it with `!`.

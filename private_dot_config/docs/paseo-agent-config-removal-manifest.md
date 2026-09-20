@@ -1,3 +1,9 @@
+<!--
+This is the migration ledger for the legacy native-agent backend removed in
+b476132. A later native MAD role may intentionally reuse a destination listed
+as Delete; that is a new provider-native wrapper generated from the current
+role catalog, not a restoration of the deleted legacy backend.
+-->
 | private_dot_agents/skills/subagent-driven-development/scripts/executable_agent-backend | Delete | — |
 | private_dot_agents/skills/subagent-driven-development/scripts/executable_review-package | Delete | — |
 | private_dot_agents/skills/subagent-driven-development/scripts/executable_run-registry | Delete | — |

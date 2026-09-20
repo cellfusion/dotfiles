@@ -1,11 +1,11 @@
-> **この環境での対応**
+> **Runtime Tool Mapping**
 >
-> | 論理名 | この環境での実体 |
+> | Logical Name | Implementation in this Environment |
 > |---|---|
-> | `[ask-user]` | `question` ツール。使えなければ選択肢を提示して応答を待つ |
-> | `[dispatch-subagent: X]` | `task` ツールでサブエージェント `X` を指定する。または `@X` で呼ぶ |
-> | `[resume-subagent]` | 継続する機構は無い。新しいサブエージェントを立て、報告ファイルで記憶を引き継ぐ |
-> | `[deterministic-loop]` | 利用不可。あなた自身がループを回し、ラウンド数を数える |
-> | `[todo]` | `todowrite` ツール |
-> | `[web-search]` | `websearch` ツール |
-> | `[retry-outside-sandbox]` | 利用可能な permission / escalation 機構で同じコマンドを sandbox 外へ再実行する。機構が無ければ失敗として扱う |
+> | `[ask-user]` | `question` tool. If unavailable, present options and wait for user response |
+> | `[dispatch-subagent: X]` | Specify subagent `X` via `task` tool, or invoke with `@X` |
+> | `[resume-subagent]` | No resumption mechanism exists. Spawn a new subagent and hand off context via report files |
+> | `[deterministic-loop]` | Unavailable. Run the loop yourself and count rounds explicitly |
+> | `[todo]` | `todowrite` tool |
+> | `[web-search]` | `websearch` tool |
+> | `[retry-outside-sandbox]` | Re-run command outside sandbox via available permission/escalation mechanism. If unavailable, treat as failure |

@@ -29,6 +29,8 @@ assert_contains "$doc" 'MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"' \
   'docs: mad-route summary の絶対 script path を記録する'
 assert_contains "$doc" 'MAD_RUN="$MAD_SCRIPTS/mad-run"' \
   'docs: mad-run の絶対 script path を記録する'
+assert_contains "$doc" 'native roleはClaude Code、Codex、Piへ同じrole catalogから配る' \
+  'docs: native role の配布先を記録する'
 assert_contains "$doc" 'MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"' \
   'docs: escalation controller の絶対 script path を記録する'
 

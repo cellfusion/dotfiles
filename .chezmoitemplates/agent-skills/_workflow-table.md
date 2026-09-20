@@ -1,19 +1,19 @@
-## 開発ワークフロー
+## Development Workflow
 
-開発の手順はスキルが持つ。ただし、スキルは依頼に必要な場合だけ起動する。ユーザーの依頼を読むこと、関連ファイルを調べること、確認質問をすることを、スキル起動の前提にしない。
+Development procedures are defined in skills. However, launch skills only when requested or needed. Never make reading user requests, inspecting relevant files, or asking clarifying questions prerequisite on launching a skill.
 
-| 依頼 | 最初に起動するスキル |
+| Request | Initial Skill to Launch |
 |---|---|
-| 明確で局所的な変更 | 直接調査・実装する。設計の選択が残る場合だけ `brainstorming` |
-| 実装経路・作業クラス・委譲方法が不明 | `task-routing` |
-| 意図や挙動が未確定な変更 | `task-routing`。必要なら `brainstorming` |
-| 複数層にまたがる設計変更 | `task-routing` → `brainstorming`。必要なら `writing-plans` |
-| バグ・不具合・「動かない」「直らない」 | 根本原因が未確定なら `systematic-debugging` |
-| 実装プランが既にある | 小さければ `executing-plans`。並列性や独立した review が必要なら `multi-agent-development` |
-| 実装が終わった・マージしたい | `finishing-a-development-branch` |
-| 完了・テスト通過を主張する直前 | `verification-before-completion` |
-| コードレビューの指摘を受け取った | `receiving-code-review` |
+| Clear, localized change | Inspect and implement directly. Use `brainstorming` only if design alternatives remain |
+| Implementation path, work class, or delegation method unclear | `task-routing` |
+| Intent or expected behavior undetermined | `task-routing`. Use `brainstorming` if necessary |
+| Multi-layer architectural change | `task-routing` -> `brainstorming`. Use `writing-plans` if needed |
+| Bug, failure, "not working", "broken" | `systematic-debugging` if root cause is unverified |
+| Implementation plan already exists | `executing-plans` if small. `multi-agent-development` if concurrency or independent reviews are needed |
+| Implementation finished / ready to merge | `finishing-a-development-branch` |
+| Right before asserting completion or test passage | `verification-before-completion` |
+| Code review feedback received | `receiving-code-review` |
 
-brainstorming はすべての変更に必要ではない。どのスキルを使うか、どの経路で進むかは親エージェントが依頼の明確さ、リスク、作業量から判断する。
+Brainstorming is not required for every change. The parent agent determines which skill to use and which path to take based on request clarity, risk, and volume of work.
 
-subagent として起動された場合、この指示は無視する。
+Ignore these instructions when launched as a subagent.

@@ -1,80 +1,80 @@
 # Root Cause Tracing
 
-## 概要
+## Overview
 
-バグはコールスタックの深いところで表面化することが多い（間違ったディレクトリで git init が走る、間違った場所にファイルができる、間違ったパスで DB が開く）。エラーが出た場所で直したくなるが、それは症状への対処である。
+Bugs often surface deep in call stacks (e.g., `git init` running in the wrong directory, files created in unexpected locations, database opening on an invalid path). The temptation is to fix the problem where the error appears, but that merely treats the symptom.
 
-**中核**: 呼び出しの連鎖を遡って元の引き金に行き着き、そこで直す。
+**Core**: Trace backward up the chain of calls to find the original trigger, and fix it there.
 
-## いつ使うか
+## When to Use
 
 ```dot
 digraph when_to_use {
-    "バグがスタックの深部で出る?" [shape=diamond];
-    "遡れる?" [shape=diamond];
-    "症状の場所で直す" [shape=box];
-    "元の引き金まで遡る" [shape=box];
-    "さらに defense-in-depth を足す" [shape=box];
+    "Bug surfaces deep in stack?" [shape=diamond];
+    "Traceable?" [shape=diamond];
+    "Fix at symptom site" [shape=box];
+    "Trace back to original trigger" [shape=box];
+    "Add defense-in-depth" [shape=box];
 
-    "バグがスタックの深部で出る?" -> "遡れる?" [label="yes"];
-    "遡れる?" -> "元の引き金まで遡る" [label="yes"];
-    "遡れる?" -> "症状の場所で直す" [label="no（行き止まり）"];
-    "元の引き金まで遡る" -> "さらに defense-in-depth を足す";
+    "Bug surfaces deep in stack?" -> "Traceable?" [label="yes"];
+    "Traceable?" -> "Trace back to original trigger" [label="yes"];
+    "Traceable?" -> "Fix at symptom site" [label="no (dead end)"];
+    "Trace back to original trigger" -> "Add defense-in-depth";
 }
 ```
 
-**使うとき**:
+**Use when**:
 
-- エラーが実行の深いところで起きる（入口ではない）
-- スタックトレースが長い呼び出し連鎖を示している
-- 不正なデータがどこで生まれたか分からない
-- どのテスト・どのコードが問題を引き起こしているか特定したい
+- Errors occur deep inside execution rather than at the entrypoint
+- Stack traces show a long chain of calls
+- Unclear where invalid data originated
+- Identifying which test or caller triggers the problem
 
-## 遡り方
+## How to Trace Backward
 
-### 1. 症状を観察する
+### 1. Observe the Symptom
 
 ```
 Error: git init failed in ~/project/packages/core
 ```
 
-### 2. 直接の原因を見つける
+### 2. Find the Immediate Cause
 
-**どのコードがこれを直接引き起こしているか**
+**Which code directly triggered this?**
 
 ```typescript
 await execFileAsync('git', ['init'], { cwd: projectDir });
 ```
 
-### 3. 「これを呼んだのは誰か」を問う
+### 3. Ask "Who Called This?"
 
 ```
 WorktreeManager.createSessionWorktree(projectDir, sessionId)
-  ← Session.initializeWorkspace()
-  ← Session.create()
-  ← test の Project.create()
+  <- Session.initializeWorkspace()
+  <- Session.create()
+  <- Project.create() in test
 ```
 
-### 4. 上へ遡り続ける
+### 4. Continue Tracing Upward
 
-**どんな値が渡されたか**
+**What value was passed?**
 
-- `projectDir = ''`（空文字列）
-- 空文字列を `cwd` に渡すと `process.cwd()` に解決される
-- それはソースコードのディレクトリだった
+- `projectDir = ''` (empty string)
+- Passing an empty string to `cwd` resolves to `process.cwd()`
+- That was the source code directory
 
-### 5. 元の引き金を見つける
+### 5. Locate the Original Trigger
 
-**空文字列はどこから来たか**
+**Where did the empty string come from?**
 
 ```typescript
-const context = setupCoreTest(); // { tempDir: '' } を返す
-Project.create('name', context.tempDir); // beforeEach より前にアクセスしていた
+const context = setupCoreTest(); // Returns { tempDir: '' }
+Project.create('name', context.tempDir); // Accessed before beforeEach
 ```
 
-## スタックトレースを仕込む
+## Instrumenting Stack Traces
 
-手で追えないときは計測を入れる。
+When tracing manually is impractical, add instrumentation:
 
 ```typescript
 async function gitInit(directory: string) {
@@ -90,23 +90,22 @@ async function gitInit(directory: string) {
 }
 ```
 
-**重要**: テストでは `console.error()` を使う（logger は出ないことがある）。
+**Important**: Use `console.error()` in tests (loggers may be silenced).
 
-実行して拾う:
+Execute and capture:
 
 ```bash
 npm test 2>&1 | grep 'DEBUG git init'
 ```
 
-スタックトレースの読み方:
+Reading stack traces:
+- Look for test file names
+- Identify the line number initiating the call
+- Identify patterns (same test? same arguments?)
 
-- テストファイル名を探す
-- 呼び出しを引き起こした行番号を見つける
-- パターンを特定する（同じテストか。同じ引数か）
+## Finding the Polluting Test
 
-## どのテストが汚染しているか
-
-テスト中に何かが現れるがどのテストか分からない場合は、テストを 1 本ずつ実行して最初に汚染したところで止める（bisection）。
+If an unwanted artifact appears during test suite execution but the source test is unknown, run tests one by one and stop at the first polluter (bisection):
 
 ```bash
 for f in $(git ls-files 'src/**/*.test.ts'); do
@@ -115,58 +114,56 @@ for f in $(git ls-files 'src/**/*.test.ts'); do
 done
 ```
 
-## 実例: 空の projectDir
+## Real Example: Empty projectDir
 
-**症状**: `packages/core/`（ソースコード）に `.git` ができる
+**Symptom**: `.git` created inside `packages/core/` (source code directory)
 
-**遡りの連鎖**:
+**Trace chain**:
+1. `git init` ran in `process.cwd()` <- `cwd` argument was empty
+2. `WorktreeManager` called with empty `projectDir`
+3. `Session.create()` passed an empty string
+4. Test accessed `context.tempDir` before `beforeEach` ran
+5. `setupCoreTest()` initially returned `{ tempDir: '' }`
 
-1. `git init` が `process.cwd()` で走る ← cwd 引数が空
-2. WorktreeManager が空の projectDir で呼ばれた
-3. `Session.create()` が空文字列を渡した
-4. テストが beforeEach より前に `context.tempDir` にアクセスした
-5. `setupCoreTest()` は初期状態で `{ tempDir: '' }` を返す
+**Root Cause**: Top-level variable initialization accessed an uninitialized value
 
-**根本原因**: トップレベル変数の初期化が空の値にアクセスしていた
+**Fix**: Converted `tempDir` into a getter that throws if accessed before `beforeEach`
 
-**修正**: `tempDir` を getter にして、beforeEach より前のアクセスで throw させた
+**Add Defense-in-Depth**:
+- Layer 1: `Project.create()` validates directory
+- Layer 2: `WorkspaceManager` validates non-empty directory
+- Layer 3: Refuse `git init` outside tmpdir during tests
+- Layer 4: Record stack trace before running `git init`
 
-**さらに defense-in-depth を追加**:
-
-- 層 1: `Project.create()` がディレクトリを検証する
-- 層 2: `WorkspaceManager` が空でないことを検証する
-- 層 3: テスト中は tmpdir 外での git init を拒否する
-- 層 4: git init 前にスタックトレースを記録する
-
-## 原則
+## Principle
 
 ```dot
 digraph principle {
-    "直接の原因が分かった" [shape=ellipse];
-    "1 段上へ遡れる?" [shape=diamond];
-    "遡る" [shape=box];
-    "ここが発生源か?" [shape=diamond];
-    "発生源で直す" [shape=box];
-    "各層に検証を足す" [shape=box];
-    "バグが起こりえなくなる" [shape=doublecircle];
-    "症状だけを直さない" [shape=octagon];
+    "Found immediate cause" [shape=ellipse];
+    "Can trace up 1 level?" [shape=diamond];
+    "Trace up" [shape=box];
+    "Is this the origin?" [shape=diamond];
+    "Fix at origin" [shape=box];
+    "Add validation at each layer" [shape=box];
+    "Bug becomes impossible" [shape=doublecircle];
+    "Do not fix symptom alone" [shape=octagon];
 
-    "直接の原因が分かった" -> "1 段上へ遡れる?";
-    "1 段上へ遡れる?" -> "遡る" [label="yes"];
-    "1 段上へ遡れる?" -> "症状だけを直さない" [label="no"];
-    "遡る" -> "ここが発生源か?";
-    "ここが発生源か?" -> "遡る" [label="no"];
-    "ここが発生源か?" -> "発生源で直す" [label="yes"];
-    "発生源で直す" -> "各層に検証を足す";
-    "各層に検証を足す" -> "バグが起こりえなくなる";
+    "Found immediate cause" -> "Can trace up 1 level?";
+    "Can trace up 1 level?" -> "Trace up" [label="yes"];
+    "Can trace up 1 level?" -> "Do not fix symptom alone" [label="no"];
+    "Trace up" -> "Is this the origin?";
+    "Is this the origin?" -> "Trace up" [label="no"];
+    "Is this the origin?" -> "Fix at origin" [label="yes"];
+    "Fix at origin" -> "Add validation at each layer";
+    "Add validation at each layer" -> "Bug becomes impossible";
 }
 ```
 
-**エラーが出た場所だけを直さない。** 元の引き金まで遡る。
+**Never patch only where the error surfaces.** Trace back to the original trigger.
 
-## スタックトレースのこつ
+## Stack Trace Tips
 
-- **テストでは**: logger ではなく `console.error()` を使う。logger は抑制されることがある
-- **操作の前に**: 失敗した後ではなく、危険な操作の前に記録する
-- **文脈を含める**: ディレクトリ、cwd、環境変数、タイムスタンプ
-- **スタックを取る**: `new Error().stack` で呼び出し連鎖全体が見える
+- **In tests**: Use `console.error()` rather than loggers, which may be suppressed.
+- **Before the action**: Record before dangerous operations, not after failure.
+- **Include context**: Directory, cwd, environment variables, timestamps.
+- **Capture full stack**: `new Error().stack` reveals the complete invocation chain.

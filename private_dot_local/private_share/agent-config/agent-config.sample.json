@@ -5,7 +5,7 @@
     "claude": { "displayName": "Claude", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
     "codex": { "displayName": "Codex", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md", "rules"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
     "opencode": { "displayName": "OpenCode", "backends": ["paseo"], "setup": null, "featureAllowlist": {} },
-    "pi": { "displayName": "Pi", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "PI_CODING_AGENT_DIR": "pi" }, "directoryPattern": { "primary": "$HOME/.pi/agent", "nonPrimary": "$HOME/.pi/agent-<environment>" }, "symlinks": [], "preservedMutable": [], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} }
+    "pi": { "displayName": "Pi", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "PI_CODING_AGENT_DIR": "pi" }, "directoryPattern": { "primary": "$HOME/.pi/agent", "nonPrimary": "$HOME/.pi/agent-<environment>" }, "symlinks": ["agents", "extensions"], "preservedMutable": [], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} }
   },
   "selection": {
     "author": {

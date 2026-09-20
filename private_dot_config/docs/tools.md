@@ -382,6 +382,8 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 
 `multi-agent-development` は Paseo CLI を既定 backend とし、Paseo MCP は明示指定時だけ使う。選択した backend が利用できないときは run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
+native roleはClaude Code、Codex、Piへ同じrole catalogから配る。Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも同時に配る。OpenCodeのnative agent定義はMADでは配らない。
+
 Paseo の child は CLI から見える。`paseo ls` が一覧と状態を出し、`paseo inspect <agent-id>` が
 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を出す。MAD 親は raw activity を
 保存せず、選択した backend の adapter `wait-agent --child-ref <safe-id> --timeout <seconds>`

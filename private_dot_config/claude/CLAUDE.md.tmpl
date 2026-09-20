@@ -2,23 +2,21 @@
 
 ## Research & Verification
 
-事実・最新情報・変化しうる技術詳細については内部知識だけに頼らず WebSearch で確認する。可能なら 2〜3 の独立したソースで裏を取り、公式ドキュメントを優先する。ソースが食い違う場合は差異を明示し、確認できない場合はその不確かさを明言する。回答末尾に `Sources:` でリンクを示す。
+Do not rely solely on internal knowledge for facts, latest information, or evolving technical details; confirm via WebSearch. When possible, cross-verify with 2-3 independent sources, prioritizing official documentation. If sources conflict, explicitly identify discrepancies, and state uncertainties if unconfirmed. Provide links under `Sources:` at the end of responses.
 
-安定した構文・数学・一般常識は検索不要。
+Standard syntax, mathematics, and common knowledge do not require searches.
 
 {{ includeTemplate "agent-skills/_workflow-table.md" (merge (dict "tool" "claude") .) }}
 
-スキルに書かれていない、この環境固有の前提:
+Environment-specific prerequisites not covered in skills:
 
-- **Research & Reuse** — 新規実装の前にコードベースで既存資産を探し、あるものを再利用する
-- **仕様変更はドキュメント先行** — 正式なドキュメント（`docs/`）を実装より先に更新して仕様と実装の乖離を防ぐ。spec は `~/docs/<owner>/<repo>/specs/`、実装プランは `~/docs/<owner>/<repo>/plans/` に置く。パスは `~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。保存先はリポジトリの作業ツリーの外にあり、`docs/` はリポジトリの正式なドキュメント専用にする
-- **検証コマンド** — `/verify`（ビルド・型・lint・テスト）と `/pre-commit-review`（セキュリティ・品質）。`finishing-a-development-branch` の Step 1 がこれらを回す
+- **Research & Reuse** — Before new implementations, search the codebase for existing assets and reuse what is already available.
+- **Specification changes precede code** — Update formal documentation (`docs/`) before implementation to prevent divergence between specs and code. Place specs in `~/docs/<owner>/<repo>/specs/` and implementation plans in `~/docs/<owner>/<repo>/plans/`. Paths are returned by `~/.agents/skills/_shared/scripts/agent-docs-dir`. Destinations lie outside the repository working tree; keep `docs/` reserved exclusively for repository-formal documentation.
+- **Verification Commands** — `/verify` (build, types, lint, tests) and `/pre-commit-review` (security and quality). Step 1 of `finishing-a-development-branch` runs these checks.
 
-## Paseo の子エージェントを作るとき
+## Spawning Paseo Child Agents
 
-`mcp__paseo__create_agent` を呼ぶ前に `agent-config resolve` を呼び、返る `mad-launch-spec` の
-`provider`、`model`、`modeId`、`thinkingOptionId`、`features` を `create_agent` へ写す。
-provider と model を自分で選ばない。
+Before calling `mcp__paseo__create_agent`, invoke `agent-config resolve` and copy the returned `mad-launch-spec` properties (`provider`, `model`, `modeId`, `thinkingOptionId`, `features`) directly into `create_agent`. Never guess or choose provider and model independently.
 
 ```bash
 agent-config --input "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json" resolve \
@@ -26,49 +24,46 @@ agent-config --input "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.jso
   --complexity "$COMPLEXITY" --round "$ROUND" --snapshot "$SNAPSHOT"
 ```
 
-`--role` は正本の `agentRoles` にある名前を渡す。role が duty を決める。`--complexity` は
-作業の重さで選ぶ。
+Pass `--role` matching names in authoritative `agentRoles`. The role dictates duty. Choose `--complexity` based on task weight:
 
-- `simple` — 判断の幅が狭い確認と、形の決まった作業を渡すとき
-- `routine` — 通常の実装、調査、タスク単位のレビューを渡すとき。既定の値である
-- `complex` — 設計判断を含む作業を渡すとき
-- `critical` — 取り込み前の最終レビューと、複数の層にまたがる設計変更を渡すとき
+- `simple` — Narrowly scoped confirmations and predetermined routine work
+- `routine` — Standard implementation, investigation, and task-level reviews (default)
+- `complex` — Work involving architectural decisions
+- `critical` — Final reviews before integration and multi-layer design changes
 
-exit 0 なら `mad-launch-spec` が出る。exit 4 は候補が尽きたことを表すので、provider と model を
-推測せず、ユーザーへ理由を伝えて止まる。exit 2 は入力または snapshot の不備である。
+Exit code 0 outputs `mad-launch-spec`. Exit code 4 signifies candidates are exhausted; do not speculate on provider/model, report reasons to user, and halt. Exit code 2 indicates invalid input or snapshot.
 
-multi-agent-development の delivery では、子の duty を role が決め、複雑度をプランのタスクの
-`**Complexity:**` が決めるので、親が候補を選ばない。
+In `multi-agent-development` delivery, the child's duty is determined by its role, and complexity is determined by `**Complexity:**` in plan tasks, so parent agents must not choose candidates.
 
 ## Shell Execution
 
-開発サーバー・ウォッチャーなど、止めるまで終わらないプロセスは Bash ツール内で直接動かさない。Bash ツール内で起動すると孤児として残留することがあり、ユーザーからは実行状況が見えない。別の端末に置けば、ユーザーが状況を見て停止できる。
+Do not run long-running processes (development servers, watchers, etc.) directly in the Bash tool. Starting them in the Bash tool can leave orphan background processes invisible to the user. Running them in a dedicated terminal allows the user to inspect status and terminate cleanly.
 
-置き場所は環境で決まる。上から順に判定し、最初に当たった経路だけを実行する。
+Destination is determined by environment in order of precedence:
 
-| 条件 | 経路 |
+| Condition | Route |
 |---|---|
-| `$PASEO_AGENT_ID` が非空 | `paseo terminal create --cwd "$PWD" --name <用途> --json` で端末を作り、`paseo terminal send-keys <id> '<コマンド>' Enter` で走らせる。出力は `paseo terminal capture`、片付けは `paseo terminal kill` |
-| `$HERDR_ENV` が `1` | `herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus` で自分の pane の隣に pane を作り、返る pane ID を `herdr pane run <pane_id> '<コマンド>'` に渡して走らせる。`--current` は使わない。ユーザーがフォーカスしている pane が基準になり、別の workspace に pane ができてしまう |
-| どちらでもない | Bash ツールの `run_in_background` で走らせる |
+| `$PASEO_AGENT_ID` is non-empty | Create terminal with `paseo terminal create --cwd "$PWD" --name <purpose> --json`, run via `paseo terminal send-keys <id> '<command>' Enter`. Capture with `paseo terminal capture`, cleanup with `paseo terminal kill` |
+| `$HERDR_ENV` is `1` | Split adjacent pane via `herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus`, run with `herdr pane run <pane_id> '<command>'`. Do not use `--current` (avoids opening in user-focused workspace) |
+| Neither | Run via Bash tool's `run_in_background` |
 
-- **端末多重化ツールを自分で起動しない。** `$HERDR_ENV` が `1` でない環境で herdr を起動してはならない。端末を開いて herdr を立ち上げ、その中の pane で動かす、という手順を取らない。Paseo も同じで、`$PASEO_AGENT_ID` が空なら Paseo の端末は作らない
-- `ls` / `git` / `grep` / 一度で終わるビルドやテストなど、実行すれば終わるコマンドは Bash ツールで実行する。この判定の対象は、止めるまで終わらないプロセスに限る
-- 常駐プロセスなので、`paseo terminal send-keys` に渡すコマンドの末尾に `; exit` は付けない
+- **Do not launch multiplexers on your own.** Never start herdr in environments where `$HERDR_ENV` is not `1`. Do not open terminals to start herdr and run panes inside. Likewise, do not create Paseo terminals if `$PASEO_AGENT_ID` is empty.
+- Run ephemeral commands (`ls`, `git`, `grep`, one-off builds or tests) directly in the Bash tool. This routing rule strictly applies to persistent processes.
+- For persistent processes, do not append `; exit` to commands passed to `paseo terminal send-keys`.
 
 ## Session Handoff
 
-herdr 管理下（`HERDR_ENV=1`）でのみ行う。context が逼迫したら、劣化する前に新しい herdr pane でクリーンな後継セッションを起動し、引き継ぎドキュメントを渡してバトンを渡す。手順は **`/handoff` スキル参照**。
+Only perform under herdr management (`HERDR_ENV=1`). When context fills up, launch a clean successor session in a new herdr pane before degradation occurs, passing a handoff document. See the **`/handoff` skill** for procedures.
 
-- **起動する**: `HERDR_ENV=1` で、context 使用率が目安 60% を超えたと自己判断したとき。auto-compact / context 上限の警告が出たら確実にそのタイミング
-- **起動しない**: `HERDR_ENV=1` 未設定のとき。Paseo もこれに当たり、通常の auto-compact に任せる。atomic な作業ステップの途中。ハンドオフ直後（最低 1 つの実作業ステップを完了してから次の判断）
+- **Trigger**: When `HERDR_ENV=1` and context usage is judged to exceed ~60%. Definitely trigger if auto-compact / context limit warnings appear.
+- **Do not trigger**: When `HERDR_ENV=1` is unset (including Paseo; rely on standard auto-compact). In the middle of atomic steps. Immediately after a handoff (complete at least one concrete work step first).
 
 ## Conventional Commits
 
-`<type>: <description>` 形式。スコープは任意（`feat(auth): add login endpoint`）。
+Format: `<type>: <description>`. Scope is optional (`feat(auth): add login endpoint`).
 
-type: `feat` 新機能 / `fix` バグ修正 / `refactor` 動作を変えない再構成 / `docs` ドキュメントのみ / `test` テストの追加・更新 / `chore` 雑務 / `perf` パフォーマンス改善 / `ci` CI/CD
+type: `feat` new feature / `fix` bug fix / `refactor` code restructuring without behavior changes / `docs` documentation only / `test` adding or updating tests / `chore` maintenance / `perf` performance improvement / `ci` CI/CD
 
-- type と description は小文字、件名は 72 文字以内
-- 命令形を使う（"add feature"、"added feature" ではない）
-- **1 コミット 1 論理変更**（小さく粒度の細かい単位で積み上げる）
+- Lowercase type and description; subject line within 72 characters
+- Use imperative mood ("add feature", not "added feature")
+- **1 commit per logical change** (build up in small, granular increments)

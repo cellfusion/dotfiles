@@ -82,7 +82,7 @@ git push
 **Japanese Input**
 - AquaSKK provides system-wide Japanese input. It is installed by hand rather than by
   `chezmoi apply`, and its dictionaries live in `~/.config/skk` outside chezmoi.
-  See the 手動インストール section of `private_dot_config/docs/tools.md`
+  See the manual installation ("手動インストール") section of `private_dot_config/docs/tools.md`
 
 ### Terminal Environment
 - Ghostty is the terminal emulator (`private_dot_config/ghostty/`)
@@ -96,22 +96,20 @@ git push
 - Tool inventory and install routes are documented in `private_dot_config/docs/tools.md`
 - Dependencies: Homebrew, Neovim, Git, and mise (which supplies node / python / java / pnpm / deno)
 
-## Chezmoi (dotfiles 管理)
+## Chezmoi (Dotfiles Management)
 
-`~/.config` 配下のファイルは chezmoi で管理されている。以下のルールを厳守すること。
+Files under `~/.config` are managed with chezmoi. Adhere strictly to the following rules:
 
-### 編集ルール
-- `~/.config` 内のファイルを修正する場合は、**必ず chezmoi ソース (`~/.local/share/chezmoi/`) 側を編集**すること。直接 `~/.config` のファイルを編集してはならない
-- chezmoi ソースを編集した後、`chezmoi apply` で反映する
-- chezmoi ソースのパス規則: `~/.config/foo/bar` → `~/.local/share/chezmoi/private_dot_config/foo/bar` (ドットファイルは `dot_` プレフィックス、private ディレクトリは `private_` プレフィックス)
+### Editing Rules
+- When modifying files within `~/.config`, **always edit the chezmoi source (`~/.local/share/chezmoi/`)**. Never edit files directly in `~/.config`.
+- After editing chezmoi source files, apply changes via `chezmoi apply`.
+- Chezmoi source path conventions: `~/.config/foo/bar` → `~/.local/share/chezmoi/private_dot_config/foo/bar` (dotfiles take `dot_` prefix, private directories take `private_` prefix).
 
-### 編集前の確認
-- コード編集を始める前に `chezmoi diff` を実行し、未反映の変更（編集途中のもの）がないか確認する
-- 差分がある場合は、ユーザーに状況を伝え、どうするか確認を取ってから作業を進める
-- **絶対に `chezmoi apply` を勝手に実行しないこと**。ユーザーの明示的な許可なしに apply してはならない
+### Pre-Edit Verification
+- Before beginning code edits, run `chezmoi diff` to verify there are no unapplied modifications.
+- If diffs exist, notify the user and obtain confirmation on how to proceed.
+- **Never run `chezmoi apply` autonomously.** You must not apply changes without explicit user approval.
 
-### キーバインドを変更したとき
+### When Keybindings are Modified
 
-キーバインドを追加・変更・削除したら、`private_dot_config/docs/keybindings.md`
-も同じコミットで更新する。このファイルが skhd / Ghostty / Herdr / Neovim / zsh /
-lazygit の全キーバインドと、層をまたいで奪われるキーの一覧を持っている。
+Whenever keybindings are added, changed, or removed, update `private_dot_config/docs/keybindings.md` in the same commit. That file maintains the complete index of keybindings across skhd, Ghostty, Herdr, Neovim, zsh, and lazygit, including hijacked key chords.

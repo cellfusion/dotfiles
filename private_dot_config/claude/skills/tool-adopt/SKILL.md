@@ -1,81 +1,81 @@
 ---
 name: tool-adopt
 description: >-
-  新しい CLI ツールの導入ワークフロー（調査・設定・chezmoi 管理・ドキュメント化）。
-  ユーザーが「ツール導入」「新しいツール」「brew install」「設定追加」
-  「tool-adopt」「インストール」などのキーワードを使った際に自動起動。
-  /tool-adopt で手動起動も可能。
+  Standard workflow for adopting new CLI tools (research, configuration, chezmoi management,
+  documentation). Activates automatically when the user mentions keywords such as "adopt tool",
+  "new tool", "brew install", "add configuration", "tool-adopt", "install", etc.
+  Can also be invoked manually with /tool-adopt.
 ---
 
-# ツール導入スキル
+# Tool Adoption Skill
 
-新しい CLI ツールを導入する際の定型ワークフローを自動化する。
+Automates the standard workflow for adopting and integrating new CLI tools.
 
-## 使い方
+## Usage
 
-### ワークフロー
+### Workflow
 
-1. **調査**: ツールの機能、設定ファイルの場所、主要なオプションを調べる
-2. **インストール確認**: `brew info <tool>` や `which <tool>` でインストール状況を確認
-3. **設定作成**: chezmoi ソース側に設定ファイルを作成
-4. **シェル統合**: 必要に応じてエイリアスやラッパーを追加
-5. **ドキュメント化**: `private_dot_config/docs/tools.md` の該当する表に追記する
-6. **反映リマインド**: `chezmoi apply` を案内（自動実行しない）
+1. **Research**: Investigate tool features, config file locations, and primary options.
+2. **Install Check**: Verify installation status with `brew info <tool>` or `which <tool>`.
+3. **Configuration**: Create configuration files within chezmoi source directory.
+4. **Shell Integration**: Add aliases or wrappers if needed.
+5. **Documentation**: Append an entry to the corresponding table in `private_dot_config/docs/tools.md`.
+6. **Apply Reminder**: Advise the user to run `chezmoi apply` (never run automatically).
 
-### 設定ファイルの配置
+### Configuration File Placement
 
-chezmoi のパス規約に従う:
+Follow chezmoi path conventions:
 
-| 実際のパス | chezmoi ソース |
-|-----------|---------------|
+| Actual Path | chezmoi Source Path |
+|---|---|
 | `~/.config/tool/config.toml` | `private_dot_config/tool/config.toml` |
 | `~/.tool.conf` | `dot_tool.conf` |
 | `~/.local/bin/tool-wrapper` | `private_dot_local/bin/executable_tool-wrapper` |
 
-### シェル統合
+### Shell Integration
 
-`.zshrc` にエイリアスや設定を追加する場合:
-- chezmoi ソース: `private_dot_config/zsh/dot_zshrc`
-- 既存の構成を確認し、適切な位置に追加
+When adding aliases or settings to `.zshrc`:
+- chezmoi source: `private_dot_config/zsh/dot_zshrc`
+- Inspect existing layout and insert at an appropriate position.
 
-### Herdr 統合
+### Herdr Integration
 
-Herdr のキーバインドに追加する場合:
-- chezmoi ソース: `private_dot_config/herdr/config.toml`
-- 既存の構成を確認し、適切な位置に追加
-- キーバインドを変えたら `private_dot_config/docs/keybindings.md` も同じコミットで更新する
+When adding keybindings to Herdr:
+- chezmoi source: `private_dot_config/herdr/config.toml`
+- Inspect existing layout and insert at an appropriate position.
+- If modifying keybindings, update `private_dot_config/docs/keybindings.md` in the same commit.
 
-### television チャンネル統合
+### Television Cable Channel Integration
 
-television のカスタムチャンネルを作成する場合:
-- `private_dot_config/television/cable/` にチャンネル定義を追加
-- 既存チャンネル（`custom-herdr-sessions.toml` など）を参考にする
+When creating custom channels for television:
+- Add channel definitions under `private_dot_config/television/cable/`.
+- Use existing channels (such as `custom-herdr-sessions.toml`) as reference.
 
-## 自動起動ガイドライン
+## Auto-Activation Guidelines
 
-以下のような状況で自動的にこのスキルを起動する:
+Automatically activate this skill in situations such as:
 
-- ユーザーが新しい CLI ツールのインストールや設定について話題にした場合
-- `brew install` コマンドを実行した、または実行しようとしている場合
-- 「このツール使ってみたい」「設定どうする？」と言及した場合
+- The user discusses installing or configuring a new CLI tool.
+- A `brew install` command was executed or is about to be executed.
+- The user mentions "I want to try this tool" or "How should I configure this?".
 
-自動で行うこと:
-- ツールの公式ドキュメントを WebSearch で調査
-- 既存の設定パターンを確認（chezmoi ソースの構成）
+Automatic actions:
+- Research official tool documentation via WebSearch.
+- Inspect existing configuration patterns across the chezmoi source tree.
 
-## 重要な注意事項
+## Important Notes
 
-- **chezmoi apply は絶対に自動実行しない** — ユーザーの明示的な許可が必要
-- chezmoi ソース側のみを編集する（`~/.local/share/chezmoi/` 配下）
-- `.zshrc` や `herdr/config.toml` への変更は既存の構造を壊さないように注意
-- 実行可能スクリプトは chezmoi で `executable_` プレフィックスを付ける
+- **Never execute `chezmoi apply` automatically** — explicit user approval is strictly required.
+- Edit only inside the chezmoi source directory (`~/.local/share/chezmoi/`).
+- Ensure changes to `.zshrc` or `herdr/config.toml` do not break existing structure.
+- Executable scripts in chezmoi require the `executable_` prefix.
 
-## 棚卸しへの記録
+## Recording in Tool Inventory
 
-ツール導入が完了したら、`private_dot_config/docs/tools.md` に記録する。
+Once tool adoption is complete, record it in `private_dot_config/docs/tools.md`:
 
-- 導入経路に合った節（core / 開発ツール / macOS 専用 など）の表に 1 行足す
-- マニフェストにも追加する。Homebrew なら `.chezmoitemplates/install/brewfile`、
-  mise なら `private_dot_config/mise/config.toml`、npm なら
-  `private_dot_config/install/npm-globals.txt`、cargo なら
-  `private_dot_config/install/cargo-globals.txt`
+- Add a row to the table matching the installation route (core / dev-tools / macOS-only, etc.).
+- Add to the manifest: `.chezmoitemplates/install/brewfile` for Homebrew,
+  `private_dot_config/mise/config.toml` for mise,
+  `private_dot_config/install/npm-globals.txt` for npm,
+  `private_dot_config/install/cargo-globals.txt` for cargo.

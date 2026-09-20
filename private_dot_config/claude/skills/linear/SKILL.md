@@ -1,134 +1,134 @@
 ---
 name: linear
 description: >-
-  Linear のプロジェクト管理（タスク作成・ドキュメント作成・イシュー管理）。
-  ユーザーが「タスク」「イシュー」「Linear」「チケット」「起票」
-  「ドキュメント」「仕様書」などのキーワードを使った際に自動起動。
-  /linear で手動起動も可能。
+  Linear project management (task creation, document management, issue tracking).
+  Activates automatically when the user mentions keywords such as "task", "issue", "Linear",
+  "ticket", "file a ticket", "document", "spec", etc.
+  Can also be invoked manually with /linear.
 ---
 
-# Linear プロジェクト管理スキル
+# Linear Project Management Skill
 
-Linear の MCP ツールを使い、プロジェクトごとのタスク管理・ドキュメント管理を行う。
+Utilizes Linear MCP tools to perform project-level task and document management.
 
-## 使い方
+## Usage
 
-### コンテキスト取得
+### Fetching Context
 
-操作対象のチーム・プロジェクトを特定する。毎回動的に取得すること。
+Identify the target team and project dynamically each time:
 
-1. `mcp__claude_ai_Linear__list_teams` でチーム一覧を取得
-2. `mcp__claude_ai_Linear__list_projects` で対象チームのプロジェクト一覧を取得
-3. 必要に応じて `mcp__claude_ai_Linear__get_project` で詳細（リソース含む）を取得
+1. Retrieve team list using `mcp__claude_ai_Linear__list_teams`.
+2. Retrieve project list for the target team using `mcp__claude_ai_Linear__list_projects`.
+3. If needed, retrieve details (including resources) using `mcp__claude_ai_Linear__get_project`.
 
-ユーザーが対象プロジェクトを明示していない場合は、一覧を提示して選択してもらう。
+If the user does not specify a project, present the list and ask them to select one.
 
-### タスク管理
+### Task Management
 
-#### 一覧・検索
+#### List and Search
 
 ```
 mcp__claude_ai_Linear__list_issues
-  - project: プロジェクト名
-  - assignee: "me"（自分のタスク）
-  - state: ステータス名でフィルタ（例: "In Progress", "Todo"）
-  - query: キーワード検索
+  - project: Project name
+  - assignee: "me" (assigned to self)
+  - state: Filter by status name (e.g., "In Progress", "Todo")
+  - query: Keyword search
 ```
 
-#### 詳細取得
+#### Get Details
 
 ```
 mcp__claude_ai_Linear__get_issue
-  - id: イシュー識別子（例: "PROJ-123"）
-  - includeRelations: true（関連イシューも表示する場合）
+  - id: Issue identifier (e.g., "PROJ-123")
+  - includeRelations: true (to include related issues)
 ```
 
-#### 新規作成
+#### Create New Issue
 
-作成前に `list_issues` で既存イシューを検索し、重複を避ける。
+Search existing issues with `list_issues` beforehand to avoid duplicates.
 
 ```
 mcp__claude_ai_Linear__save_issue
-  - title: イシュータイトル（必須）
-  - team: チーム名（必須）
-  - project: プロジェクト名
-  - description: Markdown で記述
+  - title: Issue title (required)
+  - team: Team name (required)
+  - project: Project name
+  - description: Written in Markdown
   - priority: 0=None, 1=Urgent, 2=High, 3=Normal, 4=Low
-  - labels: ラベル名の配列
-  - assignee: "me" または ユーザー名
+  - labels: Array of label names
+  - assignee: "me" or username
 ```
 
-ステータスとラベルの選択肢は事前に取得する:
-- `mcp__claude_ai_Linear__list_issue_statuses` (team で指定)
-- `mcp__claude_ai_Linear__list_issue_labels` (team で指定)
+Fetch valid statuses and labels beforehand:
+- `mcp__claude_ai_Linear__list_issue_statuses` (specified by team)
+- `mcp__claude_ai_Linear__list_issue_labels` (specified by team)
 
-#### 更新
+#### Update
 
 ```
 mcp__claude_ai_Linear__save_issue
-  - id: イシュー識別子（例: "PROJ-123"）
-  - state: 変更先ステータス名
-  - assignee: 変更先担当者
-  - priority: 変更先優先度
-  （変更するフィールドのみ指定）
+  - id: Issue identifier (e.g., "PROJ-123")
+  - state: Target status name
+  - assignee: Target assignee
+  - priority: Target priority
+  (specify only fields being updated)
 ```
 
-#### コメント追加
+#### Add Comment
 
 ```
 mcp__claude_ai_Linear__save_comment
-  - issueId: イシュー識別子（例: "PROJ-123"）
-  - body: Markdown で記述
+  - issueId: Issue identifier (e.g., "PROJ-123")
+  - body: Written in Markdown
 ```
 
-### ドキュメント管理
+### Document Management
 
-#### 一覧・検索
+#### List and Search
 
 ```
 mcp__claude_ai_Linear__list_documents
-  - projectId: プロジェクト ID
-  - query: キーワード検索
+  - projectId: Project ID
+  - query: Keyword search
 ```
 
-#### 新規作成
+#### Create New Document
 
-作成前に `list_documents` で既存ドキュメントを確認し、重複を避ける。
+Check existing documents with `list_documents` first to prevent duplicates.
 
 ```
 mcp__claude_ai_Linear__create_document
-  - title: ドキュメントタイトル（必須）
-  - content: Markdown で記述
-  - project: プロジェクト名
+  - title: Document title (required)
+  - content: Written in Markdown
+  - project: Project name
 ```
 
-#### 更新
+#### Update
 
 ```
 mcp__claude_ai_Linear__update_document
-  - id: ドキュメント ID（必須）
-  - content: 更新後の Markdown
-  - title: タイトル変更時のみ
+  - id: Document ID (required)
+  - content: Updated Markdown content
+  - title: When changing title only
 ```
 
-## 自動起動ガイドライン
+## Auto-Activation Guidelines
 
-以下のような状況で、ユーザーに確認せず自動的に Linear を参照する:
+Automatically consult Linear without asking user confirmation under these conditions:
 
-- ユーザーが「タスク」「チケット」「イシュー」と言及した場合
-- 作業中のコンテキストで Linear のプロジェクトやイシューが関連する場合
-- 「起票して」「チケット切って」と依頼された場合
+- User mentions "task", "ticket", or "issue".
+- Linear project or issue is relevant to the current work context.
+- User requests "file a ticket" or "open an issue".
 
-参照して関連するイシューが見つかった場合:
-- イシューのタイトル・ステータス・担当者を要約して提示する
+When matching issues are found:
+- Present a concise summary of issue title, status, and assignee.
 
-見つからなかった場合:
-- 無言で続行する（検索したが見つからなかったことを報告しない）
+When nothing matches:
+- Continue silently (do not output a message stating nothing was found).
 
-## ワークフローのベストプラクティス
+## Workflow Best Practices
 
-- **重複回避**: タスク作成前に既存イシューを検索する
-- **Markdown**: description や content は Markdown で記述する
-- **ステータス確認**: タスク作成・更新時は `list_issue_statuses` で有効なステータスを確認する
-- **ラベル統一**: 新規ラベルを作る前に `list_issue_labels` で既存ラベルを確認する
-- **プロジェクト紐付け**: タスクもドキュメントも必ず project を指定してプロジェクトに紐付ける
+- **Avoid Duplicates**: Search existing issues before creating tasks.
+- **Markdown**: Always write description and content in Markdown.
+- **Verify Statuses**: Fetch valid statuses via `list_issue_statuses` when creating or updating tasks.
+- **Consistent Labels**: Check existing labels via `list_issue_labels` before creating new ones.
+- **Link Projects**: Always associate tasks and documents with their corresponding project.
