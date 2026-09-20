@@ -50,7 +50,7 @@ assert_not_contains "$mutated_required_fields_contract" TASK_NUMBER \
 for token in task-excerpt.md execution-context.md; do
   assert_contains "$brief_contract" "$token" "brief envelope: $token を持つ"
 done
-for token in RUN_ID TASK_ID TASK_NUMBER ATTEMPT_ID PHASE \
+for token in RUN_ID TASK_ID TASK_NUMBER ATTEMPT_ID PHASE WORK_CLASS \
   ROLE_PROMPT ROLE_SCHEMA ATTEMPT_BASE WORKSPACE_CWD ROUND RESULT_PATH \
   HANDOFF_PATH LOG_PATH DECISION_REQUEST_PATH CONSTRAINTS_FILE REVIEW_SCOPE_PATH \
   OPEN_FINDINGS_PATH; do
@@ -69,6 +69,12 @@ assert_contains "$brief_contract" '別 attempt の context または brief を�
   'brief envelope: attempt 間の再利用を禁止する'
 assert_contains "$brief_contract" 'required field' \
   'brief envelope: 必須 metadata を検証する'
+assert_contains "$brief_contract" 'Work class' \
+  'brief envelope: workClass を brief に含める'
+assert_contains "$brief_contract" 'simple → mechanical' \
+  'brief envelope: simple の workClass 補完を定義する'
+assert_contains "$brief_contract" 'critical → architectural' \
+  'brief envelope: critical の workClass 補完を定義する'
 assert_contains "$brief_contract" 'enrichment または write に失敗' \
   'brief envelope: enrichment 失敗時は create しない'
 assert_before "$brief_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"' \

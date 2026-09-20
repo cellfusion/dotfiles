@@ -65,6 +65,8 @@
 
 **Complexity:** routine
 
+**Work class:** routine
+
 **Interfaces:**
 - Consumes: [先行タスクから使うもの — 正確なシグネチャ]
 - Produces: [後続タスクが依存するもの — 正確な関数名、引数と戻り値の型。
@@ -116,9 +118,12 @@ git commit -m "feat: add specific feature"
 
 ### タスクの複雑度
 
-各タスクは `**Depends on:**` の直後に `**Complexity:**` の 1 行を持つ。値は `simple`、
-`routine`、`complex`、`critical` のいずれかである。親はこの値を `agent-config resolve` の
-`--complexity` へ渡し、子の provider と model を決める。
+各タスクは `**Depends on:**` の直後に `**Complexity:**` と `**Work class:**` を持つ。
+`Complexity` の値は `simple`、`routine`、`complex`、`critical` のいずれかであり、親はこの値を
+`agent-config resolve` の `--complexity` へ渡す。`Work class` の値は `mechanical`、`routine`、
+`integration`、`architectural` のいずれかであり、implementer の prompt overlay と停止条件を決める。
+古い plan に `Work class` が無い場合は `simple → mechanical`、`routine → routine`、
+`complex → integration`、`critical → architectural` で補完する。
 
 - `simple` — 変更の形が既に決まっており、判断の幅が狭い。文字列の置き換え、path の付け替え、
   既存の検査の値だけを変えるタスクが当たる

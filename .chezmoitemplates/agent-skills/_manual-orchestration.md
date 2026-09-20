@@ -69,7 +69,7 @@ ATTEMPT_BASE="$(git -C "$WORKSPACE_CWD" rev-parse HEAD)"
 "$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"
 ```
 
-親は抽出直後に、次の required field を持つ `execution-context.md` を同じ attempt directory へ新規作成する。`RUN_ID`、`TASK_ID`、`TASK_NUMBER`、`ATTEMPT_ID`、`PHASE`、`ROLE_PROMPT`、`ROLE_SCHEMA`、`ATTEMPT_BASE`、`WORKSPACE_CWD`、`ROUND`、`RESULT_PATH`、`HANDOFF_PATH`、`LOG_PATH`、`DECISION_REQUEST_PATH`、`CONSTRAINTS_FILE`、`REVIEW_SCOPE_PATH`、`OPEN_FINDINGS_PATH` はすべて必須である。path field は absolute path とし、`ATTEMPT_BASE` は attempt 開始時に上のコマンドで固定した immutable SHA とする。context には role prompt と schema を必ず読むこと、global constraints である `CONSTRAINTS_FILE` を守ること、各 destination へ成果物を書くことを明記する。
+親は抽出直後に、次の required field を持つ `execution-context.md` を同じ attempt directory へ新規作成する。`RUN_ID`、`TASK_ID`、`TASK_NUMBER`、`ATTEMPT_ID`、`PHASE`、`WORK_CLASS`、`ROLE_PROMPT`、`ROLE_SCHEMA`、`ATTEMPT_BASE`、`WORKSPACE_CWD`、`ROUND`、`RESULT_PATH`、`HANDOFF_PATH`、`LOG_PATH`、`DECISION_REQUEST_PATH`、`CONSTRAINTS_FILE`、`REVIEW_SCOPE_PATH`、`OPEN_FINDINGS_PATH` はすべて必須である。path field は absolute path とし、`ATTEMPT_BASE` は attempt 開始時に上のコマンドで固定した immutable SHA とする。context には role prompt と schema を必ず読むこと、global constraints である `CONSTRAINTS_FILE` を守ること、各 destination へ成果物を書くことを明記する。`WORK_CLASS` は task excerpt の明示的な `**Work class:**` を使い、無ければ `simple → mechanical`、`routine → routine`、`complex → integration`、`critical → architectural` で補完する。
 
 `initial` では `REVIEW_SCOPE_PATH` と `OPEN_FINDINGS_PATH` を `not-applicable` とする。`fix` では両方を既存の mode `0600` regular file の absolute path とし、review scope の allowed files だけを変更して open findings だけを解消する指示を context に含める。`PHASE` とこの分岐が一致しない context は拒否する。
 
