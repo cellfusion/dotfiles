@@ -34,11 +34,22 @@ MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
 MAD_RUN="$MAD_SCRIPTS/mad-run"
+MAD_PLAN_PARSER="$MAD_SCRIPTS/mad-plan-parser.js"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 ```
 
-`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。`MAD_OUTCOME_LOG` は prompt、ファイル内容、credential、raw response を含めない mode 0600 のローカル JSONL であり、attempt 完了後に親が独立した検証結果と Paseo の集計 usage を `MAD_OUTCOME_RECORD --record <0600-json> --output "$MAD_OUTCOME_LOG"` で追記する。transport の call log と outcome log は別契約として扱う。
+`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。`MAD_OUTCOME_LOG` は prompt、ファイル内容、credential、raw response を含めない mode 0600 のローカル JSONL であり、attempt 完了後に親が独立した検証結果と Paseo の集計 usage を `MAD_OUTCOME_RECORD --record <0600-json> --output "$MAD_OUTCOME_LOG"` で追記する。transport の call log と outcome log は別契約として扱う。`$MAD_PLAN_PARSER` は plan の Task metadata と dependency wave を `paseo-plan-dependency-validate` と共有する読み取り専用 module である。
+
+実行前の fixture 検査は次で行う。`mad-run --dry-run` は parser、wave、role catalog、正本 config、匿名 availability snapshot を検査し、delivery の全 launch を `agent-config resolve` で解決する。Paseo、worktree、state、target、`chezmoi apply` は実行しない。
+
+```bash
+"$MAD_RUN" --dry-run --plan "$PLAN_FILE" --project "$PROJECT_ROOT" \\
+  --run-id <run-id> --config "$AGENT_CONFIG" --snapshot "$RUN_DIR/snapshot.json" \\
+  --backend "$MAD_BACKEND"
+```
+
+成功時は `mad-dry-run` JSON を stdout に一件出力し、`liveCalls` と `applyCalls` はともに `0` である。config、snapshot、role、candidate のどれかが解決できない場合は child create を行わず exit 2 で停止する。
 
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
 
@@ -343,13 +354,7 @@ plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証�
 
 ## dry-run
 
-代表 run を実行する前に、保存済み plan fixture だけで wave、complexity、work class、role catalog の解決を確認する。`mad-run --dry-run` は child create、Paseo transport、worktree、`chezmoi apply`、実 target の書き換えを行わず、mode 0600 の run state も作らない。
-
-```bash
-"$MAD_RUN" --dry-run --plan "$PLAN_FILE" --project "$PROJECT_ROOT" --run-id <run-id>
-```
-
-dry-run の JSON は検査用成果物であり、実 run の state や outcome log として再利用しない。
+上記の config-aware dry-run を実行してから代表 run を開始する。`mad-run --dry-run` の JSON は検査用成果物であり、実 run の state や outcome log として再利用しない。
 
 ## run と attempt の状態
 

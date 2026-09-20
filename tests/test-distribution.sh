@@ -33,6 +33,8 @@ assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-
   'task-brief を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-run' \
   'mad-run を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-plan-parser.js' \
+  'mad plan parser を配る'
 assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
   'distribute task-routing skill'
 assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \

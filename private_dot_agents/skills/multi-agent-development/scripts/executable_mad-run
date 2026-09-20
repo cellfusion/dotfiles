@@ -4,17 +4,10 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { COMPLEXITIES, parsePlan, dependencyWaves } = require('./mad-plan-parser.js')
 
-const USAGE = `usage: mad-run --dry-run --plan FILE --project DIR --run-id ID [--backend paseo-cli|paseo-mcp]`
 const ROLE_NAMES = ['plan-auditor', 'implementer', 'task-reviewer', 're-reviewer', 'final-reviewer']
-const COMPLEXITIES = new Set(['simple', 'routine', 'complex', 'critical'])
-const WORK_CLASSES = new Set(['mechanical', 'routine', 'integration', 'architectural'])
-const WORK_CLASS_BY_COMPLEXITY = {
-  simple: 'mechanical',
-  routine: 'routine',
-  complex: 'integration',
-  critical: 'architectural',
-}
+const COMPLEXITY_RANK = new Map(COMPLEXITIES.map((complexity, index) => [complexity, index]))
 
 function fail(message) {
   process.stderr.write(`mad-run: ${message}\n`)
@@ -26,15 +19,22 @@ function requireAbsolute(value, label) {
   return value
 }
 
+function requireRegularFile(value, label) {
+  requireAbsolute(value, label)
+  if (!fs.statSync(value, { throwIfNoEntry: false })?.isFile()) fail(`${label} is not a regular file`)
+  return value
+}
+
 function parseOptions(argv) {
   const options = { backend: 'paseo-cli', dryRun: false }
+  const valueOptions = new Set(['--plan', '--project', '--run-id', '--backend', '--config', '--snapshot'])
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]
     if (token === '--dry-run') {
       options.dryRun = true
       continue
     }
-    if (!['--plan', '--project', '--run-id', '--backend'].includes(token)) fail(`unknown argument: ${token}`)
+    if (!valueOptions.has(token)) fail(`unknown argument: ${token}`)
     const value = argv[index + 1]
     if (value === undefined || value.startsWith('--')) fail(`${token} requires a value`)
     index += 1
@@ -42,95 +42,16 @@ function parseOptions(argv) {
     if (token === '--project') options.project = value
     if (token === '--run-id') options.runId = value
     if (token === '--backend') options.backend = value
+    if (token === '--config') options.config = value
+    if (token === '--snapshot') options.snapshot = value
   }
   if (!options.dryRun) fail('only --dry-run is implemented')
-  if (options.plan === undefined) fail('--plan is required')
-  if (options.project === undefined) fail('--project is required')
-  if (options.runId === undefined) fail('--run-id is required')
+  for (const key of ['plan', 'project', 'runId', 'config', 'snapshot']) {
+    if (options[key] === undefined) fail(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`)
+  }
   if (!['paseo-cli', 'paseo-mcp'].includes(options.backend)) fail('backend must be paseo-cli or paseo-mcp')
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.runId)) fail('run-id is not safe')
   return options
-}
-
-function fenceMarker(line) {
-  const match = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
-  return match === null ? null : { character: match[1][0], length: match[1].length }
-}
-
-function closesFence(line, fence) {
-  const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line)
-  return match !== null && match[1][0] === fence.character && match[1].length >= fence.length
-}
-
-function parseTasks(text) {
-  const lines = text.split(/\r?\n/)
-  const headings = []
-  let fence = null
-  for (let index = 0; index < lines.length; index += 1) {
-    if (fence !== null) {
-      if (closesFence(lines[index], fence)) fence = null
-      continue
-    }
-    const marker = fenceMarker(lines[index])
-    if (marker !== null) {
-      fence = marker
-      continue
-    }
-    const match = /^#{1,6}\s+Task\s+(\d+)\b/i.exec(lines[index])
-    if (match !== null) headings.push({ index, number: Number(match[1]) })
-  }
-  if (headings.length === 0) fail('plan has no Task headings')
-
-  const tasks = new Map()
-  for (let position = 0; position < headings.length; position += 1) {
-    const heading = headings[position]
-    const end = position + 1 < headings.length ? headings[position + 1].index : lines.length
-    const block = lines.slice(heading.index + 1, end)
-    let complexity = 'routine'
-    let workClass
-    let blockFence = null
-    for (const line of block) {
-      if (blockFence !== null) {
-        if (closesFence(line, blockFence)) blockFence = null
-        continue
-      }
-      const marker = fenceMarker(line)
-      if (marker !== null) {
-        blockFence = marker
-        continue
-      }
-      const complexityMatch = /\bComplexity\s*:\s*\**\s*([A-Za-z]+)/i.exec(line)
-      if (complexityMatch !== null) complexity = complexityMatch[1].toLowerCase()
-      const workClassMatch = /\bWork class\s*:\s*\**\s*([A-Za-z]+)/i.exec(line)
-      if (workClassMatch !== null) workClass = workClassMatch[1].toLowerCase()
-    }
-    if (complexity === 'standard') complexity = 'routine'
-    if (!COMPLEXITIES.has(complexity)) fail(`Task ${heading.number}: invalid Complexity`)
-    if (workClass === undefined) workClass = WORK_CLASS_BY_COMPLEXITY[complexity]
-    if (!WORK_CLASSES.has(workClass)) fail(`Task ${heading.number}: invalid Work class`)
-    if (tasks.has(heading.number)) fail(`Task ${heading.number}: duplicate Task number`)
-    tasks.set(heading.number, { number: heading.number, complexity, workClass })
-  }
-  return tasks
-}
-
-function dependencyWaves(planPath) {
-  const validator = path.join(__dirname, 'executable_paseo-plan-dependency-validate')
-  const result = spawnSync(process.execPath, [validator, '--waves', planPath], { encoding: 'utf8' })
-  if (result.error !== undefined || result.status !== 0) {
-    const detail = (result.stderr || '').trim() || 'plan dependency validation failed'
-    fail(detail.split('\n').at(-1))
-  }
-  const waves = []
-  for (const line of (result.stdout || '').trim().split('\n')) {
-    if (line.length === 0) continue
-    const match = /^wave (\d+):(?: (.*))?$/.exec(line)
-    if (match === null) fail('dependency validator returned an invalid wave')
-    const taskNumbers = (match[2] || '').split(/\s+/).filter(Boolean).map(Number)
-    waves.push({ wave: Number(match[1]), taskNumbers })
-  }
-  if (waves.length === 0) fail('dependency validator returned no waves')
-  return waves
 }
 
 function roleCatalog() {
@@ -146,31 +67,135 @@ function roleCatalog() {
   return roles
 }
 
+function generatorPath() {
+  const configured = process.env.MAD_GENERATOR
+  if (configured !== undefined) return requireAbsolute(configured, 'MAD_GENERATOR')
+  if (typeof process.env.HOME !== 'string' || !path.isAbsolute(process.env.HOME)) fail('HOME must be absolute')
+  return path.join(process.env.HOME, '.local/bin/agent-config')
+}
+
+function resolveLaunch(options, node) {
+  const generator = generatorPath()
+  const args = [
+    '--input', options.config,
+    'resolve',
+    '--project', options.project,
+    '--role', node.role,
+    '--provenance', node.provenance,
+    '--complexity', node.complexity,
+    '--round', String(node.round),
+    '--snapshot', options.snapshot,
+  ]
+  if (node.workClass !== undefined) args.push('--work-class', node.workClass)
+  if (options.backend === 'paseo-cli') args.push('--backend', options.backend)
+
+  const result = spawnSync(generator, args, { encoding: 'utf8' })
+  if (result.error !== undefined) fail(`${node.id}: generator failed (${result.error.message})`)
+  const stdout = (result.stdout || '').trim()
+  const documents = stdout.length === 0 ? [] : stdout.split(/\r?\n/).filter(Boolean)
+  if (documents.length !== 1) fail(`${node.id}: generator returned ${documents.length} JSON documents`)
+
+  let launch
+  try {
+    launch = JSON.parse(documents[0])
+  } catch {
+    fail(`${node.id}: generator returned invalid JSON`)
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || '').trim().split(/\r?\n/).filter(Boolean).at(-1) || `exit ${result.status}`
+    fail(`${node.id}: launch unresolved (${detail})`)
+  }
+  if (launch.type !== 'mad-launch-spec' || launch.status !== 'ok') fail(`${node.id}: generator returned a non-success launch`)
+  return {
+    ...node,
+    status: launch.status,
+    provider: launch.provider,
+    model: launch.model,
+    modeId: launch.modeId,
+    thinkingOptionId: launch.thinkingOptionId,
+    features: launch.features,
+    warnings: launch.warnings,
+  }
+}
+
+function maxTask(tasks) {
+  return [...tasks.values()].reduce((current, task) => {
+    if (current === null || COMPLEXITY_RANK.get(task.complexity) > COMPLEXITY_RANK.get(current.complexity)) return task
+    return current
+  }, null)
+}
+
+function makeLaunchNodes(tasks) {
+  const highest = maxTask(tasks)
+  const nodes = [{
+    id: 'plan-auditor',
+    role: 'plan-auditor',
+    provenance: 'mad-dispatch',
+    complexity: highest.complexity,
+    round: 0,
+  }]
+  const orderedTasks = [...tasks.values()].sort((left, right) => left.number - right.number)
+  for (const task of orderedTasks) {
+    nodes.push({
+      id: `task-${task.number}-implementer`,
+      role: 'implementer',
+      provenance: 'mad-dispatch',
+      complexity: task.complexity,
+      workClass: task.workClass,
+      round: 0,
+    })
+    nodes.push({
+      id: `task-${task.number}-reviewer`,
+      role: 'task-reviewer',
+      provenance: 'mad-review',
+      complexity: task.complexity,
+      workClass: task.workClass,
+      round: 0,
+    })
+    nodes.push({
+      id: `task-${task.number}-re-reviewer`,
+      role: 're-reviewer',
+      provenance: 'mad-review',
+      complexity: task.complexity,
+      workClass: task.workClass,
+      round: 1,
+    })
+  }
+  nodes.push({
+    id: 'final-reviewer',
+    role: 'final-reviewer',
+    provenance: 'mad-review',
+    complexity: highest.complexity,
+    workClass: highest.workClass,
+    round: 0,
+  })
+  return nodes
+}
+
 function main(argv) {
   const options = parseOptions(argv)
-  const planPath = requireAbsolute(options.plan, 'plan')
+  const planPath = requireRegularFile(options.plan, 'plan')
   const project = requireAbsolute(options.project, 'project')
-  if (!fs.statSync(planPath, { throwIfNoEntry: false })?.isFile()) fail('plan is not a regular file')
   if (!fs.statSync(project, { throwIfNoEntry: false })?.isDirectory()) fail('project is not a directory')
+  const config = requireRegularFile(options.config, 'config')
+  const snapshot = requireRegularFile(options.snapshot, 'snapshot')
 
-  const tasks = parseTasks(fs.readFileSync(planPath, 'utf8'))
-  const waves = dependencyWaves(planPath)
+  const plan = parsePlan(fs.readFileSync(planPath, 'utf8'))
+  const waves = dependencyWaves(plan.tasks)
   const roles = roleCatalog()
-  const outputWaves = waves.map(({ wave, taskNumbers }) => ({
-    wave,
-    tasks: taskNumbers.map((number) => {
-      const task = tasks.get(number)
-      if (task === undefined) fail(`dependency validator returned unknown Task ${number}`)
-      return {
-        number: task.number,
-        complexity: task.complexity,
-        workClass: task.workClass,
-        nodes: ['implementer', 'task-reviewer'],
-        conditionalNodes: ['re-reviewer'],
-      }
-    }),
+  const launches = makeLaunchNodes(plan.tasks).map((node) => resolveLaunch({ ...options, project, config, snapshot }, node))
+  const outputWaves = [...waves].map(([depth, waveTasks]) => ({
+    wave: depth + 1,
+    tasks: waveTasks.map((task) => ({
+      number: task.number,
+      complexity: task.complexity,
+      workClass: task.workClass,
+      nodes: ['implementer', 'task-reviewer'],
+      conditionalNodes: ['re-reviewer'],
+    })),
   }))
 
+  for (const warning of plan.warnings) process.stderr.write(`mad-run: ${warning}\n`)
   process.stdout.write(`${JSON.stringify({
     version: 1,
     type: 'mad-dry-run',
@@ -179,9 +204,12 @@ function main(argv) {
     backend: options.backend,
     project,
     plan: planPath,
+    config,
+    snapshot,
     liveCalls: 0,
     applyCalls: 0,
     roles,
+    launches,
     waves: outputWaves,
   })}\n`)
 }
