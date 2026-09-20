@@ -71,6 +71,20 @@ single の実行手順は次である。
 
 single child の起動失敗は strict MAD run の失敗とは扱わない。別 backend や別 child を無制限に追加せず、親が直接実装へ戻るかユーザーへ状況を伝える。
 
+### single implementer の起動契約
+
+single route で write child を起動する場合、親は次の順序を守る。
+
+1. task packet を mode `0600` の absolute path に保存し、`intake-router` schema で検証する
+2. `agent-config resolve --role implementer --provenance mad-dispatch --complexity <packet.complexity> --round 0` で launch を解決する。provider、model、effort、features を親が作り直さない
+3. 書き込み用の Paseo worktree を一つ作り、返った `workspaceId` を child create に使う
+4. `implementer` prompt、schema、task packet の absolute path と workClass overlay だけを `initialPrompt` に渡す。ユーザーの会話全文、不要な repository 全体、別 task の成果物を渡さない
+5. `mcp__paseo__create_agent` を一度だけ呼び、`notifyOnFinish` と launch の settings をそのまま渡す。CLI や別 backend で代替しない
+6. child の完了後、`status`、`baseHead`、commit、`changedFiles`、worktree の clean 状態、acceptance criteria、verification を親が確認する
+7. 採用できない場合は、同じ child の無制限な再指示をせず、`escalation-judge`、親の直接修正、user decision のいずれかを選ぶ
+
+single route は strict MAD の plan-audit、wave、task review/fix admission を使わない。ただし child の commit、diff、テスト、scope を検証せずに採用してはならない。
+
 ### delivery
 
 複数段階の設計・実装・review が必要な場合だけ `writing-plans` と `multi-agent-development` へ進む。
