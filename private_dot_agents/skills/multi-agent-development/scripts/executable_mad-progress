@@ -107,9 +107,14 @@ function attempts(runDir) {
   return collected
 }
 
+// 契約が定める kind は pid と child_ref の 2 つである。それ以外の kind は生死を
+// 判定する手段が無いので、liveness が無いときと同じく null を返す。null にしないと
+// status が liveness_unknown へ出さず、reap も回収せず、止まった attempt が
+// running のまま残る。
 function livenessOf(state) {
   const value = state.liveness
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  return value.kind === 'pid' || value.kind === 'child_ref' ? value : null
 }
 
 function statusReport(runDir, runState) {
