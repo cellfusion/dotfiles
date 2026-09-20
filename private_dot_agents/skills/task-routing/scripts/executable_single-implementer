@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -u
+umask 077
+
+if [ "${1:-}" != "prepare" ]; then
+  printf 'usage: %s prepare --packet FILE --config FILE --project DIR --snapshot FILE --workspace-id ID --attempt-dir DIR --role-prompt FILE --role-schema FILE [--title TITLE] [--notify-on-finish true|false]\n' "$0" >&2
+  exit 2
+fi
+shift
+
+packet_file=""
+config_file="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+project=""
+snapshot=""
+workspace_id=""
+attempt_dir=""
+role_prompt=""
+role_schema=""
+title="single implementer"
+notify_on_finish=true
+
+fail() {
+  printf 'single-implementer: %s\n' "$1" >&2
+  exit 2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --packet|--config|--project|--snapshot|--workspace-id|--attempt-dir|--role-prompt|--role-schema|--title|--notify-on-finish)
+      [ "$#" -ge 2 ] || fail "$1 requires a value"
+      case "$1" in
+        --packet) packet_file="$2" ;;
+        --config) config_file="$2" ;;
+        --project) project="$2" ;;
+        --snapshot) snapshot="$2" ;;
+        --workspace-id) workspace_id="$2" ;;
+        --attempt-dir) attempt_dir="$2" ;;
+        --role-prompt) role_prompt="$2" ;;
+        --role-schema) role_schema="$2" ;;
+        --title) title="$2" ;;
+        --notify-on-finish) notify_on_finish="$2" ;;
+      esac
+      shift 2
+      ;;
+    *) fail "unknown option: $1" ;;
+  esac
+done
+
+for path_value in packet_file config_file project snapshot attempt_dir role_prompt role_schema; do
+  eval "value=\${$path_value}"
+  [ -n "$value" ] || fail "$path_value is required"
+done
+case "$packet_file:$config_file:$project:$snapshot:$attempt_dir:$role_prompt:$role_schema" in
+  /*:/*:/*:/*:/*:/*:/*) ;;
+  *) fail 'all paths must be absolute' ;;
+esac
+[ -f "$packet_file" ] || fail 'packet is not a regular file'
+[ -f "$config_file" ] || fail 'config is not a regular file'
+[ -d "$project" ] || fail 'project is not a directory'
+[ -f "$snapshot" ] || fail 'snapshot is not a regular file'
+[ -f "$role_prompt" ] || fail 'role prompt is not a regular file'
+[ -f "$role_schema" ] || fail 'role schema is not a regular file'
+case "$notify_on_finish" in true|false) ;; *) fail 'notify-on-finish must be true or false' ;; esac
+
+mkdir -p "$attempt_dir" || fail 'attempt directory could not be created'
+chmod 700 "$attempt_dir" || fail 'attempt directory mode could not be set'
+
+packet_json="$(jq -c 'if type == "object" then . else error end' "$packet_file" 2>/dev/null)" || fail 'packet must be a JSON object'
+printf '%s' "$packet_json" | jq -e '
+  .route == "single" and
+  (.workClass | IN("mechanical", "routine", "integration", "architectural")) and
+  (.role | IN("implementer", "architectural-implementer")) and
+  (.complexity | IN("simple", "routine", "complex", "critical")) and
+  (.confidence == "high") and
+  (.needsUserDecision == false) and
+  (.writeScope | type == "array" and length > 0) and
+  (.acceptanceCriteria | type == "array" and length > 0) and
+  (.verification | type == "array" and length > 0)
+' >/dev/null 2>&1 || fail 'packet does not satisfy the single implementer contract'
+
+mad_share="${MAD_SHARE:-$HOME/.local/share/agent-config}"
+mad_generator="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
+contract="$mad_share/mad-contract.js"
+providers="$mad_share/paseo-providers.js"
+[ -f "$contract" ] || fail 'mad-contract.js is unavailable'
+[ -f "$providers" ] || fail 'paseo-providers.js is unavailable'
+[ -x "$mad_generator" ] || fail 'agent-config is unavailable'
+
+node -e 'require(process.argv[1]).writeResolvedExport0600(process.argv[2], process.argv[3])' \
+  "$contract" "$config_file" "$attempt_dir/resolved-export.json" >/dev/null 2>&1 || fail 'resolved export could not be written'
+
+role="$(printf '%s' "$packet_json" | jq -r '.role')"
+complexity="$(printf '%s' "$packet_json" | jq -r '.complexity')"
+launch_raw="$($mad_generator --input "$config_file" resolve \
+  --project "$project" --role "$role" --provenance mad-dispatch \
+  --complexity "$complexity" --round 0 --snapshot "$snapshot" 2>/dev/null)"
+launch_status=$?
+[ "$launch_status" -eq 0 ] || fail "launch resolution failed with exit $launch_status"
+printf '%s' "$launch_raw" | jq -e 'type == "object" and .status == "ok"' >/dev/null 2>&1 || fail 'launch is not an accepted launch spec'
+printf '%s\n' "$launch_raw" > "$attempt_dir/launch.json"
+chmod 600 "$attempt_dir/launch.json" || fail 'launch mode could not be set'
+
+node - "$contract" "$providers" "$attempt_dir/resolved-export.json" "$attempt_dir/launch.json" \
+  "$packet_file" "$workspace_id" "$title" "$notify_on_finish" "$role_prompt" "$role_schema" "$attempt_dir/single-create.json" <<'NODE'
+const fs = require('node:fs')
+const [contractPath, providersPath, exportPath, launchPath, packetPath, workspaceId, title,
+  notifyRaw, rolePrompt, roleSchema, requestPath] = process.argv.slice(2)
+const contract = require(contractPath)
+const providers = require(providersPath)
+const launch = JSON.parse(fs.readFileSync(launchPath, 'utf8'))
+const resolved = JSON.parse(fs.readFileSync(exportPath, 'utf8'))
+const allowlist = providers.featureAllowlistForProviderId(resolved, launch.provider)
+contract.assertMadLaunchSpecV1(launch, allowlist)
+const initialPrompt = [
+  'Read the task packet first: ' + packetPath,
+  'Read the role prompt: ' + rolePrompt,
+  'Read the role schema: ' + roleSchema,
+  'Work only in the supplied workspace and follow the packet workClass, scope, acceptance criteria, and verification.'
+].join('\n')
+const context = {
+  title,
+  workspaceId,
+  initialPrompt,
+  notifyOnFinish: notifyRaw === 'true',
+}
+const request = contract.buildMadCreateRequestV1(launch, allowlist, context)
+contract.writeMadCreateRequest0600(request, requestPath)
+process.stdout.write(JSON.stringify({ requestPath, launchPath, packetPath }) + '\n')
+NODE

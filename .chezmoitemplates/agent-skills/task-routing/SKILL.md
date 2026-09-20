@@ -77,10 +77,10 @@ A single-child launch failure is not a strict MAD run failure. Do not add unlimi
 When a single route starts a write child, the parent follows this order:
 
 1. Save the packet as a mode `0600` absolute file and validate it with the `intake-router` schema
-2. Resolve the launch with `agent-config resolve --role implementer --provenance mad-dispatch --complexity <packet.complexity> --round 0`. Do not reconstruct provider, model, effort, or features in the parent
-3. Create one Paseo worktree and pass its `workspaceId` to child creation
-4. Pass only the `implementer` prompt, schema, packet absolute path, and work-class overlay in `initialPrompt`. Do not pass the user's full conversation, unrelated repository content, or another task's artifacts
-5. Call `mcp__paseo__create_agent` exactly once and pass `notifyOnFinish` and launch settings unchanged. Do not substitute the CLI or another backend
+2. Create one Paseo worktree and obtain its `workspaceId`
+3. Run `~/.agents/skills/task-routing/scripts/single-implementer prepare` with the packet, config, project, snapshot, workspace ID, attempt directory, implementer prompt, and schema. It resolves the launch and writes a private `single-create.json`
+4. Read and validate `single-create.json`; do not reconstruct provider, model, effort, or features in the parent
+5. Call `mcp__paseo__create_agent` exactly once with that request. Do not substitute the CLI or another backend
 6. After completion, independently check `status`, `baseHead`, commit, `changedFiles`, clean worktree state, acceptance criteria, and verification
 7. If the result cannot be adopted, do not send unlimited follow-ups to the same child; choose `escalation-judge`, direct repair, or a user decision
 
