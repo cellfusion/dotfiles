@@ -15,6 +15,12 @@ tests=(
   test-tools-doc.sh
   test-instructions.sh
   test-paseo-legacy-removal.sh
+  test-tests-not-distributed.sh
+  test-mad-worktree.sh
+  test-mad-progress.sh
+  test-mad-worktrees-ledger.sh
+  test-mad-worktree-contract-doc.sh
+  test-mad-worktree-location-doc.sh
   test-run-tests.sh
 )
 

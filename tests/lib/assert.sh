@@ -44,6 +44,17 @@ assert_eq() {
   fi
 }
 
+# 条件分岐の結果を直接記録する。assert_* と同じく検査数を 1 増やす。
+pass() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  _pass "$1"
+}
+
+fail_check() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  _fail "$1"
+}
+
 # .chezmoitemplates/<name> を tool=<tool> 付きで展開する。
 render_template() {
   chezmoi execute-template --source "$CHEZMOI_SOURCE" \
