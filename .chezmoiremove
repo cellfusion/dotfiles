@@ -1,4 +1,8 @@
 # Targets to remove on `chezmoi apply` (paths are relative to the home dir).
+# The repository-local CLAUDE.md is ignored by chezmoi; remove the old accidental
+# home-level copy so unrelated repositories do not inherit dotfiles instructions.
+CLAUDE.md
+
 #
 # ここのエントリは、配布済みの実体を回収するための一時的な指示である。全マシンに
 # apply が行き渡れば役目を終える。保持方針は「追加から 1 ヶ月」とし、それより古い

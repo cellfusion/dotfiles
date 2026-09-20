@@ -10,6 +10,9 @@
 .config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events
 .config/sketchybar/helpers/event_providers/spotify_events/bin/spotify_events
 
+# このリポジトリ自身の指示 (他のリポジトリへ home-level CLAUDE.md として配らない)
+CLAUDE.md
+
 # このリポジトリ自身のドキュメント (destDir の docs へは配らない)
 docs
 docs/**

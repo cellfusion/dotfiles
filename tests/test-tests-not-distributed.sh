@@ -9,6 +9,10 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 ignore="$(cat "$REPO_ROOT/.chezmoiignore")"
 assert_contains "$ignore" $'\ntests\n' '.chezmoiignore は tests を持つ'
 assert_contains "$ignore" $'\ntests/**\n' '.chezmoiignore は tests/** を持つ'
+assert_contains "$ignore" $'\nCLAUDE.md\n' '.chezmoiignore は repository-local CLAUDE.md を配らない'
+
+remove="$(cat "$REPO_ROOT/.chezmoiremove")"
+assert_contains "$remove" $'\nCLAUDE.md\n' '.chezmoiremove は home-level CLAUDE.md を回収する'
 
 claude_md="$(cat "$REPO_ROOT/CLAUDE.md")"
 assert_contains "$claude_md" 'tests/lib/assert.sh' 'CLAUDE.md は共通 assert の場所を書く'
