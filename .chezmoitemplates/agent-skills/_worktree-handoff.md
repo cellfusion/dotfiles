@@ -1,26 +1,29 @@
-## worktree へ委譲する
+## Delegate through a worktree
 
-承認 gate で「承認&worktree で委譲」が選ばれたときだけ実行する。worktree を新しい workspace として切り、その pane で起動した Claude セッションに実装を渡す。委譲元のこのセッションは pane を閉じずに待機する。
+Use this section only when the approval gate explicitly selects worktree delegation. Create a new
+workspace and start the delegated Claude session there. Keep the parent pane open.
 
-`$HERDR_ENV` が `1` であることは gate の判定で確認済みである。
+`HERDR_ENV=1` was already verified by the approval gate.
 
-### 1. plan を読み直す
+### 1. Re-read the artifact
 
-プレビューは編集可で開いている。手編集はファイルにしか残らない。読み直した内容を正とする。
+The preview editor may have allowed manual edits. Re-read the file from disk; on-disk content is
+canonical.
 
-### 2. ブランチ名を決める
+### 2. Choose a branch
 
-plan のファイル名から日付を落として `feat/<feature-name>` にする。`~/docs/<owner>/<repo>/plans/2026-08-14-worktree-handoff.md` なら `feat/worktree-handoff` である。
+Remove the date from the plan filename and use `feat/<feature-name>`. For example,
+`2026-08-14-worktree-handoff.md` becomes `feat/worktree-handoff`.
 
 ```bash
 git rev-parse --verify "feat/<feature-name>" 2>/dev/null
 ```
 
-終了ステータスが 0 なら同名のブランチが既にある。何も作らずに衝突を報告し、承認 gate へ戻る。
+If the branch exists, create nothing, report the collision, and return to the approval gate.
 
-### 3. worktree を workspace として作り、応答から ID とパスを読む
+### 3. Create the Herdr workspace
 
-1 つの bash 呼び出しで実行する。番号付きの手順でも、ここは 1 ブロックのまま崩さない。別々のシェル呼び出しに分けると `$out` が空になり、下の 3 つの値も空になる。
+Run this as one shell block and read every value from the response:
 
 ```bash
 out=$(herdr worktree create \
@@ -29,50 +32,51 @@ out=$(herdr worktree create \
   --base HEAD \
   --label "<feature-name>" \
   --no-focus)
-
-ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
-pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id')
-path=$(printf '%s' "$out" | jq -r '.result.worktree.path')
+ws=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
+pane=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
+path=$(printf '%s' "$out" | jq -er '.result.worktree.path')
 ```
 
-- **`--workspace` を必ず付ける。** 省くとユーザーがフォーカスしている workspace が基準になり、自分が動いている場所とは別に作られることがある
-- **`--no-focus` を付ける。** 委譲元のセッションはこのあとも報告を続けるので、視線を奪わない
-- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。リポジトリの外なので、`.gitignore` を確認する必要が無い
+Always pass `--workspace` and `--no-focus`; do not pass `--path`. If any value is empty or null,
+remove the workspace only when `ws` is known. If it is unknown, report the orphan risk and return to
+the gate. Record workspace ID, pane, path, branch, and ownership.
 
-3 つのどれかが空か `null` なら委譲は成立しない。`ws` が取れているなら `herdr worktree remove --workspace "$ws" --force` で片付ける。`ws` が取れていないなら片付けられないので、その旨も添えて報告し、承認 gate へ戻る。
+Values from this shell block are not available in later shell calls. Use the validated literal values
+in subsequent commands; never predict a path or ID.
 
-以降の手順（step 5・6・失敗時の片付け）は、この `$out` / `$ws` / `$pane` / `$path` が後続の bash 呼び出しでは参照できない前提で進める。取れた値をリテラルで埋めて実行する。
-
-### 5. その pane で Claude を起動する
+### 4. Start the delegated agent
 
 ```bash
-herdr agent start "<agent-name>" --kind claude --pane "$pane"
+herdr agent start "<safe-agent-name>" --kind claude --pane "$pane"
 ```
 
-- `<agent-name>` は feature-name をそのまま使う。`[a-z][a-z0-9_-]{0,31}` に収まらない文字は `-` に置き換え、32 文字を超えたら切り詰める
-- **権限フラグを付けない。** 承認が要る場面ではその workspace で止まる。ユーザーがそこに入って判断する
+Sanitize the agent name to `[a-z][a-z0-9_-]{0,31}`. Do not add permission-bypass flags. The agent
+must stop for approval when approval is required.
 
-### 6. 初回の指示を送る
+### 5. Send the initial prompt
 
 ```bash
-herdr agent prompt "<agent-name>" "<指示>" --wait --timeout 120000
+herdr agent prompt "<safe-agent-name>" "<bounded prompt>" --wait --timeout 120000
 ```
 
-指示に入れるのは次の 4 点だけである。会話の履歴や経緯を貼らない。
+Include only:
 
-- plan の**絶対パス**。保存先はリポジトリの作業ツリーの外にあり、どのチェックアウトから見ても同じ絶対パスなので、そのまま渡せばよい
-- このプランを multi-agent-development の implement recipe で実装すること
-- worktree は用意済みなので、新しく worktree を切らないこと
-- この worktree のブランチ名
+- the plan's absolute path
+- instruction to implement it using the `multi-agent-development` implement recipe
+- statement that the worktree already exists and must not be recreated
+- the existing worktree branch name
 
-**タイムアウトは失敗ではない。** 委譲先が MAD を回し始めるのを `--wait` は待つので、`--timeout 120000` に達すること自体はよく起こる。timeout で返ってきても worktree は消さず、7 へ進む。
+Do not paste conversation history, credentials, or raw review output. A timeout is not proof of
+failure; inspect agent state and artifacts before deciding.
 
-### 7. 報告して待機する
+### 6. Report and wait
 
-workspace ID、worktree の絶対パス、ブランチ名、agent 名を報告する。**自分の pane は閉じない。** ユーザーはこのセッションをそのまま次の作業に使える。
+Report workspace ID, absolute worktree path, branch, agent name, and current status. Do not close the
+parent pane. The user may continue using it.
 
-### 失敗したとき
+### Failure handling
 
-**片付けの対象は step 2〜4（`herdr agent start` の前）で失敗した場合に限る。** この段までは worktree も workspace も委譲元だけが把握しており、他に依存者がいないので消してよい。片付けは `herdr worktree remove --workspace "$ws" --force` である。片付けたら報告し、承認 gate へ戻る。
-
-**step 5（`herdr agent start`）以降で失敗した場合は worktree を消さない。** 委譲先の Claude セッションが既に起動している可能性があり、その worktree を強制削除すると稼働中のセッションごと消すことになる。workspace ID と worktree の絶対パスを添えて「委譲先は起動済みだが、初回指示の到達は未確認である」と報告し、承認 gate へ戻る。
+Before `agent start`, cleanup is safe only for the worktree created by this run and only when its
+workspace ID is known. After `agent start`, never force-remove the workspace because the delegated
+session may still be running. Report that the agent may be active and that receipt of the initial
+prompt is unconfirmed. Keep the workspace and return to the approval gate.

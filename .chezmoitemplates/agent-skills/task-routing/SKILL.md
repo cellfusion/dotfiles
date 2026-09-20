@@ -5,6 +5,7 @@ description: >-
   Skip it for clear local changes; use it only when direct, single-agent, and delivery paths need to be distinguished.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Route a Request to an Execution Path
 

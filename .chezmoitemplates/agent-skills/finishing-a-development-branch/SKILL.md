@@ -1,224 +1,215 @@
 ---
 name: finishing-a-development-branch
 description: >-
-  実装が完了し、この作業をどう取り込むか決めるときに使う。
-  テストと検証を通し、環境を判定し、選択肢を提示し、選ばれた処理を実行して後始末する。
-  「終わった」「マージしたい」「PR にしたい」の入口。
+  Finish a development branch by verifying the result, determining repository ownership, presenting
+  merge/push/retain choices, executing only the selected action, and cleaning up only owned resources.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# 開発ブランチを仕上げる
+# Finish a Development Branch
 
-## 概要
+This is a parent-only finalizer. Use it after implementation and review artifacts are available. The
+parent chooses how to integrate the work; it does not invent missing implementation or verification
+results. Child handoff artifacts and fresh verification output are the sources of truth.
 
-これは親専用 finalizer である。MAD の `delivery` が採用 attempt の final review と検証記録を `ok` とした後、
-親だけが取り込み方法を [ask-user] で確認し、選択された merge / push / 保持を実行する。親は実装、レビュー、
-検証本文を作らない。それらは delivery の子が `handoff.json` に残した絶対パスを正本とする。
+**Core sequence:** verify, inspect ownership, present choices, execute the selected action, verify
+the result, then clean up only resources owned by this run.
 
-**中核**: 検証を通す → 環境を判定する → 選択肢を提示する → 選ばれた処理を実行する → 後始末する。
+## Step 1: verify before offering integration choices
 
-**開始時に宣言する**: 「finishing-a-development-branch を使ってこの作業を仕上げる」
+Run the project's known verification commands. Do not blindly invoke a command that is unavailable
+in the current runtime. Prefer the repository's documented test/build/lint commands and the
+`verification-before-completion` skill's evidence contract.
 
-## Step 1: 検証を通す
+Typical checks, when applicable:
 
-1. プロジェクトのテストスイートを実行する（`npm test` / `cargo test` / `pytest` / `go test ./...`）
-2. `/verify` を実行する（ビルド、型チェック、lint、テスト、デバッグ文の監査をまとめて回す）
-3. `/pre-commit-review` を実行する（セキュリティとコード品質の確認）
+- project test suite
+- build or type check
+- lint or static analysis
+- security or pre-commit review
+- regression checks for the changed behavior
 
-**失敗があれば、そこで止めて報告する。** メニューは緑になってから出す。
+For every command, record the exact command, exit code, failure count, and the working tree it
+verified. Do not call a previous run evidence for the current tree. If a command is unavailable,
+record `not_run` with the reason instead of inventing a result.
 
-```
-テストが失敗している（<N> 件）。仕上げる前に直す必要がある:
+If any required check fails, stop and report the failure. Do not show the integration menu. If the
+repository has an explicit required review command, run it only when the current runtime supports
+it and the user has not prohibited it.
 
-[失敗の内容]
-```
-
-`/pre-commit-review` が CRITICAL を返した場合も同様に止める。
-
-**すべて通ったら** Step 2 へ進む。
-
-未コミットの変更が残っているなら、Conventional Commits（`<type>: <description>`、1 コミット 1 論理変更）でコミットしてから進む。
-
-## Step 2: 環境を判定する
+Before integration, independently inspect:
 
 ```bash
+git status --short --branch
+git diff --stat
+git diff --check
+```
+
+Do not create a commit automatically. If uncommitted changes remain, stop and ask whether to commit
+them. A Conventional Commit message may be proposed, but the user must authorize the commit.
+Never include unrelated existing changes in the proposed commit.
+
+## Step 2: determine repository and worktree ownership
+
+Capture these values before changing directories:
+
+```bash
+CALLER_ROOT=$(git rev-parse --show-toplevel)
 GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
 GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
-# Step 5 でディレクトリを移動する前に、ここで取っておく
 WORKTREE_PATH=$(git rev-parse --show-toplevel)
+BRANCH=$(git branch --show-current)
 ```
 
-どのメニューを出すか、後始末をどうするかが決まる。
+Use run metadata from `using-git-worktrees`, MAD, Herdr, or the native tool to determine ownership.
+Do not infer ownership only from a directory name. A linked worktree can be user-owned even when it
+is under `.worktrees/`.
 
-| 状態 | メニュー | 後始末 |
+Classify the environment:
+
+| State | Integration choices | Cleanup |
 |---|---|---|
-| `GIT_DIR == GIT_COMMON`（通常のリポジトリ） | 3 択 | worktree は無い |
-| `GIT_DIR != GIT_COMMON`、ブランチ上 | 3 択 | 出自に応じて（Step 6） |
-| `GIT_DIR != GIT_COMMON`、detached HEAD | 2 択（merge 無し） | 外部管理。そのまま残す |
+| Main checkout (`GIT_DIR == GIT_COMMON`) | merge, push/PR, retain | no worktree cleanup |
+| Owned linked worktree on a branch | merge, push/PR, retain | cleanup only after successful integration and explicit cleanup choice |
+| External linked worktree | push/PR, retain | never remove it |
+| Detached HEAD | push as a new branch, retain | never remove it unless ownership is proven |
 
-## Step 3: base ブランチを決める
+If ownership or base branch is unknown, stop and ask. Do not guess `main` or `master`.
 
-base ブランチはこの作業が分岐した元である。通常はプラン、会話、ブランチの upstream に書かれている。分からなければ聞く。
+## Step 3: establish the base branch
 
-> 「このブランチは <推測> から分岐したと思うが、合っているか」
+Determine the branch from the plan, task metadata, upstream configuration, or explicit user input.
+Verify that it is an ancestor or otherwise a valid integration target before presenting merge choices.
+If it cannot be established, ask:
 
-merge の前に確認する。誤った base への merge は取り消しが高くつく。
+> Which branch should receive this work?
 
-## Step 4: 選択肢を提示する
+Do not merge into a guessed base.
 
-**通常のリポジトリ、およびブランチ上の worktree — この 3 択をそのまま出す**:
+## Step 4: present choices and wait
 
-```
-実装が完了した。どうするか。
+For a normal checkout or an owned branch worktree, present exactly these choices:
 
-1. <base-branch> へローカルで merge する
-2. push して Pull Request を作る
-3. ブランチをこのまま残す（自分で処理する）
+```text
+Verification is complete. How should this work be integrated?
 
-どれにするか。
-```
-
-**detached HEAD — この 2 択をそのまま出す**:
-
-```
-実装が完了した。detached HEAD（外部管理のワークスペース）にいる。
-
-1. 新しいブランチとして push して Pull Request を作る
-2. このまま残す（自分で処理する）
-
-どれにするか。
+1. Merge locally into <base-branch>
+2. Push <feature-branch> and create a Pull Request
+3. Leave the branch and worktree in place
 ```
 
-メニューはここに書いてある通りに出す。**作業を破棄する選択肢はメニューに入れない。** 破棄はユーザーが明示的に求めたときだけ行う（後述）。答えを待つ。取り込みの判断はユーザーのものである。
+For detached HEAD or an external worktree, present:
 
-## Step 5: 選ばれた処理を実行する
+```text
+This workspace is detached or externally managed. How should this work be integrated?
 
-### 選択肢 1: ローカルで merge する
+1. Push it as a new branch and create a Pull Request
+2. Leave it in place
+```
+
+Do not include a discard option in the normal menu. Wait for an explicit selection. Do not commit,
+merge, push, delete a branch, archive a workspace, or remove a worktree before the selection.
+
+## Step 5: execute the selected action
+
+### Choice 1: local merge
+
+Perform integration from the main checkout, not from the feature worktree:
 
 ```bash
-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+MAIN_ROOT=$(git -C "$GIT_COMMON" rev-parse --show-toplevel)
 cd "$MAIN_ROOT"
-
-# 先に merge する。成功を確認してから何も消さない
-git checkout <base-branch>
-git pull
+git switch <base-branch>
 git merge <feature-branch>
-
-# merge 結果でテストを回す
-<test command>
 ```
 
-merge 結果でテストが落ちたら、止めて worktree とブランチをそのまま残し、調査する。push していないので merge はローカルで、取り消せる。
+Do not run `git pull` automatically. If the base branch is behind its remote, report that fact and
+ask whether to fetch/update it. Do not force-push or force-merge.
 
-merge 結果が緑になったら worktree を後始末し（Step 6）、ブランチを削除する。
+After a successful merge, run the required verification commands on the merged checkout. If they
+fail, stop and retain the branch and worktree. Do not delete anything after a failed merge check.
 
-```bash
-git branch -d <feature-branch>
-```
+Only after successful verification may the user be asked whether to delete the merged branch and
+owned worktree. Branch deletion is destructive and must not be bundled silently into the merge.
 
-### 選択肢 2: push して PR を作る
+### Choice 2: push and create a Pull Request
+
+Push only the selected branch:
 
 ```bash
 git push -u origin <feature-branch>
-# detached HEAD からは remote 側のブランチ名を指定する:
-# git push origin HEAD:refs/heads/<new-branch>
 ```
 
-そのうえで <base-branch> に対して PR を作る。forge の CLI があればそれを使い、無ければ push 時に表示される作成 URL を使う。リポジトリに PR テンプレートや慣習があればそれに従う。URL をユーザーに報告する。
-
-**worktree は残す。** PR のフィードバック対応はそこで行う。
-
-### 選択肢 3: このまま残す
-
-報告する: 「ブランチ <name> を残す。worktree は <path> にある」
-
-### ユーザーが破棄を求めた場合
-
-この経路は、作業を捨てるという明示的な要求への応答としてだけ存在する。先に確認する。
-
-```
-次を完全に削除する:
-- ブランチ <name>
-- コミット: <commit-list>
-- worktree: <path>
-
-確認のため 'discard' と入力してほしい。
-```
-
-**その通りの語**を待つ。届いたら:
+For detached HEAD, use an explicitly chosen branch name:
 
 ```bash
-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
-cd "$MAIN_ROOT"
+git push origin HEAD:refs/heads/<new-branch>
 ```
 
-worktree を後始末し（Step 6）、ブランチを強制削除する。
+Create the Pull Request only when the user selected this option and the forge CLI is available. Use
+the repository's PR template and base branch. Report the URL. Retain the worktree for follow-up
+feedback. Do not remove it after opening the PR.
 
-```bash
-git branch -D <feature-branch>
+### Choice 3: retain
+
+Report the branch, worktree path, verification evidence, ownership, and the next command the user
+can run. Do not clean up.
+
+### Explicit discard request
+
+Discard is a separate destructive workflow. Accept it only after the user explicitly requests it.
+Show the complete deletion set:
+
+```text
+The following will be deleted:
+- branch: <branch>
+- commits: <commit list>
+- owned worktree: <path>
+
+Type `discard` exactly to confirm.
 ```
 
-## Step 6: ワークスペースの後始末
+Wait for the exact word `discard`. If confirmed, move outside the worktree, remove only owned
+resources, and force-delete the branch. If confirmation is absent or differs, retain everything.
 
-**選択肢 1 と、確認済みの破棄でだけ実行する。** 選択肢 2 と 3 は常に worktree を残す。どちらの呼び出し元も既にメインリポジトリのルートへ移動している（worktree の削除は worktree の外から実行する必要がある）。Step 2 で取った `GIT_DIR` / `GIT_COMMON` / `WORKTREE_PATH` を使う。
+## Step 6: cleanup owned resources only
 
-**`GIT_DIR == GIT_COMMON` の場合**: 通常のリポジトリ。後始末する worktree は無い。
+Cleanup is allowed only after successful local merge plus post-merge verification, or after exact
+`discard` confirmation. Never clean after push/PR or retain.
 
-**`WORKTREE_PATH` が `.worktrees/` または `worktrees/` の下にある場合**: このスキルの流れで作った worktree なので、こちらが後始末する。
+Use recorded ownership and backend:
 
-```bash
-git worktree remove "$WORKTREE_PATH"
-git worktree prune  # 古い登録の掃除
+- Herdr: `herdr worktree remove --workspace <workspace-id> --force`.
+- Native workspace: use the native cleanup operation.
+- Git worktree created by this run: from outside it, run `git worktree remove <path>` and prune
+  stale registrations only when owned.
+- Caller-owned or host-owned worktree: leave it untouched.
+
+If cleanup fails, retain all metadata and report the path and failure. Do not retry destructively.
+
+## Chezmoi repositories
+
+`chezmoi apply` reads the main source directory returned by `chezmoi source-path`. For a chezmoi
+repository:
+
+1. Commit only the intended changes in the feature worktree after explicit approval.
+2. Merge into the main source checkout if the user selects local merge.
+3. Run `chezmoi diff` from the main source checkout.
+4. Ask for explicit permission before running `chezmoi apply`.
+
+Never apply from an unmerged worktree and never claim that apply happened without fresh evidence.
+
+## Completion record
+
+Report:
+
+```text
+verification: <commands, exit codes, and evidence paths>
+base: <branch>
+choice: <merge|push-pr|retain|discard>
+branch: <branch or detached HEAD>
+worktree: <absolute path or none>
+ownership: <owned|external|main-checkout>
+cleanup: <removed|retained|not-owned|failed>
 ```
-
-MAD の run directory はリポジトリの作業ツリーの外にあるので、worktree を消しても残る。写し取る作業は要らない。
-
-**`$HERDR_ENV` が `1` で、`WORKTREE_PATH` が `~/.herdr/worktrees/` の下にある場合**: herdr が workspace として作った worktree である。先に workspace を畳んでから worktree を消す。
-
-```bash
-ws=$(herdr worktree list --cwd "$WORKTREE_PATH" \
-  | jq -r --arg p "$WORKTREE_PATH" '.result.worktrees[] | select(.path == $p) | .open_workspace_id // empty')
-if [ -n "$ws" ]; then
-  herdr worktree remove --workspace "$ws" --force
-fi
-```
-
-`ws` が空なら workspace は既に無いので、この手順を飛ばして `git branch` の削除へ進む。`herdr worktree remove` は worktree のディレクトリも一緒に消すので、上の `git worktree remove` は不要（実行すると対象が既に無く失敗するので呼ばない）。
-
-**それ以外**: ホスト環境が所有するワークスペースなのでそのまま残す。ハーネスに worktree 退出用のツールがあればそれを使う。
-
-## chezmoi リポジトリの場合
-
-`chezmoi apply` は **chezmoi の source directory**（`chezmoi source-path` が返すパス）を読む。worktree で実装した内容は、メインチェックアウトへ merge するまで apply に反映されない。
-
-順序:
-
-1. worktree で実装してコミットする
-2. 選択肢 1 でメインチェックアウトへ merge する
-3. `chezmoi diff` で反映内容を確認する
-4. **`chezmoi apply` はユーザーの明示的な許可を得てから実行する**
-
-設定を実際に反映して動作確認したい場合は、この順序を必ず守る。
-
-## 早見表
-
-| 選択肢 | merge | push | worktree を残す | ブランチ削除 |
-|---|---|---|---|---|
-| 1. ローカル merge | する | - | - | する |
-| 2. PR を作る | - | する | 残す | - |
-| 3. このまま残す | - | - | 残す | - |
-| 破棄（明示要求時のみ） | - | - | - | する（強制） |
-
-## よくある言い訳
-
-| 言い訳 | 実際 |
-|---|---|
-| 「さっきテストが通った」 | これから取り込むツリーでスイートを回す。緑は回したツリーについてしか証明しない |
-| 「明らかに merge してほしいはずだ」 | 取り込みの判断はユーザーのもの。メニューを出して待つ |
-| 「この機能はもう不要そうなので破棄を提案する」 | メニューは書いてある通りで完結している。破棄はユーザーがそう言ったときだけ |
-| 「『うん、消していいよ』は確認になる」 | 削除を許可するのは `discard` と入力されたときだけ |
-| 「PR を出したので worktree は不要だ」 | PR のフィードバックはその worktree で直す。取り込まれるまで残す |
-| 「この worktree は古そうなので一緒に消す」 | 後始末するのは `.worktrees/` `worktrees/` 配下と、herdr が作った `~/.herdr/worktrees/` 配下だけ。他はホストのもの |
-| 「merge 結果の失敗はたぶん flaky」 | merge 結果の失敗は全部を止める。ブランチと worktree はそのまま調査する |
-| 「base はどうせ main だ」 | 分岐元を確認するか聞く。誤った base への merge は取り消しが高くつく |
-| 「push が拒否されたので force-push する」 | 拒否は remote が進んだという意味。調査する。force-push はユーザーの明示要求時のみ |

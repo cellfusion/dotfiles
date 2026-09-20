@@ -1,147 +1,116 @@
 ---
 name: verification-before-completion
 description: >-
-  完了・修正済み・テスト通過を主張する直前、コミットや PR 作成の前に使う。
-  主張を証明する検証コマンドを実行し、出力を確認してから主張する。
-  主張より先に証拠を置く。
+  Verify claims of completion, correctness, fixes, or passing tests with fresh evidence. Select
+  commands appropriate to the claim, record exit codes and failures, and report unverified items.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# 完了を主張する前に検証する
+# Verify Before Claiming Completion
 
-## 概要
+Put evidence before assertion. Verification proves a specific claim about a specific tree; it does
+not prove more than the command covers.
 
-**中核**: 主張より先に証拠を置く。常に。
+## Verification gate
 
-**この規則の字面を破ることは、この規則の精神を破ることである。**
+Before claiming a status:
 
-## 鉄則
+1. identify the claim
+2. choose the command or artifact that proves it
+3. run it freshly against the intended working tree/revision
+4. read the complete output and exit code
+5. count failures and warnings relevant to the claim
+6. compare evidence with the claim
+7. report success, failure, or uncertainty accurately
 
-```
-新しい検証の証拠なしに完了を主張しない
-```
+A previous run, an agent's message, a plausible diff, or confidence is not fresh evidence.
 
-そのメッセージの中で検証コマンドを実行していないなら、通ると主張できない。
+## Choose the smallest sufficient check
 
-## Gate Function
+Use the narrowest command that proves the claim, then add broader checks when risk requires them:
 
-```
-何らかの状態を主張する前、または満足を表明する前に:
-
-1. 特定する: この主張を証明するコマンドは何か
-2. 実行する: そのコマンドを完全な形で（新しく、省略せずに）実行する
-3. 読む: 出力全体を読み、終了コードを確認し、失敗数を数える
-4. 検証する: 出力は主張を裏付けているか
-   - いいえ: 実際の状態を証拠付きで述べる
-   - はい: 証拠を添えて主張する
-5. そこで初めて主張する
-
-どれかを飛ばした時点で、検証ではなく虚偽である
-```
-
-## 誰が検証を実行するか
-
-Gate Function の 2（実行する）と 3（読む）は、親が自分で行っても、子に委譲してもよい。1（特定
-する）、4（検証する）、5（主張する）は親が行う。
-
-- **検証コマンドが数個で、出力が短い** — 親が自分で実行する。`/verify` がこれに当たる
-- **検証が長い、または出力が大きい** — 子に委譲する。MAD の `review` recipe を使い、実行させる
-  コマンドと要件の絶対パスを渡す。子は実行したコマンド、終了コード、出力、要件ごとの根拠を
-  検証記録に書き、その絶対パスを返す
-
-子に委譲した場合も、親は検証記録の終了コードと失敗数を読む。**子が「成功した」と報告したこと
-自体は証拠にならない。** 記録に終了コードと出力が無ければ、検証は行われていない。
-
-## よくある失敗
-
-| 主張 | 必要な証拠 | 不十分なもの |
-|---|---|---|
-| テストが通る | テストコマンドの出力: 失敗 0 件 | 前回の実行、「通るはず」 |
-| lint がきれい | lint の出力: エラー 0 件 | 部分的な確認、外挿 |
-| ビルドが通る | ビルドコマンド: 終了コード 0 | lint が通ったこと、ログが良さそうなこと |
-| バグが直った | 元の症状のテスト: 通る | コードを変えたので直ったはず |
-| リグレッションテストが効く | red-green を確認した | 1 回通ったこと |
-| エージェントが完了した | VCS の差分に変更がある | エージェントの「成功」報告 |
-| 子が検証した | 検証記録の終了コードと出力 | 子の「検証した」という報告 |
-| 要件を満たした | 1 行ずつのチェックリスト | テストが通ること |
-
-このプロジェクトでは `/verify` が検証コマンド一式（ビルド、型チェック、lint、テスト、デバッグ文の監査）をまとめて実行する。何を実行すべきか迷ったらこれを使う。
-
-## 赤信号 — 止まる
-
-- 「はず」「たぶん」「〜のようだ」を使っている
-- 検証の前に満足を表明している（「完了」「うまくいった」など）
-- 検証せずにコミット・push・PR を作ろうとしている
-- エージェントの成功報告を信じている
-- 部分的な検証に頼っている
-- 「今回だけ」と考えている
-- 疲れていて終わらせたい
-- **検証を実行せずに成功を含意する言い回しをしている**
-
-## 正当化への対処
-
-| 言い訳 | 実際 |
+| Claim | Evidence |
 |---|---|
-| 「もう動くはず」 | 検証を実行する |
-| 「自信がある」 | 自信は証拠ではない |
-| 「今回だけ」 | 例外は無い |
-| 「lint が通った」 | lint はコンパイラではない |
-| 「エージェントが成功と言った」 | 独立に検証する |
-| 「疲れている」 | 疲労は理由にならない |
-| 「部分的な確認で十分」 | 部分は何も証明しない |
-| 「言い方を変えたので規則は当たらない」 | 字面ではなく精神 |
+| test passes | test output and exit code with zero failures |
+| lint is clean | lint output and exit code with zero errors |
+| build succeeds | build output and exit code 0 |
+| bug is fixed | regression reproduction/test passes |
+| requirement is met | item-by-item checklist with evidence |
+| agent completed | validated artifact, status, diff, and verification |
+| child verified | verification record with commands, exit codes, and output |
 
-## 型
+Do not use lint as proof of compilation or one passing test as proof of full correctness.
 
-**テスト**
+## Runtime-neutral command policy
 
-```
-✅ [テストコマンドを実行] [34/34 pass を確認] 「全テストが通る」
-❌ 「これで通るはず」「正しそう」
-```
+Do not assume `/verify` or `/pre-commit-review` exists in every runtime. Inspect the current tool's
+commands and the repository's documented scripts first. If a command is unavailable, record
+`not_run` and use an equivalent safe command or report the limitation.
 
-**リグレッションテスト（TDD の red-green）**
+Never install dependencies, run deploy/release operations, or execute untrusted setup scripts just to
+obtain verification without explicit approval. Do not mutate source files, auto-fix, or hide a
+failure before recording it.
 
-```
-✅ 書く → 実行（pass）→ 修正を戻す → 実行（必ず fail）→ 修正を戻す → 実行（pass）
-❌ 「リグレッションテストを書いた」（red-green の確認なし）
-```
+## Quick verification
 
-**ビルド**
+For a small, low-risk change, use a focused check plus:
 
-```
-✅ [ビルドを実行] [終了コード 0 を確認] 「ビルドが通る」
-❌ 「lint が通った」（lint はコンパイルを確認しない）
+```bash
+git diff --check
+git status --short
 ```
 
-**要件**
+For a configuration or documentation change, use rendering, parsing, schema validation, or
+translation checks instead of pretending a product test proves it.
 
+For a high-risk or public behavior change, include regression, relevant suite, type/build, and
+security checks as justified by the repository.
+
+## Verification record
+
+When verification is delegated or spans multiple commands, save an external record with:
+
+```json
+{
+  "schemaVersion": "1",
+  "verificationId": "...",
+  "repository": "owner/name",
+  "revision": "40-character-sha",
+  "claim": "...",
+  "checks": [{
+    "command": "...",
+    "cwd": "...",
+    "status": "pass|fail|not_run",
+    "exitCode": 0,
+    "failures": 0,
+    "evidence": "...",
+    "at": "2026-01-01T00:00:00Z"
+  }],
+  "verdict": "pass|fail|partial|blocked",
+  "limitations": []
+}
 ```
-✅ プランを読み直す → チェックリストを作る → 1 つずつ確認 → 抜けか完了を報告
-❌ 「テストが通ったのでフェーズ完了」
-```
 
-**エージェントへの委譲**
+Keep logs free of credentials, raw secrets, full environment dumps, and unbounded command output.
+The parent must inspect the record; a child saying “verified” is not enough.
 
-```
-✅ エージェントが成功を報告 → VCS の差分を確認 → 変更を検証 → 実際の状態を報告
-❌ エージェントの報告を信じる
-```
+## Delegation
 
-## いつ適用するか
+The parent identifies the claim and acceptance criteria. A child may run long checks, but the parent
+must inspect its command list, exit codes, failure counts, and artifacts before asserting the result.
+Use one stable verification record per attempt and revision. Do not overwrite an older record.
 
-**常に、次の前に**:
+## Red flags
 
-- 成功・完了を意味するあらゆる表現
-- 満足のあらゆる表明
-- 作業状態についてのあらゆる肯定的な発言
-- コミット、PR 作成、タスク完了
-- 次のタスクへ移る
-- エージェントへ委譲する
+Stop and re-evaluate when:
 
-**規則が当たる対象**:
+- the claim uses “should”, “probably”, or “looks right” without evidence
+- verification ran before the final change
+- only a partial check supports a broad claim
+- a test passed for the wrong reason
+- an agent report is the only evidence
+- a failure was fixed or hidden before being recorded
+- the working tree or revision does not match the one being claimed
 
-- 正確な言い回し
-- 言い換えや同義語
-- 成功の含意
-- 完了・正しさを示唆するあらゆる伝達
+Report what is actually known and what remains unverified.

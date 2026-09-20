@@ -1,84 +1,92 @@
 ---
 name: executing-plans
 description: >-
-  実装が小さく、MAD を使わなくてよい実装プランを、このセッションで直列に実行するときに使う。
-  並列にできるタスクを持つプランや worktree の隔離が要るプランは
-  multi-agent-development のほうが適する。
-  タスクの区切りでレビューを挟みながらタスクを順に消化する。
+  Execute a small, sequential implementation plan in the current session when parallelism, strict
+  multi-agent delivery, and independent task worktrees are unnecessary.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# プランを直列に実行する
+# Execute an Implementation Plan
 
-## 概要
+Read, critique, and execute a plan one task at a time. Use this skill only when the plan is small
+enough for sequential work. Use `multi-agent-development` when tasks can run independently, need
+separate worktrees, or require independent review gates.
 
-プランを読み、批判的にレビューし、全タスクを実行し、完了を報告する。
+## Choose the route first
 
-**開始時に宣言する**: 「executing-plans を使ってこのプランを実装する」
+Use `executing-plans` only when all of these are true:
 
-**先に確認する**: このプランは実装が小さく、MAD を使わなくてよいか。次のどれかに当たるなら
-multi-agent-development のほうが適する。
+- the tasks are substantially sequential
+- the parent can safely implement them in one session
+- no task requires a separate ownership boundary
+- task-boundary review by the parent is sufficient
 
-- 依存が無く並列にできるタスクが 2 つ以上ある
-- 同時に書くタスクがあり、worktree の隔離が要る
-- タスクごとに独立したレビュアーの gate を掛けたい
+Otherwise stop and select MAD or ask the user.
 
-どれにも当たらないなら、このスキルで直列に実行する。子は立てない。親が実装し、タスクの区切りで
-自分で diff を見返す。
+Write changes in an isolated workspace by default using `using-git-worktrees`. Stay in the current
+checkout only when the user explicitly accepts that risk and the change is safe to make there. The
+worktree skill owns setup, baseline policy, ownership, and cleanup; do not duplicate or bypass it.
 
-## 手順
+## Step 1: read and critique the plan
 
-### Step 1: プランを読んでレビューする
+1. Establish the selected workspace and record its ownership.
+2. Read the complete plan.
+3. Check task dependencies, files, scope, acceptance criteria, and verification commands.
+4. Check for missing decisions, unsafe commands, conflicting files, and impossible assumptions.
+5. Ask the user about a consequential blocker before modifying code.
+6. If sound, create a finite task list with one entry per plan task.
 
-1. 隔離ワークスペースを用意する（using-git-worktrees）
-2. プランファイルを読む
-3. 批判的にレビューする。プランへの疑問や懸念を洗い出す
-4. 懸念があれば、着手前にユーザーへ提起する
-5. 無ければタスクごとに todo を作って進む
+Do not silently repair a plan's intent. Record rejected concerns and their reasons. If the plan is
+larger or more parallel than expected, stop and ask whether to switch to MAD.
 
-### Step 2: タスクを実行する
+## Step 2: execute each task
 
-各タスクについて:
+For every task:
 
-1. todo を in_progress にする
-2. 各ステップをその通りに実行する（プランは一口大のステップに割られている）
-3. 指定された検証を実行する
-4. todo を完了にする
+1. mark it `in_progress`
+2. re-read the task's scope and constraints
+3. implement only that task
+4. run its specified verification
+5. inspect the task diff, changed files, and working-tree status
+6. compare the result with acceptance criteria
+7. mark it complete only with evidence
 
-タスクの区切りごとに、そのタスクの diff を自分で見返す。spec 準拠（欠落・余分・誤解）とテストの実効性を確認する。ここが multi-agent-development の review recipe を使わない場合のレビューになる。
+Do not start the next task while the current task has an unexplained failure. Do not broaden scope,
+install dependencies, commit, push, or apply configuration unless the plan and user explicitly allow
+it.
 
-### Step 3: 開発を完了する
+At each task boundary, perform a compact review:
 
-全タスクの完了と検証が済んだら:
+- missing or extra behavior
+- scope violations
+- effective tests and edge cases
+- consistency with existing patterns
+- accidental generated or unrelated files
 
-- 宣言する:「finishing-a-development-branch を使ってこの作業を完了する」
-- finishing-a-development-branch を起動し、テスト確認・選択肢の提示・選択の実行まで通す
+Save task evidence outside the repository when it is useful for later review. Never trust a child or
+command's success message without inspecting its exit code and output.
 
-## 止まって聞くべきとき
+## Step 3: finish safely
 
-**次のときは直ちに実行を止める**:
+After all tasks and verification are complete, invoke `finishing-a-development-branch`. That skill
+must verify the final tree, ask how to integrate it, and wait before merge, push, commit, apply, or
+cleanup. It must not assume that “plan complete” authorizes any integration action.
 
-- ブロッカーに当たった（依存が無い、テストが落ちる、指示が不明瞭）
-- プランに着手を妨げる致命的な欠落がある
-- 指示の意味が分からない
-- 検証が繰り返し失敗する
+## Stop conditions
 
-**推測せずに確認する。**
+Stop and ask when:
 
-## 前の段階に戻るとき
+- a dependency is missing and setup would install or execute external code
+- a test or verification fails
+- the plan omits a necessary decision or file
+- the meaning of an instruction is unclear
+- the current implementation requires a different architecture
+- the change is larger, more parallel, or riskier than the plan permits
 
-**Step 1 のレビューに戻る条件**:
+Do not force through a blocker or repeatedly retry a deterministic failure.
 
-- ユーザーのフィードバックを受けてプランが更新された
-- 根本的なアプローチを考え直す必要がある
+## Return to planning
 
-**ブロッカーを力任せに突破しない。** 止まって聞く。
-
-## 要点
-
-- プランをまず批判的にレビューする
-- プランのステップをその通りに実行する
-- 検証を飛ばさない
-- 詰まったら止まる。推測しない
-- ユーザーの明示的な同意なしに main / master で実装を始めない
-- 実装が想定より大きいと分かったら止まる。multi-agent-development へ切り替えるかをユーザーに聞く
+Return to plan review when the user changes requirements or the root approach must change. Update the
+plan or obtain a new decision before continuing. Preserve previous task evidence; do not overwrite it.

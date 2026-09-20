@@ -1,71 +1,58 @@
-## 承認 gate
+## Approval gate
 {{ $worktree := false }}
 {{- if hasKey . "worktree" }}
 {{- $worktree = .worktree }}
 {{- end }}
 
-プレビューを開いたら、[ask-user] で承認を取る。
+After preview, obtain explicit approval with `[ask-user]`.
 {{ if .issue }}
-gate を出す前に `gh repo view` を実行する。終了ステータスが 0 でなければ（`gh` が無い、未認証、GitHub remote が無い）、**issue 系の 2 つを選択肢から外し、「承認&継続」「承認のみ」の 2 択にする**。判定コマンドの出力はユーザーに見せない。
+If the artifact needs an issue, run `gh repo view` before showing issue choices. If GitHub is
+unavailable or the repository has no GitHub remote, omit issue choices and show only proceed/approve.
 {{ end }}
 {{- if $worktree }}
-gate を出す前に次の 2 つを確認する。どちらかが失敗したら、**worktree の選択肢を外して「承認&継続」「承認のみ」の 2 択にする**。判定コマンドの出力はユーザーに見せない。
+Before showing the gate, verify the worktree route is available. If either check fails, omit the
+worktree option and show only proceed/approve:
 
 ```bash
 test "${HERDR_ENV:-}" = 1
 git rev-parse --git-dir
 ```
 {{ end }}
-- 質問: 「{{ .artifact }} を `<path>` に書いた。この内容で{{ .nextLabel }}に進んでよいか」
-- 選択肢:
+
+- Question: "`{{ .artifact }}` is at `<path>`. May I {{ .nextLabel }} with this content?"
+- Options:
 {{- if $worktree }}
-  - **承認&worktree で委譲** — worktree を新しい workspace として切り、そこで起動した Claude セッションに{{ .nextLabel }}を渡す（herdr 管理下のときだけ出す）
+  - **Approve and delegate via worktree** — create a new workspace and hand off {{ .nextLabel }} (Herdr only)
 {{- end }}
-  - **承認&継続** — {{ .nextLabel }}へ進む
-  - **承認のみ** — {{ .artifact }} を `~/docs/<owner>/<repo>/` に残してここで終わる
+  - **Approve and continue** — proceed to {{ .nextLabel }}
+  - **Approve only** — retain the {{ .artifact }} and stop
 {{- if .issue }}
-  - **承認&継続（issue化）** — issue を立てて番号を追記し、{{ .nextLabel }}へ進む（`gh` が使えるときだけ出す）
-  - **承認（issue化）** — issue を立てて番号を追記し、ここで終わる（`gh` が使えるときだけ出す）
+  - **Approve and create an issue, then continue** — create and link an issue, then proceed
+  - **Approve and create an issue only** — create and link an issue, then stop
 {{- end }}
 
-**修正は選択肢に出さない。** 直したい点は「その他」の自由入力で受け取る。**中止も選択肢に出さない。** 何も選ばずに閉じられたら、そこで止める。
-
-どれを選んでも、処理に入る前にファイルを読み直して手編集を取り込む。
-
+Do not add a modification or cancellation choice. Accept modifications through free-form input. If
+the user closes the prompt without a selection, stop and retain the artifact. Re-read the artifact
+before processing any selected branch.
 {{- if $worktree }}
-### 承認&worktree で委譲
+### Approve and delegate via worktree
 
-下の「worktree へ委譲する」節に従う。
+Follow the `worktree-handoff` section.
 {{ end }}
-### 承認&継続
+### Approve and continue
 
-ファイルの絶対パスを次へ渡し、下の引き継ぎ節に従って進む。
+Pass the artifact's absolute path to the next skill.
 
-### 承認のみ
+### Approve only
 
-{{ .artifact }} は `~/docs/<owner>/<repo>/` に残る。次のスキルは起動しない。ファイルの絶対パスを最終報告して終了する。
+Leave the artifact in its external documentation directory, report its absolute path, and stop.
 {{ if .issue }}
-### issue 化を伴う分岐
+### Issue branches
 
-「承認&継続（issue化）」と「承認（issue化）」はどちらも次の手順を踏む。
-
-1. `gh issue create --title "<ファイルの H1 見出し>" --body-file "<ファイルの絶対パス>"` を実行する。本文はファイル全文をそのまま渡す（タイトルと H1 が重複するが加工しない）
-2. 失敗したら、ファイルには何も追記せず、失敗内容を報告して承認 gate に戻る
-3. 成功したら、H1 見出しの直後に次の 1 行を挿入する。同じ形式の行が既にあるなら置き換える（再 issue 化で行が積み上がらないようにする）
-
-   ```markdown
-   > Issue: [#123](https://github.com/owner/repo/issues/123)
-   ```
-
-4. ファイルは削除しない。`~/docs/<owner>/<repo>/` に残したままにする
-5. issue の番号と URL を報告する
-
-そのうえで、「承認&継続（issue化）」なら下の引き継ぎ節に従って進み、issue 番号も次へ伝える。「承認（issue化）」ならファイルの絶対パスと issue 番号を最終報告して終了する。
+Run `gh issue create --title "<H1>" --body-file "<absolute path>"`. On failure, do not modify the
+artifact. On success, add or replace one issue link immediately after the H1 and report the URL.
+Keep the artifact. Continue only for the continue branch.
 {{ end }}
-### その他（自由入力）
+### Free-form modification
 
-修正指示として扱う。内容を反映し、self-review からやり直して、プレビューと承認 gate をもう一度通す。
-
-### 何も選ばれなかった場合
-
-中止として扱い、そこで止める。ファイルは `~/docs/<owner>/<repo>/` に残したままにする。
+Apply the requested changes, re-run self-review, preview, and this approval gate.

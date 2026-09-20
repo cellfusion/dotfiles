@@ -1,79 +1,98 @@
 ---
 name: writing-plans
 description: >-
-  spec や要件が固まった多段階の作業を、コードに触る前に実装プランへ落とすときに使う。
-  architectural な設計が固まった後など、複数段階の実装に plan が必要な場合だけ起動する。
-  プランは agent-docs-dir plans が返す場所に書き、実行方法に応じて後段へ引き継ぐ。
+  Turn finalized requirements and architecture into an actionable implementation plan before coding.
+  Use it only for multi-stage work where the plan will guide execution and verification.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# 実装プランを書く
+# Write an Implementation Plan
 
-## 概要
+A plan is a coordination artifact, not a substitute for understanding. The parent owns the purpose,
+assumptions, design decisions, and adoption of review feedback.
 
-plan は、親が直接書いても、必要に応じて child に書かせてもよい。小さな plan では親が対象コードを読んで task、依存関係、検証方法を決める。長時間の調査、独立した task 分解、別の観点による確認が必要な場合だけ `plan-author` や review child を使う。
+## When to use
 
-親は plan の目的、前提、採用判断に責任を持つ。child の利用は品質を上げる手段であり、plan 作成の前提ではない。
+Use this skill when requirements and architecture are sufficiently settled and implementation has
+multiple stages, dependencies, or integration boundaries. Do not create a formal plan for a clear
+local edit. Split independent subsystems into separate plans when each can produce a working,
+testable unit.
 
-plan がどうあるべきかの基準は、`_criteria-plan.md` と必要な validator が持つ。
+## Destination
 
-**保存先**: `~/.agents/skills/_shared/scripts/agent-docs-dir plans` が返すディレクトリの
-`YYYY-MM-DD-<feature-name>.md`（プロジェクト側 CLAUDE.md の指定があればそちらを優先）
+Before writing, resolve the external plan directory:
 
-**始める前に** `~/.agents/skills/_shared/scripts/agent-docs-dir plans` を実行する。保存先を作って
-絶対パスを 1 行で返す。保存先は `~/docs/<owner>/<repo>/plans/` である。
+```bash
+PLANS="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)"
+```
 
-保存先はリポジトリの作業ツリーの外にある。本体チェックアウトから呼んでも worktree から呼んでも
-同じ絶対パスになるので、後段のスキルへは絶対パスで渡す。
+Create `YYYY-MM-DD-<feature-name>.md` there unless project instructions specify another destination.
+The plan directory is outside the repository. Pass its absolute path to later skills.
 
-## スコープ確認
+## Plan contents
 
-spec が独立した複数のサブシステムに跨っているなら、本来 brainstorming で分割されているはずのもの。されていないなら、サブシステムごとにプランを分けることを提案する。各プランは単体で動作しテスト可能なソフトウェアを生む単位にする。
+Include only what the implementation needs:
 
-## plan を書く
+- purpose and non-goals
+- approved requirements and constraints
+- architecture and data flow
+- ordered tasks with dependencies
+- files or modules each task may change
+- acceptance criteria
+- verification commands and expected evidence
+- rollback or migration considerations
+- unresolved decisions and the user needed to resolve them
 
-`~/.agents/skills/_shared/scripts/agent-docs-dir plans` を実行して保存先を決める。親が plan を書く場合も、child に書かせる場合も、plan の絶対 path を後段へ渡す。
+Each task should be independently understandable and small enough to verify. State complexity and
+work class when the downstream routing policy requires them. Do not let an implementer invent
+architecture or expand scope.
 
-child に書かせる場合は、目的、承認済み spec の絶対 path、既知の制約、plan の保存先だけを渡す。child が質問した場合は、親が内容を確認してからユーザーへ転送する。親が判断を隠して child に決めさせない。
+## Authoring
 
-## plan を確認する
+The parent may write the plan directly. Delegate plan writing only when independent research,
+long-running decomposition, or a separate perspective is worth the cost. If a child writes it,
+provide only purpose, approved specification path, known constraints, and destination. The parent
+reviews and adopts the result; a child cannot make hidden design decisions.
 
-親は plan を読み、task の依存関係、変更ファイル、検証方法、実装可能性を確認する。plan が大きい、独立 task が多い、または別の確認が必要な場合だけ `plan-author` や `reviewer` を追加する。
+## Review the plan
 
-plan の task 番号、依存関係、同一 wave のファイル衝突は `paseo-plan-dependency-validate` などの既存 validator で確認する。validator の指摘を採用するかは親が決める。重大な曖昧さや実装を妨げる欠陥が残る場合だけ、ユーザーへ確認してから plan を直す。
+Before presenting it:
 
-重大な曖昧さや実装を妨げる指摘が残った場合、親は次のいずれかを選ぶ。
+1. read it from disk
+2. validate task numbering and dependencies
+3. inspect file overlap within parallel waves
+4. check acceptance criteria and verification commands
+5. confirm the plan produces a working, testable result
+6. record rejected findings and reasons
 
-- 指摘を根拠付きで退ける
-- plan の未解決事項に残して実装時の制約にする
-- ユーザーへ確認して plan を修正する
+Use an existing dependency validator when available. Do not silently discard validator findings.
+Reject them with rationale, preserve them as an unresolved constraint, or ask the user.
 
-指摘を黙って捨てない。
+## Approval and preview
 
-{{ includeTemplate "agent-skills/_preview-tab.md" . }}
+Show the plan at its external absolute path. Obtain user approval before implementation when the plan
+contains unresolved consequential choices, external operations, public contracts, destructive actions,
+or a worktree delegation choice. Do not add a formal approval gate merely to restate a clear user
+request.
 
-{{ includeTemplate "agent-skills/_approval-gate.md" (merge (dict "artifact" "plan" "nextLabel" "実装" "issue" false "worktree" true) .) }}
+If a preview editor is used, re-read the plan after the user responds. The on-disk version is
+canonical. Incorporate manual edits before handing the plan to `executing-plans` or
+`multi-agent-development`.
 
-plan は issue にしない。実装エージェント（multi-agent-development / executing-plans）が plan ファイルのパスを受け取って直接読む前提であり、ファイルが無いと実行方式が成り立たない。
+Never run an implementation or cleanup command while waiting for approval.
 
-{{ includeTemplate "agent-skills/_worktree-handoff.md" . }}
+## Handoff
 
-## 実装への引き継ぎ
+Choose execution based on plan structure:
 
-承認されたら実行方式を決める。判断の基準は subagent が使えるかどうかではなく、plan の規模である。
+- sequential small plan with no parallelism: `executing-plans`
+- independent tasks, isolation, or task/final review gates: `multi-agent-development`
 
-- **並列にできるタスクを持つ plan、または worktree の隔離が要る plan** は
-  multi-agent-development に渡す。task ごとに Paseo の子を立て、間に review recipe を挟む
-- **実装が小さく、MAD を使わなくてよい plan** は executing-plans に渡す。このセッションで直列に
-  実行し、タスクの区切りでレビューする
+Re-read the approved plan immediately before handoff. Pass its absolute path, not copied prose.
 
-どちらに渡すか迷ったら、task の依存関係、変更ファイルの衝突、レビューの必要性で決める。並列性や隔離が不要なら `executing-plans` を使う。
+## Completion
 
-`multi-agent-development` を選んだ場合だけ、MAD の strict contract と worktree の隔離を使う。
-
-## 注意
-
-- plan の内容を親が判断できる規模なら、child の review を追加しない
-- task の依存関係とファイル衝突は、可能なら既存 validator で確認する
-- plan の内容や実行方法でユーザーの選択が必要な場合だけ、選択肢と影響を示して確認する
-- plan を読み直し、手編集や作業環境の差分を取り込んでから後段へ渡す
+A plan is complete when it is saved, self-reviewed, validated, and either approved for execution or
+explicitly retained without execution. Report the path, validation evidence, unresolved decisions,
+and selected downstream skill.

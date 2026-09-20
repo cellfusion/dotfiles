@@ -1,251 +1,152 @@
 ---
 name: systematic-debugging
 description: >-
-  バグ・テスト失敗・想定外の挙動に当たったとき、修正案を出す前に使う。
-  「動かない」「直らない」「なぜか落ちる」といった依頼の入口。
-  根本原因を特定してから修正する手順を強制する。
+  Identify root cause before proposing a fix for a bug, test failure, build failure, performance issue,
+  or unexpected behavior. Gather evidence, test one hypothesis at a time, and stop when the evidence
+  no longer supports the current approach.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Systematic Debugging
 
-## 概要
+Do not start with a fix. Start by establishing what failed, how to reproduce it, and where the
+first incorrect state appears. A symptom-level patch without a causal explanation is not a valid
+completion.
 
-**中核**: 修正を試みる前に必ず根本原因を突き止める。症状への対処は失敗である。
+## When to use this skill
 
-**この手順の字面を破ることは、デバッグの精神を破ることである。**
+Use it for test failures, production bugs, unexpected behavior, build or integration failures,
+performance regressions, and flaky or environment-dependent failures. Use the full process for
+high-risk incidents; use the compact process below for a deterministic, low-risk failure.
 
-## 鉄則
+## Phase 1: establish evidence
 
+Before changing code:
+
+1. Read the complete error, warning, stack trace, path, line, and error code.
+2. Reproduce the failure with the smallest reliable command or scenario.
+3. Record frequency, inputs, environment, and the last known good revision.
+4. Inspect recent diff, dependency, configuration, and environment changes.
+5. For multi-layer systems, observe each boundary without logging secrets.
+6. Trace the invalid value backward to its first incorrect producer.
+
+Use redacted diagnostics. Never print tokens, passwords, private keys, full environment values,
+request bodies containing secrets, or unrestricted identity/keychain output. Record only presence,
+counts, identifiers safe for the project, and the command/exit code.
+
+For a multi-layer failure, capture one bounded run:
+
+```text
+boundary: input -> output -> relevant state
+boundary: next layer input -> output -> relevant state
 ```
-根本原因の調査より先に修正しない
+
+Stop when the evidence identifies the first layer that diverges from the expected contract.
+
+## Phase 2: compare a working pattern
+
+Find a working example in the same repository or supported version. Read the relevant reference
+implementation completely enough to understand its preconditions. List every difference between the
+working and failing paths; do not dismiss a difference without evidence. Include configuration,
+permissions, dependency versions, timing, and data shape.
+
+## Phase 3: state one hypothesis
+
+Write one falsifiable hypothesis:
+
+```text
+Because <evidence>, <component> is the first incorrect producer of <state>.
+The smallest observation that can disprove this is <test/command>.
 ```
 
-Phase 1 を終えていないなら、修正案を出してはならない。
+Test only that hypothesis with the smallest read-only observation or one controlled change. Do not
+apply several fixes at once. If it fails, preserve the evidence and return to Phase 1 with a new
+hypothesis. Do not accumulate speculative patches.
 
-## いつ使うか
+## Phase 4: implement and prove the fix
 
-技術的な問題すべてに使う。
+After the root cause is supported:
 
-- テスト失敗
-- 本番のバグ
-- 想定外の挙動
-- 性能問題
-- ビルド失敗
-- 統合の問題
+1. Create the smallest regression test or reproducible check before the fix when practical.
+2. Make one focused correction at the root cause.
+3. Run the regression check and relevant broader checks.
+4. Reproduce the original scenario and confirm the original symptom is gone.
+5. Check for collateral regressions and cleanup unrelated diagnostic changes.
+6. Record commands, exit codes, and evidence before claiming success.
 
-**特に次のときに使う**:
+Use `test-driven-development` for a behavior change with a usable test harness. For configuration,
+documentation, generated files, or environments without a meaningful unit-test boundary, use the
+strongest available static, integration, or reproducibility check instead and record why TDD was not
+applicable.
 
-- 時間的な圧力がある（緊急時ほど当て推量が魅力的に見える）
-- 「1 箇所直せば済む」ように見える
-- 既に複数の修正を試した
-- 前の修正が効かなかった
-- 問題を完全には理解していない
+## Flaky or environment-dependent failures
 
-**次を理由に飛ばさない**:
+If the failure cannot be reproduced:
 
-- 単純に見える（単純なバグにも根本原因がある）
-- 急いでいる（急ぐと必ず手戻りする）
-- すぐ直せと言われている（体系的にやるほうが空転より速い）
+- record exact attempts, environment, timing, and available logs
+- compare the failing and successful environments
+- add safe observability or a deterministic reproduction harness
+- do not claim the root cause is absent merely because one run passed
+- distinguish `confirmed_root_cause`, `likely_root_cause`, and `not_reproduced`
 
-## 4 つの Phase
+When external services are involved, do not retry destructive operations. Use read-only inspection
+or a disposable fixture.
 
-各 Phase を終えてから次へ進む。
+## Escalation boundary
 
-### Phase 1: 根本原因の調査
+Do not use an arbitrary number of retries as proof of an architectural problem. Escalate when the
+evidence shows that the current component boundary, contract, or architecture cannot satisfy the
+requirement, or when repeated hypotheses fail without new information. At that point:
 
-**いかなる修正よりも前に**:
+1. summarize confirmed facts and rejected hypotheses
+2. state the smallest architectural choices
+3. explain impact, migration, and rollback
+4. ask the user before broad refactoring or redesign
 
-1. **エラーメッセージを丁寧に読む**
-   - エラーや警告を読み飛ばさない
-   - 解決そのものが書かれていることが多い
-   - スタックトレースを最後まで読む
-   - 行番号、ファイルパス、エラーコードを控える
+A timeout, missing dependency, invalid schema, or known test failure is not automatically an
+architecture issue; classify it and fix the deterministic cause first.
 
-2. **安定して再現する**
-   - 確実に引き起こせるか
-   - 正確な手順は何か
-   - 毎回起きるか
-   - 再現できないなら、推測せずデータを集める
+## Compact path for obvious failures
 
-3. **直近の変更を確認する**
-   - 何が変わってこうなったか
-   - `git diff`、直近のコミット
-   - 新しい依存、設定変更
-   - 環境の差分
+For a deterministic syntax error or a failure whose message identifies the exact changed line:
 
-4. **多層システムでは証拠を集める**
+1. capture the fresh error
+2. verify the referenced line and relevant recent diff
+3. make one correction
+4. rerun the exact failing command and a focused regression check
+5. report evidence
 
-   システムが複数のコンポーネントを持つ場合（CI → build → signing、API → service → database）、**修正案を出す前に診断用の計測を入れる**。
+Do not skip this process merely because the fix appears obvious.
 
-   ```
-   各コンポーネント境界について:
-     - 何が入ってくるかを記録する
-     - 何が出ていくかを記録する
-     - 環境変数・設定の伝播を確認する
-     - 各層での状態を確認する
+## Debugging record
 
-   1 回走らせて、どこで壊れているかを示す証拠を集める
-   → 証拠を分析して壊れているコンポーネントを特定する
-   → そのコンポーネントを調査する
-   ```
+Keep a concise external record when the investigation spans multiple attempts:
 
-   例（多層システム）:
-   ```bash
-   # 層 1: ワークフロー
-   echo "=== workflow で見える secret ==="
-   echo "IDENTITY: ${IDENTITY:+SET}${IDENTITY:-UNSET}"
+```text
+incidentId
+repository/revision
+environment summary without secrets
+reproduction command and exit code
+observations
+hypotheses and outcomes
+confirmed root cause
+changed files
+verification commands and exit codes
+remaining uncertainty
+```
 
-   # 層 2: ビルドスクリプト
-   echo "=== build script の env ==="
-   env | grep IDENTITY || echo "IDENTITY not in environment"
+Do not overwrite a previous investigation. Link follow-up attempts to the same incident ID.
 
-   # 層 3: 署名スクリプト
-   echo "=== keychain の状態 ==="
-   security list-keychains
-   security find-identity -v
-   ```
+## Stop conditions
 
-   これで**どの層で切れているか**が分かる（secret → workflow ✓、workflow → build ✗）。
+Stop and ask when:
 
-5. **データの流れを遡る**
+- the reproduction or expected behavior is unclear
+- the proposed fix expands scope or permissions
+- diagnostics would expose secrets
+- verification cannot distinguish competing hypotheses
+- the current approach has no new evidence
+- a redesign or destructive operation is required
 
-   エラーがコールスタックの深いところで出ている場合、[root-cause-tracing.md](root-cause-tracing.md) の逆方向トレース手法を読む。
-
-   短縮版:
-   - 不正な値はどこで生まれたか
-   - 不正な値を持ってこれを呼んだのは誰か
-   - 発生源に行き着くまで上へ遡る
-   - 症状ではなく発生源で直す
-
-### Phase 2: パターン分析
-
-**直す前にパターンを見つける**:
-
-1. **動いている実例を探す** — 同じコードベースで似た動作をしているコードを見つける
-2. **参照実装と比べる** — パターンを実装するなら参照実装を**最後まで**読む。流し読みしない。適用する前に完全に理解する
-3. **差分を洗い出す** — 動いているものと壊れているものの違いをすべて列挙する。どんなに小さくても「これは関係ない」と決めつけない
-4. **依存を把握する** — 他に何が要るか。どの設定・環境が要るか。何を前提にしているか
-
-### Phase 3: 仮説と検証
-
-**科学的方法で進める**:
-
-1. **仮説を 1 つ立てる** — 「Y だから X が根本原因だと考える」と明確に述べる。書き出す。曖昧にしない
-2. **最小限で検証する** — 仮説を試す**最小の**変更を加える。一度に 1 変数。複数を同時に直さない
-3. **進む前に確認する** — 効いたか。効いた → Phase 4。効かなかった → **新しい仮説**を立てる。修正を積み増さない
-4. **分からないときは分からないと言う** — 分かったふりをしない。助けを求める。もっと調べる
-
-### Phase 4: 実装
-
-**症状ではなく根本原因を直す**:
-
-1. **失敗するテストケースを作る**
-   - 最も単純な再現
-   - 可能なら自動テスト。フレームワークが無ければ使い捨てのスクリプト
-   - 直す前に必ず用意する
-   - test-driven-development を使って正しい失敗テストを書く
-
-2. **単一の修正を実装する**
-   - 特定した根本原因に対処する
-   - 一度に 1 変更
-   - 「ついでに」の改善をしない
-   - リファクタリングを抱き合わせない
-
-3. **修正を検証する**
-   - テストは通るか
-   - 他のテストは壊れていないか
-   - 問題は本当に解消したか
-   - 成功を主張する前に verification-before-completion を使う
-
-4. **修正が効かないとき**
-   - 止まる
-   - **試した修正の回数を数える**
-   - 3 回未満なら Phase 1 に戻り、新しい情報で再分析する
-   - **3 回以上なら止まってアーキテクチャを疑う（次項）**
-   - アーキテクチャの議論をせずに 4 回目を試さない
-
-5. **3 回以上失敗したらアーキテクチャを疑う**
-
-   アーキテクチャの問題を示すパターン:
-   - 修正のたびに別の場所で新しい共有状態・結合・問題が現れる
-   - 修正に「大規模なリファクタリング」が必要になる
-   - 修正のたびに別の場所で新しい症状が出る
-
-   **止まって前提を疑う**:
-   - このパターンは根本的に妥当か
-   - 惰性で続けているだけではないか
-   - 症状を直し続けるより、アーキテクチャを作り直すべきではないか
-
-   **これ以上修正を試す前にユーザーと議論する。**
-
-   これは仮説の失敗ではなく、**アーキテクチャが誤っている**という結論である。
-
-## 赤信号 — 止まって手順に戻る
-
-こう考えていたら止まる。
-
-- 「とりあえず直して、調査は後で」
-- 「X を変えて試してみよう」
-- 「複数変更してテストを回そう」
-- 「テストは省いて手で確認する」
-- 「たぶん X なので直す」
-- 「完全には理解していないがこれで動くかもしれない」
-- 「パターンは X だが自分は少し変えて適用する」
-- 「主な問題はこれです」（調査せずに修正を列挙している）
-- データの流れを追う前に解決策を出している
-- **「もう 1 回だけ試す」（既に 2 回以上試している）**
-- **修正のたびに別の場所で新しい問題が出る**
-
-**どれも意味は同じ: 止まる。Phase 1 に戻る。**
-
-**3 回以上失敗しているなら**: アーキテクチャを疑う（Phase 4.5）。
-
-## ユーザーからの「やり方が違う」の合図
-
-- 「それは起きていないの?」 — 検証せずに仮定した
-- 「それで分かるの?」 — 証拠収集を先に入れるべきだった
-- 「推測をやめて」 — 理解せずに修正を出している
-- 「よく考えて」 — 症状ではなく前提を疑うべき
-- 「詰まってる?」（苛立ち） — アプローチが機能していない
-
-**これらを見たら止まって Phase 1 に戻る。**
-
-## よくある言い訳
-
-| 言い訳 | 実際 |
-|---|---|
-| 「単純な問題だから手順は要らない」 | 単純な問題にも根本原因がある。単純なバグなら手順も速い |
-| 「緊急で手順を踏む時間がない」 | 体系的なデバッグは当て推量の空転より速い |
-| 「まず試して、それから調査する」 | 最初の修正がその後の型を決める。最初から正しくやる |
-| 「修正が効くと確認してからテストを書く」 | テストされていない修正は定着しない。先にテストを書けば証明できる |
-| 「まとめて直せば時間の節約になる」 | 何が効いたか切り分けられない。新しいバグを生む |
-| 「参照実装が長いので要点だけ真似る」 | 部分的な理解はバグを保証する。最後まで読む |
-| 「問題が見えたから直す」 | 症状が見えたことと根本原因を理解したことは違う |
-| 「もう 1 回だけ試す」（2 回以上失敗後） | 3 回以上の失敗はアーキテクチャの問題。修正ではなくパターンを疑う |
-
-## 早見表
-
-| Phase | やること | 完了条件 |
-|---|---|---|
-| **1. 根本原因** | エラーを読む、再現する、変更を確認する、証拠を集める | 何が・なぜ起きているか分かる |
-| **2. パターン** | 動く実例を探し、比較する | 差分を特定できる |
-| **3. 仮説** | 仮説を立て、最小限で検証する | 確認できたか、新しい仮説が立った |
-| **4. 実装** | テストを作り、直し、検証する | バグが解消しテストが通る |
-
-## 「根本原因が無い」と分かったとき
-
-体系的な調査の結果、本当に環境依存・タイミング依存・外部要因だと判明した場合:
-
-1. 手順は完了している
-2. 何を調査したかを記録する
-3. 適切な処理を実装する（再試行、タイムアウト、エラーメッセージ）
-4. 将来の調査のために監視・ログを足す
-
-**ただし**: 「根本原因が無い」の 95% は調査不足である。
-
-## 補助テクニック
-
-- [root-cause-tracing.md](root-cause-tracing.md) — コールスタックを遡って元の引き金を見つける
-- [defense-in-depth.md](defense-in-depth.md) — 根本原因を見つけた後、複数の層に検証を足す
-- [condition-based-waiting.md](condition-based-waiting.md) — 任意の待ち時間を条件のポーリングに置き換える
+Never claim a bug is fixed from a code change alone.

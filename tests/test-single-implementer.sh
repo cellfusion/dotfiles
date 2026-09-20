@@ -42,6 +42,8 @@ cat > "$snapshot" <<'JSON'
 JSON
 
 script="$root/private_dot_agents/skills/task-routing/scripts/executable_single-implementer"
+export MAD_SHARE="$root/private_dot_local/private_share/agent-config"
+export MAD_GENERATOR="$root/private_dot_local/bin/executable_agent-config"
 if AGENT_ENV=primary "$script" prepare \
   --backend paseo \
   --packet "$packet" \

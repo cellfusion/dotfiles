@@ -1,122 +1,124 @@
 ---
 name: brainstorming
 description: >-
-  意図や設計が未確定な変更を整理する。明確で局所的な変更には使わず、必要な範囲だけ質問・設計・承認を行う。
+  Clarify intent and design only when a request leaves meaningful choices unresolved. Avoid formal
+  gates for clear local changes; ask the smallest question that prevents costly rework.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# 変更の意図を確認し、必要な範囲だけ設計する
+# Clarify Intent and Design
 
-brainstorming は判断を助けるためのスキルであり、すべての変更に適用する承認手順ではない。
-ユーザーが目的、対象、制約、完了条件を十分に示している場合は、それを再質問せず作業へ進む。
-このスキル自身を変更するときは、brainstorming を再帰的に起動しない。
+Use brainstorming to reduce ambiguity, not as a mandatory ceremony. If the user has already given
+the purpose, scope, constraints, and success criteria, do not ask them to repeat it.
 
-## まず選ぶ経路
+Do not recursively invoke brainstorming while changing this skill.
 
-依頼を次の経路のどれで扱うかを判断する。分類をユーザーへ宣言するのは、経路によって質問や成果物が変わる場合だけでよい。分類は推奨であり、親エージェントは安全性と作業量を見て軽い経路または重い経路を選べる。
+## Choose a route
 
-### direct
+### Direct
 
-次の条件を満たす場合は、設計承認なしで通常の開発手順へ進む。
+Use direct execution when:
 
-- 変更対象が既存の処理に限定されている
-- 期待する挙動が依頼文から確定している
-- 重要な設計選択や外部操作がない
-- 変更範囲と検証方法を見積もれる
+- the change is confined to an existing flow
+- expected behavior is clear
+- there is no important design choice or external operation
+- the scope and verification can be estimated
 
-必要な手順は、関連ファイルを読む、変更する、検証する、結果を報告する、である。設計文書や確認質問を追加しない。
+Read the relevant files, implement, verify, and report. Do not create a specification or approval
+gate just for formality.
 
-### bounded
+### Bounded
 
-既存の処理を変えるが、挙動や実装方針に選択肢が残る場合に使う。対象、方針、触るファイル、検証方法を数行で整理する。未解決の選択が無ければ、その整理を作業計画として使って実装へ進む。ユーザーの依頼をもう一度承認として要求しない。
+Use bounded design when an existing flow is changing but one or more implementation choices remain.
+Write a short design containing purpose, files, chosen approach, rejected alternatives, risks,
+error handling, and verification. If no consequential choice remains, use that design as the
+implementation plan without asking for another approval.
 
-挙動が変わる選択肢をユーザーが決めていない場合だけ、最も影響の大きい質問を一つ行う。回答後に短い設計を示し、合意した内容で実装する。
+Ask one question only when the unresolved choice would change behavior, scope, data, permissions,
+or external side effects. After the answer, continue with the agreed design.
 
-### architectural
+### Architectural
 
-新しいサブシステム、複数層にまたがる変更、他のコンポーネントが依存する契約の変更に使う。次の順序を基本とするが、作業量に応じて文書を省略できる。
+Use the architectural route for a new subsystem, multiple layers, public contracts, migrations,
+authentication, or several valid designs:
 
-1. 目的、非目標、制約、成功条件を確認する
-2. 主要な案を 2〜3 個比較し、推奨案を示す
-3. アーキテクチャ、データの流れ、エラー処理、検証方法を設計する
-4. 必要なら spec と plan を作る
-5. 設計選択の承認を得てから実装する
+1. state purpose, non-goals, constraints, and success criteria
+2. compare two or three viable approaches
+3. recommend one and describe data flow, error handling, and verification
+4. create a specification or plan only when it will be used
+5. obtain a decision before implementation
 
-spec の作成、spec の別エージェントによる判定、プレビュー、MAD の利用は自動的な必須条件ではない。設計の規模、リスク、ユーザーの希望に応じて選ぶ。
+Do not make child agents, preview tabs, or MAD mandatory when the scope does not justify them.
 
-### spike
+### Spike
 
-「可能か」「どの案がよいか」を安く確かめる依頼に使う。問い、試す内容、成功条件を短く定め、必要ならユーザーへ確認してから調査する。使い捨ての調査結果やコードを製品の変更として扱わない。
+Use a spike to answer whether something is possible or which option is better. Define the question,
+small experiment, and success criteria. Keep disposable experiments separate from product changes.
 
-## 承認が必要な場合
+## When to ask the user
 
-次の場合だけ、実行前にユーザーへ確認する。
+Ask before execution when:
 
-- 破壊的操作、外部 endpoint、課金、公開、commit、apply など、取り消しにくい操作を行う
-- 依頼文から決まらない挙動の選択があり、結果が変わる
-- 目的、対象、成功条件のいずれかが不足しており、推測すると手戻りが大きい
-- 作業中に当初の目的や変更範囲を変える必要がある
+- an irreversible operation, external endpoint, publication, commit, push, or `chezmoi apply` is
+  required
+- the request leaves a consequential behavioral choice unresolved
+- purpose, scope, or success criteria are missing and guessing risks rework
+- the work must expand beyond the original request
 
-「実装を始めてよいか」だけを確認するための形式的な gate は作らない。ユーザーが具体的な変更を依頼していることは、その範囲の実装を始める許可である。
+A concrete request is already permission to begin that requested scope. Do not ask “may I start?”
+when no decision is needed.
 
-## 対話の進め方
+## Conversation flow
 
-1. 依頼文と関連する既存のファイルを読む
-2. 目的、制約、成功条件を確認する。依頼文に書かれている内容は繰り返し質問しない
-3. 欠けている情報がある場合だけ、影響の大きい質問から一つずつ尋ねる
-4. 判断できるようになったら、経路に必要な最小限の設計を示す
-5. ユーザーの回答と設計を新しい制約として扱う
-6. 実装後は、変更範囲と検証結果を確認する
+1. Read the request and relevant existing files.
+2. Extract purpose, constraints, scope, and success criteria.
+3. Ask only for missing high-impact information.
+4. Present the smallest useful design when choices remain.
+5. Treat the user's answer as a new constraint.
+6. Implement and verify the selected design.
 
-質問は選択式にできるが、選択肢を増やすために問題を複雑にしない。質問を続けるより、安全な仮定を明示して進めたほうがよい場合は、仮定を示して作業する。
+Use explicit safe assumptions instead of an endless questionnaire when the assumption is reversible and
+does not change the user's outcome.
 
-## 子エージェントと他のスキル
+## Children and related skills
 
-子エージェントへの委譲は必須ではない。次の場合にだけ使う。
+Child agents are optional. Use them only when independent research, parallel implementation, a
+separate perspective, or user-requested delegation is worth the coordination cost.
 
-- 独立した調査や実装を並行して進められる
-- 長時間の調査を親の作業と分ける価値がある
-- 別の観点によるレビューが必要である
-- ユーザーが委譲を指定した
+- Small sequential plans: `executing-plans`.
+- Independent tasks, multiple children, strict artifacts, or required isolation:
+  `multi-agent-development`.
+- Finalized multi-stage architecture: `writing-plans`.
+- Unknown bug cause: `systematic-debugging`.
 
-子エージェントを使えないことだけを理由に作業を停止しない。親が直接調査・実装・レビューできる場合は、その経路を使う。
+This skill does not automatically chain the next skill. The parent chooses the execution route.
 
-- 小さな plan は `executing-plans` で親が直列に実行する
-- 独立した task、worktree、複数の child、厳密な成果物契約が必要な場合だけ `multi-agent-development` を使う
-- architectural な設計が固まり、複数段階の実装計画が必要な場合だけ `writing-plans` を使う
-- バグの根本原因が未確定なら `systematic-debugging` を使う
+## Re-evaluate when complexity appears
 
-このスキルは次のスキルを自動的に連鎖起動しない。次の手順を選ぶのは親エージェントである。
+Do not switch to a heavier route merely because an incidental detail appeared. Continue if the
+purpose, scope, risk, and verification remain explainable. Re-plan or ask when the new complexity
+introduces a consequential design choice, destructive operation, or dependency on another owner.
 
-## 経路を重くする場合
+## Minimal design format
 
-作業中に複雑さが見つかったら、直ちに処理を中断して重い経路へ移す必要はない。次を確認する。
+Use only the fields needed:
 
-- 追加された複雑さが元の目的に必要か
-- 変更範囲と検証方法をまだ説明できるか
-- 破壊的操作や他の利用者への影響が増えたか
+- purpose
+- scope and files
+- selected approach
+- rejected alternatives and why
+- risks and error handling
+- verification
+- unresolved decisions
 
-説明でき、リスクが増えていなければ現在の経路で続ける。説明できない、または設計選択が増えた場合は、変更点と選択肢をユーザーへ示してから経路を変更する。
+Do not create a specification, diagram, or review loop for a trivial change.
 
-## 設計の最小形式
+## Completion
 
-設計を示す場合は、次の項目から必要なものだけを使う。
+- Direct: report the change and fresh verification.
+- Bounded: implement the agreed design and report evidence.
+- Architectural: leave the approved specification/plan and hand off to the selected route.
+- Spike: report the experiment, evidence, limitations, and recommendation.
 
-- 目的
-- 変更する処理とファイル
-- 採用する方針
-- 採用しない方針と理由
-- エラー処理
-- 検証方法
-- 未解決の選択
-
-簡単な変更を spec、plan、図、レビューラウンドで包まない。複雑な変更で文書を作る場合も、文書を書くこと自体を目的にしない。
-
-## 終了条件
-
-- direct は変更と検証の結果を報告して終了する
-- bounded は合意した設計に沿って実装し、検証結果を報告して終了する
-- architectural は必要な設計文書と計画を作成し、ユーザーが選んだ実行方法へ引き渡す
-- spike は調査結果と推奨案を報告して終了する
-
-成功を主張する前に、適切なテスト、lint、diff、または成果物検査を実行する。検証できなかった項目は未検証として報告する。
+Never claim success without fresh verification or clearly state what remains unverified.

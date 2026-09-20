@@ -1,225 +1,135 @@
 ---
 name: receiving-code-review
 description: >-
-  コードレビューの指摘を受け取ったとき、提案を実装する前に使う。
-  指摘が不明瞭・技術的に疑わしいときは特に使う。
-  同調も盲目的な実装もせず、検証してから動く。
+  Evaluate code-review feedback before implementing it. Verify every actionable item against the
+  codebase, record the decision, and choose a direct or delegated fix route proportional to scope.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# レビューの受け取り方
+# Receive and Act on Code Review
 
-## 概要
+Code review feedback is technical input, not an instruction to agree or implement blindly. Preserve
+the reviewer context, verify the claim against the repository, and make the decision traceable.
 
-コードレビューは技術的な評価であって、感情的な演技ではない。
+## 1. Normalize the feedback
 
-**中核**: 実装する前に検証する。仮定する前に聞く。社交的な心地よさより技術的な正しさ。
+Read all feedback before responding. Assign stable IDs when the reviewer did not provide them:
 
-## 応答の型
-
-```
-レビュー指摘を受け取ったら:
-
-1. 読む: 反応せずに指摘を最後まで読む
-2. 理解する: 要求を自分の言葉で言い直す（できなければ聞く）
-3. 検証する: コードベースの実態と突き合わせる
-4. 評価する: このコードベースにとって技術的に妥当か
-5. 応答する: 技術的な確認、または根拠のある反論
-6. 実装する: 1 件ずつ、それぞれテストする
+```text
+F-001, F-002, ...
 ```
 
-## 何を子に委譲するか
+For each item, capture:
 
-親が持つのは、指摘の受領、不明瞭な指摘をユーザーへ確認すること、押し返すかどうかの判断、
-ユーザーの過去の決定と衝突する場合の相談、実装の順序決定である。
+- reviewer text and source (human, PR review, child reviewer, CI)
+- affected path and line, if any
+- claimed behavior or risk
+- requested outcome
+- priority and confidence, if supplied
 
-次の 3 つは子に委譲する。
+Do not copy secrets or unrelated conversation into the record.
 
-- **指摘をコードベースと突き合わせる検証** — `researcher` を呼ぶ。子には指摘の本文と、読ませたい
-  ファイルの絶対パスを渡す。子は確認できたことと確認できなかったことを分けて返す
-- **使用箇所の確認** — 下の「ちゃんと実装しろ」に対する YAGNI 確認で使う。`researcher` を呼ぶ
-- **修正の実装** — MAD の `implement` recipe を使う。指摘、review package、対象ファイルの絶対
-  パスを渡す。子が TDD と再レビューを担う
+## 2. Verify before deciding
 
-親は修正を自分で書かない。親が書いた修正は独立したレビュアーの判定を受けない。修正の diff と
-テスト出力も親の会話に残り、以降のターンで毎回読み直される。
+For each item, restate the technical claim in one sentence and inspect the relevant code, tests,
+callers, configuration, and supported versions. Confirm:
 
-## 禁止する応答
+1. Is the claim true in this repository and revision?
+2. Does the proposed change preserve existing behavior and compatibility?
+3. Is the current implementation intentional or required by a documented constraint?
+4. Is the affected code actually used? Check callers before accepting broad refactors.
+5. Can the claim be verified with a focused test, static check, or reproducible observation?
 
-**書いてはならない**:
+If verification is incomplete, mark the item `needs_context` rather than treating it as accepted.
+Do not implement an unclear item while waiting for clarification on a related item.
 
-- 「おっしゃる通りです」
-- 「良い指摘ですね」「素晴らしいフィードバックです」
-- 「では実装します」（検証の前に）
+## 3. Decide explicitly
 
-**代わりに**:
+Use one decision per finding:
 
-- 技術的な要求を言い直す
-- 明確化の質問をする
-- 誤っているなら技術的な根拠で押し返す
-- そのまま作業を始める（言葉より行動）
+- `accept`: technically valid and in scope
+- `reject`: technically incorrect, unsupported, or incompatible; preserve the evidence
+- `clarify`: the requested behavior or scope is ambiguous
+- `defer`: valid but intentionally outside the current scope; record the reason and follow-up
+- `duplicate`: already covered by another finding ID
+- `fixed`: implemented and independently verified
 
-## 不明瞭な指摘の扱い
+A useful decision record is:
 
-```
-不明瞭な項目が 1 つでもあるなら:
-  止まる — まだ何も実装しない
-  不明瞭な項目について確認する
-
-理由: 項目どうしが関連していることがある。部分的な理解は誤った実装になる
-```
-
-例:
-
-```
-ユーザー: 「1-6 を直して」
-1,2,3,6 は理解した。4,5 が不明瞭。
-
-❌ 誤り: 1,2,3,6 を今実装し、4,5 は後で聞く
-✅ 正しい: 「1,2,3,6 は理解した。4 と 5 は着手前に確認したい」
+```json
+{
+  "id": "F-001",
+  "decision": "accept",
+  "reason": "The caller can pass an empty value and the changed branch does not reject it.",
+  "evidence": ["src/input.ts:42", "tests/input.test.ts:18"],
+  "scope": "current-task",
+  "nextAction": "add regression test and fix validation"
+}
 ```
 
-## 出どころ別の扱い
+Keep these records in the external review artifact directory, not in the repository working tree.
+When the parent has a project-wide audit log, append a sanitized decision event there instead of
+creating a second incompatible log.
 
-### ユーザーから
+## 4. Choose the implementation route
 
-- **信頼する** — 理解したうえで実装する
-- スコープが不明瞭なら**それでも聞く**
-- 同調の言葉を書かない
-- 行動へ飛ぶか、技術的な確認だけを返す
+Use the smallest safe route:
 
-### 外部レビュアーから
+- direct parent implementation for a small, local, well-understood correction
+- one isolated implementer for a bounded multi-file correction
+- MAD fix/re-review for parallel, architectural, or high-risk work
+- user decision when the fix changes the public contract, scope, or architecture
 
-```
-実装する前に:
-  1. このコードベースにとって技術的に正しいか
-  2. 既存の機能を壊さないか
-  3. 現在の実装にはそうしている理由がないか
-  4. すべてのプラットフォーム・バージョンで成立するか
-  5. レビュアーは全体の文脈を把握しているか
+Do not make child delegation mandatory. Do not let a reviewer choose provider, model, permissions,
+or worktree ownership. Pass only the finding, fixed review package, allowed files, requirements, and
+verification commands.
 
-提案が誤っていると思うなら:
-  技術的な根拠を添えて押し返す
+For multiple accepted findings, order work as:
 
-簡単に検証できないなら:
-  そう言う。「X が無いと検証できない。調べるか、聞くか、進めるか」
+1. blockers and security/data-integrity issues
+2. correctness and compatibility issues
+3. focused tests and error handling
+4. minor cleanup
 
-ユーザーの過去の決定と衝突するなら:
-  先にユーザーと相談する
-```
+Keep unrelated cleanup out of the fix scope.
 
-**方針**: 外部からのフィードバックは、懐疑的に、しかし丁寧に確認する。
+## 5. Verify each fix
 
-## 「ちゃんと実装しろ」に対する YAGNI 確認
+For each accepted item:
 
-```
-レビュアーが「きちんと実装すべき」と言ってきたら:
-  実際の使用箇所をコードベースで grep する
+1. Create or identify the regression test before the fix when the behavior is testable.
+2. Implement only the allowed change.
+3. Run the focused test or static check and record the exit code.
+4. Re-run the relevant broader checks.
+5. Create a fresh diff/review package and verify that the finding is resolved.
+6. Mark the item `fixed` only after independent evidence exists.
 
-  使われていない: 「このエンドポイントは呼ばれていない。削除でよいか（YAGNI）」
-  使われている:   きちんと実装する
-```
+If the reviewer was wrong, respond with concise technical evidence. If the initial rejection was
+wrong, record the correction and proceed without a performative apology.
 
-## 実装の順序
+## 6. GitHub thread replies
 
-```
-複数項目のフィードバックに対して:
-  1. 不明瞭なものを先に確認する
-  2. そのうえでこの順に実装させる
-     - ブロッカー（破壊、セキュリティ）
-     - 単純な修正（typo、import）
-     - 込み入った修正（リファクタリング、ロジック）
-  3. 各修正を個別に子へ渡し、それぞれテストさせる
-  4. リグレッションが無いことを子に確認させる
+Reply to an inline GitHub review comment in its thread, not as a top-level PR comment:
+
+```bash
+gh api --method POST \
+  "repos/<owner>/<repo>/pulls/<pr>/comments/<comment-id>/replies" \
+  -f body="<technical response>"
 ```
 
-## 押し返してよいとき
+Only post after the user or the surrounding workflow authorizes external writes. Keep the response
+factual: state the verification, decision, and commit or artifact containing the fix.
 
-- 提案が既存の機能を壊す
-- レビュアーが全体の文脈を持っていない
-- YAGNI に反する（使われていない機能）
-- このスタックでは技術的に誤っている
-- 互換性のための経緯がある
-- ユーザーのアーキテクチャ上の決定と衝突する
+## Stop conditions
 
-**押し返し方**:
+Stop and ask for a decision when:
 
-- 防御的にならず技術的な根拠で書く
-- 具体的な質問をする
-- 動いているテストやコードを示す
-- アーキテクチャに関わるならユーザーを巻き込む
+- any item is unclear and affects implementation scope
+- feedback conflicts with an explicit user or architecture decision
+- the proposed fix expands the public contract or permissions
+- verification cannot distinguish between multiple root causes
+- the fix would require unrelated files or destructive operations
 
-**声に出して押し返しにくいと感じたら**: その緊張を名指ししたうえで、見えている問題をユーザーに伝える。
-
-## 指摘が正しいときの確認
-
-```
-✅ 「直した。<何を変えたか>」
-✅ 「<具体的な問題> を <場所> で直した」
-✅ そのまま直してコードで示す
-
-❌ 「おっしゃる通りです」
-❌ 「良い指摘ですね」
-❌ 「気づいてくれてありがとう」
-❌ 感謝の表明全般
-```
-
-**なぜ感謝を書かないか**: 行動が示す。直せばよい。コード自体がフィードバックを受け取った証拠になる。
-
-**「ありがとう」と書きかけたら**: 消す。代わりに何を直したかを書く。
-
-## 押し返しが誤っていたとき
-
-```
-✅ 「確認した。<X> は <Y> だった。実装する」
-✅ 「検証した。指摘が正しい。自分の理解が <理由> で誤っていた。直す」
-
-❌ 長い謝罪
-❌ なぜ押し返したかの弁明
-❌ 過剰な説明
-```
-
-事実として訂正し、先へ進む。
-
-## よくある誤り
-
-| 誤り | 対処 |
-|---|---|
-| 同調の言葉 | 要求を言い直すか、そのまま動く |
-| 盲目的な実装 | 先にコードベースと突き合わせる |
-| まとめて実装しテストしない | 1 件ずつ、それぞれテストする |
-| レビュアーが正しいと決めつける | 何かを壊さないか確認する |
-| 押し返しを避ける | 心地よさより技術的な正しさ |
-| 部分的な実装 | 先に全項目を明確にする |
-| 検証できないまま進む | 制約を述べて指示を仰ぐ |
-| 自分で修正を書く | 親が書いた修正は独立したレビュアーの判定を受けず、diff とテスト出力が親の会話に残る。子へ渡す |
-
-## 例
-
-**同調（悪い）**
-
-```
-レビュアー: 「レガシーコードを削除して」
-❌ 「おっしゃる通りです。すぐ削除します」
-```
-
-**技術的な検証（良い）**
-
-```
-レビュアー: 「レガシーコードを削除して」
-✅ 「確認した。ビルドターゲットは 10.15+ で、この API は 13+ が要る。
-   後方互換のためレガシー側が要る。現在の実装は bundle ID が誤っているので、
-   それを直すか、13 未満のサポートを落とすかを決めたい」
-```
-
-**YAGNI（良い）**
-
-```
-レビュアー: 「DB と日付フィルタと CSV エクスポート付きのメトリクスを実装して」
-✅ 「コードベースを grep した。このエンドポイントを呼んでいる箇所が無い。
-   削除でよいか（YAGNI）。それとも見落としている使用箇所があるか」
-```
-
-## GitHub のスレッド返信
-
-インラインのレビューコメントに返すときは、トップレベルの PR コメントではなくそのスレッドに返信する（`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies`）。
+Never claim that all feedback was addressed until every finding ID has a decision and, for `fixed`,
+fresh verification evidence.
