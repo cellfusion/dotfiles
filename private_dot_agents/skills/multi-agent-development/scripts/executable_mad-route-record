@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+'use strict'
+const os = require('node:os')
+const path = require('node:path')
+function fail(message) { process.stderr.write(`mad-route-record: ${message}\n`); process.exit(2) }
+function absolute(value, label) { if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`); return value }
+const args = process.argv.slice(2)
+let recordPath
+let outputPath = path.join(os.homedir(), '.local', 'state', 'mad', 'metrics', 'route-decisions.jsonl')
+for (let i = 0; i < args.length; i += 1) {
+  if (!['--record', '--output'].includes(args[i]) || i + 1 >= args.length) fail('usage: mad-route-record --record FILE [--output FILE]')
+  if (args[i] === '--record') { if (recordPath !== undefined) fail('--record is duplicated'); recordPath = absolute(args[++i], '--record') }
+  else outputPath = absolute(args[++i], '--output')
+}
+if (recordPath === undefined) fail('usage: mad-route-record --record FILE [--output FILE]')
+const shareDir = process.env.MAD_ROUTE_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+let route
+try { route = require(path.join(shareDir, 'mad-route.js')) } catch { fail('route contract is unavailable') }
+try { route.appendRoute(recordPath, outputPath) } catch (error) { fail(error instanceof Error ? error.message : 'could not append route') }
+process.stdout.write(JSON.stringify({ status: 'recorded', output: outputPath }) + '\n')

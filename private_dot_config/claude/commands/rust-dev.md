@@ -1,34 +1,34 @@
 # Rust Development Assistant
 
-Rust開発を支援するスキルです。
+Skill supporting Rust development workflows.
 
-## 提供機能
+## Provided Features
 
-### コード品質チェック
-以下のコマンドを実行してコードの品質を確認します：
-- `cargo fmt --check` - フォーマットチェック
-- `cargo clippy -- -D warnings` - lint警告チェック
-- `cargo test` - テスト実行
+### Code Quality Checks
+Runs the following commands to verify code quality:
+- `cargo fmt --check` - Formatting check
+- `cargo clippy -- -D warnings` - Lint warning check
+- `cargo test` - Test execution
 
-### 開発ワークフロー
+### Development Workflow
 
-1. **ビルド確認**: `cargo build`
-2. **フォーマット適用**: `cargo fmt`
-3. **lint修正**: `cargo clippy --fix --allow-dirty`
-4. **テスト実行**: `cargo test`
+1. **Build Check**: `cargo build`
+2. **Apply Formatting**: `cargo fmt`
+3. **Fix Lints**: `cargo clippy --fix --allow-dirty`
+4. **Run Tests**: `cargo test`
 
-## ベストプラクティス
+## Best Practices
 
-- `unwrap()` より `?` 演算子や `expect()` を推奨
-- エラー型には `thiserror` または `anyhow` を使用
-- 必要に応じて `#[derive(Debug, Clone)]` を追加
-- ドキュメントコメント `///` を公開APIに追加
+- Prefer `?` operator or `expect()` over raw `unwrap()`
+- Use `thiserror` or `anyhow` for error types
+- Add `#[derive(Debug, Clone)]` where appropriate
+- Add doc comments `///` to public APIs
 
-## 使用方法
+## Usage
 
-引数にタスクを指定してください。例：
-- `/rust-dev 新しいモジュールを作成`
-- `/rust-dev エラーハンドリングを改善`
-- `/rust-dev テストを追加`
+Provide the task as arguments. Examples:
+- `/rust-dev create a new module`
+- `/rust-dev improve error handling`
+- `/rust-dev add tests`
 
 $ARGUMENTS

@@ -1005,7 +1005,7 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--assert-create-request" ]; then
 fi
 
 # review/fix child の create 前に、同じ task scope と固定 round 上限を確認する。
-# この境界を通らない review/fix node（hotfix を含む）は公式 MCP create へ進めない。
+# この境界を通らない review/fix node（hotfix を含む）は selected backend の create へ進めない。
 mad_prepare_review() {
   local share_dir=""
   local run_dir=""
@@ -1014,11 +1014,12 @@ mad_prepare_review() {
   local phase=""
   local node=""
   local attempt=""
+  local work_class=""
   local value=""
   local required=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --share-dir|--run-dir|--scope-file|--task|--phase|--node|--attempt)
+      --share-dir|--run-dir|--scope-file|--task|--phase|--node|--attempt|--work-class)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --share-dir) share_dir="$2" ;;
@@ -1028,6 +1029,7 @@ mad_prepare_review() {
           --phase) phase="$2" ;;
           --node) node="$2" ;;
           --attempt) attempt="$2" ;;
+          --work-class) work_class="$2" ;;
         esac
         shift 2
         ;;
@@ -1035,6 +1037,8 @@ mad_prepare_review() {
     esac
   done
   if [ -z "$share_dir" ]; then share_dir="$(mad_default_share_dir)" || return 2; fi
+  mad_require_non_empty --work-class "$work_class" || return 2
+  case "$work_class" in mechanical|routine|integration|architectural) ;; *) return 2 ;; esac
   for required in run_dir scope_file task phase node attempt; do
     case "$required" in
       run_dir) value="$run_dir" ;;
@@ -1436,9 +1440,9 @@ if [ "$#" -ge 1 ] && [ "${1:-}" = "--check-review-observations" ]; then
   exit $?
 fi
 
-# 親の MCP 境界が create の前に呼ぶ。request/state/call log の strict 検証が全て
-# 成功したときだけ一回性 marker を作る。marker を取れた呼び出しだけが
-# mcp__paseo__create_agent へ進める。state と call log は書き換えない。
+# 親の create 境界が create の前に呼ぶ。request/state/call log の strict 検証が全て
+# 成功したときだけ一回性 marker を作る。marker を取れた呼び出しだけが selected backend の
+# create へ進める。state と call log は書き換えない。
 mad_prepare_create() {
   local share_dir=""
   local attempt_dir=""

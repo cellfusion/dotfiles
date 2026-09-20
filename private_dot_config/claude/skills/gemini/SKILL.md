@@ -1,89 +1,88 @@
 ---
 name: gemini
 description: >-
-  Gemini の得意分野を活用するタスクのガイダンス。
-  ユーザーが大規模コンテキスト処理、マルチモーダル分析、
-  Google連携、大規模コードベース分析、動画・音声分析について
-  質問・依頼した際に使用。
+  Guidance for leveraging tasks where Gemini excels. Use when the user requests or asks about
+  massive context processing, multimodal analysis, Google ecosystem integrations,
+  codebase-wide cross-cutting analysis, or video/audio processing.
 ---
 
-# Gemini 活用ガイド
+# Gemini Usage Guide
 
-Gemini が特に優れている分野と、その活用方法をまとめたガイダンスです。
-Claude と Gemini を適切に使い分けることで、より効率的な開発が可能になります。
+Guidance covering the domains where Gemini excels and how to leverage them effectively.
+By appropriately dividing responsibilities between Claude and Gemini, development becomes significantly more efficient.
 
-## Gemini の得意分野
+## Areas Where Gemini Excels
 
-### 1. 大規模コンテキスト処理（100万トークン超）
+### 1. Large-Context Processing (Over 1M Tokens)
 
-- 非常に長いドキュメント、ログファイル、大量のコードを一度に処理可能
-- 複数ファイルにまたがる横断的な分析が得意
-- **活用例**: 巨大なログファイルの分析、長大な仕様書の要約、大量のテスト結果の解析
+- Capable of processing massive documents, log files, and large codebases simultaneously.
+- Excels at cross-cutting analysis spanning multiple files.
+- **Examples**: Analyzing huge log files, summarizing extensive specifications, analyzing large test suites.
 
-### 2. マルチモーダル分析（画像・動画・音声）
+### 2. Multimodal Analysis (Images, Video, Audio)
 
-- 動画の内容理解・要約（YouTube 動画を含む）
-- 音声ファイルの文字起こしと分析
-- 画像内のテキスト認識・図表解析
-- **活用例**: 技術カンファレンスの動画要約、スクリーンキャスト解析、音声ミーティングの議事録作成
+- Understanding and summarizing video content (including YouTube videos).
+- Transcribing and analyzing audio files.
+- Optical character recognition and chart/diagram analysis in images.
+- **Examples**: Summarizing tech conference videos, screencast analysis, generating meeting minutes from recordings.
 
-### 3. Google エコシステム連携
+### 3. Google Ecosystem Integrations
 
-- Google Search との統合による最新情報のグラウンディング
-- Google Workspace（Docs, Sheets, Slides）との連携
-- Google Maps、YouTube などの Google サービスとの統合
-- **活用例**: 最新の技術トレンド調査、Google ドキュメントの分析・要約
+- Real-time grounding via Google Search integration.
+- Integration with Google Workspace (Docs, Sheets, Slides).
+- Integration with Google services such as Google Maps and YouTube.
+- **Examples**: Researching latest tech trends, analyzing and summarizing Google Docs.
 
-### 4. 大規模コードベース横断分析
+### 4. Cross-Cutting Codebase Analysis
 
-- リポジトリ全体を俯瞰した依存関係の分析
-- 大規模リファクタリングの影響範囲調査
-- アーキテクチャレベルのコードレビュー
-- **活用例**: モノレポ全体の依存関係マッピング、レガシーコードの移行計画策定
+- High-level dependency analysis across an entire repository.
+- Scope-of-impact analysis for large-scale refactorings.
+- Architecture-level code reviews.
+- **Examples**: Mapping monorepo dependencies, crafting legacy migration plans.
 
-### 5. 多言語処理
+### 5. Multilingual Processing
 
-- 幅広い言語のサポートと翻訳
-- 多言語コンテンツの一括処理
-- **活用例**: 多言語ドキュメントの翻訳、国際化対応の支援
+- Broad language support and translation.
+- Batch processing of multilingual content.
+- **Examples**: Translating multilingual documentation, internationalization (i18n) support.
 
-## ユースケース別活用ガイド
+## Use-Case Guide
 
-### ドキュメント・ログ分析
+### Document and Log Analysis
 
-大量のテキストデータを扱う場合、Gemini の長大コンテキストウィンドウを活用する：
+When handling large volumes of text data, take advantage of Gemini's extensive context window:
 
-1. 対象ファイルを Gemini に渡す
-2. 具体的な分析観点を指定する（例：エラーパターンの抽出、パフォーマンスボトルネックの特定）
-3. 結果を構造化された形式で出力させる
+1. Provide target files to Gemini.
+2. Specify concrete analytical criteria (e.g., error pattern extraction, bottleneck identification).
+3. Request output in a structured format.
 
-### 動画・音声コンテンツの処理
+### Video and Audio Processing
 
-1. YouTube URL または動画/音声ファイルを Gemini に渡す
-2. 目的を明確にする（要約、文字起こし、特定情報の抽出）
-3. タイムスタンプ付きの出力を要求すると後から参照しやすい
+1. Provide YouTube URLs or media files to Gemini.
+2. Clarify the objective (summary, transcription, specific information extraction).
+3. Request timestamped outputs for easier downstream reference.
 
-### コードベース全体の分析
+### Codebase-Wide Analysis
 
-1. リポジトリの主要ファイルを Gemini に一括で渡す
-2. アーキテクチャの概要説明や依存関係の可視化を依頼する
-3. 特定の観点（セキュリティ、パフォーマンス、設計パターン）でのレビューを依頼する
+1. Provide key repository files to Gemini as a batch.
+2. Request an architectural overview or visualization of dependencies.
+3. Request reviews focused on specific aspects (security, performance, design patterns).
 
-## Claude との使い分け指針
+## Claude vs. Gemini Division of Labor
 
-| タスク | 推奨ツール | 理由 |
-|--------|-----------|------|
-| 大量のファイル/ログの一括分析 | **Gemini** | 長大コンテキスト処理が得意 |
-| 動画・音声の分析 | **Gemini** | ネイティブなマルチモーダル対応 |
-| Google サービス連携タスク | **Gemini** | エコシステム統合 |
-| コード実装・修正 | **Claude** | コーディング精度が高い |
-| 複雑な推論・分析 | **Claude** | 論理的推論が得意 |
-| ファイル編集・Git 操作 | **Claude** | ツール統合が充実 |
-| セキュリティレビュー | **両方** | Claude で詳細レビュー、Gemini で広範囲スキャン |
-| リファクタリング計画 | **Gemini → Claude** | Gemini で影響範囲分析、Claude で実装 |
+| Task | Recommended Tool | Rationale |
+|---|---|---|
+| Bulk file/log analysis | **Gemini** | Excels at large context windows |
+| Video and audio analysis | **Gemini** | Native multimodal capability |
+| Google service integrations | **Gemini** | Native ecosystem integration |
+| Code implementation and fixes | **Claude** | High coding precision |
+| Complex reasoning and analysis | **Claude** | Excels at logical reasoning |
+| File editing and Git operations | **Claude** | Rich tool integration |
+| Security reviews | **Both** | In-depth review with Claude; broad scan with Gemini |
+| Refactoring planning | **Gemini -> Claude** | Impact analysis in Gemini; implementation in Claude |
 
-### 組み合わせパターン
+### Combination Patterns
 
-- **調査 → 実装**: Gemini で広範な調査・分析 → Claude で具体的な実装
-- **レビュー**: Gemini でコードベース全体の俯瞰的レビュー → Claude で個別ファイルの詳細レビュー
-- **動画学習 → コード化**: Gemini で技術動画を要約 → Claude でコードに落とし込み
+- **Research -> Implementation**: Broad research and analysis via Gemini -> Concrete implementation via Claude.
+- **Review**: High-level repository architecture review via Gemini -> Detailed per-file review via Claude.
+- **Video Learning -> Code**: Summarize technical video via Gemini -> Translate insights into code via Claude.

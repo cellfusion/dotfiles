@@ -1,17 +1,17 @@
 # Ship
 
-変更のレビュー → コミット → Linear 更新をワンステップで実行します。
+Executes review -> commit -> Linear update in a single streamlined step.
 
-## 引数
+## Arguments
 
-`$ARGUMENTS` — オプションフラグ
+`$ARGUMENTS` — Optional flags
 
-- `--no-linear`: Linear 更新をスキップ
-- `--no-review`: レビューとverifyをスキップ（急ぎの場合のみ）
+- `--no-linear`: Skip Linear update
+- `--no-review`: Skip review and verify (urgent cases only)
 
-## 手順
+## Steps
 
-### 1. 変更の確認
+### 1. Inspect Changes
 
 ```bash
 git status
@@ -19,40 +19,40 @@ git diff --stat
 git diff --cached --stat
 ```
 
-変更がなければ「コミットする変更がありません」と報告して終了。
+If there are no changes, report "No changes to commit" and exit.
 
-### 2. レビュー（`--no-review` でスキップ）
+### 2. Review (Skipped with `--no-review`)
 
-以下を順番に実行:
+Execute the following in sequence:
 
-1. 変更対象ファイルを読み、セキュリティ上の問題やコード品質の問題がないか確認
-2. プロジェクト検出に基づき `/verify quick` 相当のチェックを実行（ビルド + 型チェック）
+1. Read target files to check for security issues and code quality concerns.
+2. Run checks equivalent to `/verify quick` based on detected project toolchain (build + typecheck).
 
-問題があれば報告し、修正するか続行するかユーザーに確認する。
+If issues are found, report them and ask the user whether to fix or proceed.
 
-### 3. コミット
+### 3. Commit
 
-1. `git diff` と `git diff --cached` で全変更内容を把握
-2. Conventional Commits 形式でコミットメッセージを作成
-3. 関連ファイルをステージング（`git add` は対象ファイルを明示指定）
-4. コミット実行
+1. Review all modifications via `git diff` and `git diff --cached`.
+2. Craft a commit message following Conventional Commits syntax.
+3. Stage relevant files (`git add` explicitly specifying target files).
+4. Execute commit.
 
-### 4. Linear 更新（`--no-linear` でスキップ）
+### 4. Update Linear (Skipped with `--no-linear`)
 
-ブランチ名またはコミットメッセージから Linear イシューID を検出:
+Detect Linear issue ID from branch name or commit message:
 
-- ブランチ名パターン: `feat/PROJ-123-description`, `fix/PROJ-456`
-- コミットメッセージパターン: `PROJ-123` 形式
+- Branch name pattern: `feat/PROJ-123-description`, `fix/PROJ-456`
+- Commit message pattern: `PROJ-123` format
 
-検出された場合:
-1. `mcp__claude_ai_Linear__get_issue` でイシューの現在のステータスを確認
-2. コミット内容に基づきコメントを追加（`mcp__claude_ai_Linear__save_comment`）
-3. ステータス変更が適切かユーザーに確認（自動でステータスは変更しない）
+When detected:
+1. Check current status of the issue using `mcp__claude_ai_Linear__get_issue`.
+2. Post a comment based on commit content (`mcp__claude_ai_Linear__save_comment`).
+3. Ask the user if a status change is appropriate (do not change status automatically).
 
-検出されなかった場合:
-- スキップして報告
+When not detected:
+- Skip silently and report.
 
-### 5. サマリー
+### 5. Summary
 
 ```
 ## Ship Complete

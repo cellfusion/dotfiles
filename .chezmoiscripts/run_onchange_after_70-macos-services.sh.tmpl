@@ -39,15 +39,53 @@ set -eu
 brew_env || die 'brew が見つからない。00-homebrew が失敗している'
 
 helpers="$HOME/.config/sketchybar/helpers"
+SBARLUA_REPOSITORY='https://github.com/FelixKratz/SbarLua.git'
+SBARLUA_COMMIT='437bd2031da38ccda75827cb'\
+'7548e7baa4aa9978'
+SBARLUA_LUA='/opt/homebrew/opt/lua@5.4/bin/lua'
+SBARLUA_MODULE="$HOME/.local/share/sketchybar_lua/sketchybar.so"
 
 [ -d "$helpers" ] || die "sketchybar の helper が見つからない: $helpers"
 
-# clang と swiftc は Xcode Command Line Tools が持つ。Homebrew のインストーラが
-# 入れるので、00-homebrew が通っていれば揃っている。
+# clang と git は Xcode Command Line Tools / Homebrew が持つ。Homebrew の
+# インストーラが入れるので、00-homebrew が通っていれば揃っている。
 command -v clang >/dev/null 2>&1 || die 'clang が見つからない。Xcode Command Line Tools を入れる'
+command -v git >/dev/null 2>&1 || die 'git が見つからない。Xcode Command Line Tools を入れる'
+[ -x "$SBARLUA_LUA" ] || die "Lua 5.4 が見つからない: $SBARLUA_LUA"
 
 printf 'sketchybar の helper をビルドする\n'
 ( cd "$helpers" && make ) || die 'sketchybar の helper のビルドに失敗した'
+
+# SketchyBar の formula は Lua モジュールを含まない。SbarLua 公式の make install
+# を Lua 5.4 対応コミットへ固定して実行する。clone は一時ディレクトリに置き、
+# make install が生成した ~/.local/share/sketchybar_lua/sketchybar.so だけを残す。
+sbarlua_tmp="$(mktemp -d "${TMPDIR:-/tmp}/SbarLua.XXXXXX")" || die 'SbarLua の一時ディレクトリを作れない'
+cleanup_sbarlua() {
+  rm -rf "$sbarlua_tmp"
+}
+trap cleanup_sbarlua EXIT
+
+git clone --quiet "$SBARLUA_REPOSITORY" "$sbarlua_tmp/source" || die 'SbarLua の clone に失敗した'
+(
+  cd "$sbarlua_tmp/source" || exit 1
+  git checkout --quiet --detach "$SBARLUA_COMMIT"
+  make install
+) || die "SbarLua の導入に失敗した: $SBARLUA_COMMIT"
+
+[ -f "$SBARLUA_MODULE" ] || die "SbarLua の共有モジュールが生成されない: $SBARLUA_MODULE"
+[ -x "$SBARLUA_MODULE" ] || die "SbarLua の共有モジュールが実行可能でない: $SBARLUA_MODULE"
+
+# 共有モジュールが存在するだけでなく、実際に sketchybarrc と同じ Lua 5.4 から
+# 読み込めることを確認する。Lua 5.5 でビルドされたモジュールはここで検出する。
+"$SBARLUA_LUA" -e 'package.cpath = package.cpath .. ";" .. os.getenv("HOME") .. "/.local/share/sketchybar_lua/?.so"; assert(require("sketchybar"))' \
+  || die 'SbarLua が Lua 5.4 から読み込めない'
+
+# 既に bar が動いている apply では、モジュールを入れただけでは古い default bar が
+# 残る。起動元は従来どおり yabai に任せ、実行中の場合だけ設定を再読込する。
+if pgrep -x sketchybar >/dev/null 2>&1; then
+  command -v sketchybar >/dev/null 2>&1 || die 'sketchybar が見つからない。10-brew が失敗している'
+  sketchybar --reload || die 'SbarLua 導入後の sketchybar reload に失敗した'
+fi
 
 # --start-service は plist を書いてから起動する。既に登録済みなら触らない。
 start_service() {

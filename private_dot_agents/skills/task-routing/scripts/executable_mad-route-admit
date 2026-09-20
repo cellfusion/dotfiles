@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+'use strict'
+
+const crypto = require('node:crypto')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+function fail(message) { process.stderr.write(`mad-route-admit: ${message}\n`); process.exit(2) }
+function absolute(value, label) { if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`); return value }
+function readPrivateJson(file, contract) {
+  let stats
+  try { stats = fs.lstatSync(file) } catch { fail(`${file} is unavailable`) }
+  if (!stats.isFile() || (stats.mode & 0o777) !== 0o600) fail(`${file} must be a regular mode 0600 file`)
+  try { return contract.parseJsonWithoutDuplicateKeys(fs.readFileSync(file, 'utf8'), 'invalid_route_packet', 'route packet') } catch { fail('route packet is invalid') }
+}
+function writePrivate(file, raw) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+  fs.writeFileSync(file, raw, { mode: 0o600 })
+  fs.chmodSync(file, 0o600)
+}
+
+const args = process.argv.slice(2)
+let packetPath, outputPath, recordPath, backend = null, provider = null, model = null, effort = null
+for (let i = 0; i < args.length; i += 1) {
+  const option = args[i]
+  if (!['--packet', '--output', '--route-record', '--backend', '--provider', '--model', '--effort'].includes(option) || i + 1 >= args.length) {
+    fail('usage: mad-route-admit --packet FILE --output FILE --route-record FILE [--backend B] [--provider P] [--model M] [--effort E]')
+  }
+  const value = args[++i]
+  if (option === '--packet') packetPath = absolute(value, option)
+  if (option === '--output') outputPath = absolute(value, option)
+  if (option === '--route-record') recordPath = absolute(value, option)
+  if (option === '--backend') backend = value
+  if (option === '--provider') provider = value
+  if (option === '--model') model = value
+  if (option === '--effort') effort = value
+}
+if (!packetPath || !outputPath || !recordPath) fail('usage: mad-route-admit --packet FILE --output FILE --route-record FILE [--backend B] [--provider P] [--model M] [--effort E]')
+
+const shareDir = process.env.MAD_ROUTE_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+let route
+let contract
+try { route = require(path.join(shareDir, 'mad-route.js')); contract = require(path.join(shareDir, 'mad-contract.js')) } catch { fail('route contract is unavailable') }
+const packet = readPrivateJson(packetPath, contract)
+if (packet.routeId !== undefined) fail('packet already has routeId')
+if (!packet || typeof packet !== 'object' || Array.isArray(packet)) fail('route packet must be an object')
+if (!['direct', 'single', 'delivery'].includes(packet.route)) fail('route is invalid')
+if (!['mechanical', 'routine', 'integration', 'architectural'].includes(packet.workClass)) fail('workClass is invalid')
+if (!['simple', 'routine', 'complex', 'critical'].includes(packet.complexity)) fail('complexity is invalid')
+if (typeof packet.role !== 'string' || packet.role.length === 0) fail('role is invalid')
+if (!['low', 'medium', 'high'].includes(packet.confidence)) fail('confidence is invalid')
+
+const routeId = crypto.randomUUID()
+const decision = {
+  version: 1,
+  type: 'mad-route-decision',
+  routeId,
+  recordedAt: new Date().toISOString(),
+  route: packet.route,
+  workClass: packet.workClass,
+  complexity: packet.complexity,
+  role: packet.role,
+  confidence: packet.confidence,
+  reasonCode: packet.route === 'direct' ? 'direct_parent_execution' : `${packet.route}_delegation`,
+  backend: backend === null ? null : backend,
+  provider,
+  model,
+  effort,
+  delegated: packet.route !== 'direct',
+}
+try { route.assertRouteV1(decision) } catch (error) { fail(error instanceof Error ? error.message : 'route decision is invalid') }
+const admitted = { ...packet, routeId }
+const routeInput = path.join(os.tmpdir(), `mad-route-admit-${process.pid}-${routeId}.json`)
+writePrivate(routeInput, JSON.stringify(decision) + '\n')
+try {
+  route.appendRoute(routeInput, recordPath)
+  writePrivate(outputPath, JSON.stringify(admitted, null, 2) + '\n')
+} catch (error) {
+  fail(error instanceof Error ? error.message : 'route admission failed')
+} finally {
+  try { fs.unlinkSync(routeInput) } catch {}
+}
+process.stdout.write(JSON.stringify({ status: 'admitted', routeId, output: outputPath }) + '\n')

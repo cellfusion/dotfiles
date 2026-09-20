@@ -1,26 +1,26 @@
 ---
 name: dev-env
 description: >-
-  この環境固有の開発運用手順。Cloudflare のアカウント切り替え、
-  1Password による CLI 認証とシークレット取得、AI 環境（herdr / Paseo）別の環境変数を扱う。
-  デプロイ・認証情報・環境変数・アカウント切り替えに触れる作業の前に読む。
-  /dev-env で手動起動も可能。
+  Operational procedures specific to this development environment. Covers Cloudflare account
+  switching, CLI authentication and secret retrieval via 1Password, and environment variables
+  per AI environment (herdr / Paseo). Read before tasks touching deployments, credentials,
+  environment variables, or account switching. Can also be invoked manually with /dev-env.
 ---
 
-# 開発環境の運用手順
+# Development Environment Operations
 
-この機械（macOS / herdr / chezmoi）で実際にどう操作するかを記録する。汎用的な技術知見ではなく、この環境での手順を扱う。
+Documenting operational procedures for this machine (macOS / herdr / chezmoi). Rather than generic technical knowledge, this guides practical operations in this specific setup.
 
-## どの章を読むか
+## Which Chapter to Read
 
-| 状況 | 読むファイル |
+| Situation | Reference File |
 |---|---|
-| Cloudflare にデプロイする。アカウントを切り替える | `references/cloudflare.md` |
-| API トークンや認証情報が必要になる | `references/secrets.md` |
-| AI 環境ごとに環境変数を変える | `references/herdr.md` |
+| Deploying to Cloudflare or switching accounts | `references/cloudflare.md` |
+| Requiring API tokens or credentials | `references/secrets.md` |
+| Configuring environment variables per AI environment | `references/herdr.md` |
 
-## 共通の前提
+## Common Prerequisites
 
-- `~/.config` 配下の設定は chezmoi 管理下にある。`~/.local/share/chezmoi/` 側を編集し、`chezmoi apply` はユーザーが実行する。
-- シークレットを平文でファイルに置かない。1Password から取る。
-- 環境を変える操作（アカウント切り替え、プラグイン設定）を実行する前に、いま何が有効かを確認する。
+- Configuration under `~/.config` is managed by chezmoi. Always edit inside `~/.local/share/chezmoi/`; `chezmoi apply` is executed by the user.
+- Never store secrets in plain text files. Retrieve them from 1Password.
+- Before running actions that alter the environment (account switching, plugin configuration), verify what is currently active.

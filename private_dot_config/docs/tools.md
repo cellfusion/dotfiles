@@ -15,7 +15,7 @@
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
-| ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
+| ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
 | Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
@@ -182,11 +182,18 @@ MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
+TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
+MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
+MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
+MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"
+MAD_RUN="$MAD_SCRIPTS/mad-run"
+MAD_PLAN_PARSER="$MAD_SCRIPTS/mad-plan-parser.js"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の11 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の15 scriptと共通 parser `mad-plan-parser.js`は`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -282,6 +289,7 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 | borders | ウィンドウ枠の強調表示 |
 | lua@5.4 | sketchybar の起動に必要（sketchybarrc の shebang が指している） |
 | sketchybar | カスタムメニューバー |
+| SbarLua | Lua 5.4 用 SketchyBar モジュール（公式 commit 固定でビルド） |
 | ghostty (cask) | ターミナルエミュレータ |
 | 1password-cli (cask) | 1Password CLI |
 | finicky (cask) | デフォルトブラウザ振り分け |
@@ -375,6 +383,8 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 
 `multi-agent-development` は Paseo CLI を既定 backend とし、Paseo MCP は明示指定時だけ使う。選択した backend が利用できないときは run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
+native roleはClaude Code、Codex、Piへ同じrole catalogから配る。Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも同時に配る。OpenCodeのnative agent定義はMADでは配らない。
+
 Paseo の child は CLI から見える。`paseo ls` が一覧と状態を出し、`paseo inspect <agent-id>` が
 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を出す。MAD 親は raw activity を
 保存せず、選択した backend の adapter `wait-agent --child-ref <safe-id> --timeout <seconds>`
@@ -415,7 +425,7 @@ round 0 の結果を採用したら `cannotVerify` を 1 件ずつ解消して
 round `N` の再レビューの結果からは `--advance-review-findings` で round `N+1` の一覧を作る。
 未解決の指摘を親が散文で引き継がない。
 
-`--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
+`MAD_RUN --dry-run` は保存済み fixture だけを使い、実 MCP の create、worktree、state write、`chezmoi apply` を実行しない。代表 run の plan、wave、role catalog を検証する。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
 snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
 はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。

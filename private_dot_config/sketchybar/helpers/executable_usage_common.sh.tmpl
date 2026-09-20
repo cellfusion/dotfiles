@@ -5,7 +5,10 @@ reader="$HOME/.local/lib/agent-usage/sketchybar.sh"
 {{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
 {{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
 {{- range $env := $envs }}
-{{- range $agent := $env.agents }}
-sh "$reader" {{ $env.session | quote }} {{ $agent | quote }} {{ $env.label | quote }}
+{{- if has "claude" $env.agents }}
+sh "$reader" {{ $env.session | quote }} "claude" {{ $env.label | quote }}
+{{- end }}
+{{- if has "codex" $env.agents }}
+sh "$reader" {{ $env.session | quote }} "codex" {{ $env.label | quote }}
 {{- end }}
 {{- end }}

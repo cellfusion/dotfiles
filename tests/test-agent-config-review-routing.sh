@@ -43,6 +43,21 @@ function launch(workClass) {
   return resolvePaseoLaunch(dispatch, snapshot)
 }
 
+let missingWorkClassRejected = false
+try {
+  resolveDispatch(config, {
+    project: source,
+    role: 'task-reviewer',
+    provenance: 'mad-review',
+    complexity: 'critical',
+    round: 0,
+    backend: 'paseo-cli'
+  })
+} catch (error) {
+  missingWorkClassRejected = /workClass/.test(String(error.message))
+}
+if (!missingWorkClassRejected) throw new Error('task-reviewer without workClass was accepted')
+
 const mechanical = launch('mechanical')
 if (mechanical.model !== 'sample-light') throw new Error(`mechanical reviewer route is wrong: ${JSON.stringify(mechanical)}`)
 const integration = launch('integration')

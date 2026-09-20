@@ -34,6 +34,29 @@ Use a packet with finite values. Do not put free-form provider or model choices 
 
 Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `verification` is unknown. Set `needsUserDecision: true` when guessing would change the result.
 
+## Route admission audit
+
+Record every admission decision, including `direct`, before execution. Initialize the local recorder once:
+
+```bash
+TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
+MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
+MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
+MAD_ROUTE_LOG="${MAD_ROUTE_LOG:-$HOME/.local/state/mad/metrics/route-decisions.jsonl}"
+```
+
+Run the admission wrapper before starting the selected path. It validates the finite packet, adds a `routeId`, writes the mode `0600` route decision, and emits the admitted packet:
+
+```bash
+"$MAD_ROUTE_ADMIT" \
+  --packet "$PACKET" --output "$ADMITTED_PACKET" \
+  --route-record "$MAD_ROUTE_LOG" \
+  --backend "$MAD_BACKEND" --provider "$PROVIDER" \
+  --model "$MODEL" --effort "$EFFORT"
+```
+
+For `direct`, omit backend/provider/model/effort and set the packet route to `direct`. Use the admitted packet for the selected path and pass its `routeId` into any child outcome record. Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for route statistics; child attempt results belong in `mad-attempt-outcome`.
+
 ## Who creates the packet
 
 - If the request is clear and confidence is high, the parent creates the packet directly
@@ -88,7 +111,7 @@ When a single route starts a write child, the parent follows this order:
 
 The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
 
-The CLI backend is allowed only for single route and is the default for single route. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback for strict MAD, and a CLI launch must not silently discard provider features.
+The CLI backend is the default transport for both single route and strict MAD. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback after a run has started, and a CLI launch must not silently discard provider features.
 
 ## Escalation judge
 
@@ -98,7 +121,7 @@ Use `escalation-judge` only when a failed attempt or review result requires sema
 2. Resolve `escalation-judge` through `agent-config` with `--provenance escalation` and the `escalationSelection` launch policy
 3. Give the judge only those inputs and its prompt/schema; it returns an `escalation` packet
 4. Run `~/.agents/skills/multi-agent-development/scripts/escalation-policy` to validate the packet against the current level, maximum level, work class, and target role
-5. For a permitted next attempt, call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --round <nextLevel>` and pass the resolved launch unchanged
+5. For a permitted next attempt, run `mad-escalation-controller`, then call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --work-class <workClass> --round <round> --attempt-level <attemptLevel>` and pass the resolved launch unchanged
 6. For `ask_user` or `stop`, do not create a child; preserve the evidence and request the decision or stop the run
 
 The judge recommends an action and level. It never chooses a provider or model directly, and it cannot increase the attempt budget.

@@ -51,6 +51,10 @@ function listProviders() {
       : typeof row.modes === 'string'
         ? row.modes.split(',').map((label) => MODE_LABELS[label.trim()]).filter(Boolean)
         : []
+    // Pi exposes a provider default rather than a named auto mode. The strict
+    // launch contract uses auto as the normalized mode, and createAgent maps
+    // it back to default for the CLI transport.
+    if (modeIds.length === 0 && row.defaultMode === 'default') modeIds.push('auto')
     if (!modeIds.every((mode) => typeof mode === 'string' && mode.length > 0)) fail('provider modes are invalid', 1)
     return { id, available: row.status === 'available', modeIds }
   })
@@ -76,8 +80,9 @@ function inspectAgent(childRef) {
     fail('inspect response is invalid', 1)
   }
   const usage = response.LastUsage
+  const cachedInputTokens = usage && (usage.CachedInputTokens ?? usage.CachedTokens)
   if (!usage || !Number.isInteger(usage.InputTokens) || usage.InputTokens < 0 ||
-      !Number.isInteger(usage.CachedInputTokens) || usage.CachedInputTokens < 0 ||
+      !Number.isInteger(cachedInputTokens) || cachedInputTokens < 0 ||
       !Number.isInteger(usage.OutputTokens) || usage.OutputTokens < 0 ||
       (typeof usage.CostUsd !== 'number' || !Number.isFinite(usage.CostUsd) || usage.CostUsd < 0)) {
     fail('inspect usage is invalid', 1)
@@ -90,7 +95,7 @@ function inspectAgent(childRef) {
     durationMs: updated - created,
     usage: {
       inputTokens: usage.InputTokens,
-      cachedInputTokens: usage.CachedInputTokens,
+      cachedInputTokens,
       outputTokens: usage.OutputTokens,
       costUsd: usage.CostUsd,
     },
@@ -110,9 +115,10 @@ function createAgent(requestPath) {
   const providerParts = request.provider.split('/')
   const provider = providerParts.shift()
   const model = providerParts.join('/')
+  const modeArgs = provider === 'pi' ? [] : ['--mode', request.settings.modeId]
   const response = parseJson(paseo([
     'run', '--background', '--json', '--provider', provider, '--model', model,
-    '--thinking', request.settings.thinkingOptionId, '--mode', request.settings.modeId,
+    '--thinking', request.settings.thinkingOptionId, ...modeArgs,
     '--workspace', request.workspaceId, '--title', request.title, request.initialPrompt,
   ]), 'create response')
   const agentId = response.agentId || response.id

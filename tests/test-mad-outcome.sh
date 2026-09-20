@@ -18,6 +18,7 @@ cat > "$record" <<'JSON'
   "taskId": "task-1",
   "runId": "run-1",
   "attemptId": "attempt-1",
+  "routeId": "route-1",
   "route": {
     "workClass": "routine",
     "complexity": "routine",

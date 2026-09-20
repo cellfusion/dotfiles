@@ -6,10 +6,17 @@ cd "$(dirname "$0")"
 
 tests=(
   test-mad-task-brief.sh
+  test-mad-run.sh
+  test-mad-plan-parser.sh
   test-single-implementer.sh
   test-paseo-cli-adapter.sh
   test-mad-outcome.sh
+  test-mad-outcome-import.sh
+  test-mad-route.sh
+  test-mad-route-admit.sh
   test-agent-config-policy.sh
+  test-agent-config-role-catalog.sh
+  test-native-agent-defs.sh
   test-agent-config-routing.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh
@@ -19,6 +26,8 @@ tests=(
   test-manual-orchestration-contract.sh
   test-schemas.sh
   test-distribution.sh
+  test-install-brewfile.sh
+  test-install-scripts.sh
   test-manual-scripts.sh
   test-tools-doc.sh
   test-instructions.sh

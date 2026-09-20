@@ -5,7 +5,7 @@ const path = require('node:path')
 const contract = require('./mad-contract.js')
 
 const TOP_KEYS = [
-  'version', 'type', 'recordedAt', 'taskId', 'runId', 'attemptId',
+  'version', 'type', 'recordedAt', 'taskId', 'runId', 'attemptId', 'routeId',
   'route', 'outcome', 'usage', 'toolLoopCount', 'toolLoopSource', 'verification',
 ]
 const ROUTE_KEYS = [
@@ -49,6 +49,7 @@ function assertOutcomeV1(value) {
     throw new Error('recordedAt must be an ISO UTC timestamp')
   }
   for (const field of ['taskId', 'runId', 'attemptId']) nonEmptyString(value[field], field)
+  if (value.routeId !== null) nonEmptyString(value.routeId, 'routeId')
 
   if (!exactKeys(value.route, ROUTE_KEYS)) throw new Error('route keys are invalid')
   for (const field of ['workClass', 'complexity', 'role', 'backend', 'provider', 'model', 'effort', 'trigger']) {

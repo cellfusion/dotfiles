@@ -1,67 +1,67 @@
 # Refactor Clean
 
-デッドコードの検出と安全な削除を行います。
+Detects dead code and performs safe cleanup.
 
-## 引数
+## Arguments
 
-- `scan` — 検出のみ（デフォルト）
-- `clean` — 検出後、SAFE カテゴリのものを自動削除
-- `report` — 詳細レポートを出力
+- `scan` — Detection only (default)
+- `clean` — Automatically deletes items categorized as SAFE after detection
+- `report` — Emits a detailed report
 
-## 手順
+## Steps
 
-### 1. プロジェクト検出
+### 1. Project Detection
 
-ツールチェインを特定してください：
-- **TypeScript/JavaScript**: `package.json` の存在を確認
-- **Rust**: `Cargo.toml` の存在を確認
+Identify the project toolchain:
+- **TypeScript/JavaScript**: Check for existence of `package.json`
+- **Rust**: Check for existence of `Cargo.toml`
 
-### 2. ツールベースの検出
+### 2. Tool-Based Detection
 
-利用可能なツールがあれば使用：
-- **TypeScript**: `npx knip` または `npx ts-prune`（インストール済みの場合）
-- **Rust**: `cargo +nightly udeps`（インストール済みの場合）
+Utilize existing tools if available:
+- **TypeScript**: `npx knip` or `npx ts-prune` (if installed)
+- **Rust**: `cargo +nightly udeps` (if installed)
 
-ツールが未インストールの場合は、手動分析にフォールバックしてください。
+If tools are not installed, fall back to manual analysis.
 
-### 3. 手動分析
+### 3. Manual Analysis
 
-Grep と Glob を使用して以下を検出：
+Detect dead code using grep and file globbing:
 
-#### エクスポートされているが未使用
-- `export` されているが他ファイルから import されていない関数・型・定数
-- `pub` だが crate 内で参照されていないアイテム（Rust）
+#### Exported but Unused
+- Functions, types, and constants that are exported but not imported anywhere
+- Items marked `pub` but not referenced within the crate (Rust)
 
-#### 未使用コード
-- 未使用の変数・関数（コンパイラ警告を確認）
-- コメントアウトされたコードブロック
-- 空のファイル・モジュール
+#### Dead Code
+- Unused variables and functions (inspect compiler warnings)
+- Commented-out code blocks
+- Empty files and modules
 
-#### 依存関係
-- `package.json` の未使用 dependencies
-- `Cargo.toml` の未使用 dependencies
+#### Dependencies
+- Unused dependencies in `package.json`
+- Unused dependencies in `Cargo.toml`
 
-### 4. 分類
+### 4. Classification
 
-検出結果を3段階に分類：
+Classify findings into 3 risk tiers:
 
-- **SAFE** — 確実に未使用。参照ゼロ、副作用なし
-- **CAUTION** — おそらく未使用だが、動的参照やリフレクションの可能性あり
-- **DANGER** — エントリポイント、プラグイン登録、副作用のある初期化コードなど
+- **SAFE** — Confirmed unused. Zero references, no side effects.
+- **CAUTION** — Likely unused, but potential dynamic references or reflection exist.
+- **DANGER** — Entrypoints, plugin registrations, initialization code with side effects, etc.
 
-### 5. レポート
+### 5. Report
 
 ```
 ## Refactor Clean Report
 
 ### SAFE (auto-removable)
-- ファイル:行 - 説明
+- file:line - description
 
 ### CAUTION (manual review needed)
-- ファイル:行 - 説明
+- file:line - description
 
 ### DANGER (do not auto-remove)
-- ファイル:行 - 説明
+- file:line - description
 
 ### Summary
 - SAFE: N items
@@ -69,6 +69,6 @@ Grep と Glob を使用して以下を検出：
 - DANGER: N items
 ```
 
-`clean` モードの場合は、SAFE カテゴリのみを削除し、各削除を個別コミットとして提案してください。
+In `clean` mode, delete only the SAFE category items, and propose each deletion as an individual commit.
 
 $ARGUMENTS

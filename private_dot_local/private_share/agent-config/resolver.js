@@ -212,6 +212,7 @@ function selectEnvironment(config, project, explicitEnvironment, parentEnvironme
 
 const ESCALATION = { simple: 'routine', routine: 'complex', complex: 'complex', critical: 'critical' }
 const WORK_CLASS_COMPLEXITY = { mechanical: 'simple', routine: 'routine', integration: 'complex', architectural: 'critical' }
+const REVIEW_WORK_CLASS_ROLES = new Set(['task-reviewer', 're-reviewer', 'final-reviewer'])
 
 function selectDuty(config, role) {
   const roleDuty = config.agentRoles[role].duty
@@ -345,6 +346,9 @@ function resolveDispatch(config, input) {
   }
   const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
   const dutySelection = selectDuty(config, input.role)
+  if (dutySelection.duty === 'review' && REVIEW_WORK_CLASS_ROLES.has(input.role) && input.workClass === undefined) {
+    throw new ConfigError(`workClass: ${input.role} には work class が必要である`)
+  }
   const complexitySelection = selectComplexity(config, dutySelection.duty, input.provenance, input.complexity, input.round, input.workClass)
   const warnings = [...dutySelection.warnings, ...complexitySelection.warnings]
   const exported = resolveExport(config)

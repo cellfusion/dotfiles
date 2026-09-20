@@ -37,7 +37,7 @@ const SETUP_TABLE = {
       primary: '$HOME/.pi/agent',
       nonPrimary: '$HOME/.pi/agent-<environment>',
     },
-    symlinks: [],
+    symlinks: ['agents', 'extensions'],
     preservedMutable: [],
   },
 }

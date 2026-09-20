@@ -1,36 +1,36 @@
 # Specification-First Workflow
 
-このスキルは仕様優先ワークフローを強制します。
+Enforces a specification-first development workflow.
 
-## ワークフロー手順
+## Workflow Steps
 
-以下の順序で作業を進めてください：
+Follow this order of execution:
 
-### 1. Planning（計画）
-- 変更の影響範囲を整理
-- 実装計画を作成
+### 1. Planning
+- Map the scope of impact of the proposed changes
+- Create an implementation plan
 
-### 2. Documentation Update（ドキュメント更新）
-- `docs/` 配下の関連ドキュメントを**先に**更新
-- 仕様書、API仕様、設計書などを最新化
+### 2. Documentation Update
+- Update relevant documentation under `docs/` **first**
+- Bring specifications, API contracts, and design docs up to date
 
-### 3. Implementation（実装）
-- ドキュメントに基づいてコードを実装
-- 小さな単位でコミット
+### 3. Implementation
+- Implement code strictly following the updated documentation
+- Commit in small, logical units
 
-### 4. Testing（テスト）
-- テストを追加・更新
-- 全テストが通ることを確認
+### 4. Testing
+- Add and update tests
+- Verify all tests pass
 
-## 重要なルール
+## Key Rules
 
-- **ドキュメントを更新する前に実装を始めない**
-- **各コミットは単一の論理的な変更を表す**
-- **ドキュメントと実装の乖離を防ぐ**
+- **Never begin implementation before updating documentation**
+- **Each commit represents a single logical change**
+- **Prevent divergence between documentation and code**
 
-## 使用方法
+## Usage
 
-このスキルが呼び出されたら、上記の手順に従って作業を進めてください。
-各フェーズの完了を明示的に報告し、次のフェーズに進む前にユーザーの確認を取ってください。
+When this command is invoked, proceed according to the steps above.
+Explicitly report the completion of each phase, and obtain user confirmation before advancing to the next phase.
 
 $ARGUMENTS

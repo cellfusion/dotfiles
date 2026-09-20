@@ -1,4 +1,8 @@
 # Targets to remove on `chezmoi apply` (paths are relative to the home dir).
+# The repository-local CLAUDE.md is ignored by chezmoi; remove the old accidental
+# home-level copy so unrelated repositories do not inherit dotfiles instructions.
+CLAUDE.md
+
 #
 # ここのエントリは、配布済みの実体を回収するための一時的な指示である。全マシンに
 # apply が行き渡れば役目を終える。保持方針は「追加から 1 ヶ月」とし、それより古い
@@ -54,7 +58,6 @@
 .agents/skills/braid
 .config/claude/skills/braid
 .config/opencode/skills/braid
-.agents/skills/multi-agent-development/scripts/mad-run
 .agents/skills/multi-agent-development/scripts/mad-agent
 .agents/skills/multi-agent-development/scripts/mad-route
 .agents/skills/multi-agent-development/scripts/mad-lib.sh
@@ -118,33 +121,19 @@
 .agents/agent-defs/schemas/sdd-task-reviewer.json
 .agents/agent-defs/schemas/sdd-re-reviewer.json
 .agents/agent-defs/schemas/sdd-final-reviewer.json
-.config/claude/agents/implementer.md
 .config/claude/agents/judge.md
-.config/claude/agents/plan-author.md
-.config/claude/agents/researcher.md
-.config/claude/agents/review-synthesizer.md
-.config/claude/agents/reviewer.md
 .config/claude/agents/sdd-final-reviewer.md
 .config/claude/agents/sdd-implementer-think.md
 .config/claude/agents/sdd-implementer.md
 .config/claude/agents/sdd-re-reviewer.md
 .config/claude/agents/sdd-task-reviewer.md
-.config/claude/agents/spec-author.md
-.config/claude/agents/synthesizer.md
 .config/claude/agents/writer.md
-.config/codex/agents/implementer.toml
 .config/codex/agents/judge.toml
-.config/codex/agents/plan-author.toml
-.config/codex/agents/researcher.toml
-.config/codex/agents/review-synthesizer.toml
-.config/codex/agents/reviewer.toml
 .config/codex/agents/sdd-final-reviewer.toml
 .config/codex/agents/sdd-implementer-think.toml
 .config/codex/agents/sdd-implementer.toml
 .config/codex/agents/sdd-re-reviewer.toml
 .config/codex/agents/sdd-task-reviewer.toml
-.config/codex/agents/spec-author.toml
-.config/codex/agents/synthesizer.toml
 .config/codex/agents/writer.toml
 .config/opencode/agents/implementer.md
 .config/opencode/agents/judge.md

@@ -1,27 +1,27 @@
 # Defense-in-Depth Validation
 
-## 概要
+## Overview
 
-不正なデータが原因のバグを直すとき、1 箇所に検証を足せば十分に思える。しかしその 1 箇所は、別の実行経路・リファクタリング・mock によって迂回されうる。
+When fixing a bug caused by invalid data, adding validation at a single location may seem sufficient. However, that single check can be bypassed by an alternate code path, refactoring, or a mock.
 
-**中核**: データが通るすべての層で検証する。バグを構造的に起こりえなくする。
+**Core**: Validate at every layer data traverses. Make bugs structurally impossible.
 
-## なぜ複数の層か
+## Why Multiple Layers?
 
-1 箇所の検証は「バグを直した」。複数の層は「バグを起こりえなくした」。
+Single-point validation "fixes the bug." Multiple layers "make the bug impossible."
 
-層ごとに捕まえるものが違う。
+Each layer catches different failure modes:
 
-- 入口の検証はほとんどのバグを捕まえる
-- ビジネスロジックの検証はエッジケースを捕まえる
-- 環境ガードは文脈固有の危険を防ぐ
-- デバッグログは他の層が抜けたときに効く
+- Entrypoint validation catches the vast majority of invalid inputs
+- Business logic validation catches domain edge cases
+- Environment guards protect against context-specific hazards
+- Debug logging captures details when other layers fail to catch an anomaly
 
-## 4 つの層
+## Four Layers
 
-### 層 1: 入口の検証
+### Layer 1: Entrypoint Validation
 
-**目的**: API 境界で明らかに不正な入力を弾く
+**Purpose**: Reject clearly invalid input at API boundaries
 
 ```typescript
 function createProject(name: string, workingDirectory: string) {
@@ -37,9 +37,9 @@ function createProject(name: string, workingDirectory: string) {
 }
 ```
 
-### 層 2: ビジネスロジックの検証
+### Layer 2: Business Logic Validation
 
-**目的**: この操作にとってデータが意味を成すことを保証する
+**Purpose**: Ensure data is meaningful in the context of this specific operation
 
 ```typescript
 function initializeWorkspace(projectDir: string, sessionId: string) {
@@ -49,13 +49,13 @@ function initializeWorkspace(projectDir: string, sessionId: string) {
 }
 ```
 
-### 層 3: 環境ガード
+### Layer 3: Environment Guards
 
-**目的**: 特定の文脈で危険な操作を防ぐ
+**Purpose**: Prevent dangerous actions in specific execution contexts
 
 ```typescript
 async function gitInit(directory: string) {
-  // テスト中は temp ディレクトリ外での git init を拒否する
+  // During tests, refuse git init outside temp directory
   if (process.env.NODE_ENV === 'test') {
     const normalized = normalize(resolve(directory));
     const tmpDir = normalize(resolve(tmpdir()));
@@ -69,9 +69,9 @@ async function gitInit(directory: string) {
 }
 ```
 
-### 層 4: デバッグ計測
+### Layer 4: Debug Instrumentation
 
-**目的**: 事後分析のために文脈を残す
+**Purpose**: Retain context for post-mortem analysis
 
 ```typescript
 async function gitInit(directory: string) {
@@ -84,42 +84,40 @@ async function gitInit(directory: string) {
 }
 ```
 
-## 適用手順
+## How to Apply
 
-バグを見つけたら:
+When a bug is discovered:
 
-1. **データの流れを追う** — 不正な値はどこで生まれ、どこで使われるか
-2. **通過点をすべて洗い出す** — データが通る点を列挙する
-3. **各層に検証を足す** — 入口、ビジネスロジック、環境、デバッグ
-4. **各層をテストする** — 層 1 を迂回してみて、層 2 が捕まえることを確認する
+1. **Trace the Data Flow** — Where was the invalid value born, and where is it consumed?
+2. **Identify All Transit Points** — Enumerate every point through which the data passes.
+3. **Add Validation at Each Layer** — Entrypoint, business logic, environment, debug.
+4. **Test Each Layer** — Bypass layer 1 to ensure layer 2 reliably catches the error.
 
-## 実例
+## Real Example
 
-バグ: 空の `projectDir` によりソースコードで `git init` が走った
+Bug: Empty `projectDir` triggered `git init` in the source repository root.
 
-**データの流れ**:
-
-1. テストのセットアップ → 空文字列
+**Data Flow**:
+1. Test setup -> Empty string
 2. `Project.create(name, '')`
 3. `WorkspaceManager.createWorkspace('')`
-4. `git init` が `process.cwd()` で走る
+4. `git init` ran in `process.cwd()`
 
-**追加した 4 層**:
+**Added 4 Layers**:
+- Layer 1: `Project.create()` asserts non-empty, existing, writable directory
+- Layer 2: `WorkspaceManager` asserts `projectDir` is non-empty
+- Layer 3: `WorktreeManager` refuses `git init` outside tmpdir during tests
+- Layer 4: Recorded stack traces before invoking `git init`
 
-- 層 1: `Project.create()` が空でない・存在する・書き込めることを検証
-- 層 2: `WorkspaceManager` が projectDir が空でないことを検証
-- 層 3: `WorktreeManager` がテスト中の tmpdir 外 git init を拒否
-- 層 4: git init 前にスタックトレースを記録
+**Result**: All tests pass, and the bug cannot be reproduced through any entrypoint.
 
-**結果**: 全テストが通り、バグを再現できなくなった。
+## Summary
 
-## 要点
+All four layers were necessary. During verification, each layer caught edge cases missed by the others:
 
-4 つの層はすべて必要だった。検証中、各層が他の層の取りこぼしを捕まえた。
+- An alternate execution path bypassed entrypoint validation
+- A mock bypassed business logic validation
+- Platform-specific quirks required environment guards
+- Debug logs pinpointed structural misuse
 
-- 別の実行経路が入口の検証を迂回した
-- mock がビジネスロジックの検査を迂回した
-- プラットフォーム固有のエッジケースには環境ガードが要った
-- デバッグログが構造的な誤用を特定した
-
-**検証を 1 箇所で止めない。** すべての層にチェックを入れる。
+**Do not stop at one validation check.** Place guards across every layer.
