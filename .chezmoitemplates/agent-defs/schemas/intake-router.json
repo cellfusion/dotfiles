@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["route", "workClass", "role", "complexity", "goal", "writeScope", "acceptanceCriteria", "verification", "needsBrainstorming", "needsUserDecision", "confidence", "reason"],
+  "additionalProperties": false,
+  "properties": {
+    "route": { "enum": ["direct", "single", "delivery"] },
+    "workClass": { "enum": ["mechanical", "routine", "integration", "architectural"] },
+    "role": { "enum": ["implementer", "architectural-implementer", null] },
+    "complexity": { "enum": ["simple", "routine", "complex", "critical"] },
+    "goal": { "type": "string", "minLength": 1 },
+    "writeScope": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "acceptanceCriteria": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "verification": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "needsBrainstorming": { "type": "boolean" },
+    "needsUserDecision": { "type": "boolean" },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

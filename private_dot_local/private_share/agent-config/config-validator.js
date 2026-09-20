@@ -215,6 +215,15 @@ function candidateLists(config) {
       }
     }
   }
+  if (config.routingSelection) {
+    lists.push({
+      location: 'routingSelection',
+      environment: null,
+      duty: 'review',
+      complexity: 'simple',
+      candidates: config.routingSelection.candidates,
+    })
+  }
   for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
     for (const [complexity, policy] of Object.entries(byComplexity)) {
       policy.levels.forEach((level, index) => {
@@ -314,6 +323,9 @@ function assertSemantics(config) {
           }
         }
       }
+    }
+    if (config.routingSelection && !config.routingSelection.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
+      throw new ConfigError(`routingSelection ${environment}: candidate provider が eligibility にない`)
     }
     for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
       for (const [complexity, policy] of Object.entries(byComplexity)) {

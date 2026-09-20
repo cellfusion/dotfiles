@@ -247,6 +247,23 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
   return { complexity: requested, requestedComplexity: requested, warnings }
 }
 
+function selectRoutingCandidates(config, environment, role) {
+  const roleConfig = config.agentRoles[role]
+  if (!roleConfig || roleConfig.launchPolicy !== 'routing') return null
+  if (!config.routingSelection) throw new ConfigError('routingSelection: intake-router に必要である')
+  const eligible = config.environments[environment].providers
+  const candidates = config.routingSelection.candidates
+    .filter((candidate) => eligible.includes(candidate.provider))
+    .map((candidate) => ({
+      family: candidate.provider,
+      model: candidate.model,
+      effort: candidate.effort,
+      features: candidate.features,
+    }))
+  if (candidates.length === 0) throw new ConfigError(`routingSelection ${environment}: candidate がない`)
+  return { candidates, warnings: ['launch policy: routing'] }
+}
+
 function selectAttemptCandidates(config, environment, duty, complexity, provenance, round) {
   const isInitialDispatch = provenance === 'mad-dispatch' && round === 0
   const isFixAttempt = provenance === 'mad-fix' && round >= 1
@@ -305,9 +322,12 @@ function resolveDispatch(config, input) {
     input.provenance,
     input.round === undefined ? 0 : input.round,
   )
-  const selectedResolution = attemptSelection === null
-    ? resolution
-    : { ...resolution, candidates: attemptSelection.candidates }
+  const routingSelection = selectRoutingCandidates(config, environmentSelection.environment, input.role)
+  const selectedResolution = routingSelection !== null
+    ? { ...resolution, candidates: routingSelection.candidates }
+    : attemptSelection === null
+      ? resolution
+      : { ...resolution, candidates: attemptSelection.candidates }
   return assertResolvedConfig({
     ...exported,
     scope: 'dispatch',
@@ -323,6 +343,7 @@ function resolveDispatch(config, input) {
         ...selectedResolution.warnings,
         ...environmentSelection.warnings,
         ...warnings,
+        ...(routingSelection === null ? [] : routingSelection.warnings),
         ...(attemptSelection === null ? [] : attemptSelection.warnings),
       ],
     }],

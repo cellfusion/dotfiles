@@ -32,6 +32,14 @@ task-routing は、ユーザーの依頼を実装用の task packet に整理す
 
 `writeScope`、`acceptanceCriteria`、`verification` が不明なまま `confidence: high` にしない。推測で結果が変わる場合は `needsUserDecision` を `true` にする。
 
+## packet の作成者
+
+- `confidence: high` で依頼が明確なら、親が packet を直接作る
+- `confidence: medium` または `low`、複数の route があり得る場合、read-only の `intake-router` role を起動する
+- `intake-router` には raw request と必要最小限の repository context だけを渡す。出力は `intake-router` schema の packet とし、コードや設定は変更させない
+- `intake-router` の launch は `agent-config` の `routingSelection` から解決する。router に provider、model、effort を自由に選ばせない
+- router の packet が `needsUserDecision: true` または `confidence: low` の場合、実装 child を作らず親が確認する
+
 ## route の判断
 
 ### direct

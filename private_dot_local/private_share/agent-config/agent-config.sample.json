@@ -33,6 +33,12 @@
       "critical": { "notes": "sample: 判断が割れた結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     }
   },
+  "routingSelection": {
+    "notes": "sample: 依頼を task packet に分類する",
+    "candidates": [
+      { "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }
+    ]
+  },
   "attemptPolicy": {
     "implement": {
       "simple": {
@@ -52,6 +58,7 @@
     "implementer": { "duty": "implement", "access": "write", "description": "実装と検証を行う", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["implementer"] },
     "task-reviewer": { "duty": "review", "access": "read", "description": "タスクの差分をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "plan-auditor": { "duty": "review", "access": "read", "description": "実装前のプラン矛盾を監査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": [] },
+    "intake-router": { "duty": "review", "launchPolicy": "routing", "access": "read", "description": "依頼を task packet に分類する", "artifactContract": "task-packet-v1", "deliveryDuties": [] },
     "re-reviewer": { "duty": "review", "access": "read", "description": "指摘の解消を判定する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "final-reviewer": { "duty": "review", "access": "read", "description": "ブランチ全体をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "spec-author": { "duty": "author", "access": "write", "description": "spec を書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["spec-author"] },

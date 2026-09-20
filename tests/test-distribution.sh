@@ -37,6 +37,14 @@ assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \
   'Claude task-routing skill を配る'
 assert_contains "$managed" '.config/opencode/skills/task-routing/SKILL.md' \
   'OpenCode task-routing skill を配る'
+assert_contains "$managed" '.agents/agent-defs/prompts/intake-router.md' \
+  'intake-router prompt を配る'
+assert_contains "$managed" '.agents/agent-defs/schemas/intake-router.json' \
+  'intake-router schema を配る'
+assert_contains "$managed" '.config/claude/agents/intake-router.md' \
+  'Claude intake-router agent を配る'
+assert_contains "$managed" '.config/opencode/agents/intake-router.md' \
+  'OpenCode intake-router agent を配る'
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
