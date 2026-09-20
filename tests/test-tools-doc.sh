@@ -29,6 +29,8 @@ assert_contains "$doc" 'MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"' \
   'docs: mad-route summary の絶対 script path を記録する'
 assert_contains "$doc" 'MAD_RUN="$MAD_SCRIPTS/mad-run"' \
   'docs: mad-run の絶対 script path を記録する'
+assert_contains "$doc" 'mad-plan-parser.js' \
+  'docs: shared plan parser の path を記録する'
 assert_contains "$doc" 'native roleはClaude Code、Codex、Piへ同じrole catalogから配る' \
   'docs: native role の配布先を記録する'
 assert_contains "$doc" 'MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"' \
@@ -36,7 +38,7 @@ assert_contains "$doc" 'MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-c
 
 # 記録した本数が実際に配る script の本数と一致することを確かめる。
 script_count="$(find "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts" \
-  -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  -mindepth 1 -maxdepth 1 -type f ! -name '*.js' | wc -l | tr -d ' ')"
 assert_eq "$script_count" 15 'docs: 配る script は 15 本である'
 
 assert_summary

@@ -58,7 +58,6 @@ CLAUDE.md
 .agents/skills/braid
 .config/claude/skills/braid
 .config/opencode/skills/braid
-.agents/skills/multi-agent-development/scripts/mad-run
 .agents/skills/multi-agent-development/scripts/mad-agent
 .agents/skills/multi-agent-development/scripts/mad-route
 .agents/skills/multi-agent-development/scripts/mad-lib.sh

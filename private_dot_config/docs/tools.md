@@ -188,11 +188,12 @@ MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
 MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
 MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"
 MAD_RUN="$MAD_SCRIPTS/mad-run"
+MAD_PLAN_PARSER="$MAD_SCRIPTS/mad-plan-parser.js"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の15 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の15 scriptと共通 parser `mad-plan-parser.js`は`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
