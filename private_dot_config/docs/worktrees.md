@@ -66,14 +66,14 @@ dev server のような常駐プロセスだけ `post-start` に置く。
     wt remove feat/foo
 
 エージェント: `multi-agent-development` の `implement` と `spike` では、worktree を作るのは親である。
-`mcp__paseo__create_agent` は作成時に `workspaceId` を要求するので、子を起動する前に workspace が
+選択した Paseo backend の create が `workspaceId` を要求するので、子を起動する前に workspace が
 存在している必要がある。親は台帳の `path` から diff を取るので、子が別の場所に worktree を作ると
 親が取る diff が空になる。worktree を作るのは `mad-worktree` であり、素の `git worktree add` を使う。
 置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` で、`MAD_STATE_DIR` の既定値は
-`~/.local/state/mad` である。Paseo MCP backend では、作成済みの worktree の絶対パスを
-`mcp__paseo__create_workspace` の `path` に渡し `isolation` `local` で呼ぶ。Paseo は worktree を
-作らず、既にある checkout に workspace を取り付けるだけである。どちらも herdr には登録しない。
-子は親が渡した worktree の中で働く。
+`~/.local/state/mad` である。MCP backend では `mcp__paseo__create_workspace` に、CLI backend では
+`paseo workspace create` に、作成済み worktree の絶対パスを local workspace として渡す。Paseo は
+worktree を作らず、既にある checkout に workspace を取り付けるだけである。どちらも herdr には
+登録しない。子は親が渡した worktree の中で働く。
 
 追跡外ファイルのコピーと依存インストールは、リポジトリに `.config/wt.toml` があるときだけ
 `wt hook pre-start` が行う。`mad-worktree` は worktree を作った後にそのフックを 1 度呼ぶ。

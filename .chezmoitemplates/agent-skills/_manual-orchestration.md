@@ -191,7 +191,7 @@ implementer の終了後、親は `status` で分岐する。`DONE` と `DONE_WI
 
 post-commit check が成功した後、親は outcome audit を一件だけ作る。CLI backend では accepted childRef に対して `"$MAD_CLI_ADAPTER" inspect-agent --child-ref <safe-id>` を一回呼び、返った `status`、`durationMs`、`usage` だけを 0600 の一時 evidence に保存する。MCP backend または usage が取得できない場合は token fields を 0、`usage.source` を `unavailable` とし、推測値を作らない。tool loop は raw logs を保存せず、sanitized な集計値だけを `toolLoopCount` / `toolLoopSource` に入れる。
 
-親は独立した test、review、regression の結果と、launch の route/model/effort、retry count、policy level、trigger を `mad-attempt-outcome-v1` の exact key set に組み立て、次で local mode 0600 JSONL へ追記する。
+親は独立した test、review、regression の結果と、launch の route/model/effort、retry count、policy level、trigger を `mad-attempt-outcome` version 1 の exact key set に組み立て、次で local mode 0600 JSONL へ追記する。
 
 ```bash
 "$MAD_OUTCOME_RECORD" --record "$ATTEMPT_DIR/outcome.json" --output "$MAD_OUTCOME_LOG"
@@ -244,7 +244,9 @@ fix は `--phase fix --node "$TASK_ID-fix"`、re-review は `--phase re-review -
 
 - round 0 の `task-reviewer` は、run state が持つ確定した `base` を `PACKAGE_BASE`、実装役が commit した後の `HEAD` を `PACKAGE_HEAD` とする
 - round 1 から 3 の `re-reviewer` は、そのラウンドの fix を始める直前の `HEAD` を `PACKAGE_BASE`、fix を commit した後の `HEAD` を `PACKAGE_HEAD` とする。`HEAD~1` を使わない。1 ラウンドが複数の commit になったとき、最後の commit 以外が範囲から外れる
-- `final-reviewer` は、run state が持つ確定した `base` を `PACKAGE_BASE`、全 task 完了後の `HEAD` を `PACKAGE_HEAD` とする
+- `final-reviewer` は、run state が持つ確定した `base` を `PACKAGE_BASE`、全 task 完了後の `HEAD` を `PACKAGE_HEAD` とする。
+
+review / re-review / final-review の `--prepare-review` には、対象 task の `WORK_CLASS` を必ず `--work-class "$WORK_CLASS"` で渡す。親は plan の明示値、または complexity fallback で得た値を review attempt 全体で固定する。
 
 親は `task-reviewer`、`re-reviewer`、`final-reviewer` の 3 つの結果を採用する前に、`--check-review-package` で範囲を検査する。`task-reviewer` と `re-reviewer` の結果には、範囲に加えて `--check-review-verdict` で verdict も検査する。`final-reviewer` の結果は範囲だけを検査する。`--check-review-verdict` が受け付ける `--role` は `task-reviewer` と `re-reviewer` の 2 つだけであり、`final-reviewer` を渡すと exit 2 で拒む。検査のいずれかが失敗したらその結果を採用せず、attempt を `failed` にする。
 
@@ -311,11 +313,11 @@ spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad
 `final-reviewer` の結果に Critical または Important の finding がある場合、finding ごとに child を作らず、次の bounded loop を一度だけ実行する。Minor は `triage` で merge 前に直すか deferred にする。
 
 1. branch の変更ファイル全体を `allowedFiles` にした task `final` の `mad-review-scope` を作る。`findingIds` は空配列、`outOfScopePath` は absolute path とする。
-2. `--prepare-review --task final --phase review --node final-review --round 0` を通してから、final-reviewer の package と結果を検証する。結果の package 範囲が不正なら fix を起動しない。
+2. `--prepare-review --task final --phase review --node final-review --round 0 --work-class "$WORK_CLASS"` を通してから、final-reviewer の package と結果を検証する。結果の package 範囲が不正なら fix を起動しない。
 3. final-reviewer の findings から `mad-review-open-findings` を一度だけ作る。Critical/Important が無い場合は final review を終了する。
-4. Critical/Important の全 finding と branch の許可範囲を含む fresh な `final-fix` brief を作り、一つの final-fix implementer だけを起動する。full plan は渡さず、brief の absolute path だけを渡す。`--prepare-review --task final --phase fix --node final-fix --round 1` と同じ scope marker を使う。
+4. Critical/Important の全 finding と branch の許可範囲を含む fresh な `final-fix` brief を作り、一つの final-fix implementer だけを起動する。full plan は渡さず、brief の absolute path だけを渡す。`--prepare-review --task final --phase fix --node final-fix --round 1 --work-class "$WORK_CLASS"` と同じ scope marker を使う。
 5. final-fix の result、commit、RED/GREEN、`changedFiles`、scope を検証する。scope 外の変更、未検証の結果、`BLOCKED`、`NEEDS_CONTEXT` は採用せず `waiting_for_user` にする。
-6. fix diff を review package にして、同じ finding list を `re-reviewer` に一度だけ渡す。これを final re-review と呼ぶ。`--prepare-review --task final --phase re-review --node final-re-review --round 1` と `--check-review-verdict --role re-reviewer` を使う。
+6. fix diff を review package にして、同じ finding list を `re-reviewer` に一度だけ渡す。これを final re-review と呼ぶ。`--prepare-review --task final --phase re-review --node final-re-review --round 1 --work-class "$WORK_CLASS"` と `--check-review-verdict --role re-reviewer` を使う。
 7. 全 finding が addressed なら final review を採用する。finding が残る、new breakage がある、または re-review が失敗した場合は `unresolved` / `waiting_for_user` として停止する。
 
 この経路では二度目の final-fix、per-finding fixer、final-reviewer の再起動を行わない。追加の変更が必要なら、元 run を延長せず新しい task/run として開始する。

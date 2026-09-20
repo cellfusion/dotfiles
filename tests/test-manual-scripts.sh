@@ -32,7 +32,7 @@ assert_contains "$mad_contract" 'MAD_BACKEND="${MAD_BACKEND:-paseo-cli}"' \
   'backend: paseo-cli is the strict MAD default'
 assert_contains "$mad_contract" '--backend paseo-cli' \
   'backend: CLI resolve path is explicit'
-assert_contains "$mad_contract" 'mad-attempt-outcome-v1' \
+assert_contains "$mad_contract" 'mad-attempt-outcome` version 1' \
   'outcome: audit record contract is explicit'
 assert_contains "$mad_contract" 'inspect-agent --child-ref' \
   'outcome: sanitized usage inspection is explicit'
