@@ -132,7 +132,7 @@ function parseArgs(argv) {
   }
 
   const options = {}
-  const allowed = ['--project', '--role', '--provenance', '--snapshot', '--complexity', '--round', '--environment']
+  const allowed = ['--project', '--role', '--provenance', '--snapshot', '--complexity', '--round', '--environment', '--backend']
   while (index < argv.length) {
     const option = argv[index]
     if (option === '--input' || option === '--paseo-config' || option === '--check') {
@@ -307,6 +307,7 @@ function runResolve(args) {
     complexity: args.options.complexity,
     round: parseRound(args.options.round),
     environment: args.options.environment,
+    backend: args.options.backend,
     parentEnvironment: readParentEnvironment(),
   })
   const snapshotRaw = readFile(args.options.snapshot, '--snapshot')

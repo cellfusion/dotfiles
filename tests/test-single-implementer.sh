@@ -12,6 +12,7 @@ prompt="$tmp/implementer.md"
 schema="$tmp/implementer.json"
 snapshot="$tmp/snapshot.json"
 attempt="$tmp/attempt"
+cli_attempt="$tmp/cli-attempt"
 
 cat > "$packet" <<'JSON'
 {
@@ -69,6 +70,35 @@ if [ -f "$attempt/single-create.json" ]; then
   assert_contains "$request" "$packet" 'single request references the packet path'
   assert_eq "$(stat -f '%Lp' "$attempt/single-create.json" 2>/dev/null || stat -c '%a' "$attempt/single-create.json")" 600 \
     'single request is private'
+fi
+
+if AGENT_ENV=primary "$script" prepare \
+  --backend paseo-cli \
+  --packet "$packet" \
+  --config "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.sample.json" \
+  --project "$CHEZMOI_SOURCE" \
+  --snapshot "$snapshot" \
+  --workspace-id workspace-test \
+  --attempt-dir "$cli_attempt" \
+  --role-prompt "$prompt" \
+  --role-schema "$schema" \
+  --title 'single CLI implementer test' >/tmp/single-cli-output; then
+  _pass 'single CLI prepare succeeds'
+else
+  _fail 'single CLI prepare succeeds'
+fi
+
+if [ -f "$cli_attempt/single-cli.json" ]; then
+  _pass 'single CLI request exists'
+else
+  _fail 'single CLI request exists'
+fi
+
+if [ -f "$cli_attempt/single-cli.json" ]; then
+  cli_request="$(cat "$cli_attempt/single-cli.json")"
+  assert_eq "$(printf '%s' "$cli_request" | jq -r '.backend')" 'paseo-cli' 'single CLI request identifies the backend'
+  assert_eq "$(printf '%s' "$cli_request" | jq -r '.provider')" 'codex' 'single CLI request uses the provider family'
+  assert_not_contains "$cli_request" 'fast_mode' 'single CLI request does not silently pass unsupported features'
 fi
 
 assert_summary

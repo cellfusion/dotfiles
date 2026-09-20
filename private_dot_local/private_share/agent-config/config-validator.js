@@ -215,6 +215,17 @@ function candidateLists(config) {
       }
     }
   }
+  if (config.singleSelection) {
+    for (const [complexity, slot] of Object.entries(config.singleSelection.implement)) {
+      lists.push({
+        location: `singleSelection.implement.${complexity}`,
+        environment: null,
+        duty: 'implement',
+        complexity,
+        candidates: slot.candidates,
+      })
+    }
+  }
   for (const [name, selection] of Object.entries({
     routingSelection: config.routingSelection,
     escalationSelection: config.escalationSelection,
@@ -326,6 +337,13 @@ function assertSemantics(config) {
           if (!definition.providers.includes(candidate.provider)) {
             throw new ConfigError(`environment ${environment}/${duty}/${complexity}: candidate provider が eligibility にない`)
           }
+        }
+      }
+    }
+    if (config.singleSelection) {
+      for (const [complexity, slot] of Object.entries(config.singleSelection.implement)) {
+        if (!slot.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
+          throw new ConfigError(`singleSelection ${environment}/implement/${complexity}: candidate provider が eligibility にない`)
         }
       }
     }

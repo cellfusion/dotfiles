@@ -247,6 +247,27 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
   return { complexity: requested, requestedComplexity: requested, warnings }
 }
 
+function selectSingleCandidates(config, environment, duty, complexity, backend) {
+  if (backend !== 'paseo-cli') return null
+  if (duty !== 'implement') throw new ConfigError('paseo-cli backend: implement role が必要である')
+  const slot = config.singleSelection && config.singleSelection.implement[complexity]
+  if (!slot) throw new ConfigError(`singleSelection implement/${complexity}: slot がない`)
+  const eligible = config.environments[environment].providers
+  const candidates = slot.candidates
+    .filter((candidate) => eligible.includes(candidate.provider))
+    .map((candidate) => ({
+      family: candidate.provider,
+      model: candidate.model,
+      effort: candidate.effort,
+      features: candidate.features,
+    }))
+  if (candidates.length === 0) throw new ConfigError(`singleSelection ${environment}/implement/${complexity}: candidate がない`)
+  if (candidates.some((candidate) => Object.keys(candidate.features).length > 0)) {
+    throw new ConfigError('paseo-cli backend: provider feature は未対応である')
+  }
+  return { candidates, warnings: ['backend policy: paseo-cli'] }
+}
+
 function selectRoutingCandidates(config, environment, role) {
   const roleConfig = config.agentRoles[role]
   if (!roleConfig || !['routing', 'escalation'].includes(roleConfig.launchPolicy)) return null
@@ -324,12 +345,21 @@ function resolveDispatch(config, input) {
     input.provenance,
     input.round === undefined ? 0 : input.round,
   )
+  const singleSelection = selectSingleCandidates(
+    config,
+    environmentSelection.environment,
+    dutySelection.duty,
+    complexitySelection.complexity,
+    input.backend,
+  )
   const routingSelection = selectRoutingCandidates(config, environmentSelection.environment, input.role)
   const selectedResolution = routingSelection !== null
     ? { ...resolution, candidates: routingSelection.candidates }
-    : attemptSelection === null
-      ? resolution
-      : { ...resolution, candidates: attemptSelection.candidates }
+    : singleSelection !== null
+      ? { ...resolution, candidates: singleSelection.candidates }
+      : attemptSelection === null
+        ? resolution
+        : { ...resolution, candidates: attemptSelection.candidates }
   return assertResolvedConfig({
     ...exported,
     scope: 'dispatch',
@@ -346,6 +376,7 @@ function resolveDispatch(config, input) {
         ...environmentSelection.warnings,
         ...warnings,
         ...(routingSelection === null ? [] : routingSelection.warnings),
+        ...(singleSelection === null ? [] : singleSelection.warnings),
         ...(attemptSelection === null ? [] : attemptSelection.warnings),
       ],
     }],

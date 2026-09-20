@@ -33,6 +33,14 @@
       "critical": { "notes": "sample: 判断が割れた結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     }
   },
+  "singleSelection": {
+    "implement": {
+      "simple": { "notes": "sample: CLI single implementer", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+      "routine": { "notes": "sample: CLI routine implementation", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": {} }] },
+      "complex": { "notes": "sample: CLI integration implementation", "candidates": [{ "provider": "codex", "model": "sample-think", "effort": "high", "features": {} }] },
+      "critical": { "notes": "sample: CLI critical implementation", "candidates": [{ "provider": "codex", "model": "sample-deep", "effort": "max", "features": {} }] }
+    }
+  },
   "routingSelection": {
     "notes": "sample: classify requests into task packets",
     "candidates": [

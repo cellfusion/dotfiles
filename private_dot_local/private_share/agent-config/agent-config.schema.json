@@ -544,6 +544,24 @@
       },
       "additionalProperties": false
     },
+    "singleSelection": {
+      "type": "object",
+      "required": ["implement"],
+      "additionalProperties": false,
+      "properties": {
+        "implement": {
+          "type": "object",
+          "required": ["simple", "routine", "complex", "critical"],
+          "additionalProperties": false,
+          "properties": {
+            "simple": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+            "routine": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+            "complex": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
+            "critical": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } }
+          }
+        }
+      }
+    },
     "routingSelection": {
       "type": "object",
       "required": ["candidates"],
