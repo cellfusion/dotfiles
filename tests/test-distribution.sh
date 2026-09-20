@@ -45,6 +45,10 @@ assert_contains "$managed" '.config/claude/agents/intake-router.md' \
   'distribute Claude intake-router agent'
 assert_contains "$managed" '.config/opencode/agents/intake-router.md' \
   'distribute OpenCode intake-router agent'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-worktree' \
+  'mad-worktree を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-progress' \
+  'mad-progress を配る'
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \

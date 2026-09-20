@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+const USAGE = `usage: mad-worktree <subcommand> [options]
+  create --repo <repo-root> --run-id <run-id> --node <node-id> --base <commit-ish>
+  list   --repo <repo-root>
+  remove --repo <repo-root> --branch <branch> [--delete-branch]
+`
+
+const SUBCOMMANDS = ['create', 'list', 'remove']
+const FLAGS = ['delete-branch', 'help']
+
+function fail(message) {
+  process.stderr.write(`mad-worktree: ${message}\n`)
+  process.exit(2)
+}
+
+function safeId(value) {
+  return typeof value === 'string' && value !== '.' && value !== '..' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
+}
+
+function parseOptions(argv) {
+  const options = {}
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (!token.startsWith('--')) fail(`unknown argument: ${token}`)
+    const name = token.slice(2)
+    if (FLAGS.includes(name)) {
+      options[name] = true
+      continue
+    }
+    const value = argv[index + 1]
+    if (value === undefined || value.startsWith('--')) fail(`--${name} requires a value`)
+    options[name] = value
+    index += 1
+  }
+  return options
+}
+
+function git(args, cwd) {
+  return spawnSync('git', args, { cwd, encoding: 'utf8' })
+}
+
+function stateDir() {
+  const configured = process.env.MAD_STATE_DIR
+  if (typeof configured === 'string' && configured.length > 0) return configured
+  return path.join(os.homedir(), '.local', 'state', 'mad')
+}
+
+function repoRoot(value) {
+  if (typeof value !== 'string' || value.length === 0) fail('--repo is required')
+  const result = git(['rev-parse', '--show-toplevel'], value)
+  if (result.status !== 0) fail(`--repo is not a git repository: ${value}`)
+  return result.stdout.trim()
+}
+
+function madWorktrees(root) {
+  const result = git(['worktree', 'list', '--porcelain'], root)
+  if (result.status !== 0) fail(result.stderr.trim() || 'git worktree list failed')
+  const entries = []
+  let current = null
+  for (const line of result.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { path: line.slice('worktree '.length), branch: null }
+    } else if (line.startsWith('branch ') && current !== null) {
+      current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '')
+    } else if (line.length === 0 && current !== null) {
+      entries.push(current)
+      current = null
+    }
+  }
+  if (current !== null) entries.push(current)
+  return entries.filter((entry) => typeof entry.branch === 'string' && entry.branch.startsWith('mad/'))
+}
+
+// 追跡外ファイルのコピーと依存インストールは wt hook pre-start に任せる。hook は
+// worktree を誰が作ったかを問わず動く。リポジトリが .config/wt.toml を持たない場合と
+// wt が入っていない場合は何も実行しない。セットアップの失敗で worktree を消すと、
+// 作業ツリー自体は使えるのに実装役が入る場所を失う。親が続行するかを決める。
+function runSetup(worktreePath, root) {
+  if (!fs.existsSync(path.join(root, '.config', 'wt.toml'))) return { setup: 'skipped' }
+  const result = spawnSync('wt', ['hook', 'pre-start'], { cwd: worktreePath, encoding: 'utf8' })
+  if (result.error !== undefined) return { setup: 'skipped' }
+  if (result.status !== 0) {
+    return { setup: 'failed', setup_stderr: String(result.stderr || '').slice(0, 500) }
+  }
+  return { setup: 'ok' }
+}
+
+function create(options) {
+  const root = repoRoot(options.repo)
+  if (!safeId(options['run-id'])) fail('--run-id must be a basename-safe id')
+  if (!safeId(options.node)) fail('--node must be a basename-safe id')
+  if (typeof options.base !== 'string' || options.base.length === 0) fail('--base is required')
+  const resolved = git(['rev-parse', '--verify', `${options.base}^{commit}`], root)
+  if (resolved.status !== 0) fail(`--base is not a commit: ${options.base}`)
+  const base = resolved.stdout.trim()
+  const branch = `mad/${options['run-id']}/${options.node}`
+  const target = path.join(stateDir(), 'worktrees', path.basename(root), branch.replace(/\//g, '-'))
+  if (fs.existsSync(target)) fail(`worktree path already exists: ${target}`)
+  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 })
+  const added = git(['worktree', 'add', '-b', branch, target, base], root)
+  if (added.status !== 0) fail(added.stderr.trim() || 'git worktree add failed')
+  const setup = runSetup(target, root)
+  process.stdout.write(`${JSON.stringify({ branch, path: target, base, ...setup })}\n`)
+}
+
+function list(options) {
+  process.stdout.write(`${JSON.stringify(madWorktrees(repoRoot(options.repo)))}\n`)
+}
+
+function remove(options) {
+  const root = repoRoot(options.repo)
+  const branch = options.branch
+  if (typeof branch !== 'string' || !branch.startsWith('mad/')) fail('--branch must start with mad/')
+  const entry = madWorktrees(root).find((candidate) => candidate.branch === branch)
+  let removed = false
+  if (entry !== undefined) {
+    const result = git(['worktree', 'remove', entry.path], root)
+    if (result.status !== 0) fail(result.stderr.trim() || 'git worktree remove failed')
+    removed = true
+  }
+  let branchDeleted = false
+  if (options['delete-branch'] === true) {
+    // 強制削除は使わない。取り込んでいないブランチを消すと実装を失う。
+    const deleted = git(['branch', '-d', branch], root)
+    branchDeleted = deleted.status === 0
+    if (!branchDeleted) {
+      process.stderr.write(`mad-worktree: branch is not deleted: ${deleted.stderr.trim()}\n`)
+    }
+  }
+  process.stdout.write(`${JSON.stringify({ branch, removed, branch_deleted: branchDeleted })}\n`)
+}
+
+function main(argv) {
+  const subcommand = argv[0]
+  if (subcommand === undefined || subcommand === '--help' || subcommand === 'help') {
+    process.stdout.write(USAGE)
+    return
+  }
+  if (!SUBCOMMANDS.includes(subcommand)) fail(`unknown subcommand: ${subcommand}`)
+  const options = parseOptions(argv.slice(1))
+  if (options.help === true) {
+    process.stdout.write(USAGE)
+    return
+  }
+  if (subcommand === 'create') create(options)
+  else if (subcommand === 'list') list(options)
+  else remove(options)
+}
+
+main(process.argv.slice(2))

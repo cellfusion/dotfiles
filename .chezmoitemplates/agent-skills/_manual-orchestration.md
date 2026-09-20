@@ -17,9 +17,14 @@ MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
+MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
+MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
+MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 ```
+
+`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。
 
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
 
@@ -158,9 +163,9 @@ implementer の終了後、親は `status` で分岐する。`DONE` と `DONE_WI
   --result-file "$RESULT_FILE"
 ```
 
-成功した結果だけを採用候補にする。exit `2` なら validator の stderr の 1 行を理由として同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user`、workspace の integration を `pending` のままにして archive しない。
+成功した結果だけを採用候補にする。exit `2` なら validator の stderr の 1 行を理由として同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user`、台帳の integration を `pending` のままにして worktree を消さない。
 
-`BLOCKED` または `NEEDS_CONTEXT` では post-commit check を実行しない。result の `summary` と、non-null の `decisionRequestPath` が指す質問・選択肢の内容を同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user` にする。この場合も workspace の integration は `pending` のままにして archive しない。status と `decisionRequestPath` の組み合わせが契約に反する結果は採用せず `waiting_for_user` にする。
+`BLOCKED` または `NEEDS_CONTEXT` では post-commit check を実行しない。result の `summary` と、non-null の `decisionRequestPath` が指す質問・選択肢の内容を同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user` にする。この場合も台帳の integration は `pending` のままにして worktree を消さない。status と `decisionRequestPath` の組み合わせが契約に反する結果は採用せず `waiting_for_user` にする。
 
 ## delivery role map
 
@@ -294,9 +299,9 @@ plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証�
 
 ## run と attempt の状態
 
-親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、implementer 用の `task-excerpt.md`、`execution-context.md`、`brief.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
+親は一意な run ID を発行し、`${MAD_STATE_DIR}/runs/<run-id>/` を run directory として作り、そこに `state.json` を置く。run directory と `${MAD_STATE_DIR}` は mode 0700 で作り、run directory の下に作る `nodes/<node-id>/` と `attempts/<attempt-id>/` も mode 0700 で作る。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、implementer 用の `task-excerpt.md`、`execution-context.md`、`brief.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
 
-run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 4`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
+run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 4`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision`、`backend_handle`、`liveness` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。`backend_handle` と `liveness` は、`create_accepted` が `true` になって attempt が `running` へ移った後にだけ書く。`pending` の attempt state は `state` と `create_accepted` の 2 key だけを持つ。`liveness` は `kind` が `pid` なら `pid`、`command`、`started_at` を持ち、`kind` が `child_ref` なら `heartbeat_at` を持つ。`heartbeat_at` は `running` になった後の attempt state の更新のたびに UTC ISO 8601 で書き直す。
 
 `state` は `pending`、`running`、`waiting_for_user`、`ok`、`failed`、`stopped`、`unresolved` のいずれかである。`state` が `running` の attempt は UTC ISO 8601 の `started_at` と `create_accepted: true` を必須にする。`create_accepted` は必須 boolean である。false なら child_ref を持たず、true なら state を問わず basename-safe な child_ref を必須にする。`adopted_attempts` は node ID から親が採用した attempt ID への map とし、run を `ok` にする前に採用結果を確認する。
 
@@ -312,9 +317,9 @@ child の role、prompt、schema、workspace を決めた後、親は `mcp-creat
 
 ## worktree と diff
 
-`implement` と `spike` は child ごとに Paseo workspace を先に作る。workspace は `isolation: worktree`、`mode: branch-off`、呼び出し元 path、`mad/<run-id>/<node-id>` の branch、確定した base を持つ。返った `workspaceId` を create request に渡し、absolute `cwd` と branch を `workspaces.json` に記録する。workspace は node ごとに一つであり、既存の台帳 entry を別 ID で上書きしない。
+`implement` と `spike` は child ごとに worktree を先に作る。作るのは `"$MAD_WORKTREE" create --repo <repo-root> --run-id <run-id> --node <node-id> --base <確定した base>` であり、branch は `mad/<run-id>/<node-id>`、置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` である。置き場所はリポジトリの作業ツリーの外なので、`.gitignore` への追加は要らない。Paseo MCP backend では、返った絶対 path を `mcp__paseo__create_workspace` の `path` に渡し `isolation: local` で呼ぶ。Paseo は worktree を作らず、既にある checkout に workspace を取り付けるだけである。返った `workspaceId` は create request に渡し、attempt が `running` へ移った後の attempt state の `backend_handle` に入れる。台帳は run directory 直下の `worktrees.json` とし、node ID ごとに `path`、`branch`、`base`、`integration`、`removed`、`branch_deleted` を記録する。worktree は node ごとに一つであり、既存の台帳 entry を別の path で上書きしない。
 
-レビュー child には worktree の中身を直接読ませず、親が `"$MAD_REVIEW_BUNDLE"` を呼んで attempt の `review-package.diff` を作り、その絶対 path だけを渡す。review package の組み立ては workspace archive より前に行う。組み立ての失敗は run を `failed` とし、空の diff は親が判断する。workspace の integration は `pending`、`merged`、`declined` のいずれかで、`declined` には理由を残す。integration の判断後にだけ archive し、`archived: true` を台帳へ書く。
+レビュー child には worktree の中身を直接読ませず、親が `"$MAD_REVIEW_BUNDLE"` を呼んで attempt の `review-package.diff` を作り、その絶対 path だけを渡す。review package の組み立ては `"$MAD_WORKTREE" remove` より前に行う。組み立ての失敗は run を `failed` とし、空の diff は親が判断する。台帳の `integration` は `pending`、`merged`、`declined` のいずれかで、`declined` には `integration_reason` を残す。integration の判断後にだけ `"$MAD_WORKTREE" remove` を実行し、`removed: true` を台帳へ書く。
 
 各 wave の採用済み task は task number の昇順で、呼び出し元の `PROJECT_ROOT` に統合する。
 
@@ -322,7 +327,7 @@ child の role、prompt、schema、workspace を決めた後、親は `mcp-creat
 git -C "$PROJECT_ROOT" merge --no-ff "mad/<run-id>/<node-id>"
 ```
 
-merge 成功時だけ workspace の integration を `merged` にする。衝突したら直ちに `git -C "$PROJECT_ROOT" merge --abort` を実行し、integration を `pending` のままにして archive しない。run の `state` と `phase_state` を `waiting_for_user` にし、decision request へ衝突ファイルの repository-relative path、衝突した 2 task の番号、両 task の `Depends on` と `Files:` を書く。同一 wave の残りの merge と、後続 wave の create は停止する。
+merge 成功時だけ台帳の integration を `merged` にする。衝突したら直ちに `git -C "$PROJECT_ROOT" merge --abort` を実行し、integration を `pending` のままにして worktree を消さない。run の `state` と `phase_state` を `waiting_for_user` にし、decision request へ衝突ファイルの repository-relative path、衝突した 2 task の番号、両 task の `Depends on` と `Files:` を書く。同一 wave の残りの merge と、後続 wave の create は停止する。
 
 ## recipe と判断要求
 
@@ -334,6 +339,14 @@ child が判断を要求する場合、write role は `decisionRequestPath` と�
 
 ## validator と後片付け
 
-親は child の実行 backend と切り離して成果物 validator を実行する。validator は MCP を呼ばず、state、attempt、handoff、workspace、artifact path の形だけを確認する。完了 recipe に必要な node の adopted attempt、regular file、integration、archive を確認し、失敗した run を `ok` にしない。
+親は child の実行 backend と切り離して成果物 validator を実行する。validator は MCP を呼ばず、state、attempt、handoff、worktree 台帳、artifact path の形だけを確認する。完了 recipe に必要な node の adopted attempt、regular file、integration、worktree の削除を確認し、失敗した run を `ok` にしない。
 
-integration の判断と diff の保存が完了したら、親は workspace を Paseo MCP で archive し、台帳に `archived: true` を記録する。archive に失敗しても run directory と台帳は削除しない。`pending` の integration や未 archive workspace が残る run は `ok` にしない。
+integration の判断と `review-package.diff` の保存が完了したら、親は次の順で片付ける。
+
+1. 親は worktree を消す前に、attempt の `review-package.diff` が保存済みであることを確認する。diff の取得は `"$MAD_WORKTREE" remove` より前に行う
+2. 親は `integration` を `merged`、`declined` のいずれかに決めて台帳へ書く。`declined` には `integration_reason` を書く。どの順で merge するか、衝突したときに run をどう止めるかは取り込みの規則が定める
+3. `integration` が `merged` の node は `"$MAD_WORKTREE" remove --repo <repo-root> --branch <branch> --delete-branch` で片付ける。返った `branch_deleted` が `false` なら、ブランチを残したまま `branch_deleted: false` を台帳へ書き、run を `ok` にしない
+4. `integration` が `declined` の node は `"$MAD_WORKTREE" remove --repo <repo-root> --branch <branch>` で checkout だけ消し、ブランチを残す。`branch_deleted` は `false` になる
+5. `remove` に失敗しても run directory と台帳は削除しない。`pending` の integration や `removed` が `false` のままの worktree が残る run は `ok` にしない
+
+run の進捗は `"$MAD_PROGRESS" status --run-dir <run-dir>` が出す。応答の無い attempt の回収は `"$MAD_PROGRESS" reap --run-dir <run-dir>`、中断した run の洗い出しは `"$MAD_PROGRESS" resume --run-dir <run-dir>` が行う。`resume` は子を起動せず attempt も発行しない。起動の判断は親が行う。

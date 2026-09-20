@@ -22,6 +22,20 @@ nvim
 :Lazy clean
 ```
 
+### Tests
+```bash
+# Run every test under tests/
+bash tests/run-tests.sh
+
+# Run one test
+bash tests/test-tools-doc.sh
+```
+
+`tests/` is not distributed; `.chezmoiignore` lists `tests` and `tests/**`. Each test file is
+self-contained, sources `tests/lib/assert.sh`, prints `SUMMARY <checks> <failures>`, and exits
+non-zero when a check fails. `tests/run-tests.sh` runs an explicit allowlist in a fixed order;
+`tests/test-run-tests.sh` checks that allowlist, so a new test has to be added to both.
+
 ### Repository Management
 ```bash
 # Commit configuration changes

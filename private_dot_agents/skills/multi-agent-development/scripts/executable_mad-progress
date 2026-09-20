@@ -1,0 +1,382 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { execFileSync, spawnSync } = require('node:child_process')
+
+const USAGE = `usage: mad-progress <subcommand> [options]
+  status --run-dir <run-dir> [--json] [--write-ledger]
+  reap   --run-dir <run-dir> [--stale-after <seconds>]
+  resume --run-dir <run-dir>
+  list   [--state-dir <dir>]
+`
+
+const SUBCOMMANDS = ['status', 'reap', 'resume', 'list']
+const FLAGS = ['json', 'write-ledger', 'help']
+const STALLED_STATES = ['pending', 'waiting_for_user', 'failed', 'stopped', 'unresolved']
+const DEFAULT_STALE_AFTER = 1800
+const REAP_NEXT_ACTION = '親が attempt を再発行するか run を停止するか決める'
+
+function fail(message) {
+  process.stderr.write(`mad-progress: ${message}\n`)
+  process.exit(2)
+}
+
+function parseOptions(argv) {
+  const options = {}
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (!token.startsWith('--')) fail(`unknown argument: ${token}`)
+    const name = token.slice(2)
+    if (FLAGS.includes(name)) {
+      options[name] = true
+      continue
+    }
+    const value = argv[index + 1]
+    if (value === undefined || value.startsWith('--')) fail(`--${name} requires a value`)
+    options[name] = value
+    index += 1
+  }
+  return options
+}
+
+function readJson(pathname) {
+  try {
+    const value = JSON.parse(fs.readFileSync(pathname, 'utf8'))
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function write0600(pathname, body) {
+  const temporary = `${pathname}.tmp`
+  fs.writeFileSync(temporary, body, { mode: 0o600 })
+  fs.renameSync(temporary, pathname)
+}
+
+function stateDir(options) {
+  const explicit = options['state-dir']
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit
+  const configured = process.env.MAD_STATE_DIR
+  if (typeof configured === 'string' && configured.length > 0) return configured
+  return path.join(os.homedir(), '.local', 'state', 'mad')
+}
+
+function staleAfter(options) {
+  const value = options['stale-after']
+  if (value === undefined) return DEFAULT_STALE_AFTER
+  const seconds = Number(value)
+  if (!Number.isInteger(seconds) || seconds <= 0) fail('--stale-after must be a positive integer')
+  return seconds
+}
+
+// 空の進捗を返して run が健全に見える状態を作らない。state.json を読めない run
+// directory は exit 2 で拒む。
+function requireRun(options) {
+  const runDir = options['run-dir']
+  if (typeof runDir !== 'string' || runDir.length === 0) fail('--run-dir is required')
+  const runState = readJson(path.join(runDir, 'state.json'))
+  if (runState === null) fail(`state.json is not readable: ${runDir}`)
+  return { runDir, runState }
+}
+
+function sortedDirectories(pathname) {
+  try {
+    return fs.readdirSync(pathname, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+function attempts(runDir) {
+  const collected = []
+  const nodesDir = path.join(runDir, 'nodes')
+  for (const node of sortedDirectories(nodesDir)) {
+    const attemptsDir = path.join(nodesDir, node, 'attempts')
+    for (const attempt of sortedDirectories(attemptsDir)) {
+      const statePath = path.join(attemptsDir, attempt, 'state.json')
+      collected.push({ node, attempt, statePath, state: readJson(statePath) })
+    }
+  }
+  return collected
+}
+
+function livenessOf(state) {
+  const value = state.liveness
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+function statusReport(runDir, runState) {
+  const ledger = readJson(path.join(runDir, 'worktrees.json')) ?? {}
+  const adopted = runState.adopted_attempts !== null && typeof runState.adopted_attempts === 'object'
+    ? runState.adopted_attempts
+    : {}
+  const report = {
+    run_id: runState.run_id ?? null,
+    recipe: runState.recipe ?? null,
+    state: runState.state ?? null,
+    started_at: runState.started_at ?? null,
+    running: [],
+    finished: [],
+    stalled: [],
+    liveness_unknown: [],
+    unreadable: [],
+  }
+  for (const item of attempts(runDir)) {
+    const state = item.state
+    // 読めない attempt state を黙って落とすと、進捗を見る側からその attempt が
+    // 消える。件数と node/attempt だけを unreadable として残す。
+    if (state === null) {
+      report.unreadable.push({ node: item.node, attempt: item.attempt })
+      continue
+    }
+    const entry = ledger[item.node]
+    const worktree = entry !== null && typeof entry === 'object' ? (entry.path ?? null) : null
+    if (state.state === 'running') {
+      report.running.push({
+        node: item.node,
+        attempt: item.attempt,
+        phase: state.phase ?? null,
+        started_at: state.started_at ?? null,
+        worktree,
+      })
+      // 判定の根拠が無い attempt は止まっている一覧と分けて出し、親に判断させる。
+      if (livenessOf(state) === null) {
+        report.liveness_unknown.push({ node: item.node, attempt: item.attempt })
+      }
+    } else if (state.state === 'ok') {
+      report.finished.push({
+        node: item.node,
+        attempt: item.attempt,
+        adopted: adopted[item.node] === item.attempt,
+      })
+    } else if (STALLED_STATES.includes(state.state)) {
+      const liveness = livenessOf(state)
+      report.stalled.push({
+        node: item.node,
+        attempt: item.attempt,
+        state: state.state,
+        next_action: state.next_action ?? null,
+        stale_reason: liveness === null ? null : (liveness.stale_reason ?? null),
+      })
+    }
+  }
+  return report
+}
+
+function renderStatus(report) {
+  const lines = [
+    `run: ${report.run_id}  recipe: ${report.recipe}  state: ${report.state}  started_at: ${report.started_at}`,
+    `running (${report.running.length}):`,
+  ]
+  for (const item of report.running) {
+    lines.push(`  ${item.node}/${item.attempt} phase=${item.phase} started_at=${item.started_at} worktree=${item.worktree}`)
+  }
+  lines.push(`finished (${report.finished.length}):`)
+  for (const item of report.finished) {
+    lines.push(`  ${item.node}/${item.attempt} adopted=${item.adopted}`)
+  }
+  lines.push(`stalled (${report.stalled.length}):`)
+  for (const item of report.stalled) {
+    lines.push(`  ${item.node}/${item.attempt} state=${item.state} next_action=${item.next_action} stale_reason=${item.stale_reason}`)
+  }
+  lines.push(`liveness_unknown (${report.liveness_unknown.length}):`)
+  for (const item of report.liveness_unknown) {
+    lines.push(`  ${item.node}/${item.attempt}`)
+  }
+  lines.push(`unreadable (${report.unreadable.length}):`)
+  for (const item of report.unreadable) {
+    lines.push(`  ${item.node}/${item.attempt}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+function planPath(runState) {
+  const paths = Array.isArray(runState.artifact_paths) ? runState.artifact_paths : []
+  const found = paths.find((entry) =>
+    typeof entry === 'string' && entry.includes('/plans/') && entry.endsWith('.md'))
+  return found === undefined ? 'none' : found
+}
+
+// ledger は state.json と attempt state から毎回作り直す。親が追記しないので、
+// run state との食い違いが起きない。
+function writeLedger(runDir, runState, report) {
+  const body = `# MAD ledger — run: ${report.run_id}\n# plan: ${planPath(runState)}\n\n${renderStatus(report)}`
+  write0600(path.join(runDir, 'progress.md'), body)
+}
+
+function processInfo(pid) {
+  try {
+    const output = execFileSync('ps', ['-o', 'lstart=,command=', '-p', String(pid)], {
+      encoding: 'utf8',
+    }).trim()
+    const match = output.match(
+      /^((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.*)$/)
+    if (match === null) return null
+    return { startedAt: match[1], command: match[2].trim() }
+  } catch {
+    return null
+  }
+}
+
+function commandBasename(command) {
+  if (typeof command !== 'string' || command.trim().length === 0) return null
+  return path.basename(command.trim().split(/\s+/)[0])
+}
+
+// PID は再利用される。ps の command は PATH 経由なら basename、絶対 path 経由なら
+// 絶対 path になるので、実行ファイルの basename だけを比べる。開始時刻も一致した
+// ときだけ生きているとみなす。
+function pidIsAlive(liveness) {
+  if (typeof liveness.pid !== 'number' || typeof liveness.command !== 'string' ||
+      typeof liveness.started_at !== 'string') {
+    return false
+  }
+  try {
+    process.kill(liveness.pid, 0)
+  } catch {
+    return false
+  }
+  const info = processInfo(liveness.pid)
+  if (info === null) return false
+  return commandBasename(info.command) === commandBasename(liveness.command) &&
+    info.startedAt === liveness.started_at
+}
+
+function staleReasonOf(liveness, limit) {
+  if (liveness.kind === 'pid') {
+    return pidIsAlive(liveness) ? null : `pid ${String(liveness.pid)} is not running`
+  }
+  if (liveness.kind === 'child_ref') {
+    const heartbeat = Date.parse(String(liveness.heartbeat_at))
+    if (Number.isNaN(heartbeat)) return 'heartbeat_at is not a timestamp'
+    const age = Math.floor((Date.now() - heartbeat) / 1000)
+    return age > limit ? `heartbeat_at is ${age} seconds old (limit ${limit})` : null
+  }
+  return null
+}
+
+function reapRun(runDir, limit) {
+  const reaped = []
+  for (const item of attempts(runDir)) {
+    const state = item.state
+    if (state === null || state.state !== 'running') continue
+    const liveness = livenessOf(state)
+    if (liveness === null) continue
+    const reason = staleReasonOf(liveness, limit)
+    if (reason === null) continue
+    const next = {
+      ...state,
+      state: 'unresolved',
+      phase_state: 'unresolved',
+      next_action: REAP_NEXT_ACTION,
+      liveness: { ...liveness, stale_reason: reason },
+    }
+    write0600(item.statePath, `${JSON.stringify(next, null, 2)}\n`)
+    reaped.push({ node: item.node, attempt: item.attempt, stale_reason: reason })
+  }
+  return reaped
+}
+
+function nodesInState(runDir, wanted) {
+  const nodes = attempts(runDir)
+    .filter((item) => item.state !== null && item.state.state === wanted)
+    .map((item) => item.node)
+  return [...new Set(nodes)].sort()
+}
+
+function status(options) {
+  const { runDir, runState } = requireRun(options)
+  const report = statusReport(runDir, runState)
+  if (options['write-ledger'] === true) writeLedger(runDir, runState, report)
+  process.stdout.write(options.json === true
+    ? `${JSON.stringify(report, null, 2)}\n`
+    : renderStatus(report))
+}
+
+function reap(options) {
+  const { runDir } = requireRun(options)
+  process.stdout.write(`${JSON.stringify(reapRun(runDir, staleAfter(options)), null, 2)}\n`)
+}
+
+// resume は子を起動せず attempt も発行しない。台帳と実体の食い違いは出力に残し、
+// 直さない。base が変わった worktree を黙って作り直さないためである。
+function resume(options) {
+  const { runDir, runState } = requireRun(options)
+  const reaped = reapRun(runDir, staleAfter(options))
+  const ledger = readJson(path.join(runDir, 'worktrees.json')) ?? {}
+  const worktrees = []
+  for (const node of Object.keys(ledger).sort()) {
+    const entry = ledger[node]
+    const entryPath = entry !== null && typeof entry === 'object' ? entry.path : null
+    let missing = true
+    if (typeof entryPath === 'string' && entryPath.length > 0) {
+      let isDirectory = false
+      try {
+        isDirectory = fs.statSync(entryPath).isDirectory()
+      } catch {
+        isDirectory = false
+      }
+      if (isDirectory) {
+        const result = spawnSync('git', ['-C', entryPath, 'rev-parse', '--is-inside-work-tree'],
+          { encoding: 'utf8' })
+        missing = result.status !== 0
+      }
+    }
+    worktrees.push({
+      node,
+      path: entryPath ?? null,
+      branch: entry !== null && typeof entry === 'object' ? (entry.branch ?? null) : null,
+      missing,
+    })
+  }
+  const completed = Array.isArray(runState.completed_nodes) ? runState.completed_nodes : []
+  const nodeNames = [...new Set(attempts(runDir).map((item) => item.node))].sort()
+  process.stdout.write(`${JSON.stringify({
+    run_id: runState.run_id ?? null,
+    reaped,
+    worktrees,
+    completed_nodes: completed,
+    adopted_attempts: runState.adopted_attempts ?? {},
+    incomplete_nodes: nodeNames.filter((node) => !completed.includes(node)),
+    waiting_for_user_nodes: nodesInState(runDir, 'waiting_for_user'),
+    unresolved_nodes: nodesInState(runDir, 'unresolved'),
+  }, null, 2)}\n`)
+}
+
+function list(options) {
+  const runsDir = path.join(stateDir(options), 'runs')
+  const rows = []
+  for (const name of sortedDirectories(runsDir)) {
+    const runState = readJson(path.join(runsDir, name, 'state.json'))
+    if (runState === null) continue
+    rows.push([name, runState.recipe ?? '-', runState.state ?? '-', runState.started_at ?? '-'].join('\t'))
+  }
+  if (rows.length > 0) process.stdout.write(`${rows.join('\n')}\n`)
+}
+
+function main(argv) {
+  const subcommand = argv[0]
+  if (subcommand === undefined || subcommand === '--help' || subcommand === 'help') {
+    process.stdout.write(USAGE)
+    return
+  }
+  if (!SUBCOMMANDS.includes(subcommand)) fail(`unknown subcommand: ${subcommand}`)
+  const options = parseOptions(argv.slice(1))
+  if (options.help === true) {
+    process.stdout.write(USAGE)
+    return
+  }
+  if (subcommand === 'status') status(options)
+  else if (subcommand === 'reap') reap(options)
+  else if (subcommand === 'resume') resume(options)
+  else list(options)
+}
+
+main(process.argv.slice(2))

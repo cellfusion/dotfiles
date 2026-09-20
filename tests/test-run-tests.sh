@@ -24,6 +24,12 @@ expected_names=(
   test-tools-doc.sh
   test-instructions.sh
   test-paseo-legacy-removal.sh
+  test-tests-not-distributed.sh
+  test-mad-worktree.sh
+  test-mad-progress.sh
+  test-mad-worktrees-ledger.sh
+  test-mad-worktree-contract-doc.sh
+  test-mad-worktree-location-doc.sh
   test-run-tests.sh
 )
 expected_order="$(printf '%s\n' "${expected_names[@]}")"
@@ -53,7 +59,7 @@ assert_eq "$(cat "$order_file")" "$expected_order" \
   'runner: allowlist の順序をそのまま実行する'
 assert_not_contains "$(cat "$order_file")" sentinel \
   'runner: allowlist 外の sentinel を実行しない'
-assert_contains "$output" 'SUMMARY 12 0' \
+assert_contains "$output" 'SUMMARY 18 0' \
   'runner: 最終 SUMMARY に実行数と失敗数を出す'
 
 assert_summary

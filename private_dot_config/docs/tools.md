@@ -176,10 +176,13 @@ MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
+MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
+MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
+MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の5 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の7 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -414,10 +417,14 @@ round `N` の再レビューの結果からは `--advance-review-findings` で r
 snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
 はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。
 
-`implement` と `spike` は node ごとに worktree を作る。作った workspace は run ディレクトリ
-直下の `workspaces.json` が持つ。run を終えたら `mcp__paseo__archive_workspace`（CLI では
-`paseo workspace archive <id>`）で片付ける。archive に失敗した workspace がある run
-ディレクトリは、台帳を失うと対応が追えなくなるため消さない。
+`implement` と `spike` は node ごとに worktree を作る。作るのは `"$MAD_WORKTREE" create` であり、
+置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` である。run ディレクトリは
+`${MAD_STATE_DIR}/runs/<run-id>/` に置き、作った worktree は run ディレクトリ直下の
+`worktrees.json` が持つ。片付けは `mad-worktree remove --branch <branch>` で行い、取り込んだ
+node にだけ `--delete-branch` を足す。remove に失敗した worktree がある run ディレクトリは、
+台帳を失うと対応が追えなくなるため消さない。run の進捗は
+`"$MAD_PROGRESS" status --run-dir <run-dir>` が出し、`"$MAD_PROGRESS" list` が
+`${MAD_STATE_DIR}/runs/` にある run を一覧にする。
 
 ### Paseo プラグイン pr-review
 
