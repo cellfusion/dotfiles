@@ -167,12 +167,12 @@ export function PullRequestSurface({ theme, layout }: PluginSurfaceProps) {
         title: `${titlePrefix}pr-review #${number} ${pull.title}`,
         source,
       });
-      // pr-review スキルは引数を正の整数 1 個だけと定めている。説明を足すと
-      // 引数が数値に一致しなくなり、レビューが始まらない。
+      // この UI は先に worktree workspace を作っているため、skill にも隔離を明示する。
+      // CLI から直接呼ぶ場合の既定値は current session である。
       await workspace.agents.create({
         config: { provider },
         title: `pr-review/${number}`,
-        prompt: `/pr-review ${number}`,
+        prompt: `/pr-review --worktree ${number}`,
       });
       setPending(null);
       toast.show(`PR #${number} のレビューを開始した`, { variant: "success" });
