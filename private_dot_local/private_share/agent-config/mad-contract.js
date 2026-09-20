@@ -40,7 +40,7 @@ const MAD_CALL_LOG_EVENT_KEYS = {
   failure: ['stage', 'exitCode', 'createCalls', 'state'],
 }
 // create の transport は公式 MCP tool だけである。call log はその一語だけを許す。
-const MAD_CREATE_TRANSPORT = 'mcp__paseo__create_agent'
+const MAD_CREATE_TRANSPORTS = ['mcp__paseo__create_agent', 'paseo_cli_run']
 const MAD_POST_CREATE_OPERATIONS = ['create_agent', 'wait_agent', 'stop_agent', 'failure']
 // review/fix は round 0 の初回 review と、round 1 から 3 の fix/re-review を許す。
 // 上限は protocol の値であり、親が任意の max_rounds を設定して回避できないようにする。
@@ -299,8 +299,8 @@ function assertMadCallLogV1(value) {
     }
     exactKeys(event, ['seq', 'operation', ...MAD_CALL_LOG_EVENT_KEYS[operation]], code, label)
     if (event.seq !== index) fail(code, `${label}: seq が連続していない`)
-    if (operation === 'create_agent' && event.transport !== MAD_CREATE_TRANSPORT) {
-      fail(code, `${label}: transport は ${MAD_CREATE_TRANSPORT} でなければならない`)
+    if (operation === 'create_agent' && !MAD_CREATE_TRANSPORTS.includes(event.transport)) {
+      fail(code, `${label}: transport が許可されていない`)
     }
   }
   if (JSON.stringify(value).includes('://')) fail(code, 'mad call log: URL が許可されない')
@@ -1283,7 +1283,7 @@ function writeProviderEnumeration0600(resolvedExportPath, outputPath) {
 
 module.exports = {
   MadContractError,
-  MAD_CREATE_TRANSPORT,
+  MAD_CREATE_TRANSPORTS,
   MAD_CREATE_PREPARE_MARKER_NAME,
   MAD_LAUNCH_KEYS,
   MAD_REVIEW_MAX_ROUNDS,

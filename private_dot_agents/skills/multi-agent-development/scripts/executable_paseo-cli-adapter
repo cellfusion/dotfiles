@@ -29,6 +29,42 @@ function paseo(args) {
   return result.stdout || ''
 }
 
+const MODE_LABELS = {
+  'Auto mode': 'auto',
+  'Default Permissions': 'auto',
+  'Full Access': 'full-access',
+  'Plan Mode': 'plan',
+  'Bypass': 'bypassPermissions',
+}
+
+function listProviders() {
+  const rows = parseJson(paseo(['provider', 'ls', '--json']), 'provider response')
+  if (!Array.isArray(rows)) fail('provider response must be an array', 1)
+  const providers = rows.map((row) => {
+    const id = row.provider
+    if (!safeId(id) || !['available', 'unavailable'].includes(row.status)) fail('provider response is invalid', 1)
+    const modeIds = Array.isArray(row.modeIds)
+      ? row.modeIds
+      : typeof row.modes === 'string'
+        ? row.modes.split(',').map((label) => MODE_LABELS[label.trim()]).filter(Boolean)
+        : []
+    if (!modeIds.every((mode) => typeof mode === 'string' && mode.length > 0)) fail('provider modes are invalid', 1)
+    return { id, available: row.status === 'available', modeIds }
+  })
+  process.stdout.write(JSON.stringify({ providers }) + '\n')
+}
+
+function listModels(provider) {
+  if (!safeId(provider)) fail('provider is invalid')
+  const rows = parseJson(paseo(['provider', 'models', '--json', '--thinking', provider]), 'models response')
+  if (!Array.isArray(rows)) fail('models response must be an array', 1)
+  const models = rows.map((row) => {
+    if (!row || typeof row.id !== 'string' || !Array.isArray(row.thinkingOptionIds)) fail('models response is invalid', 1)
+    return { id: row.id, thinkingOptionIds: row.thinkingOptionIds }
+  })
+  process.stdout.write(JSON.stringify({ provider, models }) + '\n')
+}
+
 function createAgent(requestPath) {
   let request
   try { request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) } catch { fail('create request is invalid') }
@@ -71,6 +107,14 @@ function stopAgent(childRef) {
 
 const args = process.argv.slice(2)
 switch (args[0]) {
+  case 'list-providers':
+    if (args.length !== 1) fail('list-providers arguments are invalid')
+    listProviders()
+    break
+  case 'list-models':
+    if (args.length !== 3 || args[1] !== '--provider') fail('list-models arguments are invalid')
+    listModels(args[2])
+    break
   case 'create-agent':
     if (args.length !== 2) fail('create-agent arguments are invalid')
     createAgent(args[1])

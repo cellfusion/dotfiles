@@ -2,7 +2,9 @@
 
 この節は、親が複数 child の strict MAD run を開始すると決めた後にだけ適用する。MAD を使うか、単一 child を使うか、親が直接作業するかを決めるための gate ではない。単純な task、単独の調査、MAD を使わない plan ではこの節を読んでも実行しない。
 
-strict MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP の discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。すでに strict MAD run を開始した後で Paseo MCP が利用できない場合は run を開始せず `waiting_for_user` として停止する。開始前なら、親は MAD を選ばず直接作業する経路を選べる。開始後に別の backend へ切り替えたり、別の transport を試したり、同じ create を retry したりしてはならない。
+strict MAD は `paseo-mcp` と `paseo-cli` の backend を持つ。既定は `paseo-cli` であり、親は run 開始時に backend を一つ選び、run の最後まで変更しない。両 backend は discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。すでに strict MAD run を開始した後で選択した backend が利用できない場合は run を開始せず `waiting_for_user` として停止する。開始前なら、親は MAD を選ばず直接作業する経路を選べる。開始後に別の backend へ切り替えたり、同じ create を retry したりしてはならない。
+
+`paseo-mcp` は公式 MCP create tool を使い、provider-specific features を完全に渡せる。`paseo-cli` は `paseo run --background --json`、`paseo wait --json`、`paseo stop --json` を使う。CLI backend は provider features を渡せないため、features が空の CLI-compatible launch だけを採用する。
 
 ## 実行pathの初期化
 
@@ -12,7 +14,14 @@ strict MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP 
 MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
 MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
 AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
-MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_BACKEND="${MAD_BACKEND:-paseo-cli}"
+MAD_MCP_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
+MAD_CLI_ADAPTER="$MAD_SCRIPTS/paseo-cli-adapter"
+case "$MAD_BACKEND" in
+  paseo-cli) MAD_ADAPTER="$MAD_CLI_ADAPTER" ;;
+  paseo-mcp) MAD_ADAPTER="$MAD_MCP_ADAPTER" ;;
+  *) printf 'unsupported MAD_BACKEND: %s\n' "$MAD_BACKEND" >&2; exit 2 ;;
+esac
 MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
@@ -65,7 +74,7 @@ environment は親の AI 環境名も見て決まる。CLI と runner はどち�
 
 ## create request と state
 
-implementer create の順序は `task 抜粋` → `execution context の検証と enrichment` → `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
+implementer create の順序は `task 抜粋` → `execution context の検証と enrichment` → `request build と contract assert` → `create 前の prepare` → 選択した backend の create transport → `response の sanitization` で固定する。
 
 initial attempt と fix attempt の implementer には、create request の組み立てより先に専用の attempt directory で次を実行する。
 
@@ -91,7 +100,7 @@ settings: modeId, thinkingOptionId, features
 
 `provider` は `<launch.provider>/<launch.model>`、`settings.modeId` は厳密に `auto`、`settings.features` は launch の `featureValues` そのものである。`claude` と `codex` は `fast_mode` の `true`/`false` をここに載せられる。builder が成功するまで request file を作らない。成功した request は `writeMadCreateRequest0600` で同じ directory に atomic rename し、`mcp-create.json` という mode 0600 の regular file とする。runner はここで停止し、create の transport を実行しない。
 
-親は `mcp-create.json` を読み、`assertMadCreateRequestV1` で再検証してから、その 6 key をそのまま `mcp__paseo__create_agent` の引数に渡す。検証を通していない request で create を呼ばない。Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create の経路に使わない。
+親は `mcp-create.json` を読み、`assertMadCreateRequestV1` で再検証してから create を行う。`paseo-mcp` ではその 6 key をそのまま `mcp__paseo__create_agent` の引数に渡す。`paseo-cli` では `MAD_CLI_ADAPTER create-agent --request <mcp-create.json>` を一回だけ呼び、返った accepted response を同じ contract で検証する。検証を通していない request で create を呼ばない。CLI backend では features が空であることを launch validation が保証する。
 
 create の直前の検証は次で行う。state、call log、消費 marker のいずれも変更しない。
 
@@ -138,7 +147,7 @@ create は child ごとに一回だけである。親は返ってきた response
 
 `resolve` が exit 2 のときは `provider`、`model`、`effort`、`features`、`duty`、`complexity`、`requestedComplexity` に `null` を入れ、`environment` と `role` は親が渡した値を入れる。exit 4 のときは `mad-launch-failure` の値を入れ、`provider`、`model`、`effort`、`features` に `null` を入れる。`effort` には launch spec の `thinkingOptionId` の値を入れる。
 
-`create_agent.transport` は `mcp__paseo__create_agent` の一語に固定する。create の経路が公式 MCP tool だけであることを、この値が証跡として示す。
+`create_agent.transport` は `mcp__paseo__create_agent` または `paseo_cli_run` である。選択した backend と call log の transport が一致しなければ、run を採用しない。
 
 run の対応は次で固定する。
 
@@ -311,7 +320,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。auditor と reviewer の `initialPrompt` には役割に必要な prompt file、schema file、入力成果物の absolute path を含める。implementer の initial/fix attempt では、検証済み execution context と task 抜粋を合成した専用の fresh `brief.md` の absolute path だけを `initialPrompt` に入れる。
 
-起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は adapter の `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは adapter の `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
+起動後は child ごとに一つだけ見張りを置く。選択した backend の adapter `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは同じ backend の adapter `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
 
 1 attempt につき create と見張りは一つだけである。create の transport failure、拒否、状態不明を別経路で補完せず、親が `failed`、`waiting_for_user`、`stopped` のいずれかを記録する。停止も adapter 以外の経路を使わず、stop の縮約結果を記録してから `stopped` を確定する。
 

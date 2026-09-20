@@ -826,9 +826,10 @@ mad_exercise_accepted() {
   local wait_response
   local wait_status
   local wait_evidence
+  local transport="mcp__paseo__create_agent"
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --share-dir|--attempt-dir|--adapter|--response|--wait-timeout|--call-log)
+      --share-dir|--attempt-dir|--adapter|--response|--wait-timeout|--call-log|--transport)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --share-dir) share_dir="$2" ;;
@@ -837,6 +838,7 @@ mad_exercise_accepted() {
           --response) response="$2" ;;
           --wait-timeout) wait_timeout="$2" ;;
           --call-log) MAD_CALL_LOG="$2" ;;
+          --transport) transport="$2" ;;
         esac
         shift 2
         ;;
@@ -850,6 +852,7 @@ mad_exercise_accepted() {
   mad_require_non_empty --adapter "$adapter" || return 2
   mad_require_non_empty --response "$response" || return 2
   mad_require_non_empty --call-log "${MAD_CALL_LOG:-}" || return 2
+  mad_require_non_empty --transport "$transport" || return 2
   mad_require_absolute --share-dir "$share_dir" || return 2
   mad_require_absolute --attempt-dir "$attempt_dir" || return 2
   mad_require_absolute --adapter "$adapter" || return 2
@@ -896,8 +899,8 @@ mad_exercise_accepted() {
   response_raw="$(cat "$response" 2>/dev/null)" || mad_finish_failure create_agent 2 failed 0
 
   create_calls=1
-  mad_add_event "$(jq -cn --arg path "$attempt_dir/mcp-create.json" \
-    '{operation:"create_agent",callCount:1,requestPath:$path,transport:"mcp__paseo__create_agent"}')" ||
+  mad_add_event "$(jq -cn --arg path "$attempt_dir/mcp-create.json" --arg transport "$transport" \
+    '{operation:"create_agent",callCount:1,requestPath:$path,transport:$transport}')" ||
     mad_finish_failure create_agent 1 failed "$create_calls"
   child_ref="$(mad_accepted_child_ref "$response_raw" "$contract")"
   [ -n "$child_ref" ] || mad_finish_failure create_agent 1 failed "$create_calls"
