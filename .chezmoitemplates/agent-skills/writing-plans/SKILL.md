@@ -11,13 +11,11 @@ description: >-
 
 ## 概要
 
-plan を書くのは子である。親は承認済み spec の絶対パスを渡し、結果を待つ。親は plan の本文、
-タスク分解、依存関係を自分で作らない。
+plan は、親が直接書いても、必要に応じて child に書かせてもよい。小さな plan では親が対象コードを読んで task、依存関係、検証方法を決める。長時間の調査、独立した task 分解、別の観点による確認が必要な場合だけ `plan-author` や review child を使う。
 
-plan がどうあるべきかの基準は、`plan-author` と `reviewer` の role プロンプトが持つ。実装者は
-このコードベースの前提知識を持たず、判断の質も当てにできないものとして書かれる。
+親は plan の目的、前提、採用判断に責任を持つ。child の利用は品質を上げる手段であり、plan 作成の前提ではない。
 
-**開始時に宣言する**: 「writing-plans を使って実装プランを作る」
+plan がどうあるべきかの基準は、`_criteria-plan.md` と必要な validator が持つ。
 
 **保存先**: `~/.agents/skills/_shared/scripts/agent-docs-dir plans` が返すディレクトリの
 `YYYY-MM-DD-<feature-name>.md`（プロジェクト側 CLAUDE.md の指定があればそちらを優先）
@@ -32,33 +30,25 @@ plan がどうあるべきかの基準は、`plan-author` と `reviewer` の rol
 
 spec が独立した複数のサブシステムに跨っているなら、本来 brainstorming で分割されているはずのもの。されていないなら、サブシステムごとにプランを分けることを提案する。各プランは単体で動作しテスト可能なソフトウェアを生む単位にする。
 
-## plan を書かせる
+## plan を書く
 
-MAD の `plan` recipe で `plan-author` を呼ぶ。呼び方は `multi-agent-development` スキルが持つ。
+`~/.agents/skills/_shared/scripts/agent-docs-dir plans` を実行して保存先を決める。親が plan を書く場合も、child に書かせる場合も、plan の絶対 path を後段へ渡す。
 
-子へ渡すのは、承認済み spec の絶対パス、plan の書き出し先、既存 ledger の絶対パス（あれば）で
-ある。spec の本文を会話へ転記しない。
+child に書かせる場合は、目的、承認済み spec の絶対 path、既知の制約、plan の保存先だけを渡す。child が質問した場合は、親が内容を確認してからユーザーへ転送する。親が判断を隠して child に決めさせない。
 
-子が `decisionRequestPath` を返したら、親が [ask-user] でユーザーへ渡し、回答を `decision.md` に
-書いて子を再開する。親が子に代わって判断しない。
+## plan を確認する
 
-## plan を判定する
+親は plan を読み、task の依存関係、変更ファイル、検証方法、実装可能性を確認する。plan が大きい、独立 task が多い、または別の確認が必要な場合だけ `plan-author` や `reviewer` を追加する。
 
-判定するのも子である。`reviewer` が plan を読み、`PASS` か `FAIL` と findings を返す。判定の基準は
-`reviewer` の role プロンプトが持つ。親は plan の本文を読んで良し悪しを決めない。
+plan の task 番号、依存関係、同一 wave のファイル衝突は `paseo-plan-dependency-validate` などの既存 validator で確認する。validator の指摘を採用するかは親が決める。重大な曖昧さや実装を妨げる欠陥が残る場合だけ、ユーザーへ確認してから plan を直す。
 
-`FAIL` が返ったら、指摘の絶対パスを添えて `plan-author` を再度起動する。1 回の再起動と 1 回の
-再判定で 1 ラウンドとする。**上限は 2 ラウンドである。**
+重大な曖昧さや実装を妨げる指摘が残った場合、親は次のいずれかを選ぶ。
 
-上限に達しても `PASS` にならない場合、親が残った指摘を 1 件ずつ裁定する。裁定は 3 つに振り分ける。
+- 指摘を根拠付きで退ける
+- plan の未解決事項に残して実装時の制約にする
+- ユーザーへ確認して plan を修正する
 
-- **指摘が誤っている、または議論の余地がある** — 理由を添えて退ける。理由を run state の
-  `parent_decision` に記録する
-- **本物だが、実装を妨げない** — plan にそのまま残し、実装スキルへ申し送る
-- **本物で、かつ実装を妨げる** — 止める。指摘と、衝突している plan の記述を並べてユーザーに
-  報告する
-
-**裁定は上限に達したときだけ行う。** 黙って捨てることは禁止する。
+指摘を黙って捨てない。
 
 {{ includeTemplate "agent-skills/_preview-tab.md" . }}
 
@@ -77,16 +67,13 @@ plan は issue にしない。実装エージェント（multi-agent-development
 - **実装が小さく、MAD を使わなくてよい plan** は executing-plans に渡す。このセッションで直列に
   実行し、タスクの区切りでレビューする
 
-どちらに渡すか迷ったら multi-agent-development にする。並列にならないだけで、壊れることは
-ない。
+どちらに渡すか迷ったら、task の依存関係、変更ファイルの衝突、レビューの必要性で決める。並列性や隔離が不要なら `executing-plans` を使う。
 
-multi-agent-development を選んだ場合、実装は隔離されたワークスペースで行う
-（using-git-worktrees）。
+`multi-agent-development` を選んだ場合だけ、MAD の strict contract と worktree の隔離を使う。
 
-## よくある言い訳
+## 注意
 
-| 言い訳 | 実際 |
-|---|---|
-| 「判定はレビュアーに任せて上限前に打ち切る」 | 裁定は上限に達したときだけ行う。早く終わらせるための裁定は先回りである |
-| 「プレビューは開かなくても伝わる」 | 開くのは gate の一部。読むかどうかをユーザーに選ばせない |
-| 「自分が書いた内容だから読み直さなくてよい」 | プレビューは編集可で開く。手編集はファイルにしか残らない |
+- plan の内容を親が判断できる規模なら、child の review を追加しない
+- task の依存関係とファイル衝突は、可能なら既存 validator で確認する
+- plan の内容や実行方法でユーザーの選択が必要な場合だけ、選択肢と影響を示して確認する
+- plan を読み直し、手編集や作業環境の差分を取り込んでから後段へ渡す

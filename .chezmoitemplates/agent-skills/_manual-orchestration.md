@@ -1,6 +1,8 @@
-# Paseo MAD の共通契約
+# strict MAD run の共通契約
 
-MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP の discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。利用できない場合は run を開始せず `waiting_for_user` として停止する。開始後に別の backend へ切り替えたり、別の transport を試したり、同じ create を retry したりしてはならない。
+この節は、親が複数 child の strict MAD run を開始すると決めた後にだけ適用する。MAD を使うか、単一 child を使うか、親が直接作業するかを決めるための gate ではない。単純な task、単独の調査、MAD を使わない plan ではこの節を読んでも実行しない。
+
+strict MAD の実行 backend は `paseo-mcp` だけである。親は Paseo MCP の discovery、model discovery、agent create、state の記録を担当し、子の本文を会話へ転記しない。すでに strict MAD run を開始した後で Paseo MCP が利用できない場合は run を開始せず `waiting_for_user` として停止する。開始前なら、親は MAD を選ばず直接作業する経路を選べる。開始後に別の backend へ切り替えたり、別の transport を試したり、同じ create を retry したりしてはならない。
 
 ## 実行pathの初期化
 
