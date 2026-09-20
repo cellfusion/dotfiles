@@ -69,7 +69,7 @@ role_prompt=""
 role_schema=""
 title="single implementer"
 notify_on_finish=true
-backend="paseo"
+backend="paseo-cli"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in

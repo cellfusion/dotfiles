@@ -43,6 +43,7 @@ JSON
 
 script="$root/private_dot_agents/skills/task-routing/scripts/executable_single-implementer"
 if AGENT_ENV=primary "$script" prepare \
+  --backend paseo \
   --packet "$packet" \
   --config "$root/private_dot_local/private_share/agent-config/agent-config.sample.json" \
   --project "$root" \
@@ -73,7 +74,6 @@ if [ -f "$attempt/single-create.json" ]; then
 fi
 
 if AGENT_ENV=primary "$script" prepare \
-  --backend paseo-cli \
   --packet "$packet" \
   --config "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.sample.json" \
   --project "$CHEZMOI_SOURCE" \

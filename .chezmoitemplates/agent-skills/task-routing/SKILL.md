@@ -78,7 +78,7 @@ When a single route starts a write child, the parent follows this order:
 
 1. Save the packet as a mode `0600` absolute file and validate it with the `intake-router` schema
 2. Create one Paseo worktree and obtain its `workspaceId`
-3. Run `~/.agents/skills/task-routing/scripts/single-implementer prepare` with the packet, config, project, snapshot, workspace ID, attempt directory, implementer prompt, and schema. It resolves the launch and writes a private `single-create.json`
+3. Run `~/.agents/skills/task-routing/scripts/single-implementer prepare` with the packet, config, project, snapshot, workspace ID, attempt directory, implementer prompt, and schema. The default backend is `paseo-cli`; it resolves the launch and writes a private `single-cli.json`
 4. Read and validate `single-create.json`; do not reconstruct provider, model, effort, or features in the parent
 5. For the `paseo` backend, call `mcp__paseo__create_agent` exactly once with that request. Do not substitute another backend in that mode
 6. For the `paseo-cli` backend, run `~/.agents/skills/task-routing/scripts/single-implementer run-cli --request <single-cli.json>`. The CLI request must use a CLI-compatible selection with empty provider features
@@ -87,7 +87,7 @@ When a single route starts a write child, the parent follows this order:
 
 The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
 
-The CLI backend is allowed only for single route. It is not a fallback for strict MAD, and a CLI launch must not silently discard provider features.
+The CLI backend is allowed only for single route and is the default for single route. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback for strict MAD, and a CLI launch must not silently discard provider features.
 
 ## Escalation judge
 
