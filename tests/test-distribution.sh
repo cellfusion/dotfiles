@@ -31,6 +31,12 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
   'plan-auditor schema を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
+assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
+  'task-routing skill を配る'
+assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \
+  'Claude task-routing skill を配る'
+assert_contains "$managed" '.config/opencode/skills/task-routing/SKILL.md' \
+  'OpenCode task-routing skill を配る'
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \

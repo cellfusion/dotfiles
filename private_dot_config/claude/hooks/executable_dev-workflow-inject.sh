@@ -14,8 +14,9 @@ ROUTER=$(cat <<'ROUTER_EOF'
 
 依頼の種類 → 基本経路
 - 明確で局所的な変更 → 直接調査・実装する。設計の選択が残る場合だけ brainstorming
-- 意図や挙動が未確定な変更 → brainstorming
-- 複数層にまたがる設計変更 → brainstorming。必要なら writing-plans
+- 実装経路・作業クラス・委譲方法が不明 → task-routing
+- 意図や挙動が未確定な変更 → task-routing。必要なら brainstorming
+- 複数層にまたがる設計変更 → task-routing → brainstorming。必要なら writing-plans
 - バグ・不具合・「動かない」「直らない」 → 根本原因が未確定なら systematic-debugging
 - 実装プランが既にある → 小さければ executing-plans。並列性や独立した review が必要なら multi-agent-development
 - 実装が終わった・マージしたい → finishing-a-development-branch
