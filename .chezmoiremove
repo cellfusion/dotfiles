@@ -167,3 +167,8 @@
 # 旧 CLI が PATH に残ると、v2 の正本を読めないまま呼び出せてしまう。
 .local/bin/generate-paseo-config
 .local/share/agent-config/paseo-exporter.js
+
+# worktrunk の agent.toml は削除済みの SDD の task-worktree 専用の config だった。
+# MAD の worktree の置き場所は mad-worktree が決めるので、読む側がもう無い。
+# 配布済みの実体を回収する。人が使う .config/worktrunk/config.toml は残す。
+.config/worktrunk/agent.toml

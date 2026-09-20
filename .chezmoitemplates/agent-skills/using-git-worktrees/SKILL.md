@@ -81,14 +81,14 @@ cd "$path"
 herdr で作った worktree は人間が入れる workspace になり、そこで動くエージェントの作業ツリーと進捗が外から見える。ハーネス側のツールで作った worktree は端末を持たないので、これを先に使う。
 
 - **`--workspace` を必ず付ける。** 省くとユーザーがフォーカスしている workspace が基準になる
-- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。1a で作るこの worktree 自体は下の「ディレクトリの決定」と ignore の確認は要らない。ただし MAD の波は `.worktrees/` を使うので、`git check-ignore` は Step 2 の前に 1 度通す
+- **`--path` は渡さない。** herdr が `~/.herdr/worktrees/<repo>/<branch>` に作る。1a で作るこの worktree 自体は下の「ディレクトリの決定」と ignore の確認は要らない
 - `path` か `ws` が空か `null` なら委譲は成立しない。`ws` が非空なら `herdr worktree remove --workspace "$ws" --force` で片付けてから 1b へ落ちる。`ws` が空か `null` なら片付けられないので、その旨も添えて報告してから 1b へ落ちる
 
-報告にはパスとブランチに加えて workspace ID も載せる。下の「`.worktrees/` の ignore を確認する（MAD 用）」を済ませてから Step 2 へ進む。
+報告にはパスとブランチに加えて workspace ID も載せる。Step 2 へ進む。
 
 ### 1b. ネイティブの worktree ツール
 
-`EnterWorktree` のようなツール、`/worktree` コマンド、`--worktree` フラグが使えるならそれを使う。下の「`.worktrees/` の ignore を確認する（MAD 用）」を済ませてから Step 2 へ進む。
+`EnterWorktree` のようなツール、`/worktree` コマンド、`--worktree` フラグが使えるならそれを使う。Step 2 へ進む。
 
 ネイティブツールは配置・ブランチ作成・後始末を自分で管理する。ネイティブツールがあるのに `git worktree add` を使うと、ハーネスから見えない状態を作ることになる。
 
@@ -128,20 +128,6 @@ cd "$path"
 ```
 
 **sandbox で失敗した場合**: `git worktree add` が権限エラーで落ちたら、sandbox に阻まれたので現在のディレクトリで作業する旨をユーザーに伝える。セットアップとベースラインテストはその場で行う。
-
-### `.worktrees/` の ignore を確認する（MAD 用）
-
-multi-agent-development の implement recipe は、隔離ワークスペースを `.worktrees/` に置く場合がある。1a・1b を通った場合、または 1c で `worktrees`（代替）を選んだ場合は、`.worktrees/` の ignore をまだ確認していない。Step 2 の前に 1 度確認する。
-
-```bash
-git check-ignore -q .worktrees 2>/dev/null || {
-  echo ".worktrees/" >> .gitignore
-  git add .gitignore
-  git commit -m "chore: ignore .worktrees for mad tasks"
-}
-```
-
-1c で `.worktrees/` を選んで既に確認済みの場合はここを飛ばしてよい。
 
 ## Step 2: プロジェクトのセットアップ
 

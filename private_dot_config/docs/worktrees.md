@@ -67,28 +67,32 @@ dev server のような常駐プロセスだけ `post-start` に置く。
 
 エージェント: `multi-agent-development` の `implement` と `spike` では、worktree を作るのは親である。
 `mcp__paseo__create_agent` は作成時に `workspaceId` を要求するので、子を起動する前に workspace が
-存在している必要がある。親は台帳の `cwd` から diff を取るので、子が別の場所に worktree を作ると
-親が取る diff が空になる。Paseo MCP backend では `mcp__paseo__create_workspace` を `isolation`
-`worktree`、`mode` `branch-off` で呼び、native subagent backend では `Agent` ツールの `isolation` に
-`worktree` を渡す。どちらも herdr には登録しない。子は親が渡した worktree の中で働く。
+存在している必要がある。親は台帳の `path` から diff を取るので、子が別の場所に worktree を作ると
+親が取る diff が空になる。worktree を作るのは `mad-worktree` であり、素の `git worktree add` を使う。
+置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` で、`MAD_STATE_DIR` の既定値は
+`~/.local/state/mad` である。Paseo MCP backend では、作成済みの worktree の絶対パスを
+`mcp__paseo__create_workspace` の `path` に渡し `isolation` `local` で呼ぶ。Paseo は worktree を
+作らず、既にある checkout に workspace を取り付けるだけである。どちらも herdr には登録しない。
+子は親が渡した worktree の中で働く。
 
-`wt switch --create <branch> --base <base> --no-cd --format json -y --config
-~/.config/worktrunk/agent.toml` は、MAD を通さずに task worktree を直接作るときの経路である。この
-経路の worktree は `~/.local/state/sdd/worktrees/` に置かれる。.env のコピーと依存インストールは
-agent.toml の `pre-start` フックが同期で行うので、`wt hook pre-start` を別途叩かない。
+追跡外ファイルのコピーと依存インストールは、リポジトリに `.config/wt.toml` があるときだけ
+`wt hook pre-start` が行う。`mad-worktree` は worktree を作った後にそのフックを 1 度呼ぶ。
+`wt` が入っていないときと `.config/wt.toml` が無いときは何もしない。
 
-- claude の workspace trust は cwd の祖先から継承される。`~/.local/state/sdd/worktrees`
-  を 1 度 trust すれば、以後すべての task worktree でダイアログは出ない。trust の記録は
+- claude の workspace trust は cwd の祖先から継承される。`${MAD_STATE_DIR}/worktrees`
+  を 1 度 trust すれば、以後すべての MAD の worktree でダイアログは出ない。trust の記録は
   `CLAUDE_CONFIG_DIR`（この環境では `~/.config/claude`）側の `.claude.json` にある。
 
-片付けは `wt remove --no-delete-branch` → `git branch -d` の順で行う。
+片付けは `mad-worktree remove --branch <branch>` で行う。ブランチも消すときだけ
+`--delete-branch` を足す。`mad-worktree` は `git branch -d` しか呼ばないので、取り込んでいない
+ブランチの削除は git が失敗させる。
 
 `wt hook <type>` は worktree を誰が作ったかを問わず動く。worktree の作成・統合・後始末の手順は
 `using-git-worktrees` スキルにある。`implement` recipe の親はこの規約に従う。
 
 ## エージェントの成果物の置き場所
 
-spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レビュー package は
+spec・実装プラン・SDD の作業物・レビュー package は
 `~/docs/<owner>/<repo>/` に置く。パスは
 `~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。
 
@@ -97,8 +101,10 @@ spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レ
 | `specs/` | architectural な設計で作成する spec |
 | `plans/` | writing-plans が書く実装プラン |
 | `sdd/<plan-basename>/` | SDD の ledger・brief・report・review package |
-| `orchestration/<run-id>/` | MAD の run ディレクトリ |
 | `reviews/` | SDD 外の単発レビュー package |
+
+MAD の run ディレクトリは成果物ではなく実行時の状態なので、`~/docs/<owner>/<repo>/` には置かない。
+置き場所は `${MAD_STATE_DIR}/runs/<run-id>/` であり、`mad-progress list` はそこだけを走査する。
 
 `<owner>/<repo>` は本体チェックアウトの remote の URL から決まる。remote が 1 つも無ければ
 本体チェックアウトの絶対パスの末尾 2 要素を使う。worktree から呼んでも本体チェックアウトから
@@ -111,15 +117,13 @@ review package と要件ファイルは、渡す直前に `<repo-root>/.agent-re
 レビューの終了後に削除し、`.agent-review/` とその `.gitignore` は残す。global gitignore と
 自己無視の `.gitignore` の 2 段で無視される。
 
-SDD の task worktree（`~/.local/state/sdd/worktrees/`）とは別系統である。task worktree の
-置き場所は `~/.config/worktrunk/agent.toml` が決めている。
+MAD の worktree（`${MAD_STATE_DIR}/worktrees/`）とは別系統である。MAD の worktree の置き場所は
+`mad-worktree` が決める。
 
 ## 注意点
 
 - `worktree-path` は user config 専用で、リポジトリ側の `.config/wt.toml` には
   書けない。マシンごとの設定になる
-- agent worktree は人用 config では見えない。`wt` には
-  `--config ~/.config/worktrunk/agent.toml` を渡す
 - user config のフックとリポジトリ側のフックは**並行に走る**。順序が要る処理は
   同じファイルの中で `[[...]]` を並べる
 - `wt step relocate` は worktree を worktrunk の想定パスへ移動する。herdr の
