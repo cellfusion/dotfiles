@@ -12,7 +12,8 @@ trap 'rm -rf "$work"' EXIT
 
 run="$work/state/runs/r1"
 mkdir -p "$run/nodes/alive/attempts/a1" "$run/nodes/stale/attempts/a1" \
-  "$run/nodes/bare/attempts/a1" "$run/nodes/done/attempts/a1" "$run/nodes/queued/attempts/a1"
+  "$run/nodes/bare/attempts/a1" "$run/nodes/done/attempts/a1" "$run/nodes/queued/attempts/a1" \
+  "$run/nodes/unreadable/attempts/a1"
 
 cat > "$run/state.json" <<'JSON'
 {
@@ -26,6 +27,9 @@ cat > "$run/state.json" <<'JSON'
   "base": "1111111111111111111111111111111111111111"
 }
 JSON
+
+# JSON として壊れた attempt state。status がこの attempt を落とさないことを検査する。
+printf '%s' '{ this is not json' > "$run/nodes/unreadable/attempts/a1/state.json"
 
 cat > "$run/worktrees.json" <<JSON
 {
@@ -146,6 +150,12 @@ assert_contains "$resumed" '"unresolved_nodes"' 'resume は unresolved の node 
 listed="$(progress list --state-dir "$work/state")"
 assert_contains "$listed" 'r1' 'list は run ID を出す'
 assert_contains "$listed" 'implement' 'list は recipe を出す'
+
+status_all="$(progress status --run-dir "$run")"
+assert_contains "$status_all" 'unreadable/a1' \
+  'status: 読めない attempt state を一覧から落とさない'
+assert_contains "$status_all" 'unreadable (1)' \
+  'status: 読めない attempt の件数を出す'
 
 source_text="$(cat "$SCRIPT")"
 assert_not_contains "$source_text" 'create_agent' 'Paseo の子を起動しない'

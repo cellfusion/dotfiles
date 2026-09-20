@@ -126,10 +126,16 @@ function statusReport(runDir, runState) {
     finished: [],
     stalled: [],
     liveness_unknown: [],
+    unreadable: [],
   }
   for (const item of attempts(runDir)) {
     const state = item.state
-    if (state === null) continue
+    // 読めない attempt state を黙って落とすと、進捗を見る側からその attempt が
+    // 消える。件数と node/attempt だけを unreadable として残す。
+    if (state === null) {
+      report.unreadable.push({ node: item.node, attempt: item.attempt })
+      continue
+    }
     const entry = ledger[item.node]
     const worktree = entry !== null && typeof entry === 'object' ? (entry.path ?? null) : null
     if (state.state === 'running') {
@@ -182,6 +188,10 @@ function renderStatus(report) {
   }
   lines.push(`liveness_unknown (${report.liveness_unknown.length}):`)
   for (const item of report.liveness_unknown) {
+    lines.push(`  ${item.node}/${item.attempt}`)
+  }
+  lines.push(`unreadable (${report.unreadable.length}):`)
+  for (const item of report.unreadable) {
     lines.push(`  ${item.node}/${item.attempt}`)
   }
   return `${lines.join('\n')}\n`
