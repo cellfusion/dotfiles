@@ -31,6 +31,10 @@ assert_contains "$mad_contract" 'MAD_BACKEND="${MAD_BACKEND:-paseo-cli}"' \
   'backend: paseo-cli is the strict MAD default'
 assert_contains "$mad_contract" '--backend paseo-cli' \
   'backend: CLI resolve path is explicit'
+assert_contains "$mad_contract" 'mad-attempt-outcome-v1' \
+  'outcome: audit record contract is explicit'
+assert_contains "$mad_contract" 'inspect-agent --child-ref' \
+  'outcome: sanitized usage inspection is explicit'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
 for exec_path in \

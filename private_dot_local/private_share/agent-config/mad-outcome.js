@@ -6,7 +6,7 @@ const contract = require('./mad-contract.js')
 
 const TOP_KEYS = [
   'version', 'type', 'recordedAt', 'taskId', 'runId', 'attemptId',
-  'route', 'outcome', 'usage', 'toolLoopCount', 'verification',
+  'route', 'outcome', 'usage', 'toolLoopCount', 'toolLoopSource', 'verification',
 ]
 const ROUTE_KEYS = [
   'workClass', 'complexity', 'role', 'backend', 'provider', 'model',
@@ -71,7 +71,11 @@ function assertOutcomeV1(value) {
   nonNegativeNumberOrNull(value.usage.costUsd, 'usage.costUsd')
   if (!['paseo-inspect', 'paseo-logs', 'manual', 'unavailable'].includes(value.usage.source)) throw new Error('usage.source is invalid')
 
-  nonNegativeInteger(value.toolLoopCount, 'toolLoopCount')
+  if (value.toolLoopCount !== null) nonNegativeInteger(value.toolLoopCount, 'toolLoopCount')
+  if (!['paseo-logs', 'manual', 'unavailable'].includes(value.toolLoopSource)) throw new Error('toolLoopSource is invalid')
+  if (value.toolLoopCount === null && value.toolLoopSource !== 'unavailable') {
+    throw new Error('null toolLoopCount requires unavailable source')
+  }
 
   if (!exactKeys(value.verification, VERIFICATION_KEYS)) throw new Error('verification keys are invalid')
   if (!['passed', 'failed', 'unknown'].includes(value.verification.tests)) throw new Error('verification.tests is invalid')

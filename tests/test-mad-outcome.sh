@@ -43,6 +43,7 @@ cat > "$record" <<'JSON'
     "source": "paseo-inspect"
   },
   "toolLoopCount": 4,
+  "toolLoopSource": "manual",
   "verification": {
     "tests": "passed",
     "review": "accepted",

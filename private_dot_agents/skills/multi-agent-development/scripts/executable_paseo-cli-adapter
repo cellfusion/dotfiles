@@ -68,6 +68,35 @@ function listModels(provider) {
   process.stdout.write(JSON.stringify({ provider, models }) + '\n')
 }
 
+function inspectAgent(childRef) {
+  if (!safeId(childRef)) fail('inspect arguments are invalid')
+  const response = parseJson(paseo(['inspect', '--json', childRef]), 'inspect response')
+  if (response.Id !== childRef || typeof response.Status !== 'string' ||
+      !['running', 'idle', 'error', 'stopped'].includes(response.Status.toLowerCase())) {
+    fail('inspect response is invalid', 1)
+  }
+  const usage = response.LastUsage
+  if (!usage || !Number.isInteger(usage.InputTokens) || usage.InputTokens < 0 ||
+      !Number.isInteger(usage.CachedInputTokens) || usage.CachedInputTokens < 0 ||
+      !Number.isInteger(usage.OutputTokens) || usage.OutputTokens < 0 ||
+      (typeof usage.CostUsd !== 'number' || !Number.isFinite(usage.CostUsd) || usage.CostUsd < 0)) {
+    fail('inspect usage is invalid', 1)
+  }
+  const created = Date.parse(response.CreatedAt)
+  const updated = Date.parse(response.UpdatedAt)
+  if (!Number.isFinite(created) || !Number.isFinite(updated) || updated < created) fail('inspect timestamps are invalid', 1)
+  process.stdout.write(JSON.stringify({
+    status: response.Status.toLowerCase(),
+    durationMs: updated - created,
+    usage: {
+      inputTokens: usage.InputTokens,
+      cachedInputTokens: usage.CachedInputTokens,
+      outputTokens: usage.OutputTokens,
+      costUsd: usage.CostUsd,
+    },
+  }) + '\n')
+}
+
 function createAgent(requestPath) {
   let request
   try { request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) } catch { fail('create request is invalid') }
@@ -129,6 +158,10 @@ switch (args[0]) {
   case 'stop-agent':
     if (args.length !== 3 || args[1] !== '--child-ref') fail('stop-agent arguments are invalid')
     stopAgent(args[2])
+    break
+  case 'inspect-agent':
+    if (args.length !== 3 || args[1] !== '--child-ref') fail('inspect-agent arguments are invalid')
+    inspectAgent(args[2])
     break
   default:
     fail('command is invalid')
