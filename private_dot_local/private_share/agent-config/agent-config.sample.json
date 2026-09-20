@@ -59,6 +59,7 @@
     "task-reviewer": { "duty": "review", "access": "read", "description": "タスクの差分をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "plan-auditor": { "duty": "review", "access": "read", "description": "実装前のプラン矛盾を監査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": [] },
     "intake-router": { "duty": "review", "launchPolicy": "routing", "access": "read", "description": "Classify requests into task packets", "artifactContract": "task-packet-v1", "deliveryDuties": [] },
+    "architectural-implementer": { "duty": "implement", "access": "write", "description": "Execute approved architectural plans", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["architectural-implementer"] },
     "re-reviewer": { "duty": "review", "access": "read", "description": "指摘の解消を判定する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "final-reviewer": { "duty": "review", "access": "read", "description": "ブランチ全体をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "spec-author": { "duty": "author", "access": "write", "description": "spec を書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["spec-author"] },

@@ -52,6 +52,14 @@ for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
     "MAD delivery role: schemas/$role.json を配る"
 done
+assert_contains "$managed" '.agents/agent-defs/prompts/architectural-implementer.md' \
+  'architectural implementer prompt を配る'
+assert_contains "$managed" '.agents/agent-defs/schemas/architectural-implementer.json' \
+  'architectural implementer schema を配る'
+assert_contains "$managed" '.config/claude/agents/architectural-implementer.md' \
+  'Claude architectural implementer agent を配る'
+assert_contains "$managed" '.config/opencode/agents/architectural-implementer.md' \
+  'OpenCode architectural implementer agent を配る'
 
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0
