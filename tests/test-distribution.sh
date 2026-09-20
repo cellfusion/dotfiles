@@ -68,6 +68,8 @@ assert_contains "$managed" '.agents/agent-defs/prompts/escalation-judge.md' \
   'escalation judge prompt を配る'
 assert_contains "$managed" '.agents/agent-defs/schemas/escalation-judge.json' \
   'escalation judge schema を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/escalation-policy' \
+  'escalation policy script を配る'
 assert_contains "$managed" '.config/claude/agents/escalation-judge.md' \
   'Claude escalation judge agent を配る'
 assert_contains "$managed" '.config/opencode/agents/escalation-judge.md' \

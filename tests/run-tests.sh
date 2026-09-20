@@ -8,6 +8,7 @@ tests=(
   test-mad-task-brief.sh
   test-agent-config-policy.sh
   test-agent-config-routing.sh
+  test-escalation-policy.sh
   test-paseo-plan-dependency-validate.sh
   test-manual-orchestration-contract.sh
   test-schemas.sh

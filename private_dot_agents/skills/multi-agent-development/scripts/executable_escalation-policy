@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -u
+
+judge_file=""
+current_level=""
+max_level=""
+current_work_class=""
+current_role=""
+
+usage() {
+  printf 'usage: %s --judge-result FILE --current-level N --max-level N --current-work-class CLASS --current-role ROLE\n' "$0" >&2
+}
+
+fail() {
+  printf 'escalation-policy: %s\n' "$1" >&2
+  exit 2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --judge-result|--current-level|--max-level|--current-work-class|--current-role)
+      [ "$#" -ge 2 ] || { usage; exit 2; }
+      case "$1" in
+        --judge-result) judge_file="$2" ;;
+        --current-level) current_level="$2" ;;
+        --max-level) max_level="$2" ;;
+        --current-work-class) current_work_class="$2" ;;
+        --current-role) current_role="$2" ;;
+      esac
+      shift 2
+      ;;
+    *) usage; exit 2 ;;
+  esac
+done
+
+[ -f "$judge_file" ] || fail 'judge result is not a regular file'
+case "$current_level:$max_level" in
+  *[!0-9:]*|:*) fail 'levels must be non-negative integers' ;;
+esac
+[ "$current_level" -le "$max_level" ] || fail 'current level exceeds max level'
+
+judge_json="$(jq -c 'if type == "object" then . else error end' "$judge_file" 2>/dev/null)" || fail 'judge result must be a JSON object'
+action="$(printf '%s' "$judge_json" | jq -r '.action // empty')"
+work_class="$(printf '%s' "$judge_json" | jq -r '.workClass // empty')"
+target_role="$(printf '%s' "$judge_json" | jq -r '.targetRole // empty')"
+recommended_level="$(printf '%s' "$judge_json" | jq -r '.recommendedLevel // empty')"
+reason="$(printf '%s' "$judge_json" | jq -r '.reason // empty')"
+confidence="$(printf '%s' "$judge_json" | jq -r '.confidence // empty')"
+
+case "$action" in retry_same|increase_effort|change_model|ask_user|stop) ;; *) fail 'action is invalid' ;; esac
+case "$work_class" in mechanical|routine|integration|architectural) ;; *) fail 'workClass is invalid' ;; esac
+case "$confidence" in low|medium|high) ;; *) fail 'confidence is invalid' ;; esac
+[ -n "$reason" ] || fail 'reason is required'
+
+printf '%s' "$judge_json" | jq -e '.evidence | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' >/dev/null 2>&1 || fail 'evidence must be a non-empty string array'
+if [ "$action" = "ask_user" ] || [ "$action" = "stop" ]; then
+  next_level=null
+  next_role=null
+else
+  case "$recommended_level" in ''|*[!0-9]*) fail 'recommendedLevel is invalid' ;; esac
+  [ "$recommended_level" -le "$max_level" ] || fail 'recommendedLevel exceeds max level'
+  if [ "$action" = "retry_same" ]; then
+    [ "$recommended_level" = "$current_level" ] || fail 'retry_same must keep the current level'
+    next_level="$current_level"
+  else
+    [ "$recommended_level" -gt "$current_level" ] || fail 'escalation must advance the level'
+    next_level="$recommended_level"
+  fi
+  next_role="${target_role:-$current_role}"
+  case "$next_role" in implementer|architectural-implementer) ;; *) fail 'targetRole is invalid' ;; esac
+  if [ "$work_class" = "architectural" ] && [ "$next_role" != "architectural-implementer" ]; then
+    fail 'architectural workClass requires architectural-implementer'
+  fi
+fi
+
+jq -cn \
+  --arg action "$action" \
+  --arg workClass "$work_class" \
+  --arg reason "$reason" \
+  --arg confidence "$confidence" \
+  --argjson nextLevel "$next_level" \
+  --argjson role "$(if [ "$next_role" = null ]; then printf 'null'; else printf '%s' "$(jq -Rn --arg value "$next_role" '$value')"; fi)" \
+  '{action:$action,nextLevel:$nextLevel,workClass:$workClass,role:$role,reason:$reason,confidence:$confidence}'

@@ -86,6 +86,19 @@ When a single route starts a write child, the parent follows this order:
 
 The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
 
+## Escalation judge
+
+Use `escalation-judge` only when a failed attempt or review result requires semantic judgment. Do not start it for deterministic failures such as timeout, invalid schema, missing commit, or a known test failure.
+
+1. Save the attempt result, review findings, test evidence, work class, current level, and available levels as absolute read-only inputs
+2. Resolve `escalation-judge` through `agent-config` with `--provenance escalation` and the `escalationSelection` launch policy
+3. Give the judge only those inputs and its prompt/schema; it returns an `escalation` packet
+4. Run `~/.agents/skills/multi-agent-development/scripts/escalation-policy` to validate the packet against the current level, maximum level, work class, and target role
+5. For a permitted next attempt, call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --round <nextLevel>` and pass the resolved launch unchanged
+6. For `ask_user` or `stop`, do not create a child; preserve the evidence and request the decision or stop the run
+
+The judge recommends an action and level. It never chooses a provider or model directly, and it cannot increase the attempt budget.
+
 ### delivery
 
 Use `writing-plans` and `multi-agent-development` only when multi-stage design, implementation, and review are needed.
