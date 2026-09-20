@@ -38,11 +38,24 @@ assert_contains "$mad_contract" 'mode `0600` の regular file' \
 
 brief_contract="$(sed -n '/initial attempt と fix attempt の implementer には/,/launch の検証後/p' \
   "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
-for token in task-excerpt.md execution-context.md RUN_ID TASK_ID ATTEMPT_ID PHASE \
+required_fields_contract="$(printf '%s\n' "$mad_contract" | \
+  sed -n '/親は抽出直後に、次の required field/,/はすべて必須である/p')"
+mutated_mad_contract="${mad_contract/、\`TASK_NUMBER\`/}"
+mutated_required_fields_contract="$(printf '%s\n' "$mutated_mad_contract" | \
+  sed -n '/親は抽出直後に、次の required field/,/はすべて必須である/p')"
+assert_contains "$mutated_mad_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER"' \
+  'brief mutation: extraction command の TASK_NUMBER は残る'
+assert_not_contains "$mutated_required_fields_contract" TASK_NUMBER \
+  'brief mutation: required-field 宣言から TASK_NUMBER を除くと検出する'
+for token in task-excerpt.md execution-context.md; do
+  assert_contains "$brief_contract" "$token" "brief envelope: $token を持つ"
+done
+for token in RUN_ID TASK_ID TASK_NUMBER ATTEMPT_ID PHASE \
   ROLE_PROMPT ROLE_SCHEMA ATTEMPT_BASE WORKSPACE_CWD ROUND RESULT_PATH \
   HANDOFF_PATH LOG_PATH DECISION_REQUEST_PATH CONSTRAINTS_FILE REVIEW_SCOPE_PATH \
   OPEN_FINDINGS_PATH; do
-  assert_contains "$brief_contract" "$token" "brief envelope: $token を持つ"
+  assert_contains "$required_fields_contract" "$token" \
+    "brief required fields: $token を宣言する"
 done
 assert_contains "$brief_contract" 'role prompt と schema を必ず読む' \
   'brief envelope: role/schema の明示的な読込指示を持つ'
