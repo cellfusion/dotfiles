@@ -10,19 +10,19 @@ SOURCE=$(printf '%s' "$INPUT" | jq -r '.source // empty')
 
 ROUTER=$(cat <<'ROUTER_EOF'
 <開発ワークフロー>
-応答・調査・確認質問より先に、該当するスキルを起動する。1% でも該当しそうなら起動する。起動したら「<skill> を使う」と宣言し、スキルにチェックリストがあれば 1 項目 1 todo にする。
+依頼を読んで、必要なスキルだけを起動する。スキルの起動を応答、調査、確認質問の前提にしない。起動したスキルが明示的な宣言を求める場合だけ宣言する。
 
-依頼の種類 → 最初に起動するスキル
-- 新機能・変更・「作りたい」「追加したい」 → brainstorming
-- バグ・不具合・「動かない」「直らない」 → systematic-debugging
-- 実装プランが既にある → multi-agent-development（実装が小さく MAD が要らないときだけ executing-plans）
+依頼の種類 → 基本経路
+- 明確で局所的な変更 → 直接調査・実装する。設計の選択が残る場合だけ brainstorming
+- 意図や挙動が未確定な変更 → brainstorming
+- 複数層にまたがる設計変更 → brainstorming。必要なら writing-plans
+- バグ・不具合・「動かない」「直らない」 → 根本原因が未確定なら systematic-debugging
+- 実装プランが既にある → 小さければ executing-plans。並列性や独立した review が必要なら multi-agent-development
 - 実装が終わった・マージしたい → finishing-a-development-branch
 - 完了・修正済み・テスト通過を主張する直前 → verification-before-completion
 - コードレビューの指摘を受け取った → receiving-code-review
 
-process 系スキル（上記）が先、実装系スキル（frontend-design 等）は後。
-「単純な質問だから」「先に状況を調べてから」「今回は大げさだから」は起動しない理由にならない。
-CLAUDE.md とユーザーの明示指示はスキルより優先する。
+brainstorming、writing-plans、multi-agent-development はすべての変更に必要ではない。親エージェントが依頼の明確さ、リスク、作業量から経路を選ぶ。CLAUDE.md とユーザーの明示指示はこの案内より優先する。
 
 subagent として起動された場合、この指示は無視する。
 </開発ワークフロー>

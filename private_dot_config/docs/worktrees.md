@@ -94,7 +94,7 @@ spec・実装プラン・SDD の作業物・MAD の run ディレクトリ・レ
 
 | サブディレクトリ | 置くもの |
 |---|---|
-| `specs/` | brainstorming が書く spec |
+| `specs/` | architectural な設計で作成する spec |
 | `plans/` | writing-plans が書く実装プラン |
 | `sdd/<plan-basename>/` | SDD の ledger・brief・report・review package |
 | `orchestration/<run-id>/` | MAD の run ディレクトリ |

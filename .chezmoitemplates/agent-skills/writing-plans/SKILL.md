@@ -2,8 +2,8 @@
 name: writing-plans
 description: >-
   spec や要件が固まった多段階の作業を、コードに触る前に実装プランへ落とすときに使う。
-  brainstorming の次段として起動する。プランは agent-docs-dir plans が返す場所に書き、
-  承認後に multi-agent-development へ引き継ぐ。
+  architectural な設計が固まった後など、複数段階の実装に plan が必要な場合だけ起動する。
+  プランは agent-docs-dir plans が返す場所に書き、実行方法に応じて後段へ引き継ぐ。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
