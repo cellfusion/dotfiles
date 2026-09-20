@@ -193,6 +193,54 @@ assert_contains "$macos_s" 'com.koekeishiya.skhd.plist' "macos: skhd の LaunchA
 assert_not_contains "$macos_s" 'sketchybar --start-service' "macos: sketchybar は yabairc が起動する"
 assert_not_contains "$macos_s" 'borders' "macos: borders は yabairc が起動する"
 
+# SbarLua は SketchyBar formula に含まれないため、公式ソースから Lua 5.4 対応版を
+# 固定コミットでビルドする。導入後の require 検証が無いと、空の bar のまま成功する。
+assert_contains "$macos_s" 'https://github.com/FelixKratz/SbarLua.git' \
+  "macos: 公式 SbarLua リポジトリを使う"
+sbarlua_commit_prefix='437bd2031da38ccda75827cb'
+sbarlua_commit_suffix='7548e7baa4aa9978'
+assert_contains "$macos_s" "$sbarlua_commit_prefix" \
+  "macos: Lua 5.4 対応の SbarLua コミット前半を固定する"
+assert_contains "$macos_s" "$sbarlua_commit_suffix" \
+  "macos: Lua 5.4 対応の SbarLua コミット後半を固定する"
+assert_contains "$macos_s" 'git checkout --quiet --detach "$SBARLUA_COMMIT"' \
+  "macos: 固定コミットを detached checkout する"
+assert_contains "$macos_s" 'make install' "macos: SbarLua の公式 install target を実行する"
+assert_contains "$macos_s" 'command -v git >/dev/null 2>&1 || die' \
+  "macos: SbarLua の clone に必要な git を検証する"
+assert_contains "$macos_s" '.local/share/sketchybar_lua/sketchybar.so' \
+  "macos: SbarLua の共有モジュールを検証する"
+assert_contains "$macos_s" '[ -f "$SBARLUA_MODULE" ] || die' \
+  "macos: SbarLua の共有モジュールが無ければ失敗する"
+assert_contains "$macos_s" '[ -x "$SBARLUA_MODULE" ] || die' \
+  "macos: SbarLua の共有モジュールが実行可能でなければ失敗する"
+assert_contains "$macos_s" 'package.cpath' "macos: Lua の cpath に SbarLua を追加する"
+assert_contains "$macos_s" 'require("sketchybar")' \
+  "macos: Lua 5.4 から SbarLua を require できることを検証する"
+assert_contains "$macos_s" "die 'SbarLua" \
+  "macos: SbarLua の失敗を die で伝える"
+assert_contains "$macos_s" 'sketchybar --reload' \
+  "macos: 導入済み SketchyBar に設定を再読込させる"
+sbarlua_install_line="$(printf '%s\n' "$macos_s" | grep -n 'make install' | head -1 | cut -d: -f1)"
+service_start_line="$(printf '%s\n' "$macos_s" | grep -n 'yabai --start-service' | head -1 | cut -d: -f1)"
+reload_line="$(printf '%s\n' "$macos_s" | grep -n 'sketchybar --reload' | head -1 | cut -d: -f1)"
+if [ -n "$sbarlua_install_line" ] && [ -n "$service_start_line" ] && \
+   [ "$sbarlua_install_line" -lt "$service_start_line" ]; then
+  sbarlua_order=before
+else
+  sbarlua_order=after
+fi
+assert_eq "$sbarlua_order" "before" \
+  "macos: SbarLua をサービス起動より先に導入する"
+if [ -n "$sbarlua_install_line" ] && [ -n "$reload_line" ] && \
+   [ "$sbarlua_install_line" -lt "$reload_line" ]; then
+  sbarlua_reload_order=before
+else
+  sbarlua_reload_order=after
+fi
+assert_eq "$sbarlua_reload_order" "before" \
+  "macos: SbarLua を導入してから SketchyBar を再読込する"
+
 # linux では中身が空になる。.chezmoi.os はテンプレート実行時の実 OS を返すため、
 # テストから linux を偽装できない。展開結果ではなくテンプレートのソースを見る。
 macos_src="$(cat "$CHEZMOI_SOURCE/.chezmoiscripts/run_onchange_after_70-macos-services.sh.tmpl")"

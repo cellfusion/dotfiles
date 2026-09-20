@@ -57,6 +57,8 @@ assert_contains "$darwin" 'brew "lua@5.4"' "darwin: sketchybar が要求する l
 assert_not_contains "$linux" 'brew "lua@5.4"' "linux: macOS 専用の lua@5.4 が無い"
 assert_contains "$(cat "$CHEZMOI_SOURCE/private_dot_config/sketchybar/executable_sketchybarrc")" \
   'lua@5.4' "整合: sketchybarrc が lua@5.4 を参照している"
+assert_not_contains "$darwin" 'SbarLua' \
+  "darwin: SbarLua は Homebrew formula として扱わない"
 
 # --- cask は macOS だけ ---
 assert_contains "$darwin" 'cask "ghostty"' "darwin: ghostty の cask がある"
