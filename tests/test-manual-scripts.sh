@@ -125,8 +125,8 @@ assert_contains "$mad_contract" 'non-null の `decisionRequestPath`' \
   'result: write role の decision request を要求する'
 assert_contains "$mad_contract" '`waiting_for_user`' \
   'result: 判断待ちへ遷移する'
-assert_contains "$mad_contract" 'archive しない' \
-  'result: pending workspace を archive しない'
+assert_contains "$mad_contract" 'worktree を消さない' \
+  'result: pending の worktree を消さない'
 
 assert_contains "$mad_skill" 'plan-auditor は delivery role ではない' \
   'audit: delivery role 4役を維持する'
@@ -170,16 +170,16 @@ assert_before "$done_contract" '`DONE` と `DONE_WITH_CONCERNS` だけ' \
   'result order: DONE 系だけ post-commit check を実行する'
 assert_before "$done_contract" 'exit `2`' '`waiting_for_user`' \
   'result order: validator exit 2 を判断待ちへ遷移する'
-assert_contains "$done_contract" 'integration を `pending` のままにして archive しない' \
-  'result branch: validator failure は pending・archive 禁止にする'
+assert_contains "$done_contract" 'integration を `pending` のままにして worktree を消さない' \
+  'result branch: validator failure は pending・worktree 保持にする'
 assert_not_contains "$blocked_contract" '"$MAD_VALIDATE" --check-implement-result' \
   'result branch: BLOCKED/NEEDS_CONTEXT は post-commit check を実行しない'
 assert_before "$blocked_contract" '`summary`' 'non-null の `decisionRequestPath`' \
   'result order: BLOCKED 系の summary と判断要求を転記する'
 assert_before "$blocked_contract" 'non-null の `decisionRequestPath`' '`waiting_for_user`' \
   'result order: BLOCKED 系の判断要求後に waiting_for_user にする'
-assert_contains "$blocked_contract" 'integration は `pending` のままにして archive しない' \
-  'result branch: BLOCKED 系は pending・archive 禁止にする'
+assert_contains "$blocked_contract" 'integration は `pending` のままにして worktree を消さない' \
+  'result branch: BLOCKED 系は pending・worktree 保持にする'
 
 merge_contract="$(sed -n '/各 wave の採用済み task は task number の昇順/,/^## recipe と判断要求$/p' \
   "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"

@@ -107,13 +107,15 @@ strict contract を選んだ run では、次を守る。
 
 1. run と attempt を一意に作り、既存成果物を上書きしない
 2. role、prompt、schema、scope を child ごとに固定する
-3. create、wait、stop、workspace 操作の回数を記録する
+3. create、wait、stop、worktree 操作の回数を記録する
 4. child の成果物を schema と scope で検証する
 5. phase の境界で親が採用判断を記録する
 6. review の scope を勝手に広げない
 7. timeout、transport failure、未知の状態を成功として扱わない
 8. run の上限に達したら、新しい child を追加せず停止する
 
-詳細な request、state、artifact、review、workspace の契約は、実際に strict MAD run を開始するときだけ次の共通契約を読む。
+worktree の隔離は Paseo に任せず、`mad-worktree` が素の git で行う。親は作成済みの worktree の絶対 path を Paseo の workspace に渡す。
+
+詳細な request、state、artifact、review、worktree の契約は、実際に strict MAD run を開始するときだけ次の共通契約を読む。
 
 {{ includeTemplate "agent-skills/_manual-orchestration.md" . }}
