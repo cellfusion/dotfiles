@@ -46,6 +46,8 @@ assert_contains "$task_routing" '--attempt-level <attemptLevel>' \
   'escalation: attempt level reaches resolver'
 assert_not_contains "$task_routing" 'CLI backend is allowed only for single route' \
   'backend: stale single-only CLI policy is removed'
+assert_contains "$task_routing" 'mad-route-record' \
+  'route audit: admission recorder is documented'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
 for exec_path in \

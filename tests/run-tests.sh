@@ -10,6 +10,7 @@ tests=(
   test-paseo-cli-adapter.sh
   test-mad-outcome.sh
   test-mad-outcome-import.sh
+  test-mad-route.sh
   test-agent-config-policy.sh
   test-agent-config-routing.sh
   test-agent-config-review-routing.sh

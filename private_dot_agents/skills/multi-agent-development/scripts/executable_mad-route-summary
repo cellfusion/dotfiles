@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+'use strict'
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+function fail(message) { process.stderr.write(`mad-route-summary: ${message}\n`); process.exit(2) }
+function absolute(value, label) { if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`); return value }
+const args = process.argv.slice(2)
+let input = path.join(os.homedir(), '.local', 'state', 'mad', 'metrics', 'route-decisions.jsonl')
+for (let i = 0; i < args.length; i += 1) {
+  if (args[i] !== '--input' || i + 1 >= args.length) fail('usage: mad-route-summary --input FILE')
+  input = absolute(args[++i], '--input')
+}
+const shareDir = process.env.MAD_ROUTE_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+let route
+try { route = require(path.join(shareDir, 'mad-route.js')) } catch { fail('route contract is unavailable') }
+let raw
+try { raw = fs.readFileSync(input, 'utf8') } catch { fail('input log is unavailable') }
+const records = raw.split('\n').filter(Boolean).map((line) => {
+  try { return route.assertRouteV1(JSON.parse(line)) } catch { fail('input log contains an invalid route record') }
+})
+const countBy = (values) => Object.fromEntries([...new Set(values)].sort().map((key) => [key, values.filter((value) => value === key).length]))
+const models = Object.entries(records.reduce((map, record) => {
+  const key = record.model || 'unresolved'
+  map[key] = (map[key] || 0) + 1
+  return map
+}, {})).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([model, count]) => ({ model, count }))
+process.stdout.write(JSON.stringify({ records: records.length, routes: countBy(records.map((r) => r.route)), workClasses: countBy(records.map((r) => r.workClass)), complexities: countBy(records.map((r) => r.complexity)), delegated: countBy(records.map((r) => String(r.delegated))), models }) + '\n')

@@ -33,6 +33,23 @@ Use a packet with finite values. Do not put free-form provider or model choices 
 
 Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `verification` is unknown. Set `needsUserDecision: true` when guessing would change the result.
 
+## Route admission audit
+
+Record every admission decision, including `direct`, before execution. Initialize the local recorder once:
+
+```bash
+MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
+MAD_ROUTE_LOG="${MAD_ROUTE_LOG:-$HOME/.local/state/mad/metrics/route-decisions.jsonl}"
+```
+
+Build a mode `0600` `mad-route-decision` record with the packet route, work class, complexity, role, confidence, reason code, selected backend/model when resolved, and `delegated` boolean, then append it before starting the selected path:
+
+```bash
+"$MAD_ROUTE_RECORD" --record "$ROUTE_RECORD" --output "$MAD_ROUTE_LOG"
+```
+
+Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for route statistics; child attempt results belong in `mad-attempt-outcome`.
+
 ## Who creates the packet
 
 - If the request is clear and confidence is high, the parent creates the packet directly
