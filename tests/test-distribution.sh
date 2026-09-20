@@ -32,19 +32,19 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
 assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
-  'task-routing skill を配る'
+  'distribute task-routing skill'
 assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \
-  'Claude task-routing skill を配る'
+  'distribute Claude task-routing skill'
 assert_contains "$managed" '.config/opencode/skills/task-routing/SKILL.md' \
-  'OpenCode task-routing skill を配る'
+  'distribute OpenCode task-routing skill'
 assert_contains "$managed" '.agents/agent-defs/prompts/intake-router.md' \
-  'intake-router prompt を配る'
+  'distribute intake-router prompt'
 assert_contains "$managed" '.agents/agent-defs/schemas/intake-router.json' \
-  'intake-router schema を配る'
+  'distribute intake-router schema'
 assert_contains "$managed" '.config/claude/agents/intake-router.md' \
-  'Claude intake-router agent を配る'
+  'distribute Claude intake-router agent'
 assert_contains "$managed" '.config/opencode/agents/intake-router.md' \
-  'OpenCode intake-router agent を配る'
+  'distribute OpenCode intake-router agent'
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \

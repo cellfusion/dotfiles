@@ -19,7 +19,7 @@ configValue.agentRoles['intake-router'] = {
   duty: 'review',
   launchPolicy: 'routing',
   access: 'read',
-  description: '依頼を task packet に分類する',
+  description: 'Classify requests into task packets',
   artifactContract: 'task-packet-v1',
   deliveryDuties: []
 }

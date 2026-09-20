@@ -1,17 +1,18 @@
 ---
 name: task-routing
 description: >-
-  依頼の実行経路、作業クラス、実装 role を選ぶ。明確で局所的な変更には使わず、direct、single、delivery の判断が必要な場合だけ使う。
+  Select the execution route, work class, and implementation role for a development request.
+  Skip it for clear local changes; use it only when direct, single-agent, and delivery paths need to be distinguished.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# 依頼を実行経路へ振り分ける
+# Route a Request to an Execution Path
 
-task-routing は、ユーザーの依頼を実装用の task packet に整理する入口である。実装そのもの、設計の承認、MAD の strict contract は担当しない。明確で局所的な変更はこの skill を使わず、親が直接実装するか、軽量な `implementer` child を起動する。
+task-routing is the entry point for turning a user request into an implementation task packet. It does not implement code, approve designs, or execute the MAD strict contract. Skip it for a clear local change: the parent may implement directly or start one lightweight `implementer` child.
 
-## 出力する task packet
+## Task packet
 
-次の有限値を持つ packet を親の判断材料にする。自由な model/provider の選択は packet に入れない。
+Use a packet with finite values. Do not put free-form provider or model choices in it.
 
 ```json
 {
@@ -30,115 +31,115 @@ task-routing は、ユーザーの依頼を実装用の task packet に整理す
 }
 ```
 
-`writeScope`、`acceptanceCriteria`、`verification` が不明なまま `confidence: high` にしない。推測で結果が変わる場合は `needsUserDecision` を `true` にする。
+Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `verification` is unknown. Set `needsUserDecision: true` when guessing would change the result.
 
-## packet の作成者
+## Who creates the packet
 
-- `confidence: high` で依頼が明確なら、親が packet を直接作る
-- `confidence: medium` または `low`、複数の route があり得る場合、read-only の `intake-router` role を起動する
-- `intake-router` には raw request と必要最小限の repository context だけを渡す。出力は `intake-router` schema の packet とし、コードや設定は変更させない
-- `intake-router` の launch は `agent-config` の `routingSelection` から解決する。router に provider、model、effort を自由に選ばせない
-- router の packet が `needsUserDecision: true` または `confidence: low` の場合、実装 child を作らず親が確認する
+- If the request is clear and confidence is high, the parent creates the packet directly
+- If confidence is medium or low, or several routes are plausible, start the read-only `intake-router` role
+- Give `intake-router` only the raw request and the minimum repository context. It returns a packet under its schema and never changes code or configuration
+- Resolve the `intake-router` launch from `agent-config.routingSelection`. Do not let the router choose a provider, model, or effort
+- If the router returns `needsUserDecision: true` or `confidence: low`, do not create an implementation child; ask the parent to resolve the decision
 
-## route の判断
+## Route selection
 
 ### direct
 
-親が直接実装する。
+The parent implements directly when:
 
-- 既存の一つの処理を変更する
-- ファイルが1〜2個である
-- 依頼文から挙動が確定している
-- 外部操作、公開契約、設計選択がない
+- one existing flow is being changed
+- the change touches one or two files
+- the requested behavior is clear
+- there is no external operation, public contract, or design choice
 
 ### single
 
-一つの child に実装を委譲する。full MAD、plan-auditor、task review loop は起動しない。
+Delegate one implementation to one child. Do not start full MAD, plan-auditor, or a task review loop.
 
-- 変更は明確だが、親の context から分離する価値がある
-- 実装と検証を別の child に任せたい
-- task は一つで、並列性がない
+- the change is clear but should be isolated from the parent's context
+- implementation and verification should run in a separate session
+- there is one task and no parallelism
 
-single の実行手順は次である。
+The single-child procedure is:
 
-1. `confidence: high`、`route: single`、`workClass`、`writeScope`、`acceptanceCriteria`、`verification` が揃った task packet を作る
-2. 書き込みがある場合は専用の Paseo worktree を作る。親の作業ツリーへ直接書かせない
-3. `implementer` role の prompt、schema、task packet の absolute path だけを child へ渡す。過去の会話全文や full plan は渡さない
-4. task packet の `workClass` に応じた overlay を prompt に付ける
-5. child は実装、テスト、commit、report を行う
-6. 親は child の status、commit、diff、changedFiles、scope、テスト出力を独立に確認する
-7. 採用できない場合だけ、証拠を添えて retry、`escalation-judge`、user decision のいずれかを選ぶ
+1. Create a packet with `confidence: high`, `route: single`, `workClass`, `writeScope`, `acceptanceCriteria`, and `verification`
+2. If the child writes files, create one dedicated Paseo worktree; never let it write to the parent's working tree
+3. Pass only the `implementer` prompt, schema, and packet absolute paths. Do not pass the full conversation or an unrelated plan
+4. Add the prompt overlay for the packet's `workClass`
+5. The child implements, tests, commits, and writes a report
+6. The parent independently checks status, commit, diff, changed files, scope, and test output
+7. If the result cannot be adopted, use evidence to choose retry, `escalation-judge`, direct repair, or a user decision
 
-single child の起動失敗は strict MAD run の失敗とは扱わない。別 backend や別 child を無制限に追加せず、親が直接実装へ戻るかユーザーへ状況を伝える。
+A single-child launch failure is not a strict MAD run failure. Do not add unlimited children or switch backends; return to direct implementation or report the situation to the user.
 
-### single implementer の起動契約
+### Single implementer launch contract
 
-single route で write child を起動する場合、親は次の順序を守る。
+When a single route starts a write child, the parent follows this order:
 
-1. task packet を mode `0600` の absolute path に保存し、`intake-router` schema で検証する
-2. `agent-config resolve --role implementer --provenance mad-dispatch --complexity <packet.complexity> --round 0` で launch を解決する。provider、model、effort、features を親が作り直さない
-3. 書き込み用の Paseo worktree を一つ作り、返った `workspaceId` を child create に使う
-4. `implementer` prompt、schema、task packet の absolute path と workClass overlay だけを `initialPrompt` に渡す。ユーザーの会話全文、不要な repository 全体、別 task の成果物を渡さない
-5. `mcp__paseo__create_agent` を一度だけ呼び、`notifyOnFinish` と launch の settings をそのまま渡す。CLI や別 backend で代替しない
-6. child の完了後、`status`、`baseHead`、commit、`changedFiles`、worktree の clean 状態、acceptance criteria、verification を親が確認する
-7. 採用できない場合は、同じ child の無制限な再指示をせず、`escalation-judge`、親の直接修正、user decision のいずれかを選ぶ
+1. Save the packet as a mode `0600` absolute file and validate it with the `intake-router` schema
+2. Resolve the launch with `agent-config resolve --role implementer --provenance mad-dispatch --complexity <packet.complexity> --round 0`. Do not reconstruct provider, model, effort, or features in the parent
+3. Create one Paseo worktree and pass its `workspaceId` to child creation
+4. Pass only the `implementer` prompt, schema, packet absolute path, and work-class overlay in `initialPrompt`. Do not pass the user's full conversation, unrelated repository content, or another task's artifacts
+5. Call `mcp__paseo__create_agent` exactly once and pass `notifyOnFinish` and launch settings unchanged. Do not substitute the CLI or another backend
+6. After completion, independently check `status`, `baseHead`, commit, `changedFiles`, clean worktree state, acceptance criteria, and verification
+7. If the result cannot be adopted, do not send unlimited follow-ups to the same child; choose `escalation-judge`, direct repair, or a user decision
 
-single route は strict MAD の plan-audit、wave、task review/fix admission を使わない。ただし child の commit、diff、テスト、scope を検証せずに採用してはならない。
+The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
 
 ### delivery
 
-複数段階の設計・実装・review が必要な場合だけ `writing-plans` と `multi-agent-development` へ進む。
+Use `writing-plans` and `multi-agent-development` only when multi-stage design, implementation, and review are needed.
 
-- 独立 task を並行できる
-- worktree 隔離が必要である
-- 複数層の統合や公開契約の変更がある
-- task review と final review が必要である
+- independent tasks can run in parallel
+- worktree isolation is required
+- multiple layers or a public contract must be integrated
+- task review and final review are required
 
-## workClass の判断
+## Work-class selection
 
 ### mechanical
 
-既存の実装パターンをそのまま使う。文字列置換、path の変更、形が決まった小さな修正が該当する。新しい抽象化や設計変更を行わず、疑問が出たら停止または escalation する。
+Follow the existing implementation pattern exactly. String replacements, path changes, and small fixed-shape edits belong here. Do not add abstractions or redesign behavior; stop or escalate when a question appears.
 
 ### routine
 
-既存の設計に沿って数ファイルを変更する。実装者は対象コード、既存テスト、acceptance criteria を確認して実装する。
+Change a few files within the existing design. Inspect the target code, existing tests, and acceptance criteria before implementing.
 
 ### integration
 
-複数層、複数パッケージ、複数の呼び出し元を接続する。契約、データの流れ、エラー処理、統合テストを確認する。task review を省略しない。
+Connect multiple layers, packages, or callers. Check contracts, data flow, error handling, and integration tests. Do not guess how components connect.
 
 ### architectural
 
-新しいサブシステム、公開契約、schema、認証、migration、複数の妥当な設計案がある変更に使う。実装者に設計を発明させない。`spec-author`、`plan-author`、`plan-auditor` の後に `architectural-implementer` または強い `implementer` を起動する。
+Use this for a new subsystem, public contract, schema, authentication, migration, or multiple valid design options. Do not let the implementer invent the design. Run `spec-author`, `plan-author`, and `plan-auditor` first, then start `architectural-implementer` or a strong `implementer`.
 
-## role の判断
+## Role selection
 
-同じ artifact contract、権限、停止条件で実装できるなら `implementer` に workClass overlay を渡す。次が変わる場合だけ別 role を選ぶ。
+Use the common `implementer` role with a work-class overlay when the artifact contract, permissions, and stop conditions are the same. Use a separate role only when one of these changes:
 
-- 設計判断を許すか
-- 書き込み範囲や権限が違うか
-- 成果物 schema が違うか
-- review 経路や停止条件が違うか
+- whether design decisions are allowed
+- write scope or permissions
+- artifact schema
+- review path or stop conditions
 
-model、effort、attempt の level は role ではなく `attemptPolicy` で決める。`escalation-judge` を使う場合も、judge は level と workClass を提案するだけで、provider/model を自由に決めない。
+Model, effort, and attempt level belong to `attemptPolicy`, not to role names. When `escalation-judge` is used, it may recommend a level and work class but must not freely choose a provider or model.
 
-## user decision と brainstorming
+## User decisions and brainstorming
 
-次の場合だけユーザーへ確認する。
+Ask the user only when:
 
-- 挙動の選択が依頼文から決まらない
-- scope、公開契約、破壊的操作、外部 side effect が変わる
-- architectural な設計案の選択が残る
-- confidence が低く、安全な仮定を置けない
+- the requested behavior is not determined by the request
+- scope, a public contract, a destructive action, or an external side effect would change
+- an architectural design option remains
+- confidence is low and no safe assumption is available
 
-`needsBrainstorming` が `true` の場合は、目的・制約・成功条件を整理してから brainstorming を使う。明確な local change では brainstorming を起動しない。
+When `needsBrainstorming` is true, clarify purpose, constraints, and success criteria before using brainstorming. Do not start brainstorming for a clear local change.
 
-## 終了条件
+## Terminal conditions
 
-- `direct`: 親が実装し、適切な検証を行う
-- `single`: implementer child を一つ起動し、親が成果物を採用する
-- `delivery`: spec、plan、audit、MAD delivery へ引き渡す
-- `needsUserDecision`: decision request を作り、実装を開始しない
+- `direct`: the parent implements and runs appropriate verification
+- `single`: start one implementer child and have the parent adopt its artifacts
+- `delivery`: hand off to spec, plan, audit, and MAD delivery
+- `needsUserDecision`: create a decision request and do not start implementation
 
-route の判定だけで無限に質問しない。目的、scope、acceptance criteria が揃えば次の経路へ進む。
+Do not ask endless routing questions. Once goal, scope, acceptance criteria, and verification are sufficient, continue to the selected route.
