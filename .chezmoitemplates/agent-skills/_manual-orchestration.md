@@ -267,6 +267,20 @@ spec 外などで見つけた重要事項は、fix の対象へ追加せず `mad
   --scope-file "$SCOPE_FILE" --observation-file "$OBSERVATION_FILE"
 ```
 
+## final review の一括 fix
+
+`final-reviewer` の結果に Critical または Important の finding がある場合、finding ごとに child を作らず、次の bounded loop を一度だけ実行する。Minor は `triage` で merge 前に直すか deferred にする。
+
+1. branch の変更ファイル全体を `allowedFiles` にした task `final` の `mad-review-scope` を作る。`findingIds` は空配列、`outOfScopePath` は absolute path とする。
+2. `--prepare-review --task final --phase review --node final-review --round 0` を通してから、final-reviewer の package と結果を検証する。結果の package 範囲が不正なら fix を起動しない。
+3. final-reviewer の findings から `mad-review-open-findings` を一度だけ作る。Critical/Important が無い場合は final review を終了する。
+4. Critical/Important の全 finding と branch の許可範囲を含む fresh な `final-fix` brief を作り、一つの final-fix implementer だけを起動する。full plan は渡さず、brief の absolute path だけを渡す。`--prepare-review --task final --phase fix --node final-fix --round 1` と同じ scope marker を使う。
+5. final-fix の result、commit、RED/GREEN、`changedFiles`、scope を検証する。scope 外の変更、未検証の結果、`BLOCKED`、`NEEDS_CONTEXT` は採用せず `waiting_for_user` にする。
+6. fix diff を review package にして、同じ finding list を `re-reviewer` に一度だけ渡す。これを final re-review と呼ぶ。`--prepare-review --task final --phase re-review --node final-re-review --round 1` と `--check-review-verdict --role re-reviewer` を使う。
+7. 全 finding が addressed なら final review を採用する。finding が残る、new breakage がある、または re-review が失敗した場合は `unresolved` / `waiting_for_user` として停止する。
+
+この経路では二度目の final-fix、per-finding fixer、final-reviewer の再起動を行わない。追加の変更が必要なら、元 run を延長せず新しい task/run として開始する。
+
 ## plan dependency gate
 
 plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証する。

@@ -187,6 +187,17 @@ assert_before "$merge_contract" '`waiting_for_user`' 'repository-relative path' 
 assert_before "$merge_contract" '`Depends on` と `Files:`' '同一 wave の残り' \
   'merge order: 衝突情報を書いてから wave を停止する'
 
+final_review_contract="$(sed -n '/^## final review の一括 fix$/,/^## plan dependency gate$/p' \
+  "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+assert_contains "$final_review_contract" 'final-review' \
+  'final review: final review scope を使う'
+assert_contains "$final_review_contract" '一つの final-fix' \
+  'final review: fix は一つにまとめる'
+assert_contains "$final_review_contract" 'final re-review' \
+  'final review: scoped re-review を一回だけ行う'
+assert_contains "$final_review_contract" '二度目の final-fix' \
+  'final review: 二度目の fix を起動しない'
+
 dependency_line="$(grep -nF '"$MAD_PLAN_VALIDATE" "$PLAN_FILE"' \
   "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md" | head -1 | cut -d: -f1)"
 waves_line="$(grep -nF '"$MAD_PLAN_VALIDATE" --waves "$PLAN_FILE"' \
