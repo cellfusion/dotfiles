@@ -31,6 +31,10 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
   'plan-auditor schema を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-worktree' \
+  'mad-worktree を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-progress' \
+  'mad-progress を配る'
 
 for role in implementer task-reviewer re-reviewer final-reviewer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
