@@ -21,6 +21,8 @@ assert_contains "$doc" 'MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"' \
   'docs: mad-outcome recorder の絶対 script path を記録する'
 assert_contains "$doc" 'MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"' \
   'docs: mad-outcome importer の絶対 script path を記録する'
+assert_contains "$doc" 'MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"' \
+  'docs: mad-route admission の絶対 script path を記録する'
 assert_contains "$doc" 'MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"' \
   'docs: mad-route recorder の絶対 script path を記録する'
 assert_contains "$doc" 'MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"' \

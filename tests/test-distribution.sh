@@ -78,6 +78,8 @@ assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-o
   'mad outcome recorder を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-import' \
   'mad outcome importer を配る'
+assert_contains "$managed" '.agents/skills/task-routing/scripts/mad-route-admit' \
+  'mad route admission を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-route-record' \
   'mad route recorder を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-route-summary' \

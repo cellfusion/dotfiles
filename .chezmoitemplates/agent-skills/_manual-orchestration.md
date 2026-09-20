@@ -192,7 +192,7 @@ implementer の終了後、親は `status` で分岐する。`DONE` と `DONE_WI
 
 post-commit check が成功した後、親は outcome audit を一件だけ作る。CLI backend では accepted childRef に対して `"$MAD_CLI_ADAPTER" inspect-agent --child-ref <safe-id>` を一回呼び、返った `status`、`durationMs`、`usage` だけを 0600 の一時 evidence に保存する。MCP backend または usage が取得できない場合は token fields を 0、`usage.source` を `unavailable` とし、推測値を作らない。tool loop は raw logs を保存せず、sanitized な集計値だけを `toolLoopCount` / `toolLoopSource` に入れる。
 
-親は独立した test、review、regression の結果と、launch の route/model/effort、retry count、policy level、trigger を `mad-attempt-outcome` version 1 の exact key set に組み立て、次で local mode 0600 JSONL へ追記する。
+親は admitted packet の `routeId` と、独立した test、review、regression の結果、launch の route/model/effort、retry count、policy level、trigger を `mad-attempt-outcome` version 1 の exact key set に組み立て、次で local mode 0600 JSONL へ追記する。
 
 ```bash
 "$MAD_OUTCOME_RECORD" --record "$ATTEMPT_DIR/outcome.json" --output "$MAD_OUTCOME_LOG"

@@ -38,17 +38,23 @@ Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `veri
 Record every admission decision, including `direct`, before execution. Initialize the local recorder once:
 
 ```bash
+TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
+MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
 MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
 MAD_ROUTE_LOG="${MAD_ROUTE_LOG:-$HOME/.local/state/mad/metrics/route-decisions.jsonl}"
 ```
 
-Build a mode `0600` `mad-route-decision` record with the packet route, work class, complexity, role, confidence, reason code, selected backend/model when resolved, and `delegated` boolean, then append it before starting the selected path:
+Run the admission wrapper before starting the selected path. It validates the finite packet, adds a `routeId`, writes the mode `0600` route decision, and emits the admitted packet:
 
 ```bash
-"$MAD_ROUTE_RECORD" --record "$ROUTE_RECORD" --output "$MAD_ROUTE_LOG"
+"$MAD_ROUTE_ADMIT" \
+  --packet "$PACKET" --output "$ADMITTED_PACKET" \
+  --route-record "$MAD_ROUTE_LOG" \
+  --backend "$MAD_BACKEND" --provider "$PROVIDER" \
+  --model "$MODEL" --effort "$EFFORT"
 ```
 
-Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for route statistics; child attempt results belong in `mad-attempt-outcome`.
+For `direct`, omit backend/provider/model/effort and set the packet route to `direct`. Use the admitted packet for the selected path and pass its `routeId` into any child outcome record. Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for route statistics; child attempt results belong in `mad-attempt-outcome`.
 
 ## Who creates the packet
 

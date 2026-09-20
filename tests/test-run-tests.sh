@@ -19,6 +19,7 @@ expected_names=(
   test-mad-outcome.sh
   test-mad-outcome-import.sh
   test-mad-route.sh
+  test-mad-route-admit.sh
   test-agent-config-policy.sh
   test-agent-config-routing.sh
   test-agent-config-review-routing.sh
@@ -70,7 +71,7 @@ assert_eq "$(cat "$order_file")" "$expected_order" \
   'runner: allowlist の順序をそのまま実行する'
 assert_not_contains "$(cat "$order_file")" sentinel \
   'runner: allowlist 外の sentinel を実行しない'
-assert_contains "$output" 'SUMMARY 29 0' \
+assert_contains "$output" 'SUMMARY 30 0' \
   'runner: 最終 SUMMARY に実行数と失敗数を出す'
 
 assert_summary
