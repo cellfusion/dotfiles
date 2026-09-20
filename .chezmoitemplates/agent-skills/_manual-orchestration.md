@@ -30,6 +30,7 @@ MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
@@ -197,7 +198,7 @@ post-commit check が成功した後、親は outcome audit を一件だけ作�
 "$MAD_OUTCOME_RECORD" --record "$ATTEMPT_DIR/outcome.json" --output "$MAD_OUTCOME_LOG"
 ```
 
-この記録は transport call log と別であり、child の自己申告だけで `completed` や `accepted` にしてはならない。
+この記録は transport call log と別であり、child の自己申告だけで `completed` や `accepted` にしてはならない。過去 run を再集計するときは `"$MAD_OUTCOME_IMPORT" --runs-dir "$MAD_STATE_DIR/runs" --output "$MAD_OUTCOME_LOG"` を使う。同じ `runId/attemptId` は duplicate として追記しない。usage が過去 artifact に無い場合は推測せず unavailable とする。
 
 `BLOCKED` または `NEEDS_CONTEXT` では post-commit check を実行しない。result の `summary` と、non-null の `decisionRequestPath` が指す質問・選択肢の内容を同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user` にする。この場合も台帳の integration は `pending` のままにして worktree を消さない。status と `decisionRequestPath` の組み合わせが契約に反する結果は採用せず `waiting_for_user` にする。
 

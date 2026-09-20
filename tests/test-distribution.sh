@@ -76,6 +76,8 @@ assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/paseo
   'paseo CLI adapter を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-record' \
   'mad outcome recorder を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-import' \
+  'mad outcome importer を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-escalation-controller' \
   'mad escalation controller を配る'
 assert_contains "$managed" '.local/share/agent-config/mad-outcome.js' \

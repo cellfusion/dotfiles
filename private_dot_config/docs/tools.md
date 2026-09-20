@@ -182,11 +182,12 @@ MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の11 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の12 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。

@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+function fail(message) {
+  process.stderr.write(`mad-outcome-import: ${message}\n`)
+  process.exit(2)
+}
+
+function absolute(value, label) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`)
+  return value
+}
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
+}
+
+function readTextValue(file, pattern) {
+  try {
+    const match = pattern.exec(fs.readFileSync(file, 'utf8'))
+    return match ? match[1].toLowerCase() : null
+  } catch { return null }
+}
+
+function readComplexity(attemptDir, launch) {
+  if (['simple', 'routine', 'complex', 'critical'].includes(launch.complexity)) return launch.complexity
+  return readTextValue(path.join(attemptDir, 'execution-context.md'), /^COMPLEXITY=([^\r\n]+)$/m) ||
+    readTextValue(path.join(attemptDir, 'task-excerpt.md'), /^\*\*Complexity:\*\*\s*([^\r\n]+)/mi)
+}
+
+function readWorkClass(file, complexity) {
+  const explicit = readTextValue(file, /^WORK_CLASS=([^\r\n]+)$/m)
+  if (explicit && ['mechanical', 'routine', 'integration', 'architectural'].includes(explicit)) return explicit
+  return { simple: 'mechanical', routine: 'routine', complex: 'integration', critical: 'architectural' }[complexity] || null
+}
+
+function roleForNode(node) {
+  if (node === 'final-review' || node.endsWith('-final-review')) return 'final-reviewer'
+  if (node.endsWith('-re-review')) return 're-reviewer'
+  if (node.endsWith('-review')) return 'task-reviewer'
+  if (node === 'plan-audit') return 'plan-auditor'
+  return 'implementer'
+}
+
+function durationMs(state) {
+  const started = Date.parse(state.started_at)
+  const finished = Date.parse(state.finished_at)
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return 0
+  return finished - started
+}
+
+function outcomeStatus(state) {
+  if (state.state === 'ok') return 'completed'
+  if (state.state === 'failed') return 'failed'
+  if (state.state === 'stopped') return 'cancelled'
+  return 'unresolved'
+}
+
+function collectFiles(root, result = []) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const file = path.join(root, entry.name)
+    if (entry.isDirectory() && !entry.isSymbolicLink()) collectFiles(file, result)
+    else if (entry.isFile() && entry.name === 'state.json') result.push(file)
+  }
+  return result
+}
+
+function existingKeys(outputPath, outcome) {
+  const keys = new Set()
+  if (!fs.existsSync(outputPath)) return keys
+  const raw = fs.readFileSync(outputPath, 'utf8')
+  for (const line of raw.split('\n').filter(Boolean)) {
+    let value
+    try { value = JSON.parse(line); outcome.assertOutcomeV1(value) } catch { fail('existing outcome log contains an invalid record') }
+    keys.add(`${value.runId}/${value.attemptId}`)
+  }
+  return keys
+}
+
+const args = process.argv.slice(2)
+let runsDir
+let outputPath = path.join(os.homedir(), '.local', 'state', 'mad', 'metrics', 'attempt-outcomes.jsonl')
+for (let i = 0; i < args.length; i += 1) {
+  if (!['--runs-dir', '--output'].includes(args[i]) || i + 1 >= args.length) fail('usage: mad-outcome-import --runs-dir DIR [--output FILE]')
+  if (args[i] === '--runs-dir') runsDir = absolute(args[++i], '--runs-dir')
+  else outputPath = absolute(args[++i], '--output')
+}
+if (!runsDir) fail('usage: mad-outcome-import --runs-dir DIR [--output FILE]')
+if (!fs.existsSync(runsDir) || !fs.statSync(runsDir).isDirectory()) fail('runs directory is unavailable')
+
+const shareDir = process.env.MAD_OUTCOME_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+let outcome
+try { outcome = require(path.join(shareDir, 'mad-outcome.js')) } catch { fail('outcome contract is unavailable') }
+const known = existingKeys(outputPath, outcome)
+const states = collectFiles(runsDir)
+let recorded = 0
+let duplicates = 0
+let skipped = 0
+
+for (const statePath of states) {
+  const state = readJson(statePath)
+  if (!state || !['ok', 'failed', 'stopped', 'unresolved', 'waiting_for_user'].includes(state.state)) { skipped += 1; continue }
+  const attemptDir = path.dirname(statePath)
+  const launch = readJson(path.join(attemptDir, 'launch.json'))
+  if (!launch || launch.status !== 'ok') { skipped += 1; continue }
+  const runId = typeof state.run_id === 'string' ? state.run_id : 'unknown-run'
+  const attemptId = typeof state.attempt === 'string' ? state.attempt : path.basename(attemptDir)
+  const key = `${runId}/${attemptId}`
+  if (known.has(key)) { duplicates += 1; continue }
+  const node = typeof state.node === 'string' ? state.node : 'unknown-node'
+  const complexity = readComplexity(attemptDir, launch)
+  if (!complexity || !['simple', 'routine', 'complex', 'critical'].includes(complexity)) { skipped += 1; continue }
+  if (![launch.provider, launch.model, launch.thinkingOptionId].every((value) => typeof value === 'string' && value.length > 0)) { skipped += 1; continue }
+  const result = readJson(path.join(attemptDir, 'result.json'))
+  const changedFiles = result && Array.isArray(result.changedFiles) ? result.changedFiles.length : 0
+  const workClass = readWorkClass(path.join(attemptDir, 'execution-context.md'), complexity)
+  if (!workClass) { skipped += 1; continue }
+  const role = roleForNode(node)
+  const record = {
+    version: 1,
+    type: 'mad-attempt-outcome',
+    recordedAt: new Date().toISOString(),
+    taskId: node,
+    runId,
+    attemptId,
+    route: {
+      workClass,
+      complexity,
+      role,
+      backend: state.backend === 'paseo-mcp' ? 'paseo-mcp' : 'paseo-cli',
+      provider: launch.provider,
+      model: launch.model,
+      effort: launch.thinkingOptionId,
+      policyLevel: Number.isInteger(state.round) ? state.round : 0,
+      trigger: state.round > 0 ? 'retry' : 'initial',
+      round: Number.isInteger(state.round) ? state.round : 0,
+    },
+    outcome: {
+      status: outcomeStatus(state),
+      retryCount: Number.isInteger(state.round) ? state.round : 0,
+      durationMs: durationMs(state),
+    },
+    usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: null, source: 'unavailable' },
+    toolLoopCount: null,
+    toolLoopSource: 'unavailable',
+    verification: { tests: 'unknown', review: 'unknown', changedFiles, regression: 'unknown' },
+  }
+  const recordPath = path.join(os.tmpdir(), `mad-outcome-import-${process.pid}-${recorded}.json`)
+  fs.writeFileSync(recordPath, JSON.stringify(record) + '\n', { mode: 0o600 })
+  fs.chmodSync(recordPath, 0o600)
+  try { outcome.appendOutcome(recordPath, outputPath) } finally { fs.unlinkSync(recordPath) }
+  known.add(key)
+  recorded += 1
+}
+
+process.stdout.write(JSON.stringify({ status: 'ok', discovered: states.length, recorded, skipped, duplicates, output: outputPath }) + '\n')
