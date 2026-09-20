@@ -20,6 +20,10 @@ done
 
 assert_contains "$mad_contract" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'path: task-brief を絶対 script path から使う'
+assert_contains "$mad_contract" 'MAD_BACKEND="${MAD_BACKEND:-paseo-cli}"' \
+  'backend: paseo-cli is the strict MAD default'
+assert_contains "$mad_contract" '--backend paseo-cli' \
+  'backend: CLI resolve path is explicit'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
 for exec_path in \

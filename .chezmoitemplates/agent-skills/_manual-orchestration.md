@@ -67,6 +67,7 @@ snapshot の保存後、親は次の `agent-config resolve` のみで launch を
 プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `routine` を入れる。
 `$ROUND` には review/fix loop のラウンド番号を入れ、review/fix loop の外で起動する子には
 `0` を入れる。`mad-fix` で `$ROUND` が 2 以上のとき、CLI が複雑度を 1 段上げる。
+`MAD_BACKEND=paseo-cli` の場合は `agent-config resolve` に `--backend paseo-cli` を追加し、CLI-compatible な launch を解決する。
 
 成功時の stdout は `mad-launch-spec` 一件で exit 0、候補が尽きたときは `mad-launch-failure` 一件で exit 4、入力または snapshot が不正なときは exit 2 である。exit 4 は `waiting_for_user`、exit 2 は `failed` として create を行わない。成功 launch は strict に検査し、`modeId` が `auto` でないもの、allowlist に無い feature、宣言型と違う scalar、整数でない整数 feature を拒否する。
 

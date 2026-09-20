@@ -743,6 +743,9 @@ mad_exercise_success() {
     --snapshot "$attempt_dir/snapshot.json")
   [ -n "$complexity" ] && resolve_args+=(--complexity "$complexity")
   [ -n "$round" ] && resolve_args+=(--round "$round")
+  if [ "${MAD_BACKEND:-paseo-mcp}" = "paseo-cli" ]; then
+    resolve_args+=(--backend paseo-cli)
+  fi
   resolve_output="$("$generator" --input "$input" resolve "${resolve_args[@]}" 2>/dev/null)"
   resolve_status=$?
   case "$resolve_status" in
