@@ -17,9 +17,14 @@ MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
 MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
 MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
+MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
+MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
+MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 ```
+
+`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。
 
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
 

@@ -22,6 +22,15 @@ assert_contains "$mad_contract" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'path: task-brief を絶対 script path から使う'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
+for exec_path in \
+  'MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"' \
+  'MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"' \
+  'MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"'; do
+  assert_contains "$mad_contract" "$exec_path" \
+    "path: 契約文書が ${exec_path%%=*} を初期化する"
+  assert_contains "$mad_skill" "$exec_path" \
+    "skill path: スキルが ${exec_path%%=*} を初期化する"
+done
 assert_contains "$mad_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"' \
   'brief: attempt ごとに専用 task 抜粋を作る'
 assert_contains "$mad_contract" 'initialPrompt' 'brief: create request の入力を明記する'

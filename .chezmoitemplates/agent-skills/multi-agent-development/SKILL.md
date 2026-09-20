@@ -81,6 +81,9 @@ single child が必要なだけなら、`multi-agent-development` の strict con
 
 ```bash
 MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
+MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
+MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
+MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 ```
 
 ## delivery role map
