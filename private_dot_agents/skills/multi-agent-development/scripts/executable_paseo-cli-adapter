@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const { spawnSync } = require('node:child_process')
+
+function fail(message, status = 2) {
+  process.stderr.write(`paseo-cli-adapter: ${message}\n`)
+  process.exit(status)
+}
+
+function safeId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
+}
+
+function parseJson(raw, label) {
+  try {
+    const value = JSON.parse(raw)
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object required')
+    return value
+  } catch {
+    fail(`${label} is invalid`, 1)
+  }
+}
+
+function paseo(args) {
+  const result = spawnSync(process.env.PASEO_CLI || 'paseo', args, { encoding: 'utf8' })
+  if (result.error || result.status !== 0) fail('Paseo CLI transport failed', 1)
+  return result.stdout || ''
+}
+
+function createAgent(requestPath) {
+  let request
+  try { request = JSON.parse(fs.readFileSync(requestPath, 'utf8')) } catch { fail('create request is invalid') }
+  if (!request || request.provider === undefined || request.settings === undefined) fail('create request is invalid')
+  if (typeof request.provider !== 'string' || !request.provider.includes('/')) fail('provider must contain provider/model')
+  if (!request.workspaceId || !request.initialPrompt) fail('create request is incomplete')
+  if (request.settings.modeId !== 'auto') fail('CLI backend requires modeId auto')
+  if (request.settings.features && Object.keys(request.settings.features).length > 0) {
+    fail('CLI backend cannot carry provider features')
+  }
+  const [provider, model] = request.provider.split('/', 2)
+  const response = parseJson(paseo([
+    'run', '--background', '--json', '--provider', provider, '--model', model,
+    '--thinking', request.settings.thinkingOptionId, '--mode', request.settings.modeId,
+    '--workspace', request.workspaceId, '--title', request.title, request.initialPrompt,
+  ]), 'create response')
+  const agentId = response.agentId || response.id
+  if (!safeId(agentId)) fail('create response agent id is invalid', 1)
+  process.stdout.write(JSON.stringify({ status: 'accepted', childRef: agentId }) + '\n')
+}
+
+function waitAgent(childRef, timeout) {
+  if (!safeId(childRef) || !/^[1-9][0-9]*$/.test(timeout)) fail('wait arguments are invalid')
+  const response = parseJson(paseo(['wait', childRef, '--timeout', timeout, '--json']), 'wait response')
+  if (response.agentId !== childRef || !['idle', 'timeout', 'error'].includes(response.status)) {
+    fail('wait response is invalid', 1)
+  }
+  process.stdout.write(JSON.stringify({ status: response.status }) + '\n')
+}
+
+function stopAgent(childRef) {
+  if (!safeId(childRef)) fail('stop arguments are invalid')
+  const response = parseJson(paseo(['stop', childRef, '--json']), 'stop response')
+  if (response.stoppedCount !== 1 || !Array.isArray(response.agentIds) ||
+      response.agentIds.length !== 1 || response.agentIds[0] !== childRef) {
+    fail('stop response is invalid', 1)
+  }
+  process.stdout.write(JSON.stringify({ status: 'stopped' }) + '\n')
+}
+
+const args = process.argv.slice(2)
+switch (args[0]) {
+  case 'create-agent':
+    if (args.length !== 2) fail('create-agent arguments are invalid')
+    createAgent(args[1])
+    break
+  case 'wait-agent':
+    if (args.length !== 5 || args[1] !== '--child-ref' || args[3] !== '--timeout') fail('wait-agent arguments are invalid')
+    waitAgent(args[2], args[4])
+    break
+  case 'stop-agent':
+    if (args.length !== 3 || args[1] !== '--child-ref') fail('stop-agent arguments are invalid')
+    stopAgent(args[2])
+    break
+  default:
+    fail('command is invalid')
+}

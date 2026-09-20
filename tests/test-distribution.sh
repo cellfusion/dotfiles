@@ -72,6 +72,8 @@ assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/escal
   'escalation policy script を配る'
 assert_contains "$managed" '.agents/skills/task-routing/scripts/single-implementer' \
   'single implementer script を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/paseo-cli-adapter' \
+  'paseo CLI adapter を配る'
 assert_contains "$managed" '.config/claude/agents/escalation-judge.md' \
   'Claude escalation judge agent を配る'
 assert_contains "$managed" '.config/opencode/agents/escalation-judge.md' \

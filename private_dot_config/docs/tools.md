@@ -182,7 +182,7 @@ MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の8 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の9 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。

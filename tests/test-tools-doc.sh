@@ -7,7 +7,7 @@ doc="$(cat "$CHEZMOI_SOURCE/private_dot_config/docs/tools.md")"
 
 assert_contains "$doc" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'docs: task-brief の絶対 script path を記録する'
-assert_contains "$doc" '`MAD_SCRIPTS`配下の8 script' \
+assert_contains "$doc" '`MAD_SCRIPTS`配下の9 script' \
   'docs: MAD script の本数を8本と記録する'
 assert_contains "$doc" 'MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"' \
   'docs: review-bundle の記録を保持する'
@@ -21,6 +21,6 @@ assert_contains "$doc" 'MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"' \
 # 記録した本数が実際に配る script の本数と一致することを確かめる。
 script_count="$(find "$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts" \
   -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
-assert_eq "$script_count" 8 'docs: 配る script は 8 本である'
+assert_eq "$script_count" 9 'docs: 配る script は 9 本である'
 
 assert_summary
