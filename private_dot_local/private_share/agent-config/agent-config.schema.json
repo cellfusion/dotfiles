@@ -543,6 +543,51 @@
       },
       "additionalProperties": false
     },
+    "attemptPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(author|implement|review|synthesize)$": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(simple|routine|complex|critical)$": {
+              "type": "object",
+              "required": ["levels"],
+              "additionalProperties": false,
+              "properties": {
+                "levels": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["candidates"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "candidates": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object",
+                          "required": ["provider", "model", "effort", "features"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "provider": { "type": "string", "minLength": 1 },
+                            "model": { "type": "string", "minLength": 1 },
+                            "effort": { "type": "string", "minLength": 1 },
+                            "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "projectRouting": {
       "type": "object",
       "required": ["rules"],

@@ -215,6 +215,19 @@ function candidateLists(config) {
       }
     }
   }
+  for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
+    for (const [complexity, policy] of Object.entries(byComplexity)) {
+      policy.levels.forEach((level, index) => {
+        lists.push({
+          location: `attemptPolicy.${duty}.${complexity}.levels[${index}]`,
+          environment: null,
+          duty,
+          complexity,
+          candidates: level.candidates,
+        })
+      })
+    }
+  }
   return lists
 }
 
@@ -298,6 +311,15 @@ function assertSemantics(config) {
         for (const candidate of slot.candidates) {
           if (!definition.providers.includes(candidate.provider)) {
             throw new ConfigError(`environment ${environment}/${duty}/${complexity}: candidate provider が eligibility にない`)
+          }
+        }
+      }
+    }
+    for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
+      for (const [complexity, policy] of Object.entries(byComplexity)) {
+        for (const [index, level] of policy.levels.entries()) {
+          if (!level.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
+            throw new ConfigError(`attemptPolicy ${environment}/${duty}/${complexity}/levels[${index}]: candidate provider が eligibility にない`)
           }
         }
       }

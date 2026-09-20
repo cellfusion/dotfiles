@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 
 tests=(
   test-mad-task-brief.sh
+  test-agent-config-policy.sh
   test-paseo-plan-dependency-validate.sh
   test-manual-orchestration-contract.sh
   test-schemas.sh

@@ -220,7 +220,7 @@ function selectDuty(config, role) {
 
 // 引き上げるのは指摘を修正する実装役だけである。再レビューの子は provenance が
 // mad-review なので、round が 2 以上でも据え置く。
-function selectComplexity(config, provenance, callerComplexity, callerRound) {
+function selectComplexity(config, duty, provenance, callerComplexity, callerRound) {
   const warnings = []
   let requested
   if (callerComplexity === undefined) {
@@ -235,7 +235,9 @@ function selectComplexity(config, provenance, callerComplexity, callerRound) {
     if (!Number.isInteger(callerRound) || callerRound < 0) throw new ConfigError('round: 0 以上の整数が必要である')
     round = callerRound
   }
-  if (provenance === 'mad-fix' && round >= 2) {
+  const hasAttemptPolicy = config.attemptPolicy && config.attemptPolicy[duty] &&
+    config.attemptPolicy[duty][requested]
+  if (provenance === 'mad-fix' && round >= 2 && !hasAttemptPolicy) {
     const escalated = ESCALATION[requested]
     if (escalated !== requested) {
       warnings.push(`complexity escalated: ${requested} -> ${escalated} (round ${round})`)
@@ -243,6 +245,33 @@ function selectComplexity(config, provenance, callerComplexity, callerRound) {
     return { complexity: escalated, requestedComplexity: requested, warnings }
   }
   return { complexity: requested, requestedComplexity: requested, warnings }
+}
+
+function selectAttemptCandidates(config, environment, duty, complexity, provenance, round) {
+  if (provenance !== 'mad-fix' || round < 1) return null
+  const policy = config.attemptPolicy && config.attemptPolicy[duty] && config.attemptPolicy[duty][complexity]
+  if (!policy) return null
+
+  const levelIndex = Math.min(round, policy.levels.length - 1)
+  const level = policy.levels[levelIndex]
+  const eligible = config.environments[environment].providers
+  const candidates = level.candidates
+    .filter((candidate) => eligible.includes(candidate.provider))
+    .map((candidate) => ({
+      family: candidate.provider,
+      model: candidate.model,
+      effort: candidate.effort,
+      features: candidate.features,
+    }))
+  if (candidates.length === 0) {
+    throw new ConfigError(`attemptPolicy ${environment}/${duty}/${complexity}/levels[${levelIndex}]: candidate がない`)
+  }
+
+  const warnings = [`attempt policy: ${duty}/${complexity} level ${levelIndex} for mad-fix round ${round}`]
+  if (round >= policy.levels.length) {
+    warnings.push(`attempt policy exhausted: reusing level ${levelIndex}`)
+  }
+  return { candidates, warnings }
 }
 
 function resolveDispatch(config, input) {
@@ -258,13 +287,24 @@ function resolveDispatch(config, input) {
   }
   const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
   const dutySelection = selectDuty(config, input.role)
-  const complexitySelection = selectComplexity(config, input.provenance, input.complexity, input.round)
+  const complexitySelection = selectComplexity(config, dutySelection.duty, input.provenance, input.complexity, input.round)
   const warnings = [...dutySelection.warnings, ...complexitySelection.warnings]
   const exported = resolveExport(config)
   const resolution = exported.resolutions.find(
     (entry) => entry.environment === environmentSelection.environment &&
       entry.duty === dutySelection.duty && entry.complexity === complexitySelection.complexity)
   if (!resolution) throw new ConfigError('dispatch resolution: environment と duty と complexity の組が無い')
+  const attemptSelection = selectAttemptCandidates(
+    config,
+    environmentSelection.environment,
+    dutySelection.duty,
+    complexitySelection.complexity,
+    input.provenance,
+    input.round === undefined ? 0 : input.round,
+  )
+  const selectedResolution = attemptSelection === null
+    ? resolution
+    : { ...resolution, candidates: attemptSelection.candidates }
   return assertResolvedConfig({
     ...exported,
     scope: 'dispatch',
@@ -275,8 +315,13 @@ function resolveDispatch(config, input) {
       requestedComplexity: complexitySelection.requestedComplexity,
     },
     resolutions: [{
-      ...resolution,
-      warnings: [...resolution.warnings, ...environmentSelection.warnings, ...warnings],
+      ...selectedResolution,
+      warnings: [
+        ...selectedResolution.warnings,
+        ...environmentSelection.warnings,
+        ...warnings,
+        ...(attemptSelection === null ? [] : attemptSelection.warnings),
+      ],
     }],
   })
 }

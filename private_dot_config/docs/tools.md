@@ -156,8 +156,11 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
    書かなかった枠は共通の `selection` を使う。role の `duty` と候補の順序も保持する。
 4. model と provider の優先順位は各枠の `candidates` 配列の順序にする。先頭から provider の
    `backends` に `paseo` が含まれること、availability、`auto` mode、model、thinking option を確認し、
-   最初に成立した候補を使う。
-5. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
+   最初に成立した候補を使う。これは availability fallback であり、品質不足時の再試行ではない。
+5. 品質不足時の model・effort の切り替えは、必要な duty と complexity にだけ
+   `attemptPolicy.<duty>.<complexity>.levels` を追加する。`levels[0]` が初回、`mad-fix` の round 1 以降が
+   次の level である。同じ level の `candidates` は availability fallback、level の順序は quality escalation として別々に扱う。設定した level が尽きた後は strict MAD の review 上限で停止する。
+6. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
    family 名をそのまま root `providers` の key にする。v1 ではその family の `setup` は `null`、
    `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
 

@@ -33,6 +33,17 @@
       "critical": { "notes": "sample: 判断が割れた結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
     }
   },
+  "attemptPolicy": {
+    "implement": {
+      "simple": {
+        "levels": [
+          { "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
+          { "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
+          { "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] }
+        ]
+      }
+    }
+  },
   "environments": {
     "primary": { "providers": ["claude", "codex", "opencode", "pi"], "selection": {} },
     "lab": { "providers": ["claude", "codex"], "selection": { "implement": { "routine": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
