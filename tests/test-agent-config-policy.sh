@@ -16,9 +16,9 @@ sample.attemptPolicy = {
   implement: {
     simple: {
       levels: [
-        { candidates: [{ provider: 'codex', model: 'sample-light', effort: 'medium', features: {} }] },
         { candidates: [{ provider: 'codex', model: 'sample-work', effort: 'high', features: { fast_mode: true } }] },
-        { candidates: [{ provider: 'claude', model: 'sample-think', effort: 'high', features: { fast_mode: false } }] }
+        { candidates: [{ provider: 'claude', model: 'sample-think', effort: 'high', features: { fast_mode: false } }] },
+        { candidates: [{ provider: 'codex', model: 'sample-light', effort: 'medium', features: {} }] }
       ]
     }
   }
@@ -53,17 +53,17 @@ function launch(provenance, round) {
 }
 
 const initial = launch('mad-dispatch', 0)
-if (initial.model !== 'sample-light' || initial.thinkingOptionId !== 'medium') {
+if (initial.model !== 'sample-work' || initial.thinkingOptionId !== 'high') {
   throw new Error(`initial policy level is wrong: ${JSON.stringify(initial)}`)
 }
 
 const firstFix = launch('mad-fix', 1)
-if (firstFix.model !== 'sample-work' || firstFix.thinkingOptionId !== 'high') {
+if (firstFix.provider !== 'claude' || firstFix.model !== 'sample-think') {
   throw new Error(`first fix policy level is wrong: ${JSON.stringify(firstFix)}`)
 }
 
 const secondFix = launch('mad-fix', 2)
-if (secondFix.provider !== 'claude' || secondFix.model !== 'sample-think') {
+if (secondFix.provider !== 'codex' || secondFix.model !== 'sample-light') {
   throw new Error(`second fix policy level is wrong: ${JSON.stringify(secondFix)}`)
 }
 

@@ -248,11 +248,13 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
 }
 
 function selectAttemptCandidates(config, environment, duty, complexity, provenance, round) {
-  if (provenance !== 'mad-fix' || round < 1) return null
+  const isInitialDispatch = provenance === 'mad-dispatch' && round === 0
+  const isFixAttempt = provenance === 'mad-fix' && round >= 1
+  if (!isInitialDispatch && !isFixAttempt) return null
   const policy = config.attemptPolicy && config.attemptPolicy[duty] && config.attemptPolicy[duty][complexity]
   if (!policy) return null
 
-  const levelIndex = Math.min(round, policy.levels.length - 1)
+  const levelIndex = isInitialDispatch ? 0 : Math.min(round, policy.levels.length - 1)
   const level = policy.levels[levelIndex]
   const eligible = config.environments[environment].providers
   const candidates = level.candidates
@@ -267,8 +269,9 @@ function selectAttemptCandidates(config, environment, duty, complexity, provenan
     throw new ConfigError(`attemptPolicy ${environment}/${duty}/${complexity}/levels[${levelIndex}]: candidate がない`)
   }
 
-  const warnings = [`attempt policy: ${duty}/${complexity} level ${levelIndex} for mad-fix round ${round}`]
-  if (round >= policy.levels.length) {
+  const attemptLabel = isInitialDispatch ? 'initial dispatch' : `mad-fix round ${round}`
+  const warnings = [`attempt policy: ${duty}/${complexity} level ${levelIndex} for ${attemptLabel}`]
+  if (isFixAttempt && round >= policy.levels.length) {
     warnings.push(`attempt policy exhausted: reusing level ${levelIndex}`)
   }
   return { candidates, warnings }
