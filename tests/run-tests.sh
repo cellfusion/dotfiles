@@ -19,6 +19,8 @@ tests=(
   test-manual-orchestration-contract.sh
   test-schemas.sh
   test-distribution.sh
+  test-install-brewfile.sh
+  test-install-scripts.sh
   test-manual-scripts.sh
   test-tools-doc.sh
   test-instructions.sh

@@ -15,7 +15,7 @@
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
-| ビルド・サービス登録 | sketchybar helper のソース | `run_onchange_after_70-macos-services.sh` |
+| ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
 | Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
@@ -282,6 +282,7 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 | borders | ウィンドウ枠の強調表示 |
 | lua@5.4 | sketchybar の起動に必要（sketchybarrc の shebang が指している） |
 | sketchybar | カスタムメニューバー |
+| SbarLua | Lua 5.4 用 SketchyBar モジュール（公式 commit 固定でビルド） |
 | ghostty (cask) | ターミナルエミュレータ |
 | 1password-cli (cask) | 1Password CLI |
 | finicky (cask) | デフォルトブラウザ振り分け |
