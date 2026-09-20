@@ -371,11 +371,11 @@ function resolveDispatch(config, input) {
   const routingSelection = selectRoutingCandidates(config, environmentSelection.environment, input.role)
   const selectedResolution = routingSelection !== null
     ? { ...resolution, candidates: routingSelection.candidates }
-    : singleSelection !== null
-      ? { ...resolution, candidates: singleSelection.candidates }
-      : attemptSelection === null
-        ? resolution
-        : { ...resolution, candidates: attemptSelection.candidates }
+    : attemptSelection !== null
+      ? { ...resolution, candidates: attemptSelection.candidates }
+      : singleSelection !== null
+        ? { ...resolution, candidates: singleSelection.candidates }
+        : resolution
   return assertResolvedConfig({
     ...exported,
     scope: 'dispatch',

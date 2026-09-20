@@ -41,14 +41,15 @@ const snapshot = {
   }
 }
 
-function launch(provenance, round, attemptLevel) {
+function launch(provenance, round, attemptLevel, backend) {
   const dispatch = resolveDispatch(config, {
     project: source,
     role: 'implementer',
     provenance,
     complexity: 'simple',
     round,
-    attemptLevel
+    attemptLevel,
+    backend
   })
   return resolvePaseoLaunch(dispatch, snapshot)
 }
@@ -76,6 +77,15 @@ if (retrySame.model !== 'sample-work') {
 const controllerSelected = launch('mad-fix', 1, 2)
 if (controllerSelected.model !== 'sample-light') {
   throw new Error(`controller selected attempt level is wrong: ${JSON.stringify(controllerSelected)}`)
+}
+
+const cliInitial = launch('mad-dispatch', 0, undefined, 'paseo-cli')
+if (cliInitial.model !== 'sample-work') {
+  throw new Error(`CLI initial attempt policy was bypassed: ${JSON.stringify(cliInitial)}`)
+}
+const cliRetrySame = launch('mad-fix', 1, 0, 'paseo-cli')
+if (cliRetrySame.model !== 'sample-work') {
+  throw new Error(`CLI retry_same attempt level was bypassed: ${JSON.stringify(cliRetrySame)}`)
 }
 
 const review = launch('mad-review', 2)
