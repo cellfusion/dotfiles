@@ -29,11 +29,13 @@ MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
 MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
+MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 ```
 
-`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。
+`MAD_STATE_DIR` は run directory と worktree の置き場所を決める根であり、親は export せずこの初期化だけで値を決める。`mad-worktree` と `mad-progress` は、環境変数が未設定なら `$HOME/.local/state/mad` を既定値として使う。`MAD_OUTCOME_LOG` は prompt、ファイル内容、credential、raw response を含めない mode 0600 のローカル JSONL であり、attempt 完了後に親が独立した検証結果と Paseo の集計 usage を `MAD_OUTCOME_RECORD --record <0600-json> --output "$MAD_OUTCOME_LOG"` で追記する。transport の call log と outcome log は別契約として扱う。
 
 `tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。別repositoryのMADでは、そのrepository固有のgateを使い、存在しなければこのmigration gateを実行しない。
 

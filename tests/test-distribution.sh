@@ -74,6 +74,10 @@ assert_contains "$managed" '.agents/skills/task-routing/scripts/single-implement
   'single implementer script を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/paseo-cli-adapter' \
   'paseo CLI adapter を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-record' \
+  'mad outcome recorder を配る'
+assert_contains "$managed" '.local/share/agent-config/mad-outcome.js' \
+  'mad outcome contract を配る'
 assert_contains "$managed" '.config/claude/agents/escalation-judge.md' \
   'Claude escalation judge agent を配る'
 assert_contains "$managed" '.config/opencode/agents/escalation-judge.md' \

@@ -179,10 +179,11 @@ MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
 MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
+MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の9 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の10 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -369,22 +370,21 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
 である。daemon はアプリが持つので、別に入れるものは無い。
 
-`multi-agent-development` の backend は Paseo MCP だけである。Paseo MCP が利用できないときは
-run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
+`multi-agent-development` は Paseo CLI を既定 backend とし、Paseo MCP は明示指定時だけ使う。選択した backend が利用できないときは run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
-Paseo MCP で起動した子は CLI からも見える。`paseo ls` が一覧と状態を出し、
-`paseo inspect <agent-id>` が 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を
-出す。MAD 親は raw activity を受け取らず、adapter の `wait-agent --child-ref <safe-id> --timeout <seconds>`
-だけを通じて `paseo wait <agent-id> --timeout <seconds> --json` を一回実行し、検証済みの
-`idle`、`timeout`、`error` status だけを受け取る。止めるときは `paseo stop <agent-id>` が
-実行中の子に割り込み、`paseo delete <agent-id>` が割り込んでから子を消す。
+Paseo の child は CLI から見える。`paseo ls` が一覧と状態を出し、`paseo inspect <agent-id>` が
+1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を出す。MAD 親は raw activity を
+保存せず、選択した backend の adapter `wait-agent --child-ref <safe-id> --timeout <seconds>`
+を通じて検証済みの `idle`、`timeout`、`error` status だけを受け取る。止めるときは同じ
+backend の `stop-agent` を使い、終了後は child/workspace を archive する。
 
 実行は `"$MAD_ADAPTER"` の `list-providers`、provider ごとの `list-models`、0600 の
-availability snapshot、`"$MAD_GENERATOR" resolve`、0600 の `mcp-create.json`、
-`"$MAD_VALIDATE" --prepare-create`、親による `mcp__paseo__create_agent` 一回、
-accepted childRef に対する `"$MAD_ADAPTER" wait-agent` 一回の順に進める。
-create の transport は公式 MCP tool だけであり、adapter は create の subcommand を持たない。
-Paseo CLI の `run` は `settings.features` を渡す option を持たないので、CLI を create に使わない。
+availability snapshot、`"$MAD_GENERATOR" resolve`、0600 の create request、
+`"$MAD_VALIDATE" --prepare-create`、選択した backend の create 一回、accepted childRef に
+対する同じ backend の `wait-agent` 一回の順に進める。CLI backend は `paseo run --background --json`
+を adapter 経由で使い、features が空の launch だけを許可する。MCP backend は公式 MCP create tool
+を使う。attempt 完了後、独立した検証結果と集計 usage を `MAD_OUTCOME_RECORD` で mode 0600 の
+`MAD_OUTCOME_LOG` へ追記する。raw prompt、activity、credential、URL は保存しない。
 `--prepare-create` は request と attempt state と call log を検証してから、0600 の
 `mcp-create.prepared` を `O_EXCL` で作る。marker を取れた呼び出しだけが create を呼べるので、
 2 つの親が同時に検証を通っても create は一回で止まる。

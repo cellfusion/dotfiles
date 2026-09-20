@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+'use strict'
+
+const os = require('node:os')
+const path = require('node:path')
+
+function fail(message) {
+  process.stderr.write(`mad-outcome-record: ${message}\n`)
+  process.exit(2)
+}
+
+function absolute(value, label) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`)
+  return value
+}
+
+const args = process.argv.slice(2)
+let recordPath
+let outputPath = path.join(os.homedir(), '.local', 'state', 'mad', 'metrics', 'attempt-outcomes.jsonl')
+for (let index = 0; index < args.length; index += 1) {
+  if (!['--record', '--output'].includes(args[index]) || index + 1 >= args.length) fail('usage: mad-outcome-record --record FILE [--output FILE]')
+  if (args[index] === '--record') {
+    if (recordPath !== undefined) fail('--record is duplicated')
+    recordPath = absolute(args[index + 1], '--record')
+  } else {
+    outputPath = absolute(args[index + 1], '--output')
+  }
+  index += 1
+}
+if (recordPath === undefined) fail('usage: mad-outcome-record --record FILE [--output FILE]')
+
+const shareDir = process.env.MAD_OUTCOME_SHARE_DIR || path.join(os.homedir(), '.local', 'share', 'agent-config')
+let outcome
+try { outcome = require(path.join(shareDir, 'mad-outcome.js')) } catch { fail('outcome contract is unavailable') }
+try {
+  outcome.appendOutcome(recordPath, outputPath)
+} catch (error) {
+  fail(error instanceof Error ? error.message : 'could not append outcome')
+}
+process.stdout.write(JSON.stringify({ status: 'recorded', output: outputPath }) + '\n')
