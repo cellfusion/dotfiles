@@ -46,8 +46,14 @@ function providerFamilyDefinition(resolvedExport, family) {
   return definition
 }
 
+function runtimeHome() {
+  const configured = process.env.HOME || os.homedir()
+  if (!path.isAbsolute(configured)) throw new ConfigError('HOME: 絶対 path が必要である')
+  return path.normalize(configured)
+}
+
 function runtimeConfigHome() {
-  const configured = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+  const configured = process.env.XDG_CONFIG_HOME || path.join(runtimeHome(), '.config')
   if (!path.isAbsolute(configured)) throw new ConfigError('XDG_CONFIG_HOME: 絶対 path が必要である')
   return path.normalize(configured)
 }
@@ -57,6 +63,7 @@ function materializeDirectoryPattern(pattern, environment) {
   nonEmptyString(environment, 'provider environment')
   const expanded = pattern
     .replaceAll('$XDG_CONFIG_HOME', () => runtimeConfigHome())
+    .replaceAll('$HOME', () => runtimeHome())
     .replaceAll('<environment>', () => environment)
   if (!path.isAbsolute(expanded) || expanded.includes('$')) {
     throw new ConfigError('provider directory pattern: physical path へ展開できない')

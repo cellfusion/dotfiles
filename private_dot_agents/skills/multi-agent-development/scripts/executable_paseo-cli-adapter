@@ -107,7 +107,9 @@ function createAgent(requestPath) {
   if (request.settings.features && Object.keys(request.settings.features).length > 0) {
     fail('CLI backend cannot carry provider features')
   }
-  const [provider, model] = request.provider.split('/', 2)
+  const providerParts = request.provider.split('/')
+  const provider = providerParts.shift()
+  const model = providerParts.join('/')
   const response = parseJson(paseo([
     'run', '--background', '--json', '--provider', provider, '--model', model,
     '--thinking', request.settings.thinkingOptionId, '--mode', request.settings.modeId,

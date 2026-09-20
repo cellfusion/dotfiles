@@ -160,9 +160,11 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 5. 品質不足時の model・effort の切り替えは、必要な duty と complexity にだけ
    `attemptPolicy.<duty>.<complexity>.levels` を追加する。`levels[0]` が初回、`mad-fix` の round 1 以降が
    次の level である。同じ level の `candidates` は availability fallback、level の順序は quality escalation として別々に扱う。設定した level が尽きた後は strict MAD の review 上限で停止する。
-6. `claude` と `codex` 以外の provider family は、Paseo の provider record key に現れる literal な
-   family 名をそのまま root `providers` の key にする。v1 ではその family の `setup` は `null`、
-   `featureAllowlist` は `{}` とし、directory、env、symlink、config は materialize しない。
+6. `claude`、`codex`、`pi` 以外の provider family は、Paseo の provider record key に現れる literal な
+   family 名をそのまま root `providers` の key にする。`pi` は `PI_CODING_AGENT_DIR` を
+   `$HOME/.pi/agent`（非 primary は `$HOME/.pi/agent-<environment>`）へ materialize し、
+   `featureAllowlist` は `{}` とする。その他の family は `setup` を `null` とし、directory、env、
+   symlink、config を materialize しない。
 
 実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
 この移行手順でも、先に次の絶対 path を設定する。
@@ -180,10 +182,11 @@ MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の10 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の11 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -220,9 +223,9 @@ provider family の名前そのもの（`claude`）、それ以外の環境は `
 （`claude-lab`）である。
 
 ラッパーは `AGENT_ENV` に環境名を設定し、family の `setup.configDirectoryEnv` の key
-（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`）へ `setup.directoryPattern` を展開した絶対 path を
-設定してから、family と同じ名前のコマンドを `exec` で起動する。`setup` が `null` の
-family（`opencode`、`pi`）では設定ディレクトリの変数を設定しない。自分のプロセスを
+（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`PI_CODING_AGENT_DIR`）へ `setup.directoryPattern` を
+展開した絶対 path を設定してから、family と同じ名前のコマンドを `exec` で起動する。`setup` が
+`null` のfamily（`opencode`）では設定ディレクトリの変数を設定しない。自分のプロセスを
 残さないので、`paseo provider diagnostic` がコマンドを起動して version と auth を読む
 経路でも使える。
 

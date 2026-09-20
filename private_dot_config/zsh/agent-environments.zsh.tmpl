@@ -2,21 +2,22 @@
        ~/.config/chezmoi/private-data.toml の [[data.environments]] にある。
        配列の先頭が primary で、サフィックスの無いディレクトリを使う。
        定義が無いマシン（private-data.toml を置いていない場合）では、
-       claude と codex を持つ default 環境 1 つとして描画する。 */ -}}
-{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
+       claude と pi を持つ default 環境 1 つとして描画する。 */ -}}
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "pi")) -}}
 {{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
 # chezmoi が生成する。直接編集しない。
 # 元: private_dot_config/zsh/agent-environments.zsh.tmpl
 # 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
 #
 # 環境が持たない AI ツールは、変数を unset したうえで同名の関数で覆う。
-# unset だけではツール既定（~/.claude / ~/.codex）に落ちてしまい、
+# unset だけではツール既定（~/.claude / ~/.codex / ~/.pi/agent）に落ちてしまい、
 # 意図しない環境で作業することになるため。
 
 _agent_env_apply() {
   case "$1" in
 {{- range $i, $env := $envs }}
 {{- $suffix := ternary (printf "_%s" $env.session) "" (ne $i 0) }}
+{{- $piSuffix := ternary (printf "-%s" $env.session) "" (ne $i 0) }}
 {{- $wrangler := ternary (printf ".wrangler-%s" $env.session) ".wrangler" (ne $i 0) }}
 {{- $cf := dig "cloudflareAccountId" "" $env }}
     {{ $env.session }})
@@ -29,6 +30,11 @@ _agent_env_apply() {
       export CODEX_HOME="$XDG_CONFIG_HOME/codex{{ $suffix }}"
 {{- else }}
       unset CODEX_HOME
+{{- end }}
+{{- if has "pi" $env.agents }}
+      export PI_CODING_AGENT_DIR="$HOME/.pi/agent{{ $piSuffix }}"
+{{- else }}
+      unset PI_CODING_AGENT_DIR
 {{- end }}
       export WRANGLER_HOME="$XDG_CONFIG_HOME/{{ $wrangler }}"
 {{- if $cf }}
@@ -49,7 +55,7 @@ _agent_env_apply() {
 # 定義の無い名前と、どちらも未設定の場合は、どの環境も読み込まない。先頭環境へ
 # 落とすと、指定し忘れがそのまま別の環境での作業になる。
 _agent_env_clear() {
-  unset CLAUDE_CONFIG_DIR CODEX_HOME WRANGLER_HOME CLOUDFLARE_ACCOUNT_ID AGENT_ENV_SESSION
+  unset CLAUDE_CONFIG_DIR CODEX_HOME PI_CODING_AGENT_DIR WRANGLER_HOME CLOUDFLARE_ACCOUNT_ID AGENT_ENV_SESSION
   export AGENT_ENV_AGENTS=""
 }
 _agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_clear
@@ -57,7 +63,7 @@ _agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_clear
 # この環境が持たないツールを関数で塞ぐ。持っているツールは前段の定義を外す。
 # 環境を解決できなかった場合と、環境がそのツールを持たない場合を、メッセージで
 # 区別する。前者は指定の誤りなので、指定する手段を案内する。
-for _agent_env_tool in claude codex; do
+for _agent_env_tool in claude codex pi; do
   case " $AGENT_ENV_AGENTS " in
     *" $_agent_env_tool "*)
       unfunction "$_agent_env_tool" 2>/dev/null

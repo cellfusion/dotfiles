@@ -47,16 +47,20 @@ function ensurePrimaryEntry(pathname, label) {
 
 function expandDirectoryPattern(pattern, xdgConfigHome, environment, label) {
   if (typeof pattern !== 'string' || pattern.length === 0) fail(`${label}: directory pattern が不正である`)
+  const home = process.env.HOME
+  if (typeof home !== 'string' || !path.isAbsolute(home)) fail(`${label}: HOME が絶対 path でない`)
   const expanded = pattern
     .replaceAll('$XDG_CONFIG_HOME', () => xdgConfigHome)
+    .replaceAll('$HOME', () => home)
     .replaceAll('<environment>', () => environment)
   if (!path.isAbsolute(expanded)) fail(`${label}: directory pattern が絶対 path でない`)
   const normalized = path.normalize(expanded)
-  const configRoot = path.resolve(xdgConfigHome)
-  const relative = path.relative(configRoot, normalized)
-  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    fail(`${label}: directory pattern が XDG_CONFIG_HOME の外側である`)
-  }
+  const roots = [path.resolve(xdgConfigHome), path.resolve(home)]
+  const insideRoot = roots.some((root) => {
+    const relative = path.relative(root, normalized)
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+  })
+  if (!insideRoot) fail(`${label}: directory pattern が許可された root の外側である`)
   return normalized
 }
 

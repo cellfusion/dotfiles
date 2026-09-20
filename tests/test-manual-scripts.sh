@@ -35,6 +35,10 @@ assert_contains "$mad_contract" 'mad-attempt-outcome-v1' \
   'outcome: audit record contract is explicit'
 assert_contains "$mad_contract" 'inspect-agent --child-ref' \
   'outcome: sanitized usage inspection is explicit'
+assert_contains "$mad_contract" 'MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"' \
+  'escalation: controller path is explicit'
+assert_contains "$mad_contract" '--work-class "$WORK_CLASS"' \
+  'review: work class reaches resolver'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
 for exec_path in \

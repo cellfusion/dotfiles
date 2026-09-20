@@ -211,6 +211,7 @@ function selectEnvironment(config, project, explicitEnvironment, parentEnvironme
 }
 
 const ESCALATION = { simple: 'routine', routine: 'complex', complex: 'complex', critical: 'critical' }
+const WORK_CLASS_COMPLEXITY = { mechanical: 'simple', routine: 'routine', integration: 'complex', architectural: 'critical' }
 
 function selectDuty(config, role) {
   const roleDuty = config.agentRoles[role].duty
@@ -220,7 +221,7 @@ function selectDuty(config, role) {
 
 // 引き上げるのは指摘を修正する実装役だけである。再レビューの子は provenance が
 // mad-review なので、round が 2 以上でも据え置く。
-function selectComplexity(config, duty, provenance, callerComplexity, callerRound) {
+function selectComplexity(config, duty, provenance, callerComplexity, callerRound, workClass) {
   const warnings = []
   let requested
   if (callerComplexity === undefined) {
@@ -229,6 +230,12 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
   } else {
     if (!COMPLEXITIES.includes(callerComplexity)) throw new ConfigError('complexity: 未知の複雑度である')
     requested = callerComplexity
+  }
+  if (duty === 'review' && workClass !== undefined) {
+    if (!Object.prototype.hasOwnProperty.call(WORK_CLASS_COMPLEXITY, workClass)) {
+      throw new ConfigError('workClass: 未知の work class である')
+    }
+    requested = WORK_CLASS_COMPLEXITY[workClass]
   }
   let round = 0
   if (callerRound !== undefined) {
@@ -249,9 +256,12 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
 
 function selectSingleCandidates(config, environment, duty, complexity, backend) {
   if (backend !== 'paseo-cli') return null
-  if (duty !== 'implement') throw new ConfigError('paseo-cli backend: implement role が必要である')
-  const slot = config.singleSelection && config.singleSelection.implement[complexity]
-  if (!slot) throw new ConfigError(`singleSelection implement/${complexity}: slot がない`)
+  const slot = duty === 'implement'
+    ? config.singleSelection && config.singleSelection.implement[complexity]
+    : duty === 'review'
+      ? config.selection && config.selection.review && config.selection.review[complexity]
+      : null
+  if (!slot) throw new ConfigError(`paseo-cli backend: ${duty} selection is unavailable`)
   const eligible = config.environments[environment].providers
   const candidates = slot.candidates
     .filter((candidate) => eligible.includes(candidate.provider))
@@ -261,7 +271,7 @@ function selectSingleCandidates(config, environment, duty, complexity, backend) 
       effort: candidate.effort,
       features: candidate.features,
     }))
-  if (candidates.length === 0) throw new ConfigError(`singleSelection ${environment}/implement/${complexity}: candidate がない`)
+  if (candidates.length === 0) throw new ConfigError(`paseo-cli ${duty} ${environment}/${complexity}: candidate がない`)
   if (candidates.some((candidate) => Object.keys(candidate.features).length > 0)) {
     throw new ConfigError('paseo-cli backend: provider feature は未対応である')
   }
@@ -287,14 +297,19 @@ function selectRoutingCandidates(config, environment, role) {
   return { candidates, warnings: [`launch policy: ${roleConfig.launchPolicy}`] }
 }
 
-function selectAttemptCandidates(config, environment, duty, complexity, provenance, round) {
+function selectAttemptCandidates(config, environment, duty, complexity, provenance, round, attemptLevel) {
   const isInitialDispatch = provenance === 'mad-dispatch' && round === 0
   const isFixAttempt = provenance === 'mad-fix' && round >= 1
   if (!isInitialDispatch && !isFixAttempt) return null
   const policy = config.attemptPolicy && config.attemptPolicy[duty] && config.attemptPolicy[duty][complexity]
   if (!policy) return null
 
-  const levelIndex = isInitialDispatch ? 0 : Math.min(round, policy.levels.length - 1)
+  if (attemptLevel !== undefined && (!Number.isInteger(attemptLevel) || attemptLevel < 0)) {
+    throw new ConfigError('attemptLevel: 0 以上の整数が必要である')
+  }
+  const levelIndex = attemptLevel === undefined
+    ? (isInitialDispatch ? 0 : Math.min(round, policy.levels.length - 1))
+    : Math.min(attemptLevel, policy.levels.length - 1)
   const level = policy.levels[levelIndex]
   const eligible = config.environments[environment].providers
   const candidates = level.candidates
@@ -330,7 +345,7 @@ function resolveDispatch(config, input) {
   }
   const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
   const dutySelection = selectDuty(config, input.role)
-  const complexitySelection = selectComplexity(config, dutySelection.duty, input.provenance, input.complexity, input.round)
+  const complexitySelection = selectComplexity(config, dutySelection.duty, input.provenance, input.complexity, input.round, input.workClass)
   const warnings = [...dutySelection.warnings, ...complexitySelection.warnings]
   const exported = resolveExport(config)
   const resolution = exported.resolutions.find(
@@ -344,6 +359,7 @@ function resolveDispatch(config, input) {
     complexitySelection.complexity,
     input.provenance,
     input.round === undefined ? 0 : input.round,
+    input.attemptLevel,
   )
   const singleSelection = selectSingleCandidates(
     config,

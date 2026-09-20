@@ -30,6 +30,7 @@ MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
 MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
 MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
 MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
+MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
@@ -60,13 +61,13 @@ snapshot の保存後、親は次の `agent-config resolve` のみで launch を
 ```bash
 "$MAD_GENERATOR" --input "$AGENT_CONFIG" resolve \
   --project "$PROJECT" --role "$ROLE" --provenance "$PROVENANCE" \
-  --complexity "$COMPLEXITY" --round "$ROUND" \
+  --complexity "$COMPLEXITY" --work-class "$WORK_CLASS" --round "$ROUND" \
   --snapshot "$RUN_DIR/snapshot.json" > "$RUN_DIR/launch.json"
 ```
 
 `$PROVENANCE` に入れる値は子の役目で決める。implement とそれ以外の初回の子は `mad-dispatch`、
 指摘を修正する子は `mad-fix`、再レビューの子は `mad-review` を渡す。`$COMPLEXITY` には
-プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `routine` を入れる。
+プランのタスクの `**Complexity:**` の値を入れ、行が無いタスクでは `routine` を入れる。`$WORK_CLASS` には `**Work class:**` の明示値または complexity から補完した `mechanical`、`routine`、`integration`、`architectural` のいずれかを入れる。reviewer は work class を model routing に使う。
 `$ROUND` には review/fix loop のラウンド番号を入れ、review/fix loop の外で起動する子には
 `0` を入れる。`mad-fix` で `$ROUND` が 2 以上のとき、CLI が複雑度を 1 段上げる。
 `MAD_BACKEND=paseo-cli` の場合は `agent-config resolve` に `--backend paseo-cli` を追加し、CLI-compatible な launch を解決する。
@@ -151,6 +152,17 @@ create は child ごとに一回だけである。親は返ってきた response
 `resolve` が exit 2 のときは `provider`、`model`、`effort`、`features`、`duty`、`complexity`、`requestedComplexity` に `null` を入れ、`environment` と `role` は親が渡した値を入れる。exit 4 のときは `mad-launch-failure` の値を入れ、`provider`、`model`、`effort`、`features` に `null` を入れる。`effort` には launch spec の `thinkingOptionId` の値を入れる。
 
 `create_agent.transport` は `mcp__paseo__create_agent` または `paseo_cli_run` である。選択した backend と call log の transport が一致しなければ、run を採用しない。
+
+quality escalation では、親は `escalation-judge` の JSON を自由に解釈せず、次で deterministic controller を一回だけ呼ぶ。
+
+```bash
+"$MAD_ESCALATION_CONTROLLER" \
+  --judge-result "$JUDGE_RESULT" --current-level "$CURRENT_LEVEL" \
+  --max-level "$MAX_LEVEL" --current-work-class "$WORK_CLASS" \
+  --current-role "$ROLE" > "$ATTEMPT_DIR/escalation-decision.json"
+```
+
+`status=dispatch` の decision だけを次の launch に使い、`attemptLevel` を `agent-config resolve --attempt-level`、`workClass` を `--work-class`、`complexity`、`role`、`provenance=mad-fix` へそのまま渡す。`retry_same` は round が進んでも同じ attempt level を選ぶ。`ask_user`、`stop`、work class downgrade、上限超過は controller が `waiting_for_user` として返し、create を行わない。
 
 run の対応は次で固定する。
 

@@ -11,7 +11,10 @@ tests=(
   test-mad-outcome.sh
   test-agent-config-policy.sh
   test-agent-config-routing.sh
+  test-agent-config-review-routing.sh
+  test-agent-pi-environment.sh
   test-escalation-policy.sh
+  test-escalation-controller.sh
   test-paseo-plan-dependency-validate.sh
   test-manual-orchestration-contract.sh
   test-schemas.sh

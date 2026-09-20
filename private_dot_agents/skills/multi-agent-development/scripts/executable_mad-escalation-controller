@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -u
+
+judge_file=""
+current_level=""
+max_level=""
+current_work_class=""
+current_role=""
+
+fail() {
+  printf 'mad-escalation-controller: %s\n' "$1" >&2
+  exit 2
+}
+
+usage() {
+  printf 'usage: %s --judge-result FILE --current-level N --max-level N --current-work-class CLASS --current-role ROLE\n' "$0" >&2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --judge-result|--current-level|--max-level|--current-work-class|--current-role)
+      [ "$#" -ge 2 ] || { usage; exit 2; }
+      case "$1" in
+        --judge-result) judge_file="$2" ;;
+        --current-level) current_level="$2" ;;
+        --max-level) max_level="$2" ;;
+        --current-work-class) current_work_class="$2" ;;
+        --current-role) current_role="$2" ;;
+      esac
+      shift 2
+      ;;
+    *) usage; exit 2 ;;
+  esac
+done
+
+[ -f "$judge_file" ] && [ ! -L "$judge_file" ] || fail 'judge result is not a regular file'
+case "$current_level:$max_level" in
+  *[!0-9:]*|:*) fail 'levels must be non-negative integers' ;;
+esac
+[ "$current_level" -le "$max_level" ] || fail 'current level exceeds max level'
+case "$current_work_class" in mechanical|routine|integration|architectural) ;; *) fail 'current work class is invalid' ;; esac
+case "$current_role" in implementer|architectural-implementer) ;; *) fail 'current role is invalid' ;; esac
+
+policy="$(dirname "$0")/executable_escalation-policy"
+[ -x "$policy" ] || fail 'escalation policy is unavailable'
+policy_result="$(bash "$policy" --judge-result "$judge_file" --current-level "$current_level" \
+  --max-level "$max_level" --current-work-class "$current_work_class" --current-role "$current_role")" || exit $?
+
+policy_action="$(printf '%s' "$policy_result" | jq -r '.action // empty')"
+policy_level="$(printf '%s' "$policy_result" | jq -r '.nextLevel // empty')"
+policy_work_class="$(printf '%s' "$policy_result" | jq -r '.workClass // empty')"
+policy_role="$(printf '%s' "$policy_result" | jq -r '.role // empty')"
+reason="$(printf '%s' "$policy_result" | jq -r '.reason // empty')"
+confidence="$(printf '%s' "$policy_result" | jq -r '.confidence // empty')"
+
+case "$policy_action" in
+  ask_user|stop)
+    jq -cn --arg action "$policy_action" --arg workClass "$policy_work_class" \
+      --arg reason "$reason" --arg confidence "$confidence" \
+      '{version:1,type:"mad-escalation-decision",status:"waiting_for_user",action:$action,nextLevel:null,attemptLevel:null,workClass:$workClass,role:null,complexity:null,provenance:null,reason:$reason,confidence:$confidence}'
+    ;;
+  retry_same|increase_effort|change_model)
+    [ -n "$policy_level" ] || fail 'policy did not return next level'
+    case "$policy_work_class" in
+      mechanical) complexity=simple ;;
+      routine) complexity=routine ;;
+      integration) complexity=complex ;;
+      architectural) complexity=critical ;;
+    esac
+    current_rank=0
+    target_rank=0
+    case "$current_work_class" in routine) current_rank=1 ;; integration) current_rank=2 ;; architectural) current_rank=3 ;; esac
+    case "$policy_work_class" in routine) target_rank=1 ;; integration) target_rank=2 ;; architectural) target_rank=3 ;; esac
+    [ "$target_rank" -ge "$current_rank" ] || fail 'work class downgrade is not allowed'
+    jq -cn --arg action "$policy_action" --arg workClass "$policy_work_class" \
+      --arg role "$policy_role" --arg complexity "$complexity" --arg reason "$reason" \
+      --arg confidence "$confidence" --argjson nextLevel "$policy_level" \
+      '{version:1,type:"mad-escalation-decision",status:"dispatch",action:$action,nextLevel:$nextLevel,attemptLevel:$nextLevel,workClass:$workClass,role:$role,complexity:$complexity,provenance:"mad-fix",reason:$reason,confidence:$confidence}'
+    ;;
+  *) fail 'policy action is invalid' ;;
+esac

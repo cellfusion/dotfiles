@@ -132,7 +132,7 @@ function parseArgs(argv) {
   }
 
   const options = {}
-  const allowed = ['--project', '--role', '--provenance', '--snapshot', '--complexity', '--round', '--environment', '--backend']
+  const allowed = ['--project', '--role', '--provenance', '--snapshot', '--complexity', '--work-class', '--round', '--attempt-level', '--environment', '--backend']
   while (index < argv.length) {
     const option = argv[index]
     if (option === '--input' || option === '--paseo-config' || option === '--check') {
@@ -294,6 +294,12 @@ function parseRound(value) {
   return Number(value)
 }
 
+function parseAttemptLevel(value) {
+  if (value === undefined) return undefined
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) fail('--attempt-level: 0 以上の整数が必要である')
+  return Number(value)
+}
+
 function runResolve(args) {
   if (args.input === undefined) fail('--input が必要である')
   const required = ['project', 'role', 'provenance', 'snapshot']
@@ -305,7 +311,9 @@ function runResolve(args) {
     role: args.options.role,
     provenance: args.options.provenance,
     complexity: args.options.complexity,
+    workClass: args.options['work-class'],
     round: parseRound(args.options.round),
+    attemptLevel: parseAttemptLevel(args.options['attempt-level']),
     environment: args.options.environment,
     backend: args.options.backend,
     parentEnvironment: readParentEnvironment(),

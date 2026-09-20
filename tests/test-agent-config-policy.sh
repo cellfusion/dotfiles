@@ -41,13 +41,14 @@ const snapshot = {
   }
 }
 
-function launch(provenance, round) {
+function launch(provenance, round, attemptLevel) {
   const dispatch = resolveDispatch(config, {
     project: source,
     role: 'implementer',
     provenance,
     complexity: 'simple',
-    round
+    round,
+    attemptLevel
   })
   return resolvePaseoLaunch(dispatch, snapshot)
 }
@@ -65,6 +66,16 @@ if (firstFix.provider !== 'claude' || firstFix.model !== 'sample-think') {
 const secondFix = launch('mad-fix', 2)
 if (secondFix.provider !== 'codex' || secondFix.model !== 'sample-light') {
   throw new Error(`second fix policy level is wrong: ${JSON.stringify(secondFix)}`)
+}
+
+const retrySame = launch('mad-fix', 1, 0)
+if (retrySame.model !== 'sample-work') {
+  throw new Error(`retry_same attempt level is wrong: ${JSON.stringify(retrySame)}`)
+}
+
+const controllerSelected = launch('mad-fix', 1, 2)
+if (controllerSelected.model !== 'sample-light') {
+  throw new Error(`controller selected attempt level is wrong: ${JSON.stringify(controllerSelected)}`)
 }
 
 const review = launch('mad-review', 2)

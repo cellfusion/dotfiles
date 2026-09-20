@@ -597,6 +597,7 @@ mad_exercise_success() {
   local provenance=""
   local parent_environment=""
   local complexity=""
+  local work_class=""
   local round=""
   local title=""
   local workspace_id=""
@@ -617,7 +618,7 @@ mad_exercise_success() {
   local context_json
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--complexity|--round|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
+      --generator|--share-dir|--input|--adapter|--attempt-dir|--project|--role|--provenance|--complexity|--work-class|--round|--title|--workspace-id|--initial-prompt|--notify-on-finish|--call-log)
         [ "$#" -ge 2 ] || { printf 'manual-orchestration-validate: option value is required\n' >&2; return 2; }
         case "$1" in
           --generator) generator="$2" ;;
@@ -629,6 +630,7 @@ mad_exercise_success() {
           --role) role="$2" ;;
           --provenance) provenance="$2" ;;
           --complexity) complexity="$2" ;;
+          --work-class) work_class="$2" ;;
           --round) round="$2" ;;
           --title) title="$2" ;;
           --workspace-id) workspace_id="$2" ;;
@@ -742,6 +744,7 @@ mad_exercise_success() {
   resolve_args=(--project "$project" --role "$role" --provenance "$provenance"
     --snapshot "$attempt_dir/snapshot.json")
   [ -n "$complexity" ] && resolve_args+=(--complexity "$complexity")
+  [ -n "$work_class" ] && resolve_args+=(--work-class "$work_class")
   [ -n "$round" ] && resolve_args+=(--round "$round")
   if [ "${MAD_BACKEND:-paseo-mcp}" = "paseo-cli" ]; then
     resolve_args+=(--backend paseo-cli)

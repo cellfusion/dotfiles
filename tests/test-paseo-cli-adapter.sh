@@ -12,7 +12,10 @@ request="$tmp/request.json"
 cat > "$fake" <<'SH'
 #!/usr/bin/env bash
 case "$1" in
-  run) printf '%s\n' '{"agentId":"agent-1"}' ;;
+  run)
+    [ "$5" = "pi" ] && [ "$7" = "openai-codex/sample-light" ] || exit 3
+    printf '%s\n' '{"agentId":"agent-1"}'
+    ;;
   wait) printf '%s\n' '{"agentId":"agent-1","status":"idle"}' ;;
   stop) printf '%s\n' '{"stoppedCount":1,"agentIds":["agent-1"]}' ;;
   inspect) printf '%s\n' '{"Id":"agent-1","Status":"idle","CreatedAt":"2026-09-20T08:00:00.000Z","UpdatedAt":"2026-09-20T08:02:00.000Z","LastUsage":{"InputTokens":100,"CachedInputTokens":80,"OutputTokens":20,"CostUsd":0.12}}' ;;
@@ -26,7 +29,7 @@ cat > "$request" <<'JSON'
   "workspaceId": "workspace-1",
   "initialPrompt": "Read the supplied brief.",
   "notifyOnFinish": true,
-  "provider": "codex/sample-light",
+  "provider": "pi/openai-codex/sample-light",
   "settings": {
     "modeId": "auto",
     "thinkingOptionId": "medium",

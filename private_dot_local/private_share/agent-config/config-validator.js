@@ -15,13 +15,30 @@ class ConfigError extends Error {
 const SETUP_TABLE = {
   claude: {
     configDirectoryEnv: { CLAUDE_CONFIG_DIR: 'claude' },
+    directoryPattern: {
+      primary: '$XDG_CONFIG_HOME/claude',
+      nonPrimary: '$XDG_CONFIG_HOME/claude_<environment>',
+    },
     symlinks: ['agents', 'commands', 'skills', 'hooks', 'CLAUDE.md', 'settings.json'],
     preservedMutable: ['.claude.json'],
   },
   codex: {
     configDirectoryEnv: { CODEX_HOME: 'codex' },
+    directoryPattern: {
+      primary: '$XDG_CONFIG_HOME/codex',
+      nonPrimary: '$XDG_CONFIG_HOME/codex_<environment>',
+    },
     symlinks: ['agents', 'AGENTS.md', 'rules'],
     preservedMutable: ['config.toml'],
+  },
+  pi: {
+    configDirectoryEnv: { PI_CODING_AGENT_DIR: 'pi' },
+    directoryPattern: {
+      primary: '$HOME/.pi/agent',
+      nonPrimary: '$HOME/.pi/agent-<environment>',
+    },
+    symlinks: [],
+    preservedMutable: [],
   },
 }
 const KNOWN_SETUP_FAMILIES = Object.keys(SETUP_TABLE)
@@ -159,6 +176,7 @@ function assertFamilyRegistry(family, definition) {
   if (definition.setup !== null) {
     const expected = SETUP_TABLE[family]
     if (JSON.stringify(definition.setup.configDirectoryEnv) !== JSON.stringify(expected.configDirectoryEnv) ||
+        JSON.stringify(definition.setup.directoryPattern) !== JSON.stringify(expected.directoryPattern) ||
         JSON.stringify(definition.setup.symlinks) !== JSON.stringify(expected.symlinks) ||
         JSON.stringify(definition.setup.preservedMutable) !== JSON.stringify(expected.preservedMutable)) {
       throw new ConfigError(`provider family ${family}: setup table と一致しない`)
@@ -412,11 +430,6 @@ function assertSemantics(config) {
       if (configEnvOwners.has(name)) throw new ConfigError(`config env ${name}: family 間で重複する`)
       configEnvOwners.set(name, family)
     }
-    const stem = entries[0][1]
-    if (setup.directoryPattern.primary !== `$XDG_CONFIG_HOME/${stem}` ||
-        setup.directoryPattern.nonPrimary !== `$XDG_CONFIG_HOME/${stem}_<environment>`) {
-      throw new ConfigError(`provider family ${family}: directoryPattern が config directory と一致しない`)
-    }
     assertSetupPaths(family, setup)
   }
 
@@ -443,8 +456,7 @@ function assertSemantics(config) {
     const provenance = `${family}/${firstEnvironment}`
     addGeneratedId(family, provenance)
     if (definition.setup !== null) {
-      const stem = Object.values(definition.setup.configDirectoryEnv)[0]
-      addPhysicalPath(`$XDG_CONFIG_HOME/${stem}`, provenance)
+      addPhysicalPath(definition.setup.directoryPattern.primary, provenance)
     }
   }
 
@@ -455,8 +467,7 @@ function assertSemantics(config) {
       addGeneratedId(`${family}-${environment}`, provenance)
       const setup = config.providers[family].setup
       if (setup !== null) {
-        const stem = Object.values(setup.configDirectoryEnv)[0]
-        addPhysicalPath(`$XDG_CONFIG_HOME/${stem}_${environment}`, provenance)
+        addPhysicalPath(setup.directoryPattern.nonPrimary.replace('<environment>', environment), provenance)
       }
     }
   }
