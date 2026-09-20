@@ -41,7 +41,10 @@ esac
 case "$current_work_class" in mechanical|routine|integration|architectural) ;; *) fail 'current work class is invalid' ;; esac
 case "$current_role" in implementer|architectural-implementer) ;; *) fail 'current role is invalid' ;; esac
 
-policy="$(dirname "$0")/executable_escalation-policy"
+policy="${MAD_ESCALATION_POLICY:-$(dirname "$0")/escalation-policy}"
+if [ ! -x "$policy" ] && [ -x "$(dirname "$0")/executable_escalation-policy" ]; then
+  policy="$(dirname "$0")/executable_escalation-policy"
+fi
 [ -x "$policy" ] || fail 'escalation policy is unavailable'
 policy_result="$(bash "$policy" --judge-result "$judge_file" --current-level "$current_level" \
   --max-level "$max_level" --current-work-class "$current_work_class" --current-role "$current_role")" || exit $?
