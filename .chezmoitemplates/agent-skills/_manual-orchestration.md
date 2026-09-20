@@ -343,7 +343,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 ## child の起動と完了検知
 
-child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。auditor と reviewer の `initialPrompt` には役割に必要な prompt file、schema file、入力成果物の absolute path を含める。implementer の initial/fix attempt では、検証済み execution context と task 抜粋を合成した専用の fresh `brief.md` の absolute path だけを `initialPrompt` に入れる。
+child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから選択した backend の create transport を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。auditor と reviewer の `initialPrompt` には役割に必要な prompt file、schema file、入力成果物の absolute path を含める。`task-reviewer`、`re-reviewer`、`final-reviewer` の resolve には、実装 task の `WORK_CLASS` を必ず `--work-class` で渡す。implementer の initial/fix attempt では、検証済み execution context と task 抜粋を合成した専用の fresh `brief.md` の absolute path だけを `initialPrompt` に入れる。
 
 起動後は child ごとに一つだけ見張りを置く。選択した backend の adapter `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは同じ backend の adapter `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
 

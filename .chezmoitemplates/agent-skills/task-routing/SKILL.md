@@ -87,7 +87,7 @@ When a single route starts a write child, the parent follows this order:
 
 The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
 
-The CLI backend is allowed only for single route and is the default for single route. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback for strict MAD, and a CLI launch must not silently discard provider features.
+The CLI backend is the default transport for both single route and strict MAD. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback after a run has started, and a CLI launch must not silently discard provider features.
 
 ## Escalation judge
 
@@ -97,7 +97,7 @@ Use `escalation-judge` only when a failed attempt or review result requires sema
 2. Resolve `escalation-judge` through `agent-config` with `--provenance escalation` and the `escalationSelection` launch policy
 3. Give the judge only those inputs and its prompt/schema; it returns an `escalation` packet
 4. Run `~/.agents/skills/multi-agent-development/scripts/escalation-policy` to validate the packet against the current level, maximum level, work class, and target role
-5. For a permitted next attempt, call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --round <nextLevel>` and pass the resolved launch unchanged
+5. For a permitted next attempt, run `mad-escalation-controller`, then call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --work-class <workClass> --round <round> --attempt-level <attemptLevel>` and pass the resolved launch unchanged
 6. For `ask_user` or `stop`, do not create a child; preserve the evidence and request the decision or stop the run
 
 The judge recommends an action and level. It never chooses a provider or model directly, and it cannot increase the attempt budget.

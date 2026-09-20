@@ -5,6 +5,7 @@ set -u
 
 mad_contract="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
 mad_skill="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/multi-agent-development/SKILL.md")"
+task_routing="$(cat "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/task-routing/SKILL.md")"
 mad_validator="$CHEZMOI_SOURCE/private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate"
 assert_eq "$(MANUAL_ORCHESTRATION_PASEO_CLI_AVAILABLE=1 bash "$mad_validator" --select-backend)" \
   '{"backend":"paseo-cli","backend_reason":"Paseo CLI available"}' \
@@ -39,6 +40,12 @@ assert_contains "$mad_contract" 'MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-esc
   'escalation: controller path is explicit'
 assert_contains "$mad_contract" '--work-class "$WORK_CLASS"' \
   'review: work class reaches resolver'
+assert_contains "$mad_contract" 'task-reviewer`、`re-reviewer`、`final-reviewer`' \
+  'review: reviewer roles require work class'
+assert_contains "$task_routing" '--attempt-level <attemptLevel>' \
+  'escalation: attempt level reaches resolver'
+assert_not_contains "$task_routing" 'CLI backend is allowed only for single route' \
+  'backend: stale single-only CLI policy is removed'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
 for exec_path in \

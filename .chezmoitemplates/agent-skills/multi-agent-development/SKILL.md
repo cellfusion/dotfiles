@@ -2,7 +2,7 @@
 name: multi-agent-development
 description: >-
   複数の子エージェント、並列 task、worktree 隔離、または独立した review が必要な作業を
-  Paseo MCP で実行する。単一 task の実装や通常の会話に自動適用しない。
+  Paseo CLI または明示指定した Paseo MCP backend で実行する。単一 task の実装や通常の会話に自動適用しない。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
@@ -73,7 +73,7 @@ single child が必要なだけなら、`multi-agent-development` の strict con
 - 成功条件、停止条件、ユーザー判断が必要な条件
 - 使う backend と、失敗時に別経路へ切り替えるかどうか
 
-この判断を child に丸投げしない。Paseo MCP が使えず、strict MAD run を開始できない場合は、MAD を実行したことにせず、親が直接作業するかユーザーへ状況を伝える。
+この判断を child に丸投げしない。選択した Paseo CLI/MCP backend が使えず、strict MAD run を開始できない場合は、MAD を実行したことにせず、親が直接作業するかユーザーへ状況を伝える。run 開始後に別 backend へ切り替えない。
 
 ## plan を実装する strict MAD の準備
 
