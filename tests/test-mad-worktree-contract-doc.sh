@@ -34,6 +34,11 @@ assert_contains "$contract" 'liveness' 'attempt state の key に liveness が�
 assert_contains "$contract" 'review-package.diff' '契約文書は review-package.diff の名前を残す'
 assert_contains "$skill" 'mad-worktree' 'スキルは隔離の担当を mad-worktree と書く'
 
+# 台帳の base は mad-worktree が解決した 40 桁 commit である。run state 側の表記が
+# branch 名や短縮 SHA だと、validator の文字列一致が必ず落ちる。
+assert_contains "$contract" '`base` は解決済みの 40 桁 commit とし、branch 名や短縮 SHA を書かない' \
+  '契約文書は run state の base を 40 桁 commit と定める'
+
 # pending の attempt state の 2 key は 1 本目と 2 本目の決定であり、4 本目は変えない。
 contract_module="$REPO_ROOT/private_dot_local/private_share/agent-config/mad-contract.js"
 assert_contains "$(cat "$contract_module")" \
