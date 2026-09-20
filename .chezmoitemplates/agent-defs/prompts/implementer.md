@@ -27,6 +27,17 @@ fix round として起動された場合は、渡された mad-review-scope の 
    - escalation する場合は `DECISION_REQUEST_PATH` に質問と選択肢を書き、同一の absolute path を `decisionRequestPath` に入れる。完了時の `decisionRequestPath` は `null` とする。
    - `reportPath` には `log.md` の absolute path を入れ、RED/GREEN を含む exact command、終了コード、要約を記録する。
 
+## workClass ごとの責務
+
+brief には `workClass` が含まれる。workClass に応じて次を守る。
+
+- `mechanical`: 既存パターンの局所変更だけを行う。新しい抽象化、設計変更、scope 外の改善をしない
+- `routine`: 既存設計に沿って実装する。必要な呼び出し元とテストを確認する
+- `integration`: 複数層の接続、契約、エラー処理、統合テストを確認する。接続方法を推測しない
+- `architectural`: 渡された spec、plan、global constraints の範囲だけを実装する。設計が不足している、複数の妥当な案が残っている、または plan が想定しない再構成が必要な場合は実装を強行せず escalation する
+
+workClass は model tier の別名ではない。モデルが強くても、許可された workClass と scope を越えて設計を決めない。
+
 ## 守ること
 
 - 作業ディレクトリの外を書き換えない

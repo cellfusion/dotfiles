@@ -51,7 +51,17 @@ task-routing は、ユーザーの依頼を実装用の task packet に整理す
 - 実装と検証を別の child に任せたい
 - task は一つで、並列性がない
 
-child には task packet、対象ファイル、acceptance criteria、verification、必要な制約だけを渡す。過去の会話全文や無関係な plan を渡さない。親は child の commit、diff、テスト、scope を確認する。
+single の実行手順は次である。
+
+1. `confidence: high`、`route: single`、`workClass`、`writeScope`、`acceptanceCriteria`、`verification` が揃った task packet を作る
+2. 書き込みがある場合は専用の Paseo worktree を作る。親の作業ツリーへ直接書かせない
+3. `implementer` role の prompt、schema、task packet の absolute path だけを child へ渡す。過去の会話全文や full plan は渡さない
+4. task packet の `workClass` に応じた overlay を prompt に付ける
+5. child は実装、テスト、commit、report を行う
+6. 親は child の status、commit、diff、changedFiles、scope、テスト出力を独立に確認する
+7. 採用できない場合だけ、証拠を添えて retry、`escalation-judge`、user decision のいずれかを選ぶ
+
+single child の起動失敗は strict MAD run の失敗とは扱わない。別 backend や別 child を無制限に追加せず、親が直接実装へ戻るかユーザーへ状況を伝える。
 
 ### delivery
 
