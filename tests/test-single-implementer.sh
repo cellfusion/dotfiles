@@ -42,8 +42,9 @@ cat > "$snapshot" <<'JSON'
 JSON
 
 script="$root/private_dot_agents/skills/task-routing/scripts/executable_single-implementer"
-if AGENT_ENV=primary MAD_SHARE="$root/private_dot_local/private_share/agent-config" \
-  MAD_GENERATOR="$root/private_dot_local/bin/executable_agent-config" "$script" prepare \
+export MAD_SHARE="$root/private_dot_local/private_share/agent-config"
+export MAD_GENERATOR="$root/private_dot_local/bin/executable_agent-config"
+if AGENT_ENV=primary "$script" prepare \
   --backend paseo \
   --packet "$packet" \
   --config "$root/private_dot_local/private_share/agent-config/agent-config.sample.json" \
@@ -74,8 +75,7 @@ if [ -f "$attempt/single-create.json" ]; then
     'single request is private'
 fi
 
-if AGENT_ENV=primary MAD_SHARE="$root/private_dot_local/private_share/agent-config" \
-  MAD_GENERATOR="$root/private_dot_local/bin/executable_agent-config" "$script" prepare \
+if AGENT_ENV=primary "$script" prepare \
   --packet "$packet" \
   --config "$CHEZMOI_SOURCE/private_dot_local/private_share/agent-config/agent-config.sample.json" \
   --project "$CHEZMOI_SOURCE" \

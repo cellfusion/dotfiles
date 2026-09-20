@@ -1,74 +1,98 @@
 ---
 name: writing-plans
 description: >-
-  Use to turn multi-phase work with finalized specs or requirements into an implementation
-  plan before touching code. Launch only when plans are required for multi-phase implementations
-  (such as after architectural design has solidified). Write plan to destination returned by
-  agent-docs-dir plans and hand off to downstream skills according to execution strategy.
+  Turn finalized requirements and architecture into an actionable implementation plan before coding.
+  Use it only for multi-stage work where the plan will guide execution and verification.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Writing Implementation Plans
+# Write an Implementation Plan
 
-## Overview
+A plan is a coordination artifact, not a substitute for understanding. The parent owns the purpose,
+assumptions, design decisions, and adoption of review feedback.
 
-A plan may be authored directly by the parent, or delegated to a child when appropriate. For small plans, the parent reads target code and defines tasks, dependencies, and verification methods directly. Spawn `plan-author` or review children only when extensive research, independent task breakdown, or separate perspective reviews are warranted.
+## When to use
 
-The parent is responsible for the plan's purpose, premises, and adoption decisions. Utilizing children is a means to improve quality, not a prerequisite for plan authoring.
+Use this skill when requirements and architecture are sufficiently settled and implementation has
+multiple stages, dependencies, or integration boundaries. Do not create a formal plan for a clear
+local edit. Split independent subsystems into separate plans when each can produce a working,
+testable unit.
 
-Criteria for what plans should be are held in `_criteria-plan.md` and required validators.
+## Destination
 
-**Destination**: `YYYY-MM-DD-<feature-name>.md` in the directory returned by `~/.agents/skills/_shared/scripts/agent-docs-dir plans` (prefer project-specific CLAUDE.md directives if present).
+Before writing, resolve the external plan directory:
 
-**Before starting**, run `~/.agents/skills/_shared/scripts/agent-docs-dir plans`. It ensures the directory exists and returns the absolute path on one line. The directory is `~/docs/<owner>/<repo>/plans/`.
+```bash
+PLANS="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)"
+```
 
-The destination resides outside the repository working tree. Because it resolves to the exact same absolute path whether called from the main checkout or a worktree, pass absolute paths to downstream skills.
+Create `YYYY-MM-DD-<feature-name>.md` there unless project instructions specify another destination.
+The plan directory is outside the repository. Pass its absolute path to later skills.
 
-## Scope Confirmation
+## Plan contents
 
-If a spec spans multiple independent subsystems, it should ideally have been divided during brainstorming. If not, propose splitting into separate plans per subsystem. Each plan must produce working, testable software on its own.
+Include only what the implementation needs:
 
-## Authoring the Plan
+- purpose and non-goals
+- approved requirements and constraints
+- architecture and data flow
+- ordered tasks with dependencies
+- files or modules each task may change
+- acceptance criteria
+- verification commands and expected evidence
+- rollback or migration considerations
+- unresolved decisions and the user needed to resolve them
 
-Execute `~/.agents/skills/_shared/scripts/agent-docs-dir plans` to determine the destination path. Whether written directly by the parent or delegated to a child, pass the absolute path of the plan downstream.
+Each task should be independently understandable and small enough to verify. State complexity and
+work class when the downstream routing policy requires them. Do not let an implementer invent
+architecture or expand scope.
 
-When delegating to a child, pass only the objective, approved spec's absolute path, known constraints, and plan destination. If the child raises questions, the parent reviews the content before forwarding to the user. The parent must not conceal choices or allow the child to make unilateral determinations.
+## Authoring
 
-## Reviewing the Plan
+The parent may write the plan directly. Delegate plan writing only when independent research,
+long-running decomposition, or a separate perspective is worth the cost. If a child writes it,
+provide only purpose, approved specification path, known constraints, and destination. The parent
+reviews and adopts the result; a child cannot make hidden design decisions.
 
-The parent reads the plan, verifying task dependencies, modified files, verification methods, and feasibility. Add `plan-author` or `reviewer` only if the plan is large, contains numerous independent tasks, or requires distinct perspectives.
+## Review the plan
 
-Verify task numbers, dependencies, and same-wave file conflicts using existing validators such as `paseo-plan-dependency-validate`. The parent decides whether to adopt validator recommendations. Correct the plan after consulting the user only if severe ambiguity or defects blocking implementation remain.
+Before presenting it:
 
-If consequential ambiguities or defects remain, the parent selects one of:
-- Reject the finding with rationale
-- Leave as an unresolved constraint in the plan to guide implementation
-- Confirm with the user and adjust the plan
+1. read it from disk
+2. validate task numbering and dependencies
+3. inspect file overlap within parallel waves
+4. check acceptance criteria and verification commands
+5. confirm the plan produces a working, testable result
+6. record rejected findings and reasons
 
-Never silently drop findings.
+Use an existing dependency validator when available. Do not silently discard validator findings.
+Reject them with rationale, preserve them as an unresolved constraint, or ask the user.
 
-{{ includeTemplate "agent-skills/_preview-tab.md" . }}
+## Approval and preview
 
-{{ includeTemplate "agent-skills/_approval-gate.md" (merge (dict "artifact" "plan" "nextLabel" "implementation" "issue" false "worktree" true) .) }}
+Show the plan at its external absolute path. Obtain user approval before implementation when the plan
+contains unresolved consequential choices, external operations, public contracts, destructive actions,
+or a worktree delegation choice. Do not add a formal approval gate merely to restate a clear user
+request.
 
-Plans are not converted into GitHub issues. Implementing agents (`multi-agent-development` / `executing-plans`) directly read the plan file path; without the file, execution mechanisms cannot function.
+If a preview editor is used, re-read the plan after the user responds. The on-disk version is
+canonical. Incorporate manual edits before handing the plan to `executing-plans` or
+`multi-agent-development`.
 
-{{ includeTemplate "agent-skills/_worktree-handoff.md" . }}
+Never run an implementation or cleanup command while waiting for approval.
 
-## Handoff to Implementation
+## Handoff
 
-Once approved, choose the execution method based on plan size and structure, not whether subagents are available:
+Choose execution based on plan structure:
 
-- **Plans with parallel tasks or requiring worktree isolation** -> Pass to `multi-agent-development`. Spawns Paseo children per task with review recipes interleaved.
-- **Small plans that do not require MAD** -> Pass to `executing-plans`. Runs sequentially within this session, reviewing at task boundaries.
+- sequential small plan with no parallelism: `executing-plans`
+- independent tasks, isolation, or task/final review gates: `multi-agent-development`
 
-When deciding between the two, evaluate task dependencies, file conflict likelihood, and review requirements. If parallelism and isolation are unnecessary, use `executing-plans`.
+Re-read the approved plan immediately before handoff. Pass its absolute path, not copied prose.
 
-Use MAD's strict contracts and worktree isolation only when choosing `multi-agent-development`.
+## Completion
 
-## Notes
-
-- If the parent can assess plan content directly, do not add child reviews.
-- Validate task dependencies and file conflicts with existing validators where available.
-- Present options with impacts to the user only when their choice is necessary.
-- Re-read the plan to incorporate manual edits and environment diffs before handing off.
+A plan is complete when it is saved, self-reviewed, validated, and either approved for execution or
+explicitly retained without execution. Report the path, validation evidence, unresolved decisions,
+and selected downstream skill.

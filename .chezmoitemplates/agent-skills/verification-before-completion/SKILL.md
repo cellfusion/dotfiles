@@ -1,141 +1,116 @@
 ---
 name: verification-before-completion
 description: >-
-  Use right before claiming completion, fixes, or test passage, and before committing or creating PRs.
-  Execute verification commands proving claims, confirm output, and only then assert results.
-  Place evidence before assertion.
+  Verify claims of completion, correctness, fixes, or passing tests with fresh evidence. Select
+  commands appropriate to the claim, record exit codes and failures, and report unverified items.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Verify Before Claiming Completion
 
-## Overview
+Put evidence before assertion. Verification proves a specific claim about a specific tree; it does
+not prove more than the command covers.
 
-**Core**: Put evidence before assertion. Always.
+## Verification gate
 
-**Breaking the letter of this rule breaks the spirit of this rule.**
+Before claiming a status:
 
-## Iron Rule
+1. identify the claim
+2. choose the command or artifact that proves it
+3. run it freshly against the intended working tree/revision
+4. read the complete output and exit code
+5. count failures and warnings relevant to the claim
+6. compare evidence with the claim
+7. report success, failure, or uncertainty accurately
 
-```
-Never claim completion without fresh evidence of verification
-```
+A previous run, an agent's message, a plausible diff, or confidence is not fresh evidence.
 
-If you have not run a verification command within the current turn, you cannot claim it passes.
+## Choose the smallest sufficient check
 
-## Gate Function
+Use the narrowest command that proves the claim, then add broader checks when risk requires them:
 
-```
-Before asserting any status or expressing satisfaction:
-
-1. Identify: What command proves this claim?
-2. Execute: Run that command completely (freshly, unabbreviated)
-3. Read: Read the full output, verify exit code, and count failures
-4. Verify: Does the output substantiate the claim?
-   - No: State the actual situation accompanied by evidence
-   - Yes: Make the claim accompanied by the evidence
-5. Only then assert the claim
-
-Skipping any step constitutes falsification, not verification
-```
-
-## Who Executes Verification
-
-Steps 2 (Execute) and 3 (Read) of the Gate Function may be performed by the parent directly or delegated to a child. Steps 1 (Identify), 4 (Verify), and 5 (Assert) are always performed by the parent.
-
-- **Few verification commands with brief output** — Parent runs them directly. `/verify` is an example.
-- **Lengthy verification or voluminous output** — Delegate to a child using MAD's `review` recipe, passing commands and requirements paths. The child records executed commands, exit codes, output, and rationale per requirement into a verification record, returning its absolute path.
-
-Even when delegating to a child, the parent inspects exit codes and failure counts from the verification record. **A child's report that it "succeeded" is not evidence.** Without exit codes and command outputs in the record, verification did not occur.
-
-## Common Pitfalls
-
-| Claim | Required Evidence | Insufficient Evidence |
-|---|---|---|
-| Tests pass | Test command output: 0 failures | Prior run, "should pass" |
-| Clean lint | Lint output: 0 errors | Partial check, extrapolation |
-| Build passes | Build command: exit code 0 | Passing lint, "logs look good" |
-| Bug fixed | Test reproducing original symptom: passes | "Should be fixed since code changed" |
-| Regression test works | Confirmed red-green | Passed once |
-| Agent completed | Changes visible in VCS diff | Agent's "success" message |
-| Child verified | Verification record exit code & output | Child's claim that it verified |
-| Requirements met | Line-by-line checklist verification | "Tests are green" |
-
-In this project, `/verify` runs the full verification suite (build, typecheck, lint, test, debug audit). When uncertain what to run, use `/verify`.
-
-## Red Flags — Stop
-
-- Using "should", "probably", "seems to"
-- Expressing satisfaction before verification ("done", "works great", etc.)
-- Attempting to commit, push, or open a PR without verifying
-- Trusting agent success reports blindly
-- Relying on partial verification
-- Thinking "just this once"
-- Fatigued and wanting to wrap up
-- **Using phrasing implying success without running verification**
-
-## Handling Rationalizations
-
-| Rationalization | Reality |
+| Claim | Evidence |
 |---|---|
-| "Should work by now" | Run verification |
-| "I'm confident" | Confidence is not evidence |
-| "Just this once" | No exceptions |
-| "Lint passed" | Linters are not compilers |
-| "Agent said success" | Verify independently |
-| "I'm tired" | Fatigue is not an excuse |
-| "Partial check is enough" | Partial checks prove nothing |
-| "Phrased differently, so rule doesn't apply" | Obey the spirit, not just the letter |
+| test passes | test output and exit code with zero failures |
+| lint is clean | lint output and exit code with zero errors |
+| build succeeds | build output and exit code 0 |
+| bug is fixed | regression reproduction/test passes |
+| requirement is met | item-by-item checklist with evidence |
+| agent completed | validated artifact, status, diff, and verification |
+| child verified | verification record with commands, exit codes, and output |
 
-## Patterns
+Do not use lint as proof of compilation or one passing test as proof of full correctness.
 
-**Tests**
+## Runtime-neutral command policy
 
-```
-✅ [Run test command] [Verify 34/34 passed] "All tests pass"
-❌ "This should pass now", "Looks correct"
-```
+Do not assume `/verify` or `/pre-commit-review` exists in every runtime. Inspect the current tool's
+commands and the repository's documented scripts first. If a command is unavailable, record
+`not_run` and use an equivalent safe command or report the limitation.
 
-**Regression Tests (TDD red-green)**
+Never install dependencies, run deploy/release operations, or execute untrusted setup scripts just to
+obtain verification without explicit approval. Do not mutate source files, auto-fix, or hide a
+failure before recording it.
 
-```
-✅ Write -> run (pass) -> revert fix -> run (must fail) -> reapply fix -> run (pass)
-❌ "Wrote regression test" (without verifying red-green)
-```
+## Quick verification
 
-**Build**
+For a small, low-risk change, use a focused check plus:
 
-```
-✅ [Run build] [Verify exit code 0] "Build succeeds"
-❌ "Lint passed" (linting does not verify compilation)
+```bash
+git diff --check
+git status --short
 ```
 
-**Requirements**
+For a configuration or documentation change, use rendering, parsing, schema validation, or
+translation checks instead of pretending a product test proves it.
 
+For a high-risk or public behavior change, include regression, relevant suite, type/build, and
+security checks as justified by the repository.
+
+## Verification record
+
+When verification is delegated or spans multiple commands, save an external record with:
+
+```json
+{
+  "schemaVersion": "1",
+  "verificationId": "...",
+  "repository": "owner/name",
+  "revision": "40-character-sha",
+  "claim": "...",
+  "checks": [{
+    "command": "...",
+    "cwd": "...",
+    "status": "pass|fail|not_run",
+    "exitCode": 0,
+    "failures": 0,
+    "evidence": "...",
+    "at": "2026-01-01T00:00:00Z"
+  }],
+  "verdict": "pass|fail|partial|blocked",
+  "limitations": []
+}
 ```
-✅ Re-read plan -> build checklist -> verify item by item -> report gaps or completion
-❌ "Tests pass, so phase is complete"
-```
 
-**Agent Delegation**
+Keep logs free of credentials, raw secrets, full environment dumps, and unbounded command output.
+The parent must inspect the record; a child saying “verified” is not enough.
 
-```
-✅ Agent reports success -> inspect VCS diff -> verify changes -> report actual state
-❌ Trusting agent report at face value
-```
+## Delegation
 
-## When to Apply
+The parent identifies the claim and acceptance criteria. A child may run long checks, but the parent
+must inspect its command list, exit codes, failure counts, and artifacts before asserting the result.
+Use one stable verification record per attempt and revision. Do not overwrite an older record.
 
-**Always, prior to**:
-- Any statement expressing success or completion
-- Any expression of satisfaction
-- Any affirmative statement about work status
-- Commits, PR creation, task completion
-- Advancing to the next task
-- Delegating to an agent
+## Red flags
 
-**Scope of the rule**:
-- Exact phrasing
-- Paraphrases and synonyms
-- Implied success
-- Any communication suggesting completion or correctness
+Stop and re-evaluate when:
+
+- the claim uses “should”, “probably”, or “looks right” without evidence
+- verification ran before the final change
+- only a partial check supports a broad claim
+- a test passed for the wrong reason
+- an agent report is the only evidence
+- a failure was fixed or hidden before being recorded
+- the working tree or revision does not match the one being claimed
+
+Report what is actually known and what remains unverified.

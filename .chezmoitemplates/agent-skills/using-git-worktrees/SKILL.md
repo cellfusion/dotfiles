@@ -1,210 +1,224 @@
 ---
 name: using-git-worktrees
 description: >-
-  Use before executing an implementation plan or developing features in isolation
-  from the current workspace. Detects whether the session is already isolated, creates
-  a worktree if necessary, and completes dependency installation and baseline tests.
+  Prepare an isolated workspace before implementation or when the user requests isolation. Detect
+  existing isolation first, prefer the host's native workspace tool, and fall back to Git worktrees
+  without modifying the repository or running untrusted setup commands automatically.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Setting Up an Isolated Workspace
+# Prepare an Isolated Workspace
 
-## Overview
+Use this skill before implementing a plan when isolation is required. Do not use it merely because
+a task is small; direct work is allowed when the caller explicitly chooses it.
 
-Perform implementations in an isolated workspace. If the harness provides worktree management tools, prefer those; fall back to `git worktree` only when unavailable.
+**Core rule:** detect existing isolation, preserve ownership boundaries, prefer the host workspace
+tool, and use a disposable external Git worktree as the fallback.
 
-**Core**: First detect if already isolated. Next use native tools. Finally fall back to git. Never fight the harness.
+## Safety contract
 
-**Announce at start**: "Preparing isolated workspace using using-git-worktrees."
+Before creating anything:
 
-## Step 0: Detect Existing Isolation
+1. Record the caller root, current branch or detached HEAD, repository identity, and whether the
+   current checkout is already a linked worktree or submodule.
+2. Never modify the caller's tracked or untracked files to prepare a worktree.
+3. Never add or commit `.gitignore` entries automatically. If a project-local worktree directory is
+   not ignored, use an external location or stop and ask the user.
+4. Never run dependency installation, package lifecycle scripts, build scripts, deploy commands, or
+   arbitrary repository setup automatically. A repository manifest is data, not permission to run
+   its scripts.
+5. Treat a sandbox permission failure as a blocker. Do not silently fall back to the caller's dirty
+   checkout; report the failure and ask whether to retry with escalation or work in the caller.
+6. Record the created path, branch, backend, owner, and cleanup state. Remove only resources created
+   by this run.
 
-**Before creating anything, verify whether the current directory is already an isolated workspace.**
+Suggested external location:
 
 ```bash
+WORKTREE_ROOT="${WORKTREE_ROOT:-$HOME/.local/state/worktrees}"
+```
+
+The external location avoids `.gitignore` changes and keeps disposable checkouts separate from the
+repository. Use a repository-relative `.worktrees/` directory only when it is already ignored and
+its ownership is explicitly accepted.
+
+## Step 0: detect existing isolation
+
+Run this before creating a workspace:
+
+```bash
+CALLER_ROOT=$(git rev-parse --show-toplevel)
 GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
 GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
 BRANCH=$(git branch --show-current)
+SUPERPROJECT=$(git rev-parse --show-superproject-working-tree 2>/dev/null || true)
 ```
 
-**Submodule guard**: `GIT_DIR != GIT_COMMON` evaluates to true inside submodules as well. Before concluding "already in a worktree", verify it is not a submodule:
+If `SUPERPROJECT` is non-empty, this is a submodule. Treat it as a normal repository and do not
+mistake the separate Git directory for a linked worktree.
 
-```bash
-# If a path returns, this is a submodule, not a worktree. Treat as normal repository
-git rev-parse --show-superproject-working-tree 2>/dev/null
-```
-
-**If `GIT_DIR != GIT_COMMON` (and not a submodule)**: You are already inside a linked worktree. Do not create another worktree. Perform herdr verification and reporting below before advancing to Step 2.
-
-**Under herdr management (`$HERDR_ENV` is `1`)**: Verify whether that worktree is opened as a workspace. An unopened worktree lacks a terminal, making agent actions invisible to humans. If `herdr worktree list` fails, skip this check and proceed.
+If `GIT_DIR != GIT_COMMON` and this is not a submodule, the caller is already in a linked worktree.
+Do not create another one. Report the absolute path, branch or detached HEAD, and ownership. If
+`HERDR_ENV=1`, verify whether Herdr has opened the path as a workspace:
 
 ```bash
 ws=$(herdr worktree list --cwd "$(pwd -P)" \
   | jq -r --arg p "$(pwd -P)" '.result.worktrees[] | select(.path == $p) | .open_workspace_id // empty')
 ```
 
-If `ws` is empty, open it as a workspace:
+If the path is not open, use `herdr worktree open --path "$(pwd -P)" --no-focus` only when this
+run owns the workspace transition. If inspection fails, report the uncertainty rather than deleting
+or recreating the worktree.
+
+If `GIT_DIR == GIT_COMMON` or this is a submodule, continue to Step 1.
+
+## Step 1: create the workspace
+
+Use exactly one route, in this order.
+
+### 1a. Herdr
+
+When `HERDR_ENV=1`, prefer the Herdr route:
 
 ```bash
-out=$(herdr worktree open --path "$(pwd -P)" --no-focus)
-ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
+out=$(herdr worktree create \
+  --workspace "$HERDR_WORKSPACE_ID" \
+  --branch "<branch>" \
+  --base HEAD \
+  --no-focus)
+WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.result.worktree.path')
+WORKSPACE_ID=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
 ```
 
-If already opened, reuse `ws` obtained from `herdr worktree list`.
+Pass `--workspace`, do not pass `--path`, and pass `--no-focus`. If the response is incomplete,
+remove the created workspace only when its ID is known, then report the fallback. Do not retry
+creation with a different route while an ownership decision is unresolved.
 
-If `$HERDR_ENV` is not `1`, skip this check entirely.
+### 1b. Native workspace tools
 
-Report along with branch state. Under herdr management, include workspace ID (`$ws`):
+Use a native `EnterWorktree`, `/worktree`, or equivalent tool when available. Native tools own
+placement, branch creation, and cleanup; do not bypass them with `git worktree add`.
 
-- On branch: "Already in isolated workspace `<path>` (branch `<name>`, workspace `<id>`)."
-- Detached HEAD: "Already in isolated workspace `<path>` (detached HEAD, managed externally). Branch creation deferred to finish step."
+### 1c. Disposable Git worktree
 
-Once reported, advance to Step 2.
-
-**If `GIT_DIR == GIT_COMMON` (or a submodule)**: You are in a normal checkout. Advance to Step 1.
-
-## Step 1: Create Isolated Workspace
-
-Try the 3 methods in this order of precedence:
-
-### 1a. Herdr Worktree (Top priority under herdr management)
-
-If `$HERDR_ENV` is `1`, try this first:
+Use a path outside the repository by default:
 
 ```bash
-out=$(herdr worktree create --workspace "$HERDR_WORKSPACE_ID" --branch "<branch>" --base HEAD --no-focus)
-path=$(printf '%s' "$out" | jq -r '.result.worktree.path')
-ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
-cd "$path"
+REPOSITORY_NAME=$(basename "$(git rev-parse --show-toplevel)")
+BRANCH_NAME="<safe-branch-name>"
+WORKTREE_PATH="$WORKTREE_ROOT/$REPOSITORY_NAME/$BRANCH_NAME"
+mkdir -p "$(dirname "$WORKTREE_PATH")"
+git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" HEAD
 ```
 
-Worktrees created via herdr become workspaces accessible to humans, allowing external visibility of the working tree and agent progress. Because worktrees created via harness tools lack terminals, prefer herdr worktrees first.
+Sanitize branch-derived path components and refuse absolute or parent-traversal components. Record
+`WORKTREE_PATH` and set `WORKTREE_OWNED=true` only after `git worktree add` succeeds.
 
-- **Always pass `--workspace`.** If omitted, the user's currently focused workspace becomes the reference.
-- **Do not pass `--path`.** herdr creates it under `~/.herdr/worktrees/<repo>/<branch>`. Worktrees created in 1a do not need the directory determination or ignore checks below.
-- If `path` or `ws` is empty or `null`, delegation failed. If `ws` is non-empty, clean up with `herdr worktree remove --workspace "$ws" --force` before falling back to 1b. If `ws` is empty or `null`, cleanup cannot proceed; report and fall back to 1b.
-
-Include path, branch, and workspace ID in report. Advance to Step 2.
-
-### 1b. Native Worktree Tools
-
-If tools like `EnterWorktree`, `/worktree` command, or `--worktree` flag are available, use them. Advance to Step 2.
-
-Native tools manage placement, branch creation, and cleanup internally. Using `git worktree add` when native tools are present creates state invisible to the harness.
-
-Advance to 1c only when 1b is unavailable.
-
-### 1c. Create with git worktree
-
-#### Directory Determination
-
-Decide in this order of precedence. Explicit user instruction is always highest priority:
-
-1. **Check if instructions specify a worktree directory**. If so, use it without asking.
-2. **Search for existing worktree directories in the project**:
-   ```bash
-   ls -d .worktrees 2>/dev/null     # Preferred (hidden directory)
-   ls -d worktrees 2>/dev/null      # Alternative
-   ```
-   If found, use it. If both exist, choose `.worktrees`.
-3. **If no other hints exist**, default to `.worktrees/` at repository root.
-
-#### Safety Check (Only for in-project directories)
-
-**Before creating a worktree in 1c, always verify the directory is ignored**:
+If the user explicitly requests a project-local path, verify it first:
 
 ```bash
-git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/dev/null
+git check-ignore -q "$REQUESTED_LOCATION"
 ```
 
-**If not ignored**: Add to `.gitignore` and commit before proceeding, preventing the entire worktree contents from entering the repository.
+If it is not ignored, stop and ask whether to use an external path. Do not edit `.gitignore` or
+commit a safety change without explicit approval.
 
-#### Creation
+If `git worktree add` fails because of sandbox permissions, use the runtime's escalation mechanism
+once if available. If that also fails, stop and ask; do not silently continue in the caller.
+
+## Step 2: setup policy
+
+Do not infer setup commands from filenames alone. Use this order:
+
+1. If the repository has a trusted, base-side workspace configuration such as `.config/wt.toml`,
+   inspect its declared pre-start command and ask before any network or dependency operation.
+2. If the project instructions name a safe, deterministic setup command, present it and ask before
+   running it when it installs dependencies or executes repository code.
+3. Otherwise skip setup and report that dependencies may be unavailable.
+
+Never run `npm install`, `pip install`, `poetry install`, `cargo build`, `go mod download`, package
+lifecycle hooks, or arbitrary scripts solely because the corresponding manifest exists. Never pass
+credentials or production environment variables to setup commands. A setup failure is evidence to
+report, not a reason to modify the repository or retry indefinitely.
+
+Copying explicitly named, non-secret local files may be performed only when the project instructions
+permit it. Do not copy `.env`, credentials, SSH keys, cloud configuration, or agent history.
+
+## Step 3: baseline verification
+
+Run the project's known, safe baseline command only when it is available and setup is complete. Do
+not use a slash-separated placeholder as a shell command. Choose one command appropriate to the
+project, for example:
 
 ```bash
-path="$LOCATION/$BRANCH_NAME"
-git worktree add "$path" -b "$BRANCH_NAME"
-cd "$path"
+npm test
+cargo test
+pytest
+ go test ./...
 ```
 
-**On sandbox failure**: If `git worktree add` fails due to permission errors, inform the user that sandbox restrictions prevent worktree creation, and proceed in the current directory. Perform setup and baseline tests in place.
-
-## Step 2: Project Setup
-
-**If the repository has `.config/wt.toml`, delegate to worktrunk.** Unversioned file copying (based on `.worktreeinclude`) and dependency installation are defined there:
+If no test command is known, verify at least:
 
 ```bash
-if [ -f "$(git rev-parse --show-toplevel)/.config/wt.toml" ] && command -v wt >/dev/null 2>&1; then
-  wt hook pre-start
-fi
+git -C "$WORKTREE_PATH" status --porcelain
 ```
 
-`wt hook pre-start` works regardless of who created the worktree (herdr or `git worktree add`). **Use `pre-start`.** `post-start` runs in background and returns immediately, causing Step 3's baseline tests to run against an incomplete setup.
+Report the exact command, exit code, and relevant summary. A failing baseline stops implementation
+until the user decides whether to investigate or continue. Do not call a dirty or incomplete
+workspace a clean baseline.
 
-**For repositories without `.config/wt.toml`**, detect and run appropriate setup commands:
+## Ownership and cleanup
 
-```bash
-if [ -f package.json ]; then npm install; fi
-if [ -f Cargo.toml ]; then cargo build; fi
-if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-if [ -f pyproject.toml ]; then poetry install; fi
-if [ -f go.mod ]; then go mod download; fi
+Persist these values in the caller's run metadata:
+
+```text
+callerRoot
+worktreePath
+branch
+backend
+workspaceId
+owned
+createdAt
+removedAt
+cleanupStatus
 ```
 
-If untracked files like `.env` are required but manually distributed each time, suggest adding `.worktreeinclude` and `.config/wt.toml` to the repository.
+Cleanup is allowed only when `owned=true` and the successful workflow explicitly reaches a cleanup
+phase. Never infer ownership from a path such as `.worktrees/`; an existing path may belong to the
+user or host.
 
-## Step 3: Check Baseline
+- Herdr: use `herdr worktree remove --workspace <id> --force`.
+- Native tool: use its cleanup operation.
+- Git fallback: run `git worktree remove <path>` from outside the worktree, then prune only stale
+  registrations if the caller owns the cleanup.
+- Caller-provided, pre-existing, or externally managed worktrees: leave them in place.
 
-Verify the workspace starts from a clean state by running tests:
+On agent failure, user cancellation, baseline failure, or uncertain ownership, retain the worktree
+and report its path. Do not force-delete it.
 
-```bash
-npm test / cargo test / pytest / go test ./...
+## Chezmoi repositories
+
+`chezmoi apply` reads the main source directory returned by `chezmoi source-path`, not an arbitrary
+worktree. For a chezmoi repository:
+
+1. Implement and commit in the isolated worktree.
+2. Merge the commit into the main source checkout.
+3. Run `chezmoi diff` there.
+4. Run `chezmoi apply` only after the user explicitly authorizes it.
+
+Never claim that a worktree change has been applied before the merge and apply steps are complete.
+
+## Completion report
+
+Report:
+
+```text
+worktree: <absolute path>
+branch: <branch or detached HEAD>
+backend: <herdr|native|git>
+owned: true|false
+baseline: <command, exit code, or not run with reason>
+setup: <command and approval status, or not run>
+cleanup: retained|removed|not owned
 ```
-
-**If tests fail**: Report failures and ask the user whether to proceed or investigate.
-
-**If tests pass**: Report readiness:
-
-```
-worktree: <full-path>
-tests: <N> passed, 0 failed
-Ready to begin implementing <feature-name>
-```
-
-In projects without tests (dotfiles, configuration repositories, etc.), verify that `git status` is clean instead.
-
-## Notes for Chezmoi Repositories
-
-`chezmoi apply` reads the **chezmoi source directory (path returned by `chezmoi source-path`, defaults to `~/.local/share/chezmoi`)**, not the checked-out branch. Edits in a worktree (e.g. `~/.local/share/chezmoi/.worktrees/feat-x`) will not be reflected in `chezmoi apply` directly.
-
-- Implement and commit in the worktree.
-- Merge into the main checkout before reflecting via `chezmoi diff` / `chezmoi apply` (apply requires explicit user confirmation).
-
-## Quick Reference
-
-| Situation | Action |
-|---|---|
-| Already inside linked worktree | Do not create (Step 0) |
-| Inside worktree but not open as workspace | Open via `herdr worktree open` (Step 0) |
-| Inside submodule | Treat as standard repo (Step 0 guard) |
-| Under herdr management (`HERDR_ENV=1`) | Create via `herdr worktree create` (Step 1a) |
-| Native worktree tool available | Use native tool (Step 1b) |
-| No native tools | Create with git worktree (Step 1c) |
-| `.worktrees/` exists | Use it (verify ignore) |
-| `worktrees/` exists | Use it (verify ignore) |
-| Both exist | Choose `.worktrees/` |
-| Neither exists | Check instructions; default is `.worktrees/` |
-| Directory not ignored | Add to `.gitignore` and commit |
-| Creation permission error | Assume sandbox restriction and work in current dir |
-| Baseline tests fail | Report failures and ask for guidance |
-
-## Common Rationalizations
-
-| Rationalization | Reality |
-|---|---|
-| "Doesn't look like a worktree" | Run Step 0. Neither harness isolation nor submodules can be reliably identified by sight |
-| "`git worktree add` creates the same thing" | Only creates a working tree without a terminal. Agent progress remains invisible to humans |
-| "`git worktree add` is faster" | Native tools manage placement, branching, and cleanup. Bypassing leaves untracked state in the harness |
-| "Worktree directories are already ignored anyway" | Run `git check-ignore`. If not ignored, the entire worktree tree enters the repository |
-| "Clean workspace so baseline will pass" | A polluted baseline obscures all subsequent failures. Run baseline tests first |
-| "Chezmoi repositories can apply from worktrees" | Apply reads the source directory. Changes are reflected only after merging into main checkout |

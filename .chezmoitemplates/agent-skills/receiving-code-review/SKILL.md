@@ -1,218 +1,135 @@
 ---
 name: receiving-code-review
 description: >-
-  Use when receiving code review feedback before implementing suggestions.
-  Especially critical when feedback is ambiguous or technically questionable.
-  Verify before acting; neither sycophantically agree nor blindly implement.
+  Evaluate code-review feedback before implementing it. Verify every actionable item against the
+  codebase, record the decision, and choose a direct or delegated fix route proportional to scope.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Receiving Code Review
+# Receive and Act on Code Review
 
-## Overview
+Code review feedback is technical input, not an instruction to agree or implement blindly. Preserve
+the reviewer context, verify the claim against the repository, and make the decision traceable.
 
-Code review is a technical evaluation, not an emotional performance.
+## 1. Normalize the feedback
 
-**Core**: Verify before implementing. Ask before assuming. Technical correctness over social comfort.
+Read all feedback before responding. Assign stable IDs when the reviewer did not provide them:
 
-## Response Pattern
-
-```
-When receiving review feedback:
-
-1. Read: Read the feedback to the end without reacting
-2. Understand: Restate the requirement in your own words (ask if unable)
-3. Verify: Check against the reality of the codebase
-4. Evaluate: Is this technically sound for this codebase?
-5. Respond: Technical confirmation, or reasoned pushback
-6. Implement: One item at a time, testing each
+```text
+F-001, F-002, ...
 ```
 
-## What to Delegate to Children
+For each item, capture:
 
-The parent handles receiving findings, clarifying ambiguous items with the user, deciding whether to push back, consulting on conflicts with prior user decisions, and ordering implementation.
+- reviewer text and source (human, PR review, child reviewer, CI)
+- affected path and line, if any
+- claimed behavior or risk
+- requested outcome
+- priority and confidence, if supplied
 
-Delegate the following 3 tasks to children:
+Do not copy secrets or unrelated conversation into the record.
 
-- **Verifying findings against codebase** — Invoke the `researcher` role through Paseo or the native role path. Resolve it through `agent-config` when using Paseo. Pass finding text and absolute paths of files to read. The child returns what was confirmed vs. what could not be confirmed.
-- **Call site verification** — Used for YAGNI checks against "implement it properly" requests. Invoke the same `researcher` role. Do not switch backends merely because a provider-native wrapper is unavailable.
-- **Implementing fixes** — Use MAD's `implement` recipe. Pass findings, review package, and absolute paths to target files. The child executes TDD and re-review.
+## 2. Verify before deciding
 
-The parent must not write fixes directly. Fixes written by the parent do not undergo independent reviewer judgment, and the diffs and test logs remain in parent context, re-read on every subsequent turn.
+For each item, restate the technical claim in one sentence and inspect the relevant code, tests,
+callers, configuration, and supported versions. Confirm:
 
-## Prohibited Responses
+1. Is the claim true in this repository and revision?
+2. Does the proposed change preserve existing behavior and compatibility?
+3. Is the current implementation intentional or required by a documented constraint?
+4. Is the affected code actually used? Check callers before accepting broad refactors.
+5. Can the claim be verified with a focused test, static check, or reproducible observation?
 
-**Never write**:
-- "You're absolutely right"
-- "Great point!", "Awesome feedback!"
-- "I will implement that right away" (before verification)
+If verification is incomplete, mark the item `needs_context` rather than treating it as accepted.
+Do not implement an unclear item while waiting for clarification on a related item.
 
-**Instead**:
-- Restate the technical requirement
-- Ask clarifying questions
-- Push back with technical rationale if incorrect
-- Begin working directly (actions over words)
+## 3. Decide explicitly
 
-## Handling Ambiguous Feedback
+Use one decision per finding:
 
-```
-If even a single item is ambiguous:
-  Stop — do not implement anything yet
-  Ask for clarification on the ambiguous item
+- `accept`: technically valid and in scope
+- `reject`: technically incorrect, unsupported, or incompatible; preserve the evidence
+- `clarify`: the requested behavior or scope is ambiguous
+- `defer`: valid but intentionally outside the current scope; record the reason and follow-up
+- `duplicate`: already covered by another finding ID
+- `fixed`: implemented and independently verified
 
-Rationale: Items are often interdependent. Partial understanding produces buggy code
-```
+A useful decision record is:
 
-Example:
-
-```
-User: "Fix items 1 through 6"
-Understood: 1, 2, 3, 6. Ambiguous: 4, 5.
-
-❌ Wrong: Implement 1, 2, 3, 6 now and ask about 4, 5 later
-✅ Right: "Understood 1, 2, 3, and 6. Before starting, I would like to clarify 4 and 5."
-```
-
-## Handling by Source
-
-### From User
-
-- **Trust** — Implement once understood
-- If scope is ambiguous, **still ask**
-- Omit agreeable fluff
-- Jump directly to action or return only technical confirmation
-
-### From External Reviewer
-
-```
-Before implementing:
-  1. Is this technically sound for this codebase?
-  2. Does this break existing functionality?
-  3. Is there an intentional historical reason for the current implementation?
-  4. Does this hold across all supported platforms/versions?
-  5. Does the reviewer possess full context?
-
-If you believe the suggestion is wrong:
-  Push back with technical rationale
-
-If you cannot easily verify:
-  Say so: "Cannot verify without X. Should we investigate, ask, or proceed?"
-
-If it conflicts with prior user decisions:
-  Consult with the user first
+```json
+{
+  "id": "F-001",
+  "decision": "accept",
+  "reason": "The caller can pass an empty value and the changed branch does not reject it.",
+  "evidence": ["src/input.ts:42", "tests/input.test.ts:18"],
+  "scope": "current-task",
+  "nextAction": "add regression test and fix validation"
+}
 ```
 
-**Policy**: Treat external feedback with constructive skepticism, verifying thoroughly and politely.
+Keep these records in the external review artifact directory, not in the repository working tree.
+When the parent has a project-wide audit log, append a sanitized decision event there instead of
+creating a second incompatible log.
 
-## YAGNI Check for "Implement It Properly"
+## 4. Choose the implementation route
 
-```
-When a reviewer asks to "properly implement" something:
-  Grep the codebase for actual call sites
+Use the smallest safe route:
 
-  Unused: "This endpoint has no callers. Can we delete it instead (YAGNI)?"
-  Used:   Implement it properly
-```
+- direct parent implementation for a small, local, well-understood correction
+- one isolated implementer for a bounded multi-file correction
+- MAD fix/re-review for parallel, architectural, or high-risk work
+- user decision when the fix changes the public contract, scope, or architecture
 
-## Implementation Order
+Do not make child delegation mandatory. Do not let a reviewer choose provider, model, permissions,
+or worktree ownership. Pass only the finding, fixed review package, allowed files, requirements, and
+verification commands.
 
-```
-For multi-item feedback:
-  1. Clarify ambiguous items first
-  2. Have children implement in this order:
-     - Blockers (breakages, security vulnerabilities)
-     - Simple fixes (typos, imports)
-     - Involved changes (refactoring, logic updates)
-  3. Pass each fix individually to children, having them test each
-  4. Have children verify no regressions occurred
-```
+For multiple accepted findings, order work as:
 
-## When to Push Back
+1. blockers and security/data-integrity issues
+2. correctness and compatibility issues
+3. focused tests and error handling
+4. minor cleanup
 
-- Suggestion breaks existing functionality
-- Reviewer lacks overall architectural context
-- Violates YAGNI (unused functionality)
-- Technically incorrect for this technology stack
-- Historical compatibility requirements exist
-- Conflicts with user's architectural decisions
+Keep unrelated cleanup out of the fix scope.
 
-**How to push back**:
-- State technical rationale without defensiveness
-- Ask specific, focused questions
-- Point to working tests or code
-- Involve the user if architectural decisions are impacted
+## 5. Verify each fix
 
-**If you feel hesitant to push back**: Name that tension explicitly and present the observed technical conflict to the user.
+For each accepted item:
 
-## Confirming Valid Findings
+1. Create or identify the regression test before the fix when the behavior is testable.
+2. Implement only the allowed change.
+3. Run the focused test or static check and record the exit code.
+4. Re-run the relevant broader checks.
+5. Create a fresh diff/review package and verify that the finding is resolved.
+6. Mark the item `fixed` only after independent evidence exists.
 
-```
-✅ "Fixed. <What was changed>"
-✅ "Resolved <specific issue> in <location>"
-✅ Fix directly and demonstrate with code
+If the reviewer was wrong, respond with concise technical evidence. If the initial rejection was
+wrong, record the correction and proceed without a performative apology.
 
-❌ "You are completely right"
-❌ "Good catch!"
-❌ "Thank you for noticing"
-❌ Expressions of gratitude in general
+## 6. GitHub thread replies
+
+Reply to an inline GitHub review comment in its thread, not as a top-level PR comment:
+
+```bash
+gh api --method POST \
+  "repos/<owner>/<repo>/pulls/<pr>/comments/<comment-id>/replies" \
+  -f body="<technical response>"
 ```
 
-**Why omit gratitude**: Actions speak. Fixing the issue is sufficient proof of having received the feedback.
+Only post after the user or the surrounding workflow authorizes external writes. Keep the response
+factual: state the verification, decision, and commit or artifact containing the fix.
 
-**If you catch yourself typing "thank you"**: Erase it. State what was fixed instead.
+## Stop conditions
 
-## When Pushback was Mistaken
+Stop and ask for a decision when:
 
-```
-✅ "Verified. <X> was indeed <Y>. Implementing now."
-✅ "Tested and confirmed. Finding was correct; my previous understanding was incorrect due to <reason>. Fixing."
+- any item is unclear and affects implementation scope
+- feedback conflicts with an explicit user or architecture decision
+- the proposed fix expands the public contract or permissions
+- verification cannot distinguish between multiple root causes
+- the fix would require unrelated files or destructive operations
 
-❌ Long apologies
-❌ Defending why you initially pushed back
-❌ Excessive explanations
-```
-
-State the factual correction and move forward.
-
-## Common Mistakes
-
-| Mistake | Remedy |
-|---|---|
-| Agreeable fluff | Restate technical requirement or proceed silently |
-| Blind implementation | Verify against codebase first |
-| Implementing in bulk without testing | Implement and test one item at a time |
-| Assuming reviewer is always right | Verify it doesn't break existing features |
-| Avoiding pushback | Technical correctness over social comfort |
-| Partial implementation | Clarify all items before starting |
-| Proceeding without verification | State constraints and request guidance |
-| Writing fixes yourself | Fixes written by parent lack independent reviewer gates and bloat context; pass to children |
-
-## Examples
-
-**Sycophancy (Bad)**
-
-```
-Reviewer: "Delete this legacy code"
-❌ "You're absolutely right. Deleting immediately."
-```
-
-**Technical Verification (Good)**
-
-```
-Reviewer: "Delete this legacy code"
-✅ "Checked. The build target is 10.15+, while this newer API requires 13+.
-   The legacy path is required for backward compatibility. The current implementation
-   has an invalid bundle ID, so we should either fix that or decide to drop pre-13 support."
-```
-
-**YAGNI (Good)**
-
-```
-Reviewer: "Implement metrics with DB persistence, date filters, and CSV export"
-✅ "Grepped the codebase. This endpoint has no callers.
-   Can we remove it instead (YAGNI), or is there an intended caller I missed?"
-```
-
-## GitHub Thread Replies
-
-When replying to inline review comments, reply directly to the review thread rather than posting a top-level PR comment (`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies`).
+Never claim that all feedback was addressed until every finding ID has a decision and, for `fixed`,
+fresh verification evidence.

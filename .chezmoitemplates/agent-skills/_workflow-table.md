@@ -1,19 +1,20 @@
-## Development Workflow
+## Workflow selection
 
-Development procedures are defined in skills. However, launch skills only when requested or needed. Never make reading user requests, inspecting relevant files, or asking clarifying questions prerequisite on launching a skill.
+The skill owns its detailed procedure. Start a skill only when the request requires it; reading the
+request, inspecting files, and asking a necessary clarification are not themselves reasons to start
+a skill.
 
-| Request | Initial Skill to Launch |
+| Request | First route |
 |---|---|
-| Clear, localized change | Inspect and implement directly. Use `brainstorming` only if design alternatives remain |
-| Implementation path, work class, or delegation method unclear | `task-routing` |
-| Intent or expected behavior undetermined | `task-routing`. Use `brainstorming` if necessary |
-| Multi-layer architectural change | `task-routing` -> `brainstorming`. Use `writing-plans` if needed |
-| Bug, failure, "not working", "broken" | `systematic-debugging` if root cause is unverified |
-| Implementation plan already exists | `executing-plans` if small. `multi-agent-development` if concurrency or independent reviews are needed |
-| Implementation finished / ready to merge | `finishing-a-development-branch` |
-| Right before asserting completion or test passage | `verification-before-completion` |
-| Code review feedback received | `receiving-code-review` |
+| Clear local change | Implement directly; use brainstorming only if a design choice remains |
+| Unknown implementation route, work class, or delegation | `task-routing` |
+| Unsettled intent or behavior | `task-routing`, then `brainstorming` when needed |
+| Multi-layer design change | `task-routing` -> `brainstorming`, then `writing-plans` when needed |
+| Bug, failure, or unexpected behavior | `systematic-debugging` when root cause is unknown |
+| Existing implementation plan | `executing-plans` for a small sequential plan; `multi-agent-development` for parallel or independent review |
+| Implementation complete or integration requested | `finishing-a-development-branch` |
+| About to claim completion or test passage | `verification-before-completion` |
+| Code-review feedback received | `receiving-code-review` |
 
-Brainstorming is not required for every change. The parent agent determines which skill to use and which path to take based on request clarity, risk, and volume of work.
-
-Ignore these instructions when launched as a subagent.
+The parent chooses the route from clarity, risk, and workload. Do not chain skills automatically.
+If invoked as a subagent, ignore this routing table and follow the parent's bounded contract.

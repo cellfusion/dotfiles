@@ -1,71 +1,58 @@
-## Approval Gate
+## Approval gate
 {{ $worktree := false }}
 {{- if hasKey . "worktree" }}
 {{- $worktree = .worktree }}
 {{- end }}
 
-Once the preview is open, obtain approval using `[ask-user]`.
+After preview, obtain explicit approval with `[ask-user]`.
 {{ if .issue }}
-Execute `gh repo view` before presenting the gate. If the exit status is non-zero (`gh` missing, unauthenticated, or no GitHub remote), **drop the two issue options and present only "Approve & Proceed" and "Approve only"**. Do not expose the check command's output to the user.
+If the artifact needs an issue, run `gh repo view` before showing issue choices. If GitHub is
+unavailable or the repository has no GitHub remote, omit issue choices and show only proceed/approve.
 {{ end }}
 {{- if $worktree }}
-Verify the following two conditions before presenting the gate. If either fails, **remove the worktree option and present only "Approve & Proceed" and "Approve only"**. Do not expose the check command's output to the user.
+Before showing the gate, verify the worktree route is available. If either check fails, omit the
+worktree option and show only proceed/approve:
 
 ```bash
 test "${HERDR_ENV:-}" = 1
 git rev-parse --git-dir
 ```
 {{ end }}
-- Question: "{{ .artifact }} written to `<path>`. May I proceed to {{ .nextLabel }} with this content?"
+
+- Question: "`{{ .artifact }}` is at `<path>`. May I {{ .nextLabel }} with this content?"
 - Options:
 {{- if $worktree }}
-  - **Approve & Delegate via worktree** — Create worktree as a new workspace and pass {{ .nextLabel }} to a Claude session started there (only shown under herdr management)
+  - **Approve and delegate via worktree** — create a new workspace and hand off {{ .nextLabel }} (Herdr only)
 {{- end }}
-  - **Approve & Proceed** — Advance to {{ .nextLabel }}
-  - **Approve only** — Keep {{ .artifact }} in `~/docs/<owner>/<repo>/` and end here
+  - **Approve and continue** — proceed to {{ .nextLabel }}
+  - **Approve only** — retain the {{ .artifact }} and stop
 {{- if .issue }}
-  - **Approve & Proceed (Create Issue)** — Create issue, record issue number, and advance to {{ .nextLabel }} (only shown when `gh` is available)
-  - **Approve (Create Issue)** — Create issue, record issue number, and end here (only shown when `gh` is available)
+  - **Approve and create an issue, then continue** — create and link an issue, then proceed
+  - **Approve and create an issue only** — create and link an issue, then stop
 {{- end }}
 
-**Do not include modification options.** Edits are accepted via free-form input ("Other"). **Do not include cancellation options.** If closed without selection, halt there.
-
-Regardless of selection, re-read the file before processing to incorporate manual edits.
-
+Do not add a modification or cancellation choice. Accept modifications through free-form input. If
+the user closes the prompt without a selection, stop and retain the artifact. Re-read the artifact
+before processing any selected branch.
 {{- if $worktree }}
-### Approve & Delegate via worktree
+### Approve and delegate via worktree
 
-Follow the "Delegating to Worktree" section below.
+Follow the `worktree-handoff` section.
 {{ end }}
-### Approve & Proceed
+### Approve and continue
 
-Pass the absolute file path and proceed according to the handoff section below.
+Pass the artifact's absolute path to the next skill.
 
 ### Approve only
 
-{{ .artifact }} remains in `~/docs/<owner>/<repo>/`. Do not launch the next skill. Report the file's absolute path and finish.
+Leave the artifact in its external documentation directory, report its absolute path, and stop.
 {{ if .issue }}
-### Issue Creation Branches
+### Issue branches
 
-Both "Approve & Proceed (Create Issue)" and "Approve (Create Issue)" execute the following steps:
-
-1. Run `gh issue create --title "<File H1 Title>" --body-file "<Absolute Path to File>"`. Pass the entire file body directly (do not trim title duplication with H1).
-2. If it fails, do not modify the file; report failure and return to approval gate.
-3. If it succeeds, insert the following line immediately following the H1 heading. If a line of this format already exists, replace it (preventing line duplication on re-issue creation):
-
-   ```markdown
-   > Issue: [#123](https://github.com/owner/repo/issues/123)
-   ```
-
-4. Do not delete the file. Keep it in `~/docs/<owner>/<repo>/`.
-5. Report the issue number and URL.
-
-Then, for "Approve & Proceed (Create Issue)", advance according to the handoff section below, passing the issue number forward. For "Approve (Create Issue)", report the absolute file path and issue number, then terminate.
+Run `gh issue create --title "<H1>" --body-file "<absolute path>"`. On failure, do not modify the
+artifact. On success, add or replace one issue link immediately after the H1 and report the URL.
+Keep the artifact. Continue only for the continue branch.
 {{ end }}
-### Other (Free-form Input)
+### Free-form modification
 
-Treat as modification instructions. Apply requested changes, re-run self-review, and present preview and approval gate once more.
-
-### If Nothing Selected
-
-Treat as cancellation and halt execution. Keep file in `~/docs/<owner>/<repo>/`.
+Apply the requested changes, re-run self-review, preview, and this approval gate.

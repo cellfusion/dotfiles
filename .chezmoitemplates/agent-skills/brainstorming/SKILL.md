@@ -1,123 +1,124 @@
 ---
 name: brainstorming
 description: >-
-  Clarify intent and architecture for undetermined changes. Do not use for clear, localized
-  changes; ask questions, design, and seek approval only to the necessary extent.
+  Clarify intent and design only when a request leaves meaningful choices unresolved. Avoid formal
+  gates for clear local changes; ask the smallest question that prevents costly rework.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Clarifying Change Intent and Designing to the Necessary Extent
+# Clarify Intent and Design
 
-Brainstorming is a skill to assist decision-making, not an approval gate required for every change.
-If the user has clearly specified the goal, target, constraints, and completion criteria, proceed directly to work without re-asking.
-When modifying this skill itself, do not invoke brainstorming recursively.
+Use brainstorming to reduce ambiguity, not as a mandatory ceremony. If the user has already given
+the purpose, scope, constraints, and success criteria, do not ask them to repeat it.
 
-## Determining the Path
+Do not recursively invoke brainstorming while changing this skill.
 
-Decide which path to handle the request with. Declare the category to the user only when questions or deliverables differ based on the path. Categorization is a recommendation; the parent agent may choose a lighter or heavier path based on safety and workload.
+## Choose a route
 
-### direct
+### Direct
 
-Proceed with standard development workflows without design approval if:
+Use direct execution when:
 
-- Changes are confined to existing routines
-- Desired behavior is unambiguous from the request
-- No critical design choices or external actions exist
-- Scope of impact and verification methods are predictable
+- the change is confined to an existing flow
+- expected behavior is clear
+- there is no important design choice or external operation
+- the scope and verification can be estimated
 
-Steps are: read relevant files, make modifications, verify, and report results. Do not generate design documents or confirmation questions.
+Read the relevant files, implement, verify, and report. Do not create a specification or approval
+gate just for formality.
 
-### bounded
+### Bounded
 
-Used when altering existing behavior but design or implementation choices remain. Summarize target, direction, files touched, and verification methods in a few lines. If no unresolved choices remain, treat this summary as the working plan and proceed to implementation. Do not demand redundant re-approval of the user's initial request.
+Use bounded design when an existing flow is changing but one or more implementation choices remain.
+Write a short design containing purpose, files, chosen approach, rejected alternatives, risks,
+error handling, and verification. If no consequential choice remains, use that design as the
+implementation plan without asking for another approval.
 
-Only if behavioral alternatives have not been determined by the user, ask the single most consequential question. After receiving the response, present a concise design and implement according to agreed content.
+Ask one question only when the unresolved choice would change behavior, scope, data, permissions,
+or external side effects. After the answer, continue with the agreed design.
 
-### architectural
+### Architectural
 
-Used for new subsystems, multi-layer changes, or modifying contracts on which other components depend. Follow this general sequence, omitting documents according to workload:
+Use the architectural route for a new subsystem, multiple layers, public contracts, migrations,
+authentication, or several valid designs:
 
-1. Clarify goals, non-goals, constraints, and success criteria
-2. Compare 2-3 major options and state a recommendation
-3. Design architecture, data flow, error handling, and verification methods
-4. Create spec and plan if necessary
-5. Obtain approval on design choices before implementing
+1. state purpose, non-goals, constraints, and success criteria
+2. compare two or three viable approaches
+3. recommend one and describe data flow, error handling, and verification
+4. create a specification or plan only when it will be used
+5. obtain a decision before implementation
 
-Creating specs, having separate agents evaluate specs, previewing, and using MAD are not automatic requirements. Choose based on design scale, risk, and user preference.
+Do not make child agents, preview tabs, or MAD mandatory when the scope does not justify them.
 
-### spike
+### Spike
 
-Used for requests cheaply verifying "is it feasible?" or "which option is better?". Define the question, what to try, and success criteria concisely, confirming with user if necessary before investigating. Never treat throwaway prototypes or exploratory code as production changes.
+Use a spike to answer whether something is possible or which option is better. Define the question,
+small experiment, and success criteria. Keep disposable experiments separate from product changes.
 
-## When Approval is Required
+## When to ask the user
 
-Seek confirmation from the user prior to execution only when:
+Ask before execution when:
 
-- Performing hard-to-reverse actions: destructive commands, external endpoints, billing, public publishing, commits, applies
-- Choices undefined in request alter outcomes or behavior
-- Goals, targets, or success criteria are insufficient, where guessing risks major rework
-- Direction or scope must change mid-flight
+- an irreversible operation, external endpoint, publication, commit, push, or `chezmoi apply` is
+  required
+- the request leaves a consequential behavioral choice unresolved
+- purpose, scope, or success criteria are missing and guessing risks rework
+- the work must expand beyond the original request
 
-Do not create ceremonial gates solely to ask "may I start implementing?" A user requesting a specific change already authorizes implementing within that scope.
+A concrete request is already permission to begin that requested scope. Do not ask “may I start?”
+when no decision is needed.
 
-## How to Conduct Dialogue
+## Conversation flow
 
-1. Read the request and relevant existing files
-2. Confirm goals, constraints, and success criteria. Do not repeatedly ask what is already written in the request
-3. Only if information is missing, ask questions one by one starting with the highest impact
-4. When sufficient clarity is reached, present minimal design required for the path
-5. Treat user answers and design as new constraints
-6. After implementation, verify change scope and results
+1. Read the request and relevant existing files.
+2. Extract purpose, constraints, scope, and success criteria.
+3. Ask only for missing high-impact information.
+4. Present the smallest useful design when choices remain.
+5. Treat the user's answer as a new constraint.
+6. Implement and verify the selected design.
 
-Questions may offer choices, but do not artificially complicate problems to add options. When proceeding under explicit safe assumptions is preferable to endless questions, state the assumption and proceed.
+Use explicit safe assumptions instead of an endless questionnaire when the assumption is reversible and
+does not change the user's outcome.
 
-## Child Agents and Other Skills
+## Children and related skills
 
-Delegating to child agents is optional. Use only when:
+Child agents are optional. Use them only when independent research, parallel implementation, a
+separate perspective, or user-requested delegation is worth the coordination cost.
 
-- Independent investigation or implementation can proceed concurrently
-- Long investigations warrant separation from parent work
-- Reviews from distinct perspectives are required
-- User explicitly requested delegation
+- Small sequential plans: `executing-plans`.
+- Independent tasks, multiple children, strict artifacts, or required isolation:
+  `multi-agent-development`.
+- Finalized multi-stage architecture: `writing-plans`.
+- Unknown bug cause: `systematic-debugging`.
 
-Never stop work simply because child agents cannot be spawned. If parent can directly investigate, implement, or review, use that route.
+This skill does not automatically chain the next skill. The parent chooses the execution route.
 
-- Small plans are executed serially by parent via `executing-plans`
-- Use `multi-agent-development` only when independent tasks, worktrees, multiple children, or strict artifact contracts are required
-- Use `writing-plans` only when architectural design has solidified and multi-phase implementation plans are needed
-- Use `systematic-debugging` if the root cause of a bug is unverified
+## Re-evaluate when complexity appears
 
-This skill does not automatically chain other skills. The parent agent decides subsequent steps.
+Do not switch to a heavier route merely because an incidental detail appeared. Continue if the
+purpose, scope, risk, and verification remain explainable. Re-plan or ask when the new complexity
+introduces a consequential design choice, destructive operation, or dependency on another owner.
 
-## Escalating to a Heavier Path
+## Minimal design format
 
-If complexity surfaces during execution, there is no need to abruptly halt and jump to a heavier path. Check:
+Use only the fields needed:
 
-- Is the added complexity necessary for the original goal?
-- Can change scope and verification methods still be explained?
-- Have destructive actions or external blast radiuses increased?
+- purpose
+- scope and files
+- selected approach
+- rejected alternatives and why
+- risks and error handling
+- verification
+- unresolved decisions
 
-If explainable and risks have not grown, continue on the current path. If unexplainable or design choices have expanded, present differences and options to the user before changing paths.
+Do not create a specification, diagram, or review loop for a trivial change.
 
-## Minimal Design Format
+## Completion
 
-When presenting a design, include only necessary items from:
+- Direct: report the change and fresh verification.
+- Bounded: implement the agreed design and report evidence.
+- Architectural: leave the approved specification/plan and hand off to the selected route.
+- Spike: report the experiment, evidence, limitations, and recommendation.
 
-- Goal
-- Routines and files to modify
-- Adopted strategy
-- Rejected strategies and rationale
-- Error handling
-- Verification methods
-- Unresolved choices
-
-Do not wrap simple changes in specs, plans, diagrams, and review rounds. Even when creating documents for complex changes, writing documentation is never an end in itself.
-
-## Completion Criteria
-
-- direct: Report modification and verification results, then finish
-- bounded: Implement according to agreed design, report verification results, then finish
-- architectural: Produce necessary design documents/plans and hand off to user's chosen execution route
-- spike: Report findings and recommendations, then finish
-
-Run appropriate tests, lints, diffs, or artifact inspections before claiming success. Report unverified items explicitly.
+Never claim success without fresh verification or clearly state what remains unverified.

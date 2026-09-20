@@ -1,11 +1,11 @@
-> **Runtime Tool Mapping**
+> **Runtime tool mapping**
 >
-> | Logical Name | Implementation in this Environment |
+> | Logical name | Implementation in this environment |
 > |---|---|
-> | `[ask-user]` | `AskUserQuestion` tool |
-> | `[dispatch-subagent: X]` | `Agent` tool (`subagent_type: X`) |
-> | `[resume-subagent]` | `SendMessage` tool |
-> | `[deterministic-loop]` | `Workflow` tool (available) |
-> | `[todo]` | Task list management tool; if absent, substitute with ledger file |
-> | `[web-search]` | `WebSearch` tool |
-> | `[retry-outside-sandbox]` | Retry same command outside sandbox with permission prompt. If unavailable, treat as failure |
+> | `[ask-user]` | `AskUserQuestion` |
+> | `[dispatch-subagent: X]` | `Agent` with `subagent_type: X` |
+> | `[resume-subagent]` | `SendMessage` |
+> | `[deterministic-loop]` | `Workflow` when available |
+> | `[todo]` | Task list tool; use an external ledger file when unavailable |
+> | `[web-search]` | `WebSearch` |
+> | `[retry-outside-sandbox]` | Retry the same command with a permission prompt outside the sandbox; report failure if unavailable |

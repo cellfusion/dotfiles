@@ -1,26 +1,29 @@
-## Delegating to Worktree
+## Delegate through a worktree
 
-Execute only when "Approve & Delegate via worktree" is selected at the approval gate. Create a worktree as a new workspace and hand off implementation to a Claude session launched in that pane. The delegating session waits without closing its pane.
+Use this section only when the approval gate explicitly selects worktree delegation. Create a new
+workspace and start the delegated Claude session there. Keep the parent pane open.
 
-`$HERDR_ENV` being `1` is already verified by the approval gate checks.
+`HERDR_ENV=1` was already verified by the approval gate.
 
-### 1. Re-read Plan
+### 1. Re-read the artifact
 
-Previews are opened in editable mode. Manual edits exist only in the file. Content re-read from disk is authoritative.
+The preview editor may have allowed manual edits. Re-read the file from disk; on-disk content is
+canonical.
 
-### 2. Determine Branch Name
+### 2. Choose a branch
 
-Strip the date from the plan file name to form `feat/<feature-name>`. For instance, `~/docs/<owner>/<repo>/plans/2026-08-14-worktree-handoff.md` becomes `feat/worktree-handoff`.
+Remove the date from the plan filename and use `feat/<feature-name>`. For example,
+`2026-08-14-worktree-handoff.md` becomes `feat/worktree-handoff`.
 
 ```bash
 git rev-parse --verify "feat/<feature-name>" 2>/dev/null
 ```
 
-If exit status is 0, a branch with that name already exists. Report the conflict without creating anything and return to the approval gate.
+If the branch exists, create nothing, report the collision, and return to the approval gate.
 
-### 3. Create Worktree as Workspace, Reading ID and Path from Response
+### 3. Create the Herdr workspace
 
-Execute in a single bash invocation. Keep as a single contiguous block. Splitting across invocations empties `$out` and leaves subsequent values empty.
+Run this as one shell block and read every value from the response:
 
 ```bash
 out=$(herdr worktree create \
@@ -29,50 +32,51 @@ out=$(herdr worktree create \
   --base HEAD \
   --label "<feature-name>" \
   --no-focus)
-
-ws=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id')
-pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id')
-path=$(printf '%s' "$out" | jq -r '.result.worktree.path')
+ws=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
+pane=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
+path=$(printf '%s' "$out" | jq -er '.result.worktree.path')
 ```
 
-- **Always pass `--workspace`.** If omitted, the user's currently focused workspace is used, possibly creating it elsewhere.
-- **Pass `--no-focus`.** The delegating session continues reporting afterward; do not hijack focus.
-- **Do not pass `--path`.** herdr creates it under `~/.herdr/worktrees/<repo>/<branch>`. Since this is outside the repository, checking `.gitignore` is unnecessary.
+Always pass `--workspace` and `--no-focus`; do not pass `--path`. If any value is empty or null,
+remove the workspace only when `ws` is known. If it is unknown, report the orphan risk and return to
+the gate. Record workspace ID, pane, path, branch, and ownership.
 
-If any of the 3 values is empty or `null`, delegation fails. If `ws` is obtained, clean up with `herdr worktree remove --workspace "$ws" --force`. If `ws` could not be obtained, report the failure and return to the approval gate.
+Values from this shell block are not available in later shell calls. Use the validated literal values
+in subsequent commands; never predict a path or ID.
 
-Subsequent steps (5, 6, cleanup on failure) assume `$out` / `$ws` / `$pane` / `$path` are not preserved across subsequent bash tool calls. Populate acquired values as literals.
-
-### 5. Launch Claude in that Pane
+### 4. Start the delegated agent
 
 ```bash
-herdr agent start "<agent-name>" --kind claude --pane "$pane"
+herdr agent start "<safe-agent-name>" --kind claude --pane "$pane"
 ```
 
-- Use `<agent-name>` directly from feature-name. Replace characters outside `[a-z][a-z0-9_-]{0,31}` with `-`, truncating if exceeding 32 characters.
-- **Do not pass permission bypass flags.** When approval is required, execution pauses in that workspace for user review.
+Sanitize the agent name to `[a-z][a-z0-9_-]{0,31}`. Do not add permission-bypass flags. The agent
+must stop for approval when approval is required.
 
-### 6. Send Initial Prompt
+### 5. Send the initial prompt
 
 ```bash
-herdr agent prompt "<agent-name>" "<prompt>" --wait --timeout 120000
+herdr agent prompt "<safe-agent-name>" "<bounded prompt>" --wait --timeout 120000
 ```
 
-Include only the following 4 items in the prompt. Do not paste conversation history:
+Include only:
 
-- The plan's **absolute path**. The destination lies outside the working tree and resolves identically from any checkout.
-- Instruct to implement this plan using the `multi-agent-development` implement recipe.
-- State that the worktree is already prepared, so do not create a new one.
-- Provide the branch name of this worktree.
+- the plan's absolute path
+- instruction to implement it using the `multi-agent-development` implement recipe
+- statement that the worktree already exists and must not be recreated
+- the existing worktree branch name
 
-**Timeouts are not failures.** `--wait` waits for the delegate to begin running MAD, so reaching `--timeout 120000` is expected. Do not delete the worktree on timeout; proceed to step 7.
+Do not paste conversation history, credentials, or raw review output. A timeout is not proof of
+failure; inspect agent state and artifacts before deciding.
 
-### 7. Report and Stand By
+### 6. Report and wait
 
-Report workspace ID, absolute worktree path, branch name, and agent name. **Do not close your own pane.** The user can continue using this session for subsequent tasks.
+Report workspace ID, absolute worktree path, branch, agent name, and current status. Do not close the
+parent pane. The user may continue using it.
 
-### On Failure
+### Failure handling
 
-**Cleanup applies only to failures during steps 2–4 (before `herdr agent start`).** Up to that point, only the delegating session is aware of the worktree and workspace, so deletion is safe: `herdr worktree remove --workspace "$ws" --force`. After cleanup, report and return to the approval gate.
-
-**Do not delete the worktree if failure occurs at or after step 5 (`herdr agent start`).** The delegate Claude session may have already started, and force-deleting the worktree destroys active sessions. Report workspace ID and absolute worktree path stating: "Delegate agent launched, but receipt of initial prompt could not be confirmed," and return to approval gate.
+Before `agent start`, cleanup is safe only for the worktree created by this run and only when its
+workspace ID is known. After `agent start`, never force-remove the workspace because the delegated
+session may still be running. Report that the agent may be active and that receipt of the initial
+prompt is unconfirmed. Keep the workspace and return to the approval gate.

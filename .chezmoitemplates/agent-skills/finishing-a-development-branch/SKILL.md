@@ -1,219 +1,215 @@
 ---
 name: finishing-a-development-branch
 description: >-
-  Use when implementation is finished to determine how to integrate this work.
-  Runs tests and verifications, evaluates environment, presents options, executes
-  selected action, and cleans up. Entrypoint for "done", "merge", or "create PR".
+  Finish a development branch by verifying the result, determining repository ownership, presenting
+  merge/push/retain choices, executing only the selected action, and cleaning up only owned resources.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
+{{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Finishing a Development Branch
+# Finish a Development Branch
 
-## Overview
+This is a parent-only finalizer. Use it after implementation and review artifacts are available. The
+parent chooses how to integrate the work; it does not invent missing implementation or verification
+results. Child handoff artifacts and fresh verification output are the sources of truth.
 
-This is a parent-exclusive finalizer. After MAD's `delivery` confirms the accepted attempt's final review and verification records are `ok`, only the parent confirms integration method via `[ask-user]` and executes the chosen merge / push / keep action. The parent does not generate implementation, review, or verification text; the authoritative source is the absolute paths recorded by delivery children in `handoff.json`.
+**Core sequence:** verify, inspect ownership, present choices, execute the selected action, verify
+the result, then clean up only resources owned by this run.
 
-**Core**: Verify -> evaluate environment -> present options -> execute chosen option -> clean up.
+## Step 1: verify before offering integration choices
 
-**Announce at start**: "Finishing this work using finishing-a-development-branch."
+Run the project's known verification commands. Do not blindly invoke a command that is unavailable
+in the current runtime. Prefer the repository's documented test/build/lint commands and the
+`verification-before-completion` skill's evidence contract.
 
-## Step 1: Pass Verification
+Typical checks, when applicable:
 
-1. Run the project's test suite (`npm test` / `cargo test` / `pytest` / `go test ./...`)
-2. Run `/verify` (runs build, typecheck, lint, test, and debug statement audit together)
-3. Run `/pre-commit-review` (security and code quality checks)
+- project test suite
+- build or type check
+- lint or static analysis
+- security or pre-commit review
+- regression checks for the changed behavior
 
-**If failures occur, stop and report.** Present the menu only after reaching green.
+For every command, record the exact command, exit code, failure count, and the working tree it
+verified. Do not call a previous run evidence for the current tree. If a command is unavailable,
+record `not_run` with the reason instead of inventing a result.
 
-```
-Tests are failing (<N> failures). Must be resolved before finishing:
+If any required check fails, stop and report the failure. Do not show the integration menu. If the
+repository has an explicit required review command, run it only when the current runtime supports
+it and the user has not prohibited it.
 
-[Failure details]
-```
-
-Stop similarly if `/pre-commit-review` returns `CRITICAL`.
-
-**Once all pass**, advance to Step 2.
-
-If uncommitted changes remain, commit using Conventional Commits (`<type>: <description>`, 1 commit per logical change) before advancing.
-
-## Step 2: Determine Environment
+Before integration, independently inspect:
 
 ```bash
+git status --short --branch
+git diff --stat
+git diff --check
+```
+
+Do not create a commit automatically. If uncommitted changes remain, stop and ask whether to commit
+them. A Conventional Commit message may be proposed, but the user must authorize the commit.
+Never include unrelated existing changes in the proposed commit.
+
+## Step 2: determine repository and worktree ownership
+
+Capture these values before changing directories:
+
+```bash
+CALLER_ROOT=$(git rev-parse --show-toplevel)
 GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
 GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
-# Capture before changing directories in Step 5
 WORKTREE_PATH=$(git rev-parse --show-toplevel)
+BRANCH=$(git branch --show-current)
 ```
 
-Determines which menu to display and how cleanup is handled:
+Use run metadata from `using-git-worktrees`, MAD, Herdr, or the native tool to determine ownership.
+Do not infer ownership only from a directory name. A linked worktree can be user-owned even when it
+is under `.worktrees/`.
 
-| State | Menu | Cleanup |
+Classify the environment:
+
+| State | Integration choices | Cleanup |
 |---|---|---|
-| `GIT_DIR == GIT_COMMON` (standard repository) | 3 options | No worktree |
-| `GIT_DIR != GIT_COMMON`, on branch | 3 options | Based on provenance (Step 6) |
-| `GIT_DIR != GIT_COMMON`, detached HEAD | 2 options (no merge) | Managed externally; leave untouched |
+| Main checkout (`GIT_DIR == GIT_COMMON`) | merge, push/PR, retain | no worktree cleanup |
+| Owned linked worktree on a branch | merge, push/PR, retain | cleanup only after successful integration and explicit cleanup choice |
+| External linked worktree | push/PR, retain | never remove it |
+| Detached HEAD | push as a new branch, retain | never remove it unless ownership is proven |
 
-## Step 3: Determine Base Branch
+If ownership or base branch is unknown, stop and ask. Do not guess `main` or `master`.
 
-The base branch is where this work branched from. Usually documented in plans, conversations, or upstream branch tracking. If uncertain, ask:
+## Step 3: establish the base branch
 
-> "I believe this branch diverged from <guess>, is that correct?"
+Determine the branch from the plan, task metadata, upstream configuration, or explicit user input.
+Verify that it is an ancestor or otherwise a valid integration target before presenting merge choices.
+If it cannot be established, ask:
 
-Confirm before merging; merging into the wrong base is costly to revert.
+> Which branch should receive this work?
 
-## Step 4: Present Options
+Do not merge into a guessed base.
 
-**Standard repository and worktree on branch — present these 3 choices verbatim**:
+## Step 4: present choices and wait
 
-```
-Implementation complete. How would you like to proceed?
+For a normal checkout or an owned branch worktree, present exactly these choices:
+
+```text
+Verification is complete. How should this work be integrated?
 
 1. Merge locally into <base-branch>
-2. Push and create a Pull Request
-3. Keep the branch as is (handle manually)
-
-Which do you prefer?
+2. Push <feature-branch> and create a Pull Request
+3. Leave the branch and worktree in place
 ```
 
-**Detached HEAD — present these 2 choices verbatim**:
+For detached HEAD or an external worktree, present:
 
-```
-Implementation complete. Currently in detached HEAD (externally managed workspace).
+```text
+This workspace is detached or externally managed. How should this work be integrated?
 
-1. Push as a new branch and create a Pull Request
-2. Keep as is (handle manually)
-
-Which do you prefer?
+1. Push it as a new branch and create a Pull Request
+2. Leave it in place
 ```
 
-Present the menu exactly as written. **Do not include options to discard work.** Discarding happens only upon explicit user request (detailed below). Await answer. The integration decision belongs to the user.
+Do not include a discard option in the normal menu. Wait for an explicit selection. Do not commit,
+merge, push, delete a branch, archive a workspace, or remove a worktree before the selection.
 
-## Step 5: Execute Chosen Action
+## Step 5: execute the selected action
 
-### Option 1: Merge Locally
+### Choice 1: local merge
+
+Perform integration from the main checkout, not from the feature worktree:
 
 ```bash
-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+MAIN_ROOT=$(git -C "$GIT_COMMON" rev-parse --show-toplevel)
 cd "$MAIN_ROOT"
-
-# Merge first; delete nothing until verified
-git checkout <base-branch>
-git pull
+git switch <base-branch>
 git merge <feature-branch>
-
-# Run tests on merge result
-<test command>
 ```
 
-If tests fail on the merge result, stop, leave worktree and branch intact, and investigate. Because it hasn't been pushed, the merge is local and can be undone.
+Do not run `git pull` automatically. If the base branch is behind its remote, report that fact and
+ask whether to fetch/update it. Do not force-push or force-merge.
 
-Once tests pass on the merge result, clean up the worktree (Step 6) and delete the branch:
+After a successful merge, run the required verification commands on the merged checkout. If they
+fail, stop and retain the branch and worktree. Do not delete anything after a failed merge check.
 
-```bash
-git branch -d <feature-branch>
-```
+Only after successful verification may the user be asked whether to delete the merged branch and
+owned worktree. Branch deletion is destructive and must not be bundled silently into the merge.
 
-### Option 2: Push and Create PR
+### Choice 2: push and create a Pull Request
+
+Push only the selected branch:
 
 ```bash
 git push -u origin <feature-branch>
-# From detached HEAD, specify remote branch name:
-# git push origin HEAD:refs/heads/<new-branch>
 ```
 
-Create a PR against `<base-branch>`. Use forge CLI if available, otherwise output the PR creation URL shown during push. Follow PR templates and repository conventions. Report the URL to the user.
-
-**Keep the worktree.** Address PR review feedback within that worktree.
-
-### Option 3: Keep As-Is
-
-Report: "Retaining branch <name>. Worktree located at <path>."
-
-### If User Requests Discard
-
-This path exists only in response to explicit instructions to discard work. Confirm beforehand:
-
-```
-This will permanently delete:
-- Branch <name>
-- Commits: <commit-list>
-- Worktree: <path>
-
-Please type 'discard' to confirm.
-```
-
-Wait for the **exact word**. Once received:
+For detached HEAD, use an explicitly chosen branch name:
 
 ```bash
-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
-cd "$MAIN_ROOT"
+git push origin HEAD:refs/heads/<new-branch>
 ```
 
-Clean up worktree (Step 6) and force-delete the branch:
+Create the Pull Request only when the user selected this option and the forge CLI is available. Use
+the repository's PR template and base branch. Report the URL. Retain the worktree for follow-up
+feedback. Do not remove it after opening the PR.
 
-```bash
-git branch -D <feature-branch>
+### Choice 3: retain
+
+Report the branch, worktree path, verification evidence, ownership, and the next command the user
+can run. Do not clean up.
+
+### Explicit discard request
+
+Discard is a separate destructive workflow. Accept it only after the user explicitly requests it.
+Show the complete deletion set:
+
+```text
+The following will be deleted:
+- branch: <branch>
+- commits: <commit list>
+- owned worktree: <path>
+
+Type `discard` exactly to confirm.
 ```
 
-## Step 6: Workspace Cleanup
+Wait for the exact word `discard`. If confirmed, move outside the worktree, remove only owned
+resources, and force-delete the branch. If confirmation is absent or differs, retain everything.
 
-**Execute only for Option 1 and confirmed discards.** Options 2 and 3 always retain worktrees. Both callers have already moved to the main repository root (worktree deletion must be executed outside the worktree). Use `GIT_DIR` / `GIT_COMMON` / `WORKTREE_PATH` captured in Step 2.
+## Step 6: cleanup owned resources only
 
-**If `GIT_DIR == GIT_COMMON`**: Standard repository; no worktree to clean up.
+Cleanup is allowed only after successful local merge plus post-merge verification, or after exact
+`discard` confirmation. Never clean after push/PR or retain.
 
-**If `WORKTREE_PATH` is under `.worktrees/` or `worktrees/`**: Created as part of this workflow; clean up here:
+Use recorded ownership and backend:
 
-```bash
-git worktree remove "$WORKTREE_PATH"
-git worktree prune
+- Herdr: `herdr worktree remove --workspace <workspace-id> --force`.
+- Native workspace: use the native cleanup operation.
+- Git worktree created by this run: from outside it, run `git worktree remove <path>` and prune
+  stale registrations only when owned.
+- Caller-owned or host-owned worktree: leave it untouched.
+
+If cleanup fails, retain all metadata and report the path and failure. Do not retry destructively.
+
+## Chezmoi repositories
+
+`chezmoi apply` reads the main source directory returned by `chezmoi source-path`. For a chezmoi
+repository:
+
+1. Commit only the intended changes in the feature worktree after explicit approval.
+2. Merge into the main source checkout if the user selects local merge.
+3. Run `chezmoi diff` from the main source checkout.
+4. Ask for explicit permission before running `chezmoi apply`.
+
+Never apply from an unmerged worktree and never claim that apply happened without fresh evidence.
+
+## Completion record
+
+Report:
+
+```text
+verification: <commands, exit codes, and evidence paths>
+base: <branch>
+choice: <merge|push-pr|retain|discard>
+branch: <branch or detached HEAD>
+worktree: <absolute path or none>
+ownership: <owned|external|main-checkout>
+cleanup: <removed|retained|not-owned|failed>
 ```
-
-MAD run directories reside outside the working tree, so deleting the worktree does not destroy them.
-
-**If `$HERDR_ENV` is `1` and `WORKTREE_PATH` is under `~/.herdr/worktrees/`**: Worktree created as a herdr workspace. Close the workspace before deleting:
-
-```bash
-ws=$(herdr worktree list --cwd "$WORKTREE_PATH" \
-  | jq -r --arg p "$WORKTREE_PATH" '.result.worktrees[] | select(.path == $p) | .open_workspace_id // empty')
-if [ -n "$ws" ]; then
-  herdr worktree remove --workspace "$ws" --force
-fi
-```
-
-If `ws` is empty, the workspace no longer exists; skip to deleting `git branch`. `herdr worktree remove` also deletes the worktree directory, so `git worktree remove` above is not needed.
-
-**Otherwise**: Workspace owned by host environment; leave intact. Use harness exit tools if available.
-
-## For Chezmoi Repositories
-
-`chezmoi apply` reads the **chezmoi source directory** (returned by `chezmoi source-path`). Changes implemented in a worktree will not be reflected in `chezmoi apply` until merged into the main checkout.
-
-Sequence:
-1. Implement and commit in worktree
-2. Merge into main checkout via Option 1
-3. Inspect changes via `chezmoi diff`
-4. **Execute `chezmoi apply` only after obtaining explicit user permission**
-
-## Quick Reference
-
-| Option | Merge | Push | Keep Worktree | Delete Branch |
-|---|---|---|---|---|
-| 1. Local Merge | Yes | - | - | Yes |
-| 2. Create PR | - | Yes | Yes | - |
-| 3. Keep As-Is | - | - | Yes | - |
-| Discard (explicit only) | - | - | - | Yes (forced) |
-
-## Common Rationalizations
-
-| Rationalization | Reality |
-|---|---|
-| "Tests passed earlier" | Run tests on the tree you are about to merge into. Green only proves the tree it was run on |
-| "Obviously they want to merge" | Integration decisions belong to the user. Present the menu and wait |
-| "This feature looks unneeded, suggesting discard" | Menu is complete as written. Discard only when user explicitly asks |
-| "'Sure, go ahead and delete' is confirmation" | Only permit deletion when user enters `discard` |
-| "PR opened, worktree no longer needed" | PR feedback is resolved in that worktree. Retain until merged |
-| "This worktree looks old, deleting too" | Clean up only under `.worktrees/`, `worktrees/`, or `~/.herdr/worktrees/`. Host owns the rest |
-| "Merge result test failure is probably flaky" | Merge failures halt everything. Leave branch and worktree intact to investigate |
-| "Base is probably main anyway" | Confirm or ask. Merging to the wrong base is costly to undo |
-| "Push rejected, force-pushing" | Rejection means remote has advanced. Investigate. Force-push only on explicit user request |
