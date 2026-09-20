@@ -22,19 +22,68 @@ assert_contains "$mad_contract" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'path: task-brief を絶対 script path から使う'
 assert_contains "$mad_skill" 'MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"' \
   'skill path: task-brief を初期化する'
-assert_contains "$mad_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/brief.md"' \
-  'brief: attempt ごとに専用 brief を作る'
+assert_contains "$mad_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"' \
+  'brief: attempt ごとに専用 task 抜粋を作る'
 assert_contains "$mad_contract" 'initialPrompt' 'brief: create request の入力を明記する'
-assert_contains "$mad_contract" 'brief.md の absolute path だけ' \
+assert_contains "$mad_contract" '`brief.md` の absolute path だけ' \
   'brief: implementer には brief path だけを渡す'
-assert_contains "$mad_contract" 'plan 本文は渡さない' \
-  'brief: implementer に plan 本文を渡さない'
+assert_contains "$mad_contract" 'full plan は合成しない' \
+  'brief: implementer に full plan を渡さない'
 assert_contains "$mad_contract" 'initial attempt と fix attempt' \
   'brief: initial と fix の両方を fresh brief にする'
-assert_contains "$mad_contract" 'brief 作成に失敗' \
+assert_contains "$mad_contract" 'enrichment または write に失敗' \
   'brief: 作成失敗時は create しない'
 assert_contains "$mad_contract" 'mode `0600` の regular file' \
   'brief: private artifact とする'
+
+brief_contract="$(sed -n '/initial attempt と fix attempt の implementer には/,/launch の検証後/p' \
+  "$CHEZMOI_SOURCE/.chezmoitemplates/agent-skills/_manual-orchestration.md")"
+required_fields_contract="$(printf '%s\n' "$mad_contract" | \
+  sed -n '/親は抽出直後に、次の required field/,/はすべて必須である/p')"
+mutated_mad_contract="${mad_contract/、\`TASK_NUMBER\`/}"
+mutated_required_fields_contract="$(printf '%s\n' "$mutated_mad_contract" | \
+  sed -n '/親は抽出直後に、次の required field/,/はすべて必須である/p')"
+assert_contains "$mutated_mad_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER"' \
+  'brief mutation: extraction command の TASK_NUMBER は残る'
+assert_not_contains "$mutated_required_fields_contract" TASK_NUMBER \
+  'brief mutation: required-field 宣言から TASK_NUMBER を除くと検出する'
+for token in task-excerpt.md execution-context.md; do
+  assert_contains "$brief_contract" "$token" "brief envelope: $token を持つ"
+done
+for token in RUN_ID TASK_ID TASK_NUMBER ATTEMPT_ID PHASE \
+  ROLE_PROMPT ROLE_SCHEMA ATTEMPT_BASE WORKSPACE_CWD ROUND RESULT_PATH \
+  HANDOFF_PATH LOG_PATH DECISION_REQUEST_PATH CONSTRAINTS_FILE REVIEW_SCOPE_PATH \
+  OPEN_FINDINGS_PATH; do
+  assert_contains "$required_fields_contract" "$token" \
+    "brief required fields: $token を宣言する"
+done
+assert_contains "$brief_contract" 'role prompt と schema を必ず読む' \
+  'brief envelope: role/schema の明示的な読込指示を持つ'
+assert_contains "$brief_contract" 'git -C "$WORKSPACE_CWD" rev-parse HEAD' \
+  'brief envelope: attempt 開始時の base を固定する'
+assert_contains "$brief_contract" '`initial` では `REVIEW_SCOPE_PATH` と `OPEN_FINDINGS_PATH` を `not-applicable`' \
+  'brief envelope: initial は fix 専用参照を持たない'
+assert_contains "$brief_contract" '`fix` では両方を既存の mode `0600` regular file の absolute path' \
+  'brief envelope: fix は scope と open findings を参照する'
+assert_contains "$brief_contract" '別 attempt の context または brief を再利用しない' \
+  'brief envelope: attempt 間の再利用を禁止する'
+assert_contains "$brief_contract" 'required field' \
+  'brief envelope: 必須 metadata を検証する'
+assert_contains "$brief_contract" 'enrichment または write に失敗' \
+  'brief envelope: enrichment 失敗時は create しない'
+assert_before "$brief_contract" '"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"' \
+  'execution-context.md' \
+  'brief order: task 抜粋後に execution context を作る'
+assert_before "$brief_contract" 'execution-context.md' 'brief.md' \
+  'brief order: context 作成後に composed brief を作る'
+assert_before "$brief_contract" 'brief.md' 'buildMadCreateRequestV1' \
+  'brief order: composed brief 後に create request を作る'
+assert_before "$brief_contract" 'brief.md' '`--prepare-create`' \
+  'brief order: composed brief 後に admission を取る'
+assert_not_contains "$brief_contract" 'role prompt、schema path も渡さない' \
+  'brief envelope: role/schema を brief から排除しない'
+assert_contains "$mad_contract" '--base "$ATTEMPT_BASE"' \
+  'result: post-commit check は attempt-specific base を使う'
 
 assert_contains "$mad_contract" '"$MAD_PLAN_VALIDATE" --waves "$PLAN_FILE"' \
   'wave: validator から wave を得る'

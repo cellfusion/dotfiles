@@ -58,15 +58,22 @@ environment は親の AI 環境名も見て決まる。CLI と runner はどち�
 
 ## create request と state
 
-create の順序は `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
+implementer create の順序は `task 抜粋` → `execution context の検証と enrichment` → `request build と contract assert` → `create 前の prepare` → `親の公式 mcp__paseo__create_agent` → `response の sanitization` で固定する。
 
 initial attempt と fix attempt の implementer には、create request の組み立てより先に専用の attempt directory で次を実行する。
 
 ```bash
-"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/brief.md"
+ATTEMPT_BASE="$(git -C "$WORKSPACE_CWD" rev-parse HEAD)"
+"$MAD_TASK_BRIEF" "$PLAN_FILE" "$TASK_NUMBER" "$ATTEMPT_DIR/task-excerpt.md"
 ```
 
-毎回新規の `brief.md` を mode `0600` の regular file として作り、brief.md の absolute path だけを `initialPrompt` に渡す。plan 本文は渡さない。別 attempt の brief、role prompt、schema path も渡さない。role と schema は選択済みの implementer 設定と返却成果物の検証に使う。brief 作成に失敗した場合は attempt を `failed` にし、create を呼ばない。auditor と reviewer はこの例外の対象外であり、それぞれの役割に必要な prompt、schema、review package を渡せる。
+親は抽出直後に、次の required field を持つ `execution-context.md` を同じ attempt directory へ新規作成する。`RUN_ID`、`TASK_ID`、`TASK_NUMBER`、`ATTEMPT_ID`、`PHASE`、`ROLE_PROMPT`、`ROLE_SCHEMA`、`ATTEMPT_BASE`、`WORKSPACE_CWD`、`ROUND`、`RESULT_PATH`、`HANDOFF_PATH`、`LOG_PATH`、`DECISION_REQUEST_PATH`、`CONSTRAINTS_FILE`、`REVIEW_SCOPE_PATH`、`OPEN_FINDINGS_PATH` はすべて必須である。path field は absolute path とし、`ATTEMPT_BASE` は attempt 開始時に上のコマンドで固定した immutable SHA とする。context には role prompt と schema を必ず読むこと、global constraints である `CONSTRAINTS_FILE` を守ること、各 destination へ成果物を書くことを明記する。
+
+`initial` では `REVIEW_SCOPE_PATH` と `OPEN_FINDINGS_PATH` を `not-applicable` とする。`fix` では両方を既存の mode `0600` regular file の absolute path とし、review scope の allowed files だけを変更して open findings だけを解消する指示を context に含める。`PHASE` とこの分岐が一致しない context は拒否する。
+
+親は `execution-context.md` の検証後、その全文と `task-excerpt.md` の task 抜粋だけをこの順に合成して `brief.md` を作る。`task-excerpt.md`、`execution-context.md`、composed `brief.md` は各 attempt で fresh な mode `0600` の regular file とし、既存 path への上書きや別 attempt の context または brief を再利用しない。full plan は合成しない。`brief.md` の absolute path だけを `initialPrompt` に渡し、prose や role/schema path を request へ追加しない。role/schema 情報は brief の context が child へ伝える。
+
+required field の欠落・型または absolute path の不正、task 抽出、enrichment または write に失敗した場合は attempt を `failed` にして `buildMadCreateRequestV1` と `--prepare-create` を実行せず、create を呼ばない。auditor と reviewer はこの brief-only dispatch の対象外であり、それぞれの役割に必要な prompt、schema、入力成果物を渡せる。
 
 launch の検証後、親は `buildMadCreateRequestV1` を使って次の 6 つの top-level key だけを持つ request を作る。key は公式 MCP tool の引数と一対一に対応する。
 
@@ -145,7 +152,7 @@ implementer の終了後、親は `status` で分岐する。`DONE` と `DONE_WI
 
 ```bash
 "$MAD_VALIDATE" --check-implement-result \
-  --workdir "$WORKSPACE_CWD" --base "$BASE" --round "$ROUND" \
+  --workdir "$WORKSPACE_CWD" --base "$ATTEMPT_BASE" --round "$ROUND" \
   --result-file "$RESULT_FILE"
 ```
 
@@ -271,7 +278,7 @@ plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証�
 
 ## run と attempt の状態
 
-親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、implementer 用の `brief.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
+親は一意な run ID を発行し、作業ツリーの外にある run directory に `state.json` を置く。child の成果物は必ず `nodes/<node-id>/attempts/<attempt-id>/` に分け、`prompt.md`、implementer 用の `task-excerpt.md`、`execution-context.md`、`brief.md`、`result.json` または `result.md`、`state.json`、`handoff.json`、`log.md` を置く。node 直下へ成果物を置かず、同じ node を再実行するときも既存 attempt を上書きしない。
 
 run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_action`、`current_round`、`started_at`、`finished_at`、`backend`、`backend_reason`、`parent_decision`、`active_nodes`、`completed_nodes`、`adopted_attempts`、`artifact_paths` を持つ。review/fix を含む run はさらに `review_policy`（`max_rounds: 4`、`scope_file`、`out_of_scope_path`）を持つ。worktree を作る run は確定した `base` も持つ。attempt state は `run_id`、`node`、`attempt`、`round`、`state`、`phase`、`phase_state`、`next_action`、`started_at`、`finished_at`、`create_accepted`、`child_ref`、`backend`、`backend_reason`、`parent_decision` を持ち、review/fix attempt は発行済みの `review_admission` absolute path も持つ。
 
@@ -281,7 +288,7 @@ run state は `run_id`、`recipe`、`state`、`phase`、`phase_state`、`next_ac
 
 ## child の起動と完了検知
 
-child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。auditor と reviewer の `initialPrompt` には役割に必要な prompt file、schema file、入力成果物の absolute path を含める。implementer の initial/fix attempt では、専用の fresh `brief.md` の absolute path だけを `initialPrompt` に入れる。
+child の role、prompt、schema、workspace を決めた後、親は `mcp-create.json` を検証してから `mcp__paseo__create_agent` を一回だけ呼ぶ。`provider`、`settings.modeId`、`settings.thinkingOptionId`、`settings.features`、`notifyOnFinish` は launch と create request の検証済み値を使い、値を作り直さない。auditor と reviewer の `initialPrompt` には役割に必要な prompt file、schema file、入力成果物の absolute path を含める。implementer の initial/fix attempt では、検証済み execution context と task 抜粋を合成した専用の fresh `brief.md` の absolute path だけを `initialPrompt` に入れる。
 
 起動後は child ごとに一つだけ見張りを置く。Paseo MCP の child は adapter の `wait-agent` を使う。返ってきた縮約済み status は一語だけを採用し、活動履歴や本文を親の log へ流さない。通知を先に受け取った場合は見張りを止め、成果物を確認する。出力が無いまま idle なら同じ backend で親が再指示を判断できるが、timeout、error、unknown は `waiting_for_user` として停止する。停止が必要なときは adapter の `stop-agent --child-ref <safe-id>` を一回だけ呼び、返った縮約済み stop status と 0600 の state/evidence だけを読む。
 
