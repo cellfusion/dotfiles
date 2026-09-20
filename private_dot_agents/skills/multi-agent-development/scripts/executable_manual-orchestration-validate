@@ -117,64 +117,72 @@ require_recipe_output() {
     fail "$run_state: $required_node is a required $recipe output"
 }
 
-# implement と spike は node ごとに worktree を作る。workspaces.json はその台帳で、
-# run 側だけでどの workspace を作ったか、取り込んだか、片付けたかを追えるようにする。
+# implement と spike は node ごとに worktree を作る。worktrees.json はその台帳で、
+# run 側だけでどの worktree を作ったか、取り込んだか、消したかを追えるようにする。
 # この 2 つの recipe では台帳を必須にする。台帳の無い run を素通りさせると、隔離を
 # 飛ばして同じ作業ディレクトリで並列に起動した run を検査が捕まえられない。
 # 他の recipe は worktree を作らないので、台帳が無ければこの検査を飛ばす。
-validate_workspaces() {
+validate_worktrees() {
   local run_dir="$1"
   local run_state="$2"
   local run_status="$3"
   local recipe="$4"
-  local workspaces="$run_dir/workspaces.json"
+  local worktrees="$run_dir/worktrees.json"
   local node_id
   local field
   local integration
+  local run_base
 
   case "$recipe" in
     implement|spike)
-      [ -f "$workspaces" ] ||
-        fail "$workspaces: workspaces.json is required for a $recipe run" ;;
-    *) [ -f "$workspaces" ] || return 0 ;;
+      [ -f "$worktrees" ] ||
+        fail "$worktrees: worktrees.json is required for a $recipe run" ;;
+    *) [ -f "$worktrees" ] || return 0 ;;
   esac
-  require_json "$workspaces"
+  require_json "$worktrees"
   jq -e '.base | strings | select(length > 0)' "$run_state" >/dev/null 2>&1 ||
-    fail "$run_state: base is required for a run that creates workspaces"
+    fail "$run_state: base is required for a run that creates worktrees"
+  run_base="$(jq -r '.base' "$run_state")"
 
   while IFS= read -r node_id; do
-    require_basename_safe_id "$node_id" "$workspaces: workspace node ID"
-    [ -d "$run_dir/nodes/$node_id" ] || fail "$workspaces: unknown node: $node_id"
-    jq -e --arg node "$node_id" '.[$node] | type == "object"' "$workspaces" >/dev/null 2>&1 ||
-      fail "$workspaces: $node_id must map to a workspace object"
-    for field in workspace_id cwd branch; do
+    require_basename_safe_id "$node_id" "$worktrees: worktree node ID"
+    [ -d "$run_dir/nodes/$node_id" ] || fail "$worktrees: unknown node: $node_id"
+    jq -e --arg node "$node_id" '.[$node] | type == "object"' "$worktrees" >/dev/null 2>&1 ||
+      fail "$worktrees: $node_id must map to a worktree object"
+    for field in path branch base; do
       jq -e --arg node "$node_id" --arg field "$field" \
-        '.[$node][$field] | strings | select(length > 0)' "$workspaces" >/dev/null 2>&1 ||
-        fail "$workspaces: $node_id $field must be a non-empty string"
+        '.[$node][$field] | strings | select(length > 0)' "$worktrees" >/dev/null 2>&1 ||
+        fail "$worktrees: $node_id $field must be a non-empty string"
     done
-    jq -e --arg node "$node_id" '.[$node].cwd | test("^/")' "$workspaces" >/dev/null 2>&1 ||
-      fail "$workspaces: $node_id cwd must be an absolute path"
-    jq -e --arg node "$node_id" '.[$node].archived | type == "boolean"' "$workspaces" >/dev/null 2>&1 ||
-      fail "$workspaces: $node_id archived must be a boolean"
-    # archive は worktree のディレクトリごと消す。取り込みの判断を run の完了条件に
+    jq -e --arg node "$node_id" '.[$node].path | test("^/")' "$worktrees" >/dev/null 2>&1 ||
+      fail "$worktrees: $node_id path must be an absolute path"
+    # 再開したときに別の base から worktree を切り直す事故を、ここで捕まえる。
+    [ "$(jq -r --arg node "$node_id" '.[$node].base' "$worktrees")" = "$run_base" ] ||
+      fail "$worktrees: $node_id base does not match run state base"
+    for field in removed branch_deleted; do
+      jq -e --arg node "$node_id" --arg field "$field" \
+        '.[$node][$field] | type == "boolean"' "$worktrees" >/dev/null 2>&1 ||
+        fail "$worktrees: $node_id $field must be a boolean"
+    done
+    # worktree の削除はディレクトリごと消す。取り込みの判断を run の完了条件に
     # しないと、上限で切られた review-package.diff しか残らない実装が復元できなくなる。
     jq -e --arg node "$node_id" '.[$node].integration | IN("pending", "merged", "declined")' \
-      "$workspaces" >/dev/null 2>&1 ||
-      fail "$workspaces: $node_id integration must be one of pending, merged, declined"
-    integration="$(jq -r --arg node "$node_id" '.[$node].integration' "$workspaces")"
+      "$worktrees" >/dev/null 2>&1 ||
+      fail "$worktrees: $node_id integration must be one of pending, merged, declined"
+    integration="$(jq -r --arg node "$node_id" '.[$node].integration' "$worktrees")"
     if [ "$integration" = "declined" ]; then
       jq -e --arg node "$node_id" '.[$node].integration_reason | strings | select(length > 0)' \
-        "$workspaces" >/dev/null 2>&1 ||
-        fail "$workspaces: $node_id integration_reason is required when integration is declined"
+        "$worktrees" >/dev/null 2>&1 ||
+        fail "$worktrees: $node_id integration_reason is required when integration is declined"
     fi
-    # archived の要求は、取り込みの判断が済んだ後にだけ掛ける。
+    # removed の要求は、取り込みの判断が済んだ後にだけ掛ける。
     if [ "$run_status" = "ok" ]; then
       [ "$integration" != "pending" ] ||
-        fail "$workspaces: $node_id integration is still pending"
-      jq -e --arg node "$node_id" '.[$node].archived' "$workspaces" >/dev/null 2>&1 ||
-        fail "$workspaces: $node_id workspace is not archived"
+        fail "$worktrees: $node_id integration is still pending"
+      jq -e --arg node "$node_id" '.[$node].removed' "$worktrees" >/dev/null 2>&1 ||
+        fail "$worktrees: $node_id worktree is not removed"
     fi
-  done < <(jq -r 'keys[]' "$workspaces")
+  done < <(jq -r 'keys[]' "$worktrees")
 }
 
 validate_handoff() {
@@ -1955,7 +1963,7 @@ if [ -d "$run_dir/nodes" ]; then
 fi
 
 validate_review_policy "$run_dir" "$run_state" "$run_status" "$recipe" "$current_round"
-validate_workspaces "$run_dir" "$run_state" "$run_status" "$recipe"
+validate_worktrees "$run_dir" "$run_state" "$run_status" "$recipe"
 
 if [ "$run_status" = "ok" ] && [ "$has_non_ok_adopted_attempt" -eq 1 ]; then
   fail "$run_state: root state ok conflicts with a non-ok adopted child state"
