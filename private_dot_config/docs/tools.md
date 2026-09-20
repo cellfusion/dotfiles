@@ -187,11 +187,12 @@ TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/
 MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
 MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
 MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"
+MAD_RUN="$MAD_SCRIPTS/mad-run"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 ```
 
-`MAD_SCRIPTS`配下の14 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`MAD_SCRIPTS`配下の15 scriptは`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -381,6 +382,8 @@ paseo。複数のコーディングエージェントを走らせる macOS ア�
 
 `multi-agent-development` は Paseo CLI を既定 backend とし、Paseo MCP は明示指定時だけ使う。選択した backend が利用できないときは run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
 
+native roleはClaude Code、Codex、Piへ同じrole catalogから配る。Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも同時に配る。OpenCodeのnative agent定義はMADでは配らない。
+
 Paseo の child は CLI から見える。`paseo ls` が一覧と状態を出し、`paseo inspect <agent-id>` が
 1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を出す。MAD 親は raw activity を
 保存せず、選択した backend の adapter `wait-agent --child-ref <safe-id> --timeout <seconds>`
@@ -421,7 +424,7 @@ round 0 の結果を採用したら `cannotVerify` を 1 件ずつ解消して
 round `N` の再レビューの結果からは `--advance-review-findings` で round `N+1` の一覧を作る。
 未解決の指摘を親が散文で引き継がない。
 
-`--dry-run` は保存済み fixture だけを使い、実 MCP の create と `chezmoi apply` を実行しない。
+`MAD_RUN --dry-run` は保存済み fixture だけを使い、実 MCP の create、worktree、state write、`chezmoi apply` を実行しない。代表 run の plan、wave、role catalog を検証する。
 実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
 snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
 はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。

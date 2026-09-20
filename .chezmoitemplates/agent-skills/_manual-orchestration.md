@@ -33,6 +33,7 @@ MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
 MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
 MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
+MAD_RUN="$MAD_SCRIPTS/mad-run"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
 ```
@@ -202,6 +203,12 @@ post-commit check が成功した後、親は outcome audit を一件だけ作�
 
 `BLOCKED` または `NEEDS_CONTEXT` では post-commit check を実行しない。result の `summary` と、non-null の `decisionRequestPath` が指す質問・選択肢の内容を同一 run の decision request に転記し、run の `state` と `phase_state` を `waiting_for_user` にする。この場合も台帳の integration は `pending` のままにして worktree を消さない。status と `decisionRequestPath` の組み合わせが契約に反する結果は採用せず `waiting_for_user` にする。
 
+## role dispatch boundary
+
+MAD の role catalog は `~/.agents/agent-defs/prompts`、`~/.agents/agent-defs/schemas`、正本の `agentRoles` で構成する。Paseo child は `agent-config resolve` で role を解決し、prompt と schema の absolute path を `initialPrompt` に渡す。native runtimeでも同じprompt/schemaを使い、roleごとの定義を複製しない。
+
+native roleの配布先はClaude Codeが`~/.config/claude/agents`、Codexが`$CODEX_HOME/agents`、Piが`$PI_CODING_AGENT_DIR/agents`である。Piは同じディレクトリのsubagent extensionを使って別processを起動する。OpenCode用のnative wrapperはMAD catalogには追加しない。MADの親はprovider wrapperの有無を理由に別backendへ切り替えない。
+
 ## delivery role map
 
 MAD の delivery role は次の 4 役である。各 role は同名の `agent-defs/prompts/<role>.md` と `agent-defs/schemas/<role>.json` を持ち、正本の `agentRoles` に同じ key で登録する。
@@ -333,6 +340,16 @@ plan の Task 番号、`Depends on`、`Files:` の literal path は次で検証�
 ```
 
 最初のコマンドは plan を検証し、存在しない Task の参照、循環、同じ wave の Files 衝突があれば exit 2、問題が無ければ stdout 空で exit 0 になる。検証成功後だけ `--waves` を実行し、その出力を実装順序の正本にする。wave 内の implementer は並列に create できるが、wave の全 task の採用と merge が完了するまでは次の wave の workspace または implementer を create しない。
+
+## dry-run
+
+代表 run を実行する前に、保存済み plan fixture だけで wave、complexity、work class、role catalog の解決を確認する。`mad-run --dry-run` は child create、Paseo transport、worktree、`chezmoi apply`、実 target の書き換えを行わず、mode 0600 の run state も作らない。
+
+```bash
+"$MAD_RUN" --dry-run --plan "$PLAN_FILE" --project "$PROJECT_ROOT" --run-id <run-id>
+```
+
+dry-run の JSON は検査用成果物であり、実 run の state や outcome log として再利用しない。
 
 ## run と attempt の状態
 

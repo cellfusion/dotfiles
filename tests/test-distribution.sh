@@ -31,6 +31,8 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
   'plan-auditor schema を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
+assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-run' \
+  'mad-run を配る'
 assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
   'distribute task-routing skill'
 assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \
@@ -50,12 +52,22 @@ assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-w
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-progress' \
   'mad-progress を配る'
 
-for role in implementer task-reviewer re-reviewer final-reviewer; do
+for role in implementer task-reviewer plan-auditor intake-router architectural-implementer escalation-judge re-reviewer final-reviewer spec-author plan-author synthesizer reviewer researcher review-synthesizer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
-    "MAD delivery role: prompts/$role.md を配る"
+    "native role: prompts/$role.md を配る"
   assert_contains "$managed" ".agents/agent-defs/schemas/$role.json" \
-    "MAD delivery role: schemas/$role.json を配る"
+    "native role: schemas/$role.json を配る"
+  assert_contains "$managed" ".config/claude/agents/$role.md" \
+    "Claude native role: agents/$role.md を配る"
+  assert_contains "$managed" ".config/codex/agents/$role.toml" \
+    "Codex native role: agents/$role.toml を配る"
+  assert_contains "$managed" ".pi/agent/agents/$role.md" \
+    "Pi native role: agents/$role.md を配る"
 done
+assert_contains "$managed" '.pi/agent/extensions/subagent/index.ts' \
+  'Pi subagent extension を配る'
+assert_contains "$managed" '.pi/agent/extensions/subagent/agents.ts' \
+  'Pi subagent discovery を配る'
 assert_contains "$managed" '.agents/agent-defs/prompts/architectural-implementer.md' \
   'architectural implementer prompt を配る'
 assert_contains "$managed" '.agents/agent-defs/schemas/architectural-implementer.json' \

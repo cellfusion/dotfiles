@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+
+const USAGE = `usage: mad-run --dry-run --plan FILE --project DIR --run-id ID [--backend paseo-cli|paseo-mcp]`
+const ROLE_NAMES = ['plan-auditor', 'implementer', 'task-reviewer', 're-reviewer', 'final-reviewer']
+const COMPLEXITIES = new Set(['simple', 'routine', 'complex', 'critical'])
+const WORK_CLASSES = new Set(['mechanical', 'routine', 'integration', 'architectural'])
+const WORK_CLASS_BY_COMPLEXITY = {
+  simple: 'mechanical',
+  routine: 'routine',
+  complex: 'integration',
+  critical: 'architectural',
+}
+
+function fail(message) {
+  process.stderr.write(`mad-run: ${message}\n`)
+  process.exit(2)
+}
+
+function requireAbsolute(value, label) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail(`${label} must be absolute`)
+  return value
+}
+
+function parseOptions(argv) {
+  const options = { backend: 'paseo-cli', dryRun: false }
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (token === '--dry-run') {
+      options.dryRun = true
+      continue
+    }
+    if (!['--plan', '--project', '--run-id', '--backend'].includes(token)) fail(`unknown argument: ${token}`)
+    const value = argv[index + 1]
+    if (value === undefined || value.startsWith('--')) fail(`${token} requires a value`)
+    index += 1
+    if (token === '--plan') options.plan = value
+    if (token === '--project') options.project = value
+    if (token === '--run-id') options.runId = value
+    if (token === '--backend') options.backend = value
+  }
+  if (!options.dryRun) fail('only --dry-run is implemented')
+  if (options.plan === undefined) fail('--plan is required')
+  if (options.project === undefined) fail('--project is required')
+  if (options.runId === undefined) fail('--run-id is required')
+  if (!['paseo-cli', 'paseo-mcp'].includes(options.backend)) fail('backend must be paseo-cli or paseo-mcp')
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.runId)) fail('run-id is not safe')
+  return options
+}
+
+function fenceMarker(line) {
+  const match = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+  return match === null ? null : { character: match[1][0], length: match[1].length }
+}
+
+function closesFence(line, fence) {
+  const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line)
+  return match !== null && match[1][0] === fence.character && match[1].length >= fence.length
+}
+
+function parseTasks(text) {
+  const lines = text.split(/\r?\n/)
+  const headings = []
+  let fence = null
+  for (let index = 0; index < lines.length; index += 1) {
+    if (fence !== null) {
+      if (closesFence(lines[index], fence)) fence = null
+      continue
+    }
+    const marker = fenceMarker(lines[index])
+    if (marker !== null) {
+      fence = marker
+      continue
+    }
+    const match = /^#{1,6}\s+Task\s+(\d+)\b/i.exec(lines[index])
+    if (match !== null) headings.push({ index, number: Number(match[1]) })
+  }
+  if (headings.length === 0) fail('plan has no Task headings')
+
+  const tasks = new Map()
+  for (let position = 0; position < headings.length; position += 1) {
+    const heading = headings[position]
+    const end = position + 1 < headings.length ? headings[position + 1].index : lines.length
+    const block = lines.slice(heading.index + 1, end)
+    let complexity = 'routine'
+    let workClass
+    let blockFence = null
+    for (const line of block) {
+      if (blockFence !== null) {
+        if (closesFence(line, blockFence)) blockFence = null
+        continue
+      }
+      const marker = fenceMarker(line)
+      if (marker !== null) {
+        blockFence = marker
+        continue
+      }
+      const complexityMatch = /\bComplexity\s*:\s*\**\s*([A-Za-z]+)/i.exec(line)
+      if (complexityMatch !== null) complexity = complexityMatch[1].toLowerCase()
+      const workClassMatch = /\bWork class\s*:\s*\**\s*([A-Za-z]+)/i.exec(line)
+      if (workClassMatch !== null) workClass = workClassMatch[1].toLowerCase()
+    }
+    if (complexity === 'standard') complexity = 'routine'
+    if (!COMPLEXITIES.has(complexity)) fail(`Task ${heading.number}: invalid Complexity`)
+    if (workClass === undefined) workClass = WORK_CLASS_BY_COMPLEXITY[complexity]
+    if (!WORK_CLASSES.has(workClass)) fail(`Task ${heading.number}: invalid Work class`)
+    if (tasks.has(heading.number)) fail(`Task ${heading.number}: duplicate Task number`)
+    tasks.set(heading.number, { number: heading.number, complexity, workClass })
+  }
+  return tasks
+}
+
+function dependencyWaves(planPath) {
+  const validator = path.join(__dirname, 'executable_paseo-plan-dependency-validate')
+  const result = spawnSync(process.execPath, [validator, '--waves', planPath], { encoding: 'utf8' })
+  if (result.error !== undefined || result.status !== 0) {
+    const detail = (result.stderr || '').trim() || 'plan dependency validation failed'
+    fail(detail.split('\n').at(-1))
+  }
+  const waves = []
+  for (const line of (result.stdout || '').trim().split('\n')) {
+    if (line.length === 0) continue
+    const match = /^wave (\d+):(?: (.*))?$/.exec(line)
+    if (match === null) fail('dependency validator returned an invalid wave')
+    const taskNumbers = (match[2] || '').split(/\s+/).filter(Boolean).map(Number)
+    waves.push({ wave: Number(match[1]), taskNumbers })
+  }
+  if (waves.length === 0) fail('dependency validator returned no waves')
+  return waves
+}
+
+function roleCatalog() {
+  const roleRoot = process.env.MAD_ROLE_ROOT || path.resolve(__dirname, '../../../agent-defs')
+  const roles = {}
+  for (const role of ROLE_NAMES) {
+    const prompt = path.join(roleRoot, 'prompts', `${role}.md`)
+    const schema = path.join(roleRoot, 'schemas', `${role}.json`)
+    if (!fs.statSync(prompt, { throwIfNoEntry: false })?.isFile()) fail(`role prompt is missing: ${role}`)
+    if (!fs.statSync(schema, { throwIfNoEntry: false })?.isFile()) fail(`role schema is missing: ${role}`)
+    roles[role] = { prompt, schema }
+  }
+  return roles
+}
+
+function main(argv) {
+  const options = parseOptions(argv)
+  const planPath = requireAbsolute(options.plan, 'plan')
+  const project = requireAbsolute(options.project, 'project')
+  if (!fs.statSync(planPath, { throwIfNoEntry: false })?.isFile()) fail('plan is not a regular file')
+  if (!fs.statSync(project, { throwIfNoEntry: false })?.isDirectory()) fail('project is not a directory')
+
+  const tasks = parseTasks(fs.readFileSync(planPath, 'utf8'))
+  const waves = dependencyWaves(planPath)
+  const roles = roleCatalog()
+  const outputWaves = waves.map(({ wave, taskNumbers }) => ({
+    wave,
+    tasks: taskNumbers.map((number) => {
+      const task = tasks.get(number)
+      if (task === undefined) fail(`dependency validator returned unknown Task ${number}`)
+      return {
+        number: task.number,
+        complexity: task.complexity,
+        workClass: task.workClass,
+        nodes: ['implementer', 'task-reviewer'],
+        conditionalNodes: ['re-reviewer'],
+      }
+    }),
+  }))
+
+  process.stdout.write(`${JSON.stringify({
+    version: 1,
+    type: 'mad-dry-run',
+    runId: options.runId,
+    recipe: 'delivery',
+    backend: options.backend,
+    project,
+    plan: planPath,
+    liveCalls: 0,
+    applyCalls: 0,
+    roles,
+    waves: outputWaves,
+  })}\n`)
+}
+
+try {
+  main(process.argv.slice(2))
+} catch (error) {
+  if (error && error.code === 'ENOENT') fail('required file is missing')
+  fail(error instanceof Error ? error.message : 'invalid input')
+}

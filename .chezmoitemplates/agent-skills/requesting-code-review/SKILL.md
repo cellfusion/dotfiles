@@ -56,7 +56,7 @@ Across both routes, pass only these 4 items (never pass session history):
 - Absolute path to review package
 - List of deferred or parked findings (if any)
 
-MAD's `review` spawns perspective-specific `reviewer` instances in parallel, synthesized by `review-synthesizer` into actionable findings. The synthesized outcome is `approved` only when zero critical or important findings remain.
+MAD's `review` spawns perspective-specific `reviewer` instances in parallel, synthesized by the `review-synthesizer` role into actionable findings. Resolve both roles through `agent-config` for Paseo or use the matching native role definitions for Claude Code, Codex, or Pi. The synthesized outcome is `approved` only when zero critical or important findings remain.
 
 Both the review package and plan reside outside the working tree. Because child agents must function in engine configurations that disallow reading outside cwd, copy them into a unique directory under `<repo-root>/.agent-review/` before passing, providing the copied absolute paths:
 

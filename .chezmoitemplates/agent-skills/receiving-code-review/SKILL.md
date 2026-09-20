@@ -34,8 +34,8 @@ The parent handles receiving findings, clarifying ambiguous items with the user,
 
 Delegate the following 3 tasks to children:
 
-- **Verifying findings against codebase** — Invoke `researcher`. Pass finding text and absolute paths of files to read. The child returns what was confirmed vs. what could not be confirmed.
-- **Call site verification** — Used for YAGNI checks against "implement it properly" requests. Invoke `researcher`.
+- **Verifying findings against codebase** — Invoke the `researcher` role through Paseo or the native role path. Resolve it through `agent-config` when using Paseo. Pass finding text and absolute paths of files to read. The child returns what was confirmed vs. what could not be confirmed.
+- **Call site verification** — Used for YAGNI checks against "implement it properly" requests. Invoke the same `researcher` role. Do not switch backends merely because a provider-native wrapper is unavailable.
 - **Implementing fixes** — Use MAD's `implement` recipe. Pass findings, review package, and absolute paths to target files. The child executes TDD and re-review.
 
 The parent must not write fixes directly. Fixes written by the parent do not undergo independent reviewer judgment, and the diffs and test logs remain in parent context, re-read on every subsequent turn.
