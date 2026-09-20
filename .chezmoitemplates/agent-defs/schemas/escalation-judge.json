@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["action", "workClass", "targetRole", "recommendedLevel", "reason", "evidence", "confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "action": { "enum": ["retry_same", "increase_effort", "change_model", "ask_user", "stop"] },
+    "workClass": { "enum": ["mechanical", "routine", "integration", "architectural"] },
+    "targetRole": { "enum": ["implementer", "architectural-implementer", null] },
+    "recommendedLevel": { "type": "integer", "minimum": 0 },
+    "reason": { "type": "string", "minLength": 1 },
+    "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "confidence": { "enum": ["low", "medium", "high"] }
+  }
+}

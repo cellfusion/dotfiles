@@ -39,6 +39,12 @@
       { "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }
     ]
   },
+  "escalationSelection": {
+    "notes": "sample: choose bounded escalation actions",
+    "candidates": [
+      { "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }
+    ]
+  },
   "attemptPolicy": {
     "implement": {
       "simple": {
@@ -60,6 +66,7 @@
     "plan-auditor": { "duty": "review", "access": "read", "description": "実装前のプラン矛盾を監査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": [] },
     "intake-router": { "duty": "review", "launchPolicy": "routing", "access": "read", "description": "Classify requests into task packets", "artifactContract": "task-packet-v1", "deliveryDuties": [] },
     "architectural-implementer": { "duty": "implement", "access": "write", "description": "Execute approved architectural plans", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["architectural-implementer"] },
+    "escalation-judge": { "duty": "review", "launchPolicy": "escalation", "access": "read", "description": "Choose bounded escalation actions", "artifactContract": "mad-escalation-v1", "deliveryDuties": [] },
     "re-reviewer": { "duty": "review", "access": "read", "description": "指摘の解消を判定する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "final-reviewer": { "duty": "review", "access": "read", "description": "ブランチ全体をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "spec-author": { "duty": "author", "access": "write", "description": "spec を書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["spec-author"] },

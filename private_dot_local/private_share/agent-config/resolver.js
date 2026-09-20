@@ -249,10 +249,12 @@ function selectComplexity(config, duty, provenance, callerComplexity, callerRoun
 
 function selectRoutingCandidates(config, environment, role) {
   const roleConfig = config.agentRoles[role]
-  if (!roleConfig || roleConfig.launchPolicy !== 'routing') return null
-  if (!config.routingSelection) throw new ConfigError('routingSelection: intake-router に必要である')
+  if (!roleConfig || !['routing', 'escalation'].includes(roleConfig.launchPolicy)) return null
+  const selectionName = roleConfig.launchPolicy === 'routing' ? 'routingSelection' : 'escalationSelection'
+  const selection = config[selectionName]
+  if (!selection) throw new ConfigError(`${selectionName}: ${role} に必要である`)
   const eligible = config.environments[environment].providers
-  const candidates = config.routingSelection.candidates
+  const candidates = selection.candidates
     .filter((candidate) => eligible.includes(candidate.provider))
     .map((candidate) => ({
       family: candidate.provider,
@@ -261,7 +263,7 @@ function selectRoutingCandidates(config, environment, role) {
       features: candidate.features,
     }))
   if (candidates.length === 0) throw new ConfigError(`routingSelection ${environment}: candidate がない`)
-  return { candidates, warnings: ['launch policy: routing'] }
+  return { candidates, warnings: [`launch policy: ${roleConfig.launchPolicy}`] }
 }
 
 function selectAttemptCandidates(config, environment, duty, complexity, provenance, round) {

@@ -215,14 +215,19 @@ function candidateLists(config) {
       }
     }
   }
-  if (config.routingSelection) {
-    lists.push({
-      location: 'routingSelection',
-      environment: null,
-      duty: 'review',
-      complexity: 'simple',
-      candidates: config.routingSelection.candidates,
-    })
+  for (const [name, selection] of Object.entries({
+    routingSelection: config.routingSelection,
+    escalationSelection: config.escalationSelection,
+  })) {
+    if (selection) {
+      lists.push({
+        location: name,
+        environment: null,
+        duty: 'review',
+        complexity: 'simple',
+        candidates: selection.candidates,
+      })
+    }
   }
   for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
     for (const [complexity, policy] of Object.entries(byComplexity)) {
@@ -324,8 +329,13 @@ function assertSemantics(config) {
         }
       }
     }
-    if (config.routingSelection && !config.routingSelection.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
-      throw new ConfigError(`routingSelection ${environment}: candidate provider が eligibility にない`)
+    for (const [name, selection] of Object.entries({
+      routingSelection: config.routingSelection,
+      escalationSelection: config.escalationSelection,
+    })) {
+      if (selection && !selection.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
+        throw new ConfigError(`${name} ${environment}: candidate provider が eligibility にない`)
+      }
     }
     for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
       for (const [complexity, policy] of Object.entries(byComplexity)) {

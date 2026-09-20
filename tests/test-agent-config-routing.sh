@@ -15,12 +15,23 @@ const configValue = JSON.parse(fs.readFileSync(path.join(source, 'private_dot_lo
 configValue.routingSelection = {
   candidates: [{ provider: 'codex', model: 'sample-light', effort: 'medium', features: {} }]
 }
+configValue.escalationSelection = {
+  candidates: [{ provider: 'codex', model: 'sample-work', effort: 'high', features: { fast_mode: true } }]
+}
 configValue.agentRoles['intake-router'] = {
   duty: 'review',
   launchPolicy: 'routing',
   access: 'read',
   description: 'Classify requests into task packets',
   artifactContract: 'task-packet-v1',
+  deliveryDuties: []
+}
+configValue.agentRoles['escalation-judge'] = {
+  duty: 'review',
+  launchPolicy: 'escalation',
+  access: 'read',
+  description: 'Choose bounded escalation actions',
+  artifactContract: 'mad-escalation-v1',
   deliveryDuties: []
 }
 
@@ -36,10 +47,32 @@ const launch = resolvePaseoLaunch(dispatch, {
   version: 1,
   type: 'paseo-availability-snapshot',
   providers: { codex: { available: true, modeIds: ['auto'] } },
-  models: { codex: [{ id: 'sample-light', thinkingOptionIds: ['medium'] }] }
+  models: {
+    codex: [
+      { id: 'sample-light', thinkingOptionIds: ['medium'] },
+      { id: 'sample-work', thinkingOptionIds: ['high'] }
+    ]
+  }
 })
 if (launch.provider !== 'codex' || launch.model !== 'sample-light' || launch.thinkingOptionId !== 'medium') {
   throw new Error(`routing launch is wrong: ${JSON.stringify(launch)}`)
+}
+
+const escalationDispatch = resolveDispatch(config, {
+  project: source,
+  role: 'escalation-judge',
+  provenance: 'escalation',
+  complexity: 'routine',
+  round: 0
+})
+const escalationLaunch = resolvePaseoLaunch(escalationDispatch, {
+  version: 1,
+  type: 'paseo-availability-snapshot',
+  providers: { codex: { available: true, modeIds: ['auto'] } },
+  models: { codex: [{ id: 'sample-work', thinkingOptionIds: ['high'] }] }
+})
+if (escalationLaunch.provider !== 'codex' || escalationLaunch.model !== 'sample-work' || escalationLaunch.thinkingOptionId !== 'high') {
+  throw new Error(`escalation launch is wrong: ${JSON.stringify(escalationLaunch)}`)
 }
 NODE
 then
