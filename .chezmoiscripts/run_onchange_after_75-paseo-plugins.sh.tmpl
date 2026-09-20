@@ -8,13 +8,14 @@
     (include "private_dot_local/private_share/paseo-plugins/pr-review/paseo-plugin.json")
     (include "private_dot_local/private_share/paseo-plugins/pr-review/package.json")
     (include "private_dot_local/private_share/paseo-plugins/pr-review/tsconfig.json")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/contracts.ts")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/commands.ts")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/instructions.ts")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/index.ts")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/main.client.tsx")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/provider-resolution.ts")
-    (include "private_dot_local/private_share/paseo-plugins/pr-review/review-plan.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/index.client.tsx")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/index.server.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/client/main.tsx")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/client/provider-resolution.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/client/review-plan.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/server/commands.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/server/instructions.ts")
+    (include "private_dot_local/private_share/paseo-plugins/pr-review/shared/contracts.ts")
     | join "" | sha256sum }}
 set -eu
 

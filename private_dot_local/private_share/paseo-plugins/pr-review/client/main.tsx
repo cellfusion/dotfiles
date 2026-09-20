@@ -1,5 +1,5 @@
-import { type PluginSurfaceProps, usePaseo, useRpc } from "@getpaseo/plugin";
-import { Modal, useToast } from "@getpaseo/plugin/react-native";
+import { type PluginSurfaceProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
@@ -8,7 +8,7 @@ import {
   type PullRequest,
   listPullRequests,
   preparePullRequest,
-} from "./contracts";
+} from "../shared/contracts";
 import { resolveProviderFamily } from "./provider-resolution";
 import { describeReviewPlan } from "./review-plan";
 

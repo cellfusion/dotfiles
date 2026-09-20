@@ -1,8 +1,7 @@
-import type { PluginContext } from "@getpaseo/plugin";
-import { runCommand } from "./commands";
-import { listPullRequests, preparePullRequest } from "./contracts";
-import { touchesInstructions } from "./instructions";
-import { PullRequestSurface } from "./main.client";
+import type { PluginServerContext } from "@getpaseo/plugin/server";
+import { runCommand } from "./server/commands";
+import { touchesInstructions } from "./server/instructions";
+import { listPullRequests, preparePullRequest } from "./shared/contracts";
 
 interface GhPullRequest {
   number: number;
@@ -12,8 +11,8 @@ interface GhPullRequest {
   updatedAt: string;
 }
 
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(listPullRequests, async ({ projectRootPath }) => {
+export default function contribute(server: PluginServerContext) {
+  server.handle(listPullRequests, async ({ projectRootPath }) => {
     const stdout = await runCommand(
       "gh",
       [
@@ -40,7 +39,7 @@ export default function contribute(plugin: PluginContext) {
     };
   });
 
-  plugin.handle(preparePullRequest, async ({ projectRootPath, number }) => {
+  server.handle(preparePullRequest, async ({ projectRootPath, number }) => {
     const viewOut = await runCommand(
       "gh",
       ["pr", "view", String(number), "--json", "baseRefName"],
@@ -67,24 +66,6 @@ export default function contribute(plugin: PluginContext) {
       branchName: instructionsChanged ? `pr-review/${number}-base` : null,
       instructionsChanged,
     };
-  });
-
-  plugin.addSurface("pull-requests", PullRequestSurface);
-  plugin.addSidebarItem({
-    id: "pull-requests",
-    title: "PR レビュー",
-    icon: "GitPullRequest",
-    surface: "pull-requests",
-  });
-  plugin.addCommandCenterItem({
-    id: "open-pull-requests",
-    title: "PR をレビューする",
-    icon: "GitPullRequest",
-    keywords: ["pr", "review", "pull request", "レビュー"],
-    context: "global",
-    onSelect({ openSurface }) {
-      openSurface("pull-requests");
-    },
   });
 
   return () => {};
