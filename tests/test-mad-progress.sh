@@ -13,7 +13,8 @@ trap 'rm -rf "$work"' EXIT
 run="$work/state/runs/r1"
 mkdir -p "$run/nodes/alive/attempts/a1" "$run/nodes/stale/attempts/a1" \
   "$run/nodes/bare/attempts/a1" "$run/nodes/done/attempts/a1" "$run/nodes/queued/attempts/a1" \
-  "$run/nodes/unreadable/attempts/a1"
+  "$run/nodes/unreadable/attempts/a1" \
+  "$run/nodes/unknownkind/attempts/a1"
 
 cat > "$run/state.json" <<'JSON'
 {
@@ -81,6 +82,17 @@ cat > "$run/nodes/bare/attempts/a1/state.json" <<'JSON'
 }
 JSON
 
+# liveness はあるが kind が pid でも child_ref でもない。判定の根拠が無いので
+# bare と同じ扱いになる。
+cat > "$run/nodes/unknownkind/attempts/a1/state.json" <<'JSON'
+{
+  "run_id": "r1", "node": "unknownkind", "attempt": "a1", "state": "running",
+  "phase": "implement", "phase_state": "running", "next_action": "wait",
+  "started_at": "2026-09-19T00:01:00Z", "create_accepted": true, "child_ref": "c6",
+  "liveness": {"kind": "typo", "heartbeat_at": "2000-01-01T00:00:00Z"}
+}
+JSON
+
 cat > "$run/nodes/done/attempts/a1/state.json" <<'JSON'
 {
   "run_id": "r1", "node": "done", "attempt": "a1", "state": "ok",
@@ -120,7 +132,10 @@ assert_eq "$?" 0 'status は adapter が無い PATH でも exit 0 である'
 assert_contains "$status" '"node": "alive"' 'running の attempt を動いている一覧に出す'
 assert_contains "$status" "$work/present" 'running の attempt に worktree の path を添える'
 assert_contains "$status" '"node": "queued"' 'pending の attempt を止まっている一覧に出す'
-assert_contains "$status" '"node": "bare"' 'liveness の無い attempt を liveness_unknown に出す'
+# node 名は running の一覧にも出るので、liveness_unknown の中だけを取り出して比べる。
+liveness_unknown="$(printf '%s' "$status" | jq -r '[.liveness_unknown[].node] | sort | join(",")')"
+assert_eq "$liveness_unknown" 'bare,unknownkind' \
+  '判定の根拠が無い attempt だけを liveness_unknown に出す'
 assert_contains "$status" '"adopted": true' '採用済みの attempt を終わった一覧に出す'
 
 progress status --run-dir "$run" --write-ledger >/dev/null
@@ -134,9 +149,11 @@ assert_eq "$?" 0 'reap は adapter が無い PATH でも exit 0 である'
 assert_contains "$reaped" '"node": "stale"' 'heartbeat_at が古い attempt を回収する'
 assert_not_contains "$reaped" '"node": "alive"' 'heartbeat_at が新しい attempt は回収しない'
 assert_not_contains "$reaped" '"node": "bare"' 'liveness の無い attempt は回収しない'
+assert_not_contains "$reaped" '"node": "unknownkind"' '未知の kind の attempt は回収しない'
 assert_contains "$(cat "$run/nodes/stale/attempts/a1/state.json")" '"state": "unresolved"' '回収した attempt は unresolved になる'
 assert_contains "$(cat "$run/nodes/stale/attempts/a1/state.json")" '"stale_reason"' 'stale_reason を liveness へ書く'
 assert_contains "$(cat "$run/nodes/bare/attempts/a1/state.json")" '"state": "running"' 'liveness の無い attempt の state は変わらない'
+assert_contains "$(cat "$run/nodes/unknownkind/attempts/a1/state.json")" '"state": "running"' '未知の kind の attempt の state は変わらない'
 
 after="$(progress status --run-dir "$run" --json)"
 assert_contains "$after" '"stale_reason"' 'status は reap が書いた stale_reason を読む'
