@@ -1,64 +1,116 @@
 ---
 name: multi-agent-development
 description: >-
-  親エージェントが Paseo MCP の子エージェントを組み合わせて手動でオーケストレーションするときに使う。
-  spec、plan、implement、review、その 4 つを通す delivery と、観点を分けた作業を対象にする。
+  複数の子エージェント、並列 task、worktree 隔離、または独立した review が必要な作業を
+  Paseo MCP で実行する。単一 task の実装や通常の会話に自動適用しない。
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 
-# 親主導の MAD オーケストレーション
+# MAD を必要な作業だけに使う
 
-MAD は親が Paseo MCP の agent を起動・監視し、フェーズごとに判断して進める。子同士の本文は会話へ集めず、mode 0600 の run 成果物を介して後段へ渡す。Paseo MCP が利用できないときは開始前に停止し、開始済みの create を別経路へ移さない。
+Multi-Agent Development（MAD）は、親エージェントが複数の子エージェントを管理するための実行 recipe である。MAD は依頼を理解する仕組みでも、複雑度を自動判定する仕組みでも、親の判断を置き換える仕組みでもない。
 
-## lifecycle
+## MAD を使うか判断する
 
-`research`、`decide`、`debate`、`fanout`、`review`、`triage` は独立 child を並列に起動し、親が全 child の state と handoff を確認してから統合役を起動する。`spec`、`plan`、`implement`、`refine` は親が round と approval を管理する。`delivery` は spec、plan、implement、review、final-review を順に進める。各境界で親だけが user decision、retry、停止を state に記録する。task の review/fix は `--prepare-review` を通す bounded loop（round `0` の初回 review、round `1` から `3` の fix と re-review）であり、admission なしの再実行や hotfix node の追加をしない。
+MAD を使うのは、次のいずれかを満たす場合だけである。
 
-すべての child は同じ `paseo-mcp` backend、Paseo provider/model discovery、`mad-attempt-v1` artifact contract を使う。作成、待機、停止、workspace 操作は Paseo MCP の機能だけで行う。child の prompt、result、handoff、state は絶対 path で受け渡し、raw response や秘密情報を親の会話や log に出さない。
+- 独立した task を並行して実装できる
+- 調査、実装、レビューを別の child に分けることで品質または時間が改善する
+- task ごとに worktree を分ける必要がある
+- 長時間の作業を親の会話から分離する必要がある
+- ユーザーが複数エージェントの利用を指定した
 
-## 実行path
+次の場合は MAD を使わない。
 
-配布済みのscriptは`~/.agents/skills/multi-agent-development/scripts`にあるため、`PATH`や`~/.local/bin`に依存しない。MAD開始時に次を設定し、`AGENT_CONFIG`は未設定ならchezmoiの正本へfallbackする。
+- 一つの task を親が直接実装できる
+- 直列の小さな plan を `executing-plans` で処理できる
+- child を作ることが調査や判断より重い
+- review が必要でも、親が diff と検証結果を確認できる
+
+MAD を使わないことは失敗ではない。MAD を使う価値が無いと判断したら、親が直接作業するか、`executing-plans` へ進む。
+
+## 親の責務
+
+親エージェントだけが次を決める。
+
+- MAD を使うかどうか
+- recipe、task、依存関係、並列数
+- child に渡す role、scope、成果物、複雑度
+- review の採用、再実行、モデルの引き上げ、停止
+- ユーザーに判断を求めるかどうか
+
+child の成功報告だけを根拠に採用しない。成果物、diff、テスト、scope、schema を確認してから採用する。
+
+## 選べる recipe
+
+| recipe | 使う場合 | 終了条件 |
+|---|---|---|
+| `research` | 観点の異なる調査を並行する | 全成果物を親が統合する |
+| `fanout` | 独立した task を並行して処理する | 全 task の採用判断が終わる |
+| `review` | 独立したレビュー観点が必要である | review package と verdict を検証する |
+| `delivery` | spec、plan、実装、task review、final review が必要である | 全 phase の成果物と integration を確認する |
+| `refine` | 既存成果物を限定 scope で改善する | scope 内の差分を検証する |
+
+`spec` と `plan` は独立した recipe ではなく、必要な delivery の phase として扱う。単独の spec や plan を親が書いてもよい。
+
+## 軽量な実行経路
+
+MAD を使うと決めても、最初から full delivery にしない。次の順に必要なものだけを選ぶ。
+
+1. **single child** — 一つの調査または一つの実装を child に任せる。親は成果物を確認する
+2. **fanout** — 独立した child を並行して起動する。全 child の終了後に親が統合する
+3. **delivery** — spec、plan、実装、review を分ける必要があるときだけ使う
+
+single child が必要なだけなら、`multi-agent-development` の strict contract を使わず、Paseo の通常の child 起動経路を選べる。strict contract が必要な複数 child の run に入る場合だけ、末尾の共通契約を適用する。
+
+## MAD run を開始する前
+
+次を親が決めて記録する。
+
+- run の目的と recipe
+- 各 node の責務、入力、出力、許可された変更範囲
+- 依存関係と並列にできる範囲
+- 成功条件、停止条件、ユーザー判断が必要な条件
+- 使う backend と、失敗時に別経路へ切り替えるかどうか
+
+この判断を child に丸投げしない。Paseo MCP が使えず、strict MAD run を開始できない場合は、MAD を実行したことにせず、親が直接作業するかユーザーへ状況を伝える。
+
+## plan を実装する strict MAD の準備
+
+以下は、親が strict MAD で plan を実装すると決めた場合だけに適用する。MAD を採用する前や、plan の実装を含まない調査・review の gate にはしない。共通契約の実行pathを初期化し、task 抜粋に使う script を設定する。
 
 ```bash
-MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
-MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
-AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
-MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
-MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
-MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
-MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
 MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
-MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
-PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
-PASEO_UNIT_GATE="${PASEO_UNIT_GATE:-$PROJECT_ROOT/tests/manual/paseo-unit-gate.sh}"
 ```
-
-`tests/manual/paseo-unit-gate.sh` はこの repository の checkout 専用である。`PASEO_UNIT_GATE`が実在する場合だけ使い、別repositoryで存在しなければそのmigration gateを実行しない。
 
 ## delivery role map
 
-実際に起動する role は `implementer`、`task-reviewer`、`re-reviewer`、`final-reviewer` の 4 つである。role 名、prompt、schema、artifact contract は一致させる。レビュー結果は task 単位、fix 単位、branch 全体の順に対応する role が返す。
-
-plan-auditor は delivery role ではない。delivery role と同じ prompt/schema 命名規則に従う read role だが、implementation の前に使う one-shot gate として別枠で扱う。
+delivery role は `implementer`、`task-reviewer`、`re-reviewer`、`final-reviewer` の 4 役である。plan-auditor は delivery role ではない。同じ prompt/schema 命名規則に従う read role として、実装前の one-shot gate を担当する。
 
 ## 共通手順
 
-1. `PASEO_UNIT_GATE`が実在するこのrepositoryだけ、`bash "$PASEO_UNIT_GATE" require unit2-decision.txt continue` を通し、親が必要な run directory と state を用意する。別repositoryでは固有のgateを使う。
-2. dependency gate と `--waves` を通し、wave 順序を確定する。
-3. dependency gate の後、plan-auditor 用の provider/model discovery と `agent-config resolve` を行い、返された provider、model、modeId、thinkingOptionId、features を保持する。最初の implementer create 前に行うが、implementer 用の値には流用しない。
-4. plan-auditor の launch を検証し、その role prompt、schema、plan の absolute path を initialPrompt に持つ plan-auditor の create request を作る。mode 0600 の `mcp-create.json` を再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取る。
-5. marker を取れた場合だけ、`plan-audit` node を create して同一 run で一回だけ起動する。accepted response を縮約して保存し、wait 後に audit attempt の state、result、handoff を検証する。audit attempt が `ok` でなければ implementer を create しない。
-6. `findings` が一件以上なら全件を一つの decision request に写し、state と phase_state を `waiting_for_user` にして停止する。non-null の `decisionRequest` があれば `question`、`options`、`recommendation`、`confirmed` の4欄を同じファイルへ転記する。同一 run で二度目の plan-audit を起動しない。
-7. plan-auditor の findings が空かつ `decisionRequest` が null のときだけ、最初の wave の implementer 用に配布された `mad-contract.js` で resolved export と provider enumeration を mode 0600 で作る。
-8. implementer ごとに `"$MAD_ADAPTER"` の `list-providers`、available provider ごとの `list-models`、snapshot、`agent-config resolve` の順に実行する。
-9. implementer の launch を検証した後、initial/fix の各 attempt で task 抜粋を fresh な private file へ作る。親は role/schema、identity、phase、immutable attempt base、workspace、round、成果物 destination、global constraints、fix scope/open findings を持つ fresh な execution context を検証して task 抜粋へ enrichment し、mode 0600 の `brief.md` を作る。missing/invalid context や enrichment/write failure では create request を作らない。
-10. `brief.md` の absolute path だけを `initialPrompt` に設定して request を作り、mode 0600 の `mcp-create.json` として書く。`assertMadCreateRequestV1` で再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取ってから、その 6 key をそのまま `mcp__paseo__create_agent` へ渡して一回だけ create する。marker を取れなければ create しない。adapter に create の経路は無い。
-11. accepted response を `{"status":"accepted","childRef":"<safe-id>"}` へ縮約して 0600 の state に保存し、`"$MAD_ADAPTER" wait-agent --child-ref <safe-id> --timeout <seconds>` を一回だけ呼んで、縮約済み status だけを 0600 の `wait-evidence.json` と call log に記録する。
-12. 各 child の state、result、handoff を検証し、親が採用判断を記録する。
+plan を実装する strict MAD では、次の順序を守る。
 
-review/fix の scope 外で見つけた重要事項は、同じ loop を延長せず observations に保持して最終 gate で一度だけ user decision を求める。scope 拡張は新しい run で行う。
+1. dependency gate と `--waves` を通し、wave 順序を確定する。
+2. dependency gate の後、plan-auditor 用の provider/model discovery と `agent-config resolve` を共通契約に従って行う。最初の implementer create 前に実施し、解決した provider、model、modeId、thinkingOptionId、features を implementer 用には流用しない。
+3. plan-auditor の launch を検証し、role prompt、schema、plan の absolute path を渡す plan-auditor の create request を作る。mode 0600 の `mcp-create.json` を再検証し、`"$MAD_VALIDATE" --prepare-create` で一回性 marker を取る。
+4. marker を取れた場合だけ `plan-audit` node を create し、同一 run で一回だけ起動する。accepted response を縮約して保存し、wait 後に audit attempt の state、result、handoff を検証する。audit attempt が `ok` でなければ implementer を create しない。
+5. findings が一件以上、または `decisionRequest` が non-null なら、全 findings と判断要求を一つの decision request に転記し、state と phase_state を `waiting_for_user` にして停止する。判断要求の `question`、`options`、`recommendation`、`confirmed` の4欄を保持する。同一 run で二度目の plan-audit を起動しない。
+6. audit が `ok`、findings が空、`decisionRequest` が null のときだけ、最初の wave の implementer 用に discovery と resolve を行う。initial/fix ごとの実行情報を含む fresh な private `brief.md` を作り、その absolute path だけを `initialPrompt` に渡す。create・wait・成果物検証・wave ごとの取り込みは共通契約に従う。
 
-詳細な request、failure、state、role、plan の契約は共通文書を参照する。
+## 実行中
+
+strict contract を選んだ run では、次を守る。
+
+1. run と attempt を一意に作り、既存成果物を上書きしない
+2. role、prompt、schema、scope を child ごとに固定する
+3. create、wait、stop、workspace 操作の回数を記録する
+4. child の成果物を schema と scope で検証する
+5. phase の境界で親が採用判断を記録する
+6. review の scope を勝手に広げない
+7. timeout、transport failure、未知の状態を成功として扱わない
+8. run の上限に達したら、新しい child を追加せず停止する
+
+詳細な request、state、artifact、review、workspace の契約は、実際に strict MAD run を開始するときだけ次の共通契約を読む。
 
 {{ includeTemplate "agent-skills/_manual-orchestration.md" . }}
