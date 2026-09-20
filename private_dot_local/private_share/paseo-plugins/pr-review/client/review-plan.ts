@@ -1,4 +1,4 @@
-import type { PreparedPlan } from "./contracts";
+import type { PreparedPlan } from "../shared/contracts";
 
 /**
  * 確認 Modal に 1 行ずつ出す説明文を組み立てる。画面を描画せずにテストできるよう、
