@@ -80,7 +80,9 @@
     "spec-author": { "duty": "author", "access": "write", "description": "spec を書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["spec-author"] },
     "plan-author": { "duty": "author", "access": "write", "description": "実装プランを書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["plan-author"] },
     "synthesizer": { "duty": "synthesize", "access": "read", "description": "複数の結果を統合する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
-    "reviewer": { "access": "read", "description": "成果物をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] }
+    "reviewer": { "duty": "review", "access": "read", "description": "成果物をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
+    "researcher": { "duty": "review", "access": "read", "description": "コードベースを調査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["researcher"] },
+    "review-synthesizer": { "duty": "synthesize", "access": "read", "description": "複数のレビュー結果を統合する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["review-synthesizer"] }
   },
   "projectRouting": { "rules": [{ "name": "sample-project", "environment": "lab", "match": { "remote": "example.test/Org/Repo" } }] }
 }

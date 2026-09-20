@@ -35,9 +35,11 @@ description: >-
 
 次の 3 つは子に委譲する。
 
-- **指摘をコードベースと突き合わせる検証** — `researcher` を呼ぶ。子には指摘の本文と、読ませたい
+- **指摘をコードベースと突き合わせる検証** — `researcher` roleをPaseo経由で呼ぶ。親は
+  `agent-config resolve --role researcher` でlaunchを解決し、子には指摘の本文と、読ませたい
   ファイルの絶対パスを渡す。子は確認できたことと確認できなかったことを分けて返す
-- **使用箇所の確認** — 下の「ちゃんと実装しろ」に対する YAGNI 確認で使う。`researcher` を呼ぶ
+- **使用箇所の確認** — 下の「ちゃんと実装しろ」に対する YAGNI 確認で使う。同じ`researcher`
+  roleを使う。native provider wrapperの有無を理由に別backendへ切り替えない
 - **修正の実装** — MAD の `implement` recipe を使う。指摘、review package、対象ファイルの絶対
   パスを渡す。子が TDD と再レビューを担う
 

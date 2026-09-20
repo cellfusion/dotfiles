@@ -60,8 +60,9 @@ MAD の `review` recipe を使う。呼び方は `multi-agent-development` ス�
 - review package の絶対パス
 - 先送りされた指摘や park された指摘のリスト（あれば）
 
-MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` が採用可能な指摘へ
-統合する。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
+MAD の `review` は観点別の `reviewer` を並列に起動し、`review-synthesizer` roleをPaseo経由で
+起動して採用可能な指摘へ統合する。両roleとも `agent-config resolve` でlaunchを解決し、
+provider固有のagent wrapperを直接選ばない。統合結果は critical と important の finding が 1 件も無いときだけ `approved` になる。
 
 review package も plan もリポジトリの作業ツリーの外にある。子は呼び出し元の作業ディレクトリの
 外を読めない engine 設定でも動く必要があるので、渡す前に `<repo-root>/.agent-review/` の下の
