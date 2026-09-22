@@ -2,7 +2,7 @@ local icons = require("icons")
 local colors = require("colors")
 local settings = require("settings")
 
--- Spotify のミニプレイヤー。bottom bar の中央に出す。
+-- Spotify のミニプレイヤー。bottom bar の左側に出す。
 --
 -- macOS 26 では MediaRemote が塞がれていて nowplaying-cli も SketchyBar 組み込みの
 -- media_change / media.artwork も動かない。そのため情報は Spotify の AppleScript から
@@ -46,7 +46,7 @@ local function volume_icon(v)
 end
 
 local cover = sbar.add("item", "spotify.cover", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	updates = true,
@@ -67,7 +67,7 @@ local cover = sbar.add("item", "spotify.cover", {
 -- レベル width = 150 が予約する。label.align = "left" を効かせるには label.width
 -- に領域幅 (150) を明示する必要がある。実幅のままでは中央寄せに見える。
 local title = sbar.add("item", "spotify.title", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	width = 0,
@@ -84,7 +84,7 @@ local title = sbar.add("item", "spotify.title", {
 })
 
 local artist = sbar.add("item", "spotify.artist", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	width = 150,
@@ -102,7 +102,7 @@ local artist = sbar.add("item", "spotify.artist", {
 })
 
 local prev = sbar.add("item", "spotify.prev", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	padding_left = settings.paddings,
@@ -112,7 +112,7 @@ local prev = sbar.add("item", "spotify.prev", {
 })
 
 local playpause = sbar.add("item", "spotify.playpause", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	padding_left = settings.paddings,
@@ -122,7 +122,7 @@ local playpause = sbar.add("item", "spotify.playpause", {
 })
 
 local next_track = sbar.add("item", "spotify.next", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	padding_left = settings.paddings,
@@ -132,7 +132,7 @@ local next_track = sbar.add("item", "spotify.next", {
 })
 
 local volume = sbar.add("item", "spotify.volume", {
-	position = "center",
+	position = "left",
 	display = DISPLAY,
 	drawing = false,
 	padding_left = settings.paddings,

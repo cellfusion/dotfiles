@@ -1,0 +1,4 @@
+#!/opt/homebrew/opt/lua@5.4/bin/lua
+
+require("helpers")
+require("init")
