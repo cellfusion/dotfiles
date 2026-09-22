@@ -1,13 +1,11 @@
 
---require("items.apple")
+-- Workspace management and the focused application are shown in the top bar.
+-- The bottom bar is reserved for the media and status widgets.
+-- require("items.apple")
 -- require("items.menus")
--- ウィンドウマネージャに合わせてどちらか一方を有効にする
--- spaces     : yabai (macOS ネイティブスペース連動)
--- workspaces : aerospace
-require("items.spaces")
+-- require("items.spaces")
 -- require("items.workspaces")
 -- require("items.front_app")
--- 日付(時計) と IME は macOS メニューバーに出るため非表示
 -- require("items.calendar")
 -- require("items.ime")
 require("items.widgets")
@@ -18,5 +16,5 @@ require("items.herdr_agents")
 require("items.usage")
 -- 予定表示は Slack notification の左に置く (right クラスタは後に require するほど左)
 require("items.calendar_events")
--- Spotify のミニプレイヤー (bar 中央)
+-- Spotify は bottom bar の左側に置き、右クラスタとの衝突を避ける。
 require("items.media")

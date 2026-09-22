@@ -3,6 +3,7 @@ local icons = require("icons")
 local settings = require("settings")
 local app_icons = require("helpers.app_icons")
 
+local space_gap = 2
 local spaces = {}
 
 for i = 1, 10, 1 do
@@ -11,24 +12,24 @@ for i = 1, 10, 1 do
 		icon = {
 			font = { family = settings.font.numbers },
 			string = i,
-			padding_left = 8,
-			padding_right = 6,
+			padding_left = 5,
+			padding_right = 3,
 			color = colors.white,
 			highlight_color = colors.red,
 		},
 		label = {
-			padding_right = 10,
+			padding_right = 3,
 			color = colors.grey,
 			highlight_color = colors.red,
-			font = "sketchybar-app-font:Regular:16.0",
+			font = "sketchybar-app-font:Regular:14.0",
 			y_offset = -1,
 		},
-		padding_right = 1,
-		padding_left = 1,
+		padding_right = 0,
+		padding_left = 0,
 		background = {
 			color = colors.bg1,
 			border_width = 0,
-			height = 32,
+			height = 26,
 		},
 		popup = { background = { border_width = 5, border_color = colors.black } },
 	})
@@ -39,16 +40,16 @@ for i = 1, 10, 1 do
 	sbar.add("bracket", { space.name }, {
 		background = {
 			color = colors.transparent,
-			height = 32,
+			height = 26,
 			border_width = 0,
 		},
 	})
 
-	-- Padding space
+	-- Small gap between workspaces keeps the full 1-10 list usable on narrow displays.
 	sbar.add("space", "space.padding." .. i, {
 		space = i,
 		script = "",
-		width = settings.group_paddings,
+		width = space_gap,
 	})
 
 	local space_popup = sbar.add("item", {

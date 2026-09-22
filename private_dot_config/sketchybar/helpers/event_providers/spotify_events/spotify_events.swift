@@ -14,11 +14,18 @@ import Foundation
 let eventName = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "spotify_change"
 let spotifyBundleID = "com.spotify.client"
 
-// Homebrew の既定パスを先に見て、無ければ PATH から探す。
+// 複数 bar を併走できるよう、起動元の BAR_NAME を引き継ぐ。
+// カスタム bar は ~/.local/bin/<bar-name> の symlink 経由で起動する。
+let barName = ProcessInfo.processInfo.environment["BAR_NAME"] ?? "sketchybar"
 let sketchybarPath: String = {
     let preferred = "/opt/homebrew/bin/sketchybar"
-    if FileManager.default.isExecutableFile(atPath: preferred) {
+    if barName == "sketchybar" && FileManager.default.isExecutableFile(atPath: preferred) {
         return preferred
+    }
+
+    let custom = "\(NSHomeDirectory())/.local/bin/\(barName)"
+    if FileManager.default.isExecutableFile(atPath: custom) {
+        return custom
     }
     return "/usr/bin/env"
 }()
@@ -32,7 +39,7 @@ func trigger() {
         let p = Process()
         if sketchybarPath == "/usr/bin/env" {
             p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            p.arguments = ["sketchybar", "--trigger", eventName]
+            p.arguments = [barName, "--trigger", eventName]
         } else {
             p.executableURL = URL(fileURLWithPath: sketchybarPath)
             p.arguments = ["--trigger", eventName]

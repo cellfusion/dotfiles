@@ -3,6 +3,7 @@ local icons = require("icons")
 local settings = require("settings")
 
 local popup_width = 250
+local bar_name = os.getenv("BAR_NAME") or "sketchybar"
 
 local volume_icon = sbar.add("item", "widgets.volume2", {
 	position = "right",
@@ -115,7 +116,7 @@ local function volume_toggle_details(env)
 						label = { string = device, color = color },
 						click_script = 'SwitchAudioSource -s "'
 							.. device
-							.. '" && sketchybar --set /volume.device\\.*/ label.color='
+							.. '" && ' .. bar_name .. ' --set /volume.device\\.*/ label.color='
 							.. colors.grey
 							.. " --set $NAME label.color="
 							.. colors.white,

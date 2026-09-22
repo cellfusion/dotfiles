@@ -21,9 +21,8 @@ yabai -m config split_type auto
 yabai -m config auto_balance off
 
 # --- 余白 ---------------------------------------------------------------
-# 上端は macOS メニューバーが自動で確保されるので小さな隙間のみ。
-# 下端は sketchybar (高さ34) ぶんを確保する。どのディスプレイでも下部は共通。
-yabai -m config top_padding 4
+# 上下の SketchyBar (高さ34) ぶんを確保する。どのディスプレイでも共通。
+yabai -m config top_padding 38
 yabai -m config bottom_padding 38
 yabai -m config left_padding 4
 yabai -m config right_padding 4
@@ -80,6 +79,10 @@ yabai -m rule --apply
 # --- 併走するプロセス ---------------------------------------------------
 # yabairc は yabai の起動ごとに実行されるため、多重起動しないようにする
 pgrep -x sketchybar >/dev/null || sketchybar &
+top_bar="$HOME/.local/bin/top_bar"
+if [ -x "$top_bar" ] && ! pgrep -x top_bar >/dev/null; then
+  "$top_bar" &
+fi
 pgrep -x borders >/dev/null || borders &
 
 # --- SIP を部分無効化したら有効にする ----------------------------------
