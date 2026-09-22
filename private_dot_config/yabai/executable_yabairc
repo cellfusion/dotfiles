@@ -21,12 +21,29 @@ yabai -m config split_type auto
 yabai -m config auto_balance off
 
 # --- 余白 ---------------------------------------------------------------
-# 上下の SketchyBar (高さ34) ぶんを確保する。どのディスプレイでも共通。
+# MBPの内蔵ディスプレイは top_barの下に38pxを確保する。外部ディスプレイは
+# top_barを最上面に重ねるため、spaceごとのtop_paddingを0にする。
+yabai -m config external_bar off:0:0
 yabai -m config top_padding 38
 yabai -m config bottom_padding 38
 yabai -m config left_padding 4
 yabai -m config right_padding 4
 yabai -m config window_gap 4
+
+main_display=$(yabai -m query --displays | jq -r \
+  '.[] | select(.frame.x == 0 and .frame.y == 0) | .index' | head -n 1)
+[ -n "$main_display" ] || main_display=1
+
+# yabaiのtop_paddingはグローバル値なので、displayごとにspaceへ上書きする。
+yabai -m query --spaces | jq -r '.[] | [.index, .display] | @tsv' |
+while IFS="$(printf '\t')" read -r space display; do
+  if [ "$display" = "$main_display" ]; then
+    padding=38
+  else
+    padding=0
+  fi
+  yabai -m config --space "$space" top_padding "$padding"
+done
 
 # --- フォーカス ---------------------------------------------------------
 yabai -m config focus_follows_mouse off
