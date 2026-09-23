@@ -1,5 +1,8 @@
 # npm グローバルにインストールするパッケージ。1 行 1 パッケージ。
 # # 始まりと空行は無視される。
+@anthropic-ai/claude-code
+@openai/codex
+@earendil-works/pi-coding-agent
 wrangler
 firebase-tools
 mcp-hub
