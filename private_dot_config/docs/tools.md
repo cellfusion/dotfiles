@@ -242,8 +242,9 @@ provider family の名前そのもの（`claude`）、それ以外の環境は `
 `--` 以降の引数は family のコマンドへそのまま渡す。
 
 zsh は解決できた AI 環境の変数だけを設定する。`AGENT_ENV` も `HERDR_SESSION` も
-定義済みの環境名でないシェルでは `claude` と `codex` が関数で塞がれるので、その場合は
-このラッパーで起動する。
+定義済みの環境名でないシェルでは、その環境に含まれない AI CLI の通常起動は関数で塞がれるので、
+このラッパーで起動する。ただし Pi と Codex の管理用 `update` サブコマンドは直接実行できる
+（例: `pi update`、`codex update`）。
 
 ## core
 

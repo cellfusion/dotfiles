@@ -11,7 +11,7 @@
 #
 # 環境が持たない AI ツールは、変数を unset したうえで同名の関数で覆う。
 # unset だけではツール既定（~/.claude / ~/.codex / ~/.pi/agent）に落ちてしまい、
-# 意図しない環境で作業することになるため。
+# 意図しない環境で作業することになるため。Pi / Codex の update だけは管理操作なので通す。
 
 _agent_env_apply() {
   case "$1" in
@@ -70,6 +70,12 @@ for _agent_env_tool in claude codex pi; do
       ;;
     *)
       eval "\$_agent_env_tool() {
+        case \"\${1}:${_agent_env_tool}\" in
+          update:codex|update:pi)
+            command ${_agent_env_tool} \"\$@\"
+            return \$?
+            ;;
+        esac
         if [ -z \"\${AGENT_ENV_SESSION-}\" ]; then
           print -u2 \"\$0: AI 環境を解決できない（AGENT_ENV と HERDR_SESSION のどちらも定義済みの環境名ではない）。agent --provider=<provider-id> で起動するか、AGENT_ENV に環境名を設定して新しいシェルを開く\"
         else
