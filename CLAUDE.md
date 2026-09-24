@@ -102,13 +102,14 @@ Files under `~/.config` are managed with chezmoi. Adhere strictly to the followi
 
 ### Editing Rules
 - When modifying files within `~/.config`, **always edit the chezmoi source (`~/.local/share/chezmoi/`)**. Never edit files directly in `~/.config`.
-- After editing chezmoi source files, apply changes via `chezmoi apply`.
+- After editing chezmoi source files, apply only the requested target paths with `chezmoi apply <target...>` when the user has explicitly approved applying. Avoid applying unrelated pending changes.
 - Chezmoi source path conventions: `~/.config/foo/bar` → `~/.local/share/chezmoi/private_dot_config/foo/bar` (dotfiles take `dot_` prefix, private directories take `private_` prefix).
 
 ### Pre-Edit Verification
-- Before beginning code edits, run `chezmoi diff` to verify there are no unapplied modifications.
-- If diffs exist, notify the user and obtain confirmation on how to proceed.
-- **Never run `chezmoi apply` autonomously.** You must not apply changes without explicit user approval.
+- Before editing chezmoi source files, run `chezmoi diff` and inspect the changes relevant to the requested targets. Prefer `chezmoi diff <target...>` when the target paths are known.
+- If an existing diff overlaps a requested target, or a planned apply would affect it, stop and ask the user how to proceed.
+- Unrelated existing diffs do not block the task: leave them untouched, do not stage or commit them, and continue without asking for confirmation. When applying, target only the requested paths.
+- **Never run `chezmoi apply` without explicit user approval.**
 
 ### When Keybindings are Modified
 
