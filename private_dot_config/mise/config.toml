@@ -1,6 +1,6 @@
 [tools]
 python = "3.13"
-node = "22.19"
+node = "26.10"
 pnpm = "10.16.1"
 java = "25"
 deno = "2.5"

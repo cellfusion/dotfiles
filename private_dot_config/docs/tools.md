@@ -349,7 +349,7 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 | ツール | バージョン | 用途 |
 |---|---|---|
 | python | 3.13 | Python ランタイム |
-| node | 22.19 | Node.js ランタイム |
+| node | 26.10 | Node.js ランタイム |
 | pnpm | 10.16.1 | Node.js パッケージマネージャ |
 | java | 25 | JVM ランタイム |
 | deno | 2.5 | Deno ランタイム |
