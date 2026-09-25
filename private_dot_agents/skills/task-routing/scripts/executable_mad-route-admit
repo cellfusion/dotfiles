@@ -48,7 +48,7 @@ if (!packet || typeof packet !== 'object' || Array.isArray(packet)) fail('route 
 if (!['direct', 'single', 'delivery'].includes(packet.route)) fail('route is invalid')
 if (!['mechanical', 'routine', 'integration', 'architectural'].includes(packet.workClass)) fail('workClass is invalid')
 if (!['simple', 'routine', 'complex', 'critical'].includes(packet.complexity)) fail('complexity is invalid')
-if (typeof packet.role !== 'string' || packet.role.length === 0) fail('role is invalid')
+if (packet.route === 'direct' ? packet.role !== null : !['implementer', 'architectural-implementer'].includes(packet.role)) fail('role is invalid')
 if (!['low', 'medium', 'high'].includes(packet.confidence)) fail('confidence is invalid')
 
 const routeId = crypto.randomUUID()
@@ -60,7 +60,7 @@ const decision = {
   route: packet.route,
   workClass: packet.workClass,
   complexity: packet.complexity,
-  role: packet.role,
+  role: packet.route === 'direct' ? 'parent' : packet.role,
   confidence: packet.confidence,
   reasonCode: packet.route === 'direct' ? 'direct_parent_execution' : `${packet.route}_delegation`,
   backend: backend === null ? null : backend,
