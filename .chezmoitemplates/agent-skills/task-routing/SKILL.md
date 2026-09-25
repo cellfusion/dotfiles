@@ -19,7 +19,7 @@ Use a packet with finite values. Do not put free-form provider or model choices 
 {
   "route": "direct|single|delivery",
   "workClass": "mechanical|routine|integration|architectural",
-  "role": "implementer|architectural-implementer",
+  "role": "null (direct)|implementer|architectural-implementer",
   "complexity": "simple|routine|complex|critical",
   "goal": "...",
   "writeScope": ["..."],
@@ -36,10 +36,11 @@ Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `veri
 
 ## Route admission audit
 
-Record every admission decision, including `direct`, before execution. Initialize the local recorder once:
+Record every decision made by task-routing, including `direct`, before executing its selected path. Clear local changes that skip this skill are not admitted and do not appear in this log; do not start routing solely to record them. Initialize the local recorder once:
 
 ```bash
 TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
+MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
 MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
 MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
 MAD_ROUTE_LOG="${MAD_ROUTE_LOG:-$HOME/.local/state/mad/metrics/route-decisions.jsonl}"
@@ -55,7 +56,7 @@ Run the admission wrapper before starting the selected path. It validates the fi
   --model "$MODEL" --effort "$EFFORT"
 ```
 
-For `direct`, omit backend/provider/model/effort and set the packet route to `direct`. Use the admitted packet for the selected path and pass its `routeId` into any child outcome record. Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for route statistics; child attempt results belong in `mad-attempt-outcome`.
+For `direct`, set `role: null` and omit backend/provider/model/effort. The admitted packet retains the null role; the route-decision log uses `parent` to identify the executor (its record contract requires a string). Use the admitted packet for the selected path and pass its `routeId` into any child outcome record. Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for *admitted* route statistics, not all requests; child attempt results belong in `mad-attempt-outcome`.
 
 ## Who creates the packet
 
@@ -103,8 +104,8 @@ When a single route starts a write child, the parent follows this order:
 1. Save the packet as a mode `0600` absolute file and validate it with the `intake-router` schema
 2. Create one Paseo worktree and obtain its `workspaceId`
 3. Run `~/.agents/skills/task-routing/scripts/single-implementer prepare` with the packet, config, project, snapshot, workspace ID, attempt directory, implementer prompt, and schema. The default backend is `paseo-cli`; it resolves the launch and writes a private `single-cli.json`
-4. Read and validate `single-create.json`; do not reconstruct provider, model, effort, or features in the parent
-5. For the `paseo` backend, call `mcp__paseo__create_agent` exactly once with that request. Do not substitute another backend in that mode
+4. Read and validate `single-cli.json` for `paseo-cli` or `single-create.json` for `paseo`; do not reconstruct provider, model, effort, or features in the parent
+5. For the `paseo` backend, call `mcp__paseo__create_agent` exactly once with `single-create.json`. Do not substitute another backend in that mode
 6. For the `paseo-cli` backend, run `~/.agents/skills/task-routing/scripts/single-implementer run-cli --request <single-cli.json>`. The CLI request must use a CLI-compatible selection with empty provider features
 7. After completion, independently check `status`, `baseHead`, commit, `changedFiles`, clean worktree state, acceptance criteria, and verification
 8. If the result cannot be adopted, do not send unlimited follow-ups to the same child; choose `escalation-judge`, direct repair, or a user decision
@@ -179,7 +180,7 @@ When `needsBrainstorming` is true, clarify purpose, constraints, and success cri
 
 - `direct`: the parent implements and runs appropriate verification
 - `single`: start one implementer child and have the parent adopt its artifacts
-- `delivery`: hand off to spec, plan, audit, and MAD delivery
+- `delivery`: when design is unsettled, use `brainstorming` first; use `writing-plans` for multi-stage planning and `multi-agent-development` only when parallel tasks or independent review are needed. Start only the next skill the task requires, not an automatic chain
 - `needsUserDecision`: create a decision request and do not start implementation
 
 Do not ask endless routing questions. Once goal, scope, acceptance criteria, and verification are sufficient, continue to the selected route.

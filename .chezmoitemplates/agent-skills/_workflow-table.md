@@ -7,9 +7,9 @@ a skill.
 | Request | First route |
 |---|---|
 | Clear local change | Implement directly; use brainstorming only if a design choice remains |
-| Unknown implementation route, work class, or delegation | `task-routing` |
-| Unsettled intent or behavior | `task-routing`, then `brainstorming` when needed |
-| Multi-layer design change | `task-routing` -> `brainstorming`, then `writing-plans` when needed |
+| Unknown implementation route, work class, or delegation | `task-routing`; follow only the selected path |
+| Unsettled intent or behavior | `brainstorming` when a design choice needs clarification; `task-routing` only if the implementation route is also unclear |
+| Multi-layer design change | `task-routing` if route/delegation is unclear; `brainstorming` for unsettled design, `writing-plans` for multi-stage planning when needed |
 | Bug, failure, or unexpected behavior | `systematic-debugging` when root cause is unknown |
 | Existing implementation plan | `executing-plans` for a small sequential plan; `multi-agent-development` for parallel or independent review |
 | Implementation complete or integration requested | `finishing-a-development-branch` |
