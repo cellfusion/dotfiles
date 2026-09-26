@@ -15,7 +15,7 @@ for display in displays.prefix(Int(count)) where CGDisplayIsBuiltin(display) != 
 # グローバル既定値は内蔵向け。各スペースの余白を再設定する。
 yabai -m config top_padding 0
 yabai -m query --displays | jq -r \
-  '.[] | .frame as $frame | .spaces[] | [$frame.x, $frame.y, $frame.w, $frame.h, .] | @tsv' |
+  '.[] | .frame as $frame | .spaces[] | [($frame.x | floor), ($frame.y | floor), ($frame.w | floor), ($frame.h | floor), .] | @tsv' |
 while IFS="$(printf '\t')" read -r x y w h space; do
   if [ "$(printf '%s\t%s\t%s\t%s' "$x" "$y" "$w" "$h")" = "$builtin_frame" ]; then
     padding=0
