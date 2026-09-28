@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 環境で無効な agent でも CLI 自身の update サブコマンドは実行できる。
+# Pi/Codex の update は実 CLI、通常の AI CLI 起動は cwd-aware agent wrapper を使う。
 set -u
 
 source "$(dirname "$0")/lib/assert.sh"
@@ -22,7 +22,7 @@ fi
 
 mock_bin="$tmp/bin"
 mkdir -p "$mock_bin"
-for tool in pi codex; do
+for tool in pi codex claude omp agent; do
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'printf "%s %s\n" "${0##*/}" "$*" >> "$COMMAND_LOG"' > "$mock_bin/$tool"
@@ -37,16 +37,16 @@ output="$(AGENT_ENV=restricted COMMAND_LOG="$calls" PATH="$mock_bin:$PATH" \
     source "$1"
     pi update
     codex update
-    if pi prompt; then exit 11; fi
-    if codex exec; then exit 12; fi
-    if claude update; then exit 13; fi
+    claude prompt
+    codex exec
+    pi prompt
+    omp prompt
   ' zsh "$rendered" 2>&1)" || status=$?
-assert_eq "$status" 0 'pi/codex の update を許可し、通常起動は引き続き拒否する'
+assert_eq "$status" 0 'pi/codex の update と通常の wrapper 起動が成功する'
 recorded_calls=''
 [ -f "$calls" ] && recorded_calls="$(<"$calls")"
-assert_eq "$recorded_calls" $'pi update\ncodex update' \
-  'pi update と codex update が実 CLI にそのまま渡る'
-assert_contains "$output" 'not configured for this environment' \
-  '対話・実行サブコマンドは引き続き環境制限される'
+assert_eq "$recorded_calls" $'pi update\ncodex update\nagent --family=claude -- prompt\nagent --family=codex -- exec\nagent --family=pi -- prompt\nagent --family=omp -- prompt' \
+  'update は実 CLI、通常起動は family wrapper に渡る'
+assert_eq "$output" '' 'wrapper routing は拒否メッセージを出さない'
 
 assert_summary

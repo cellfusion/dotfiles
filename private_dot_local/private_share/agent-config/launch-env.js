@@ -8,6 +8,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { expandDirectoryPattern } = require('./directory-setup.js')
+const { validateConfig } = require('./config-validator.js')
+const { selectEnvironment } = require('./resolver.js')
 
 class LaunchError extends Error {}
 
@@ -39,8 +41,8 @@ function inputPath() {
   return path.join(configHome(), 'chezmoi', 'agent-config.json')
 }
 
-// 正本の全体は検査しない。起動に要るのは defaults.environment、providers、
-// environments の 3 つだけであり、selection の形が変わっても起動は動き続ける。
+// 起動前に schema と semantics の全体を検査する。Project routing、environment
+// eligibility、provider assignment のどれか一つでも不正なら CLI を起動しない。
 function readConfig() {
   const file = inputPath()
   let text
@@ -49,18 +51,11 @@ function readConfig() {
   } catch {
     fail(`${file}: 読めない`)
   }
-  let config
   try {
-    config = JSON.parse(text)
-  } catch {
-    fail(`${file}: JSON として読めない`)
+    return validateConfig(text).config
+  } catch (error) {
+    fail(`${file}: ${error instanceof Error ? error.message : '設定が不正である'}`)
   }
-  if (!isObject(config) || !isObject(config.providers) || !isObject(config.environments) ||
-      !isObject(config.defaults) || typeof config.defaults.environment !== 'string' ||
-      config.defaults.environment.length === 0) {
-    fail(`${file}: shape が不正である`)
-  }
-  return config
 }
 
 // id の作り方と集合は paseo-providers.js の materializeProviderId と
@@ -102,6 +97,9 @@ function assignments(config, entry) {
   const definition = config.providers[entry.family]
   if (!isObject(definition)) fail(`provider family ${entry.family}: 定義が不正である`)
   const lines = [`binary ${entry.family}`, `env AGENT_ENV ${entry.environment}`]
+  if (definition.environmentVariable !== undefined) {
+    lines.push(`env ${definition.environmentVariable} ${entry.environment}`)
+  }
   const setup = definition.setup
   if (setup === null || setup === undefined) return lines
   if (!isObject(setup) || !isObject(setup.configDirectoryEnv) || !isObject(setup.directoryPattern)) {
@@ -120,18 +118,45 @@ function assignments(config, entry) {
   return lines
 }
 
+function familyEntry(config, family, explicitEnvironment) {
+  if (!Object.prototype.hasOwnProperty.call(config.providers, family)) {
+    fail(`provider family ${family}: agent-config.json にない`)
+  }
+  const parentEnvironment = typeof process.env.AGENT_ENV === 'string' && process.env.AGENT_ENV.length > 0
+    ? process.env.AGENT_ENV
+    : undefined
+  const selected = selectEnvironment(config, process.cwd(), explicitEnvironment, parentEnvironment)
+  for (const warning of selected.warnings) process.stderr.write(`agent: ${warning}\n`)
+  const environment = config.environments[selected.environment]
+  if (!environment.providers.includes(family)) {
+    fail(`provider family ${family}: environment ${selected.environment} に configured されていない`)
+  }
+  return { family, environment: selected.environment }
+}
+
 function main(argv) {
-  if (argv.length !== 1) fail('引数は provider id か --list を 1 つだけ取る')
   const config = readConfig()
   const byId = providerIndex(config)
   const ids = [...byId.keys()].sort()
-  if (argv[0] === '--list') {
+  if (argv.length === 1 && argv[0] === '--list') {
     process.stdout.write(`${ids.join('\n')}\n`)
     return
   }
-  const entry = byId.get(argv[0])
+  let entry
+  if (argv.length === 1 && !argv[0].startsWith('--')) {
+    entry = byId.get(argv[0])
+  } else if (argv.length === 2 && argv[0] === '--provider') {
+    entry = byId.get(argv[1])
+  } else if (argv.length === 2 && argv[0] === '--family') {
+    entry = familyEntry(config, argv[1], undefined)
+  } else if (argv.length === 4 && argv[0] === '--family' && argv[2] === '--environment') {
+    entry = familyEntry(config, argv[1], argv[3])
+  } else {
+    fail('引数は --provider <id>、--family <family> [--environment <environment>]、--list のいずれかである')
+  }
   if (entry === undefined) {
-    process.stderr.write(`agent: provider id ${argv[0]}: agent-config.json にない\n`)
+    const requested = argv[0] === '--provider' ? argv[1] : argv[0]
+    process.stderr.write(`agent: provider id ${requested}: agent-config.json にない\n`)
     process.stderr.write(`agent: 使える provider id: ${ids.join(' ')}\n`)
     process.exit(2)
   }

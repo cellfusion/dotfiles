@@ -58,7 +58,14 @@ function assertSetup(value) {
 }
 
 function assertProviderFamily(value) {
-  assertExactObject(value, ['family', 'displayName', 'backends', 'setup', 'featureAllowlist'])
+  assertExactObject(value, [
+    'family',
+    'displayName',
+    'backends',
+    'setup',
+    'environmentVariable',
+    'featureAllowlist',
+  ])
   assertNoPaseoField(value)
   assertNonEmptyString(value.family)
   assertNonEmptyString(value.displayName)
@@ -66,6 +73,10 @@ function assertProviderFamily(value) {
   value.backends.forEach(assertNonEmptyString)
   if (new Set(value.backends).size !== value.backends.length) throw new TypeError('resolved-config: backends が重複する')
   if (value.setup !== null) assertSetup(value.setup)
+  if (value.environmentVariable !== null &&
+      (typeof value.environmentVariable !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(value.environmentVariable))) {
+    throw new TypeError('resolved-config: environmentVariable が不正')
+  }
   assertNoPaseoField(value.featureAllowlist)
   if (!value.featureAllowlist || typeof value.featureAllowlist !== 'object' || Array.isArray(value.featureAllowlist)) {
     throw new TypeError('resolved-config: featureAllowlist は object')
