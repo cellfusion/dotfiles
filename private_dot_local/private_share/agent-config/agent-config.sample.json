@@ -5,7 +5,8 @@
     "claude": { "displayName": "Claude", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
     "codex": { "displayName": "Codex", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md", "rules"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
     "opencode": { "displayName": "OpenCode", "backends": ["paseo"], "setup": null, "featureAllowlist": {} },
-    "pi": { "displayName": "Pi", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "PI_CODING_AGENT_DIR": "pi" }, "directoryPattern": { "primary": "$HOME/.pi/agent", "nonPrimary": "$HOME/.pi/agent-<environment>" }, "symlinks": ["agents", "extensions"], "preservedMutable": [], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} }
+    "pi": { "displayName": "Pi", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "PI_CODING_AGENT_DIR": "pi" }, "directoryPattern": { "primary": "$HOME/.pi/agent", "nonPrimary": "$HOME/.pi/agent-<environment>" }, "symlinks": ["agents", "extensions"], "preservedMutable": [], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} },
+    "omp": { "displayName": "OMP", "backends": ["paseo"], "setup": null, "environmentVariable": "OMP_PROFILE", "featureAllowlist": {} }
   },
   "selection": {
     "author": {
@@ -65,8 +66,8 @@
     }
   },
   "environments": {
-    "primary": { "providers": ["claude", "codex", "opencode", "pi"], "selection": {} },
-    "lab": { "providers": ["claude", "codex"], "selection": { "implement": { "routine": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
+    "primary": { "providers": ["claude", "codex", "opencode", "pi", "omp"], "selection": {} },
+    "lab": { "providers": ["claude", "codex", "omp"], "selection": { "implement": { "routine": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
   },
   "agentRoles": {
     "implementer": { "duty": "implement", "access": "write", "description": "実装と検証を行う", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["implementer"] },
@@ -84,5 +85,5 @@
     "researcher": { "duty": "review", "access": "read", "description": "コードベースを調査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["researcher"] },
     "review-synthesizer": { "duty": "synthesize", "access": "read", "description": "複数のレビュー結果を統合する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["review-synthesizer"] }
   },
-  "projectRouting": { "rules": [{ "name": "sample-project", "environment": "lab", "match": { "remote": "example.test/Org/Repo" } }] }
+  "projectRouting": { "rules": [{ "name": "sample-organization", "environment": "lab", "match": { "remoteNamespace": "example.test/SampleOrg" } }] }
 }

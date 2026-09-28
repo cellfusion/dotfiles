@@ -14,6 +14,7 @@ function providerFamilies(config) {
     displayName: definition.displayName,
     backends: [...definition.backends],
     setup: definition.setup,
+    environmentVariable: definition.environmentVariable || null,
     featureAllowlist: definition.featureAllowlist,
   }))
 }
@@ -79,19 +80,34 @@ function resolveExport(config) {
   })
 }
 
-function gitToplevel(canonical) {
-  const result = spawnSync('git', ['-C', canonical, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' })
-  if (result.error || result.status !== 0) return null
+function gitCommonDirectory(canonical, allowNonRepository = false) {
+  const result = spawnSync(
+    'git',
+    ['-C', canonical, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } },
+  )
+  if (result.error) {
+    throw new ConfigError(`project: Git を起動できない (${result.error.code || 'spawn error'})`)
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || '').trim().replace(/\s+/g, ' ')
+    if (allowNonRepository && result.status === 128 && detail.startsWith('fatal: not a git repository')) {
+      return null
+    }
+    throw new ConfigError(`project: Git common directory を取得できない (${detail || `exit ${result.status}`})`)
+  }
   const output = (result.stdout || '').trim()
-  if (output.length === 0) return null
+  if (!path.isAbsolute(output)) {
+    throw new ConfigError('project: Git common directory が絶対 path ではない')
+  }
   try {
     return fs.realpathSync.native(output)
-  } catch {
-    return null
+  } catch (error) {
+    throw new ConfigError(`project: Git common directory を canonicalize できない (${error.code || 'I/O'})`)
   }
 }
 
-function requireProjectRoot(project) {
+function requireProjectDirectory(project) {
   if (typeof project !== 'string' || !path.isAbsolute(project)) {
     throw new ConfigError('project: 絶対 path が必要である')
   }
@@ -102,17 +118,11 @@ function requireProjectRoot(project) {
     throw new ConfigError('project: 存在しない')
   }
   if (!stats.isDirectory()) throw new ConfigError('project: directory ではない')
-  let canonical
   try {
-    canonical = fs.realpathSync.native(project)
+    return fs.realpathSync.native(project)
   } catch {
     throw new ConfigError('project: realpath を取得できない')
   }
-  const toplevel = gitToplevel(canonical)
-  if (toplevel !== null && toplevel !== canonical) {
-    throw new ConfigError('project: Git worktree の subdirectory である')
-  }
-  return canonical
 }
 
 function canonicalHost(authority, scheme) {
@@ -130,7 +140,7 @@ function canonicalPath(rawPath) {
   let remotePath = rawPath.startsWith('/') ? rawPath.slice(1) : rawPath
   if (remotePath.endsWith('/')) remotePath = remotePath.slice(0, -1)
   const segments = remotePath.split('/')
-  if (segments.some((segment) => segment.length === 0)) return null
+  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return null
   remotePath = remotePath.endsWith('.git') ? remotePath.slice(0, -4) : remotePath
   return remotePath.length === 0 ? null : remotePath
 }
@@ -176,7 +186,7 @@ function pathMatches(project, rulePath) {
 
 // 親の環境名は --environment の次に強い。正本に無い名前は、--environment の有無に
 // かかわらず設定の不正として扱う。
-function selectEnvironment(config, project, explicitEnvironment, parentEnvironment) {
+function selectEnvironmentFromCanonicalProject(config, project, explicitEnvironment, parentEnvironment) {
   const parent = typeof parentEnvironment === 'string' && parentEnvironment.length > 0
     ? parentEnvironment
     : undefined
@@ -192,22 +202,45 @@ function selectEnvironment(config, project, explicitEnvironment, parentEnvironme
   if (parent !== undefined) return { environment: parent, warnings: [] }
 
   const warnings = []
-  let remote
-  let remoteLoaded = false
+  let projectRemoteKey
+  let projectGitCommonDirectory
   for (const rule of config.projectRouting.rules) {
     const matchesPath = rule.match.path === undefined || pathMatches(project, rule.match.path)
-    let matchesRemote = true
-    if (rule.match.remote !== undefined) {
-      if (!remoteLoaded) {
-        remote = projectRemote(project)
-        remoteLoaded = true
-        if (remote === null) warnings.push(REMOTE_UNAVAILABLE_WARNING)
+    let matchesGitRepository = true
+    if (rule.match.gitRepository !== undefined) {
+      if (projectGitCommonDirectory === undefined) {
+        projectGitCommonDirectory = gitCommonDirectory(project, true)
       }
-      matchesRemote = remote !== null && remote === rule.match.remote
+      const ruleGitCommonDirectory = gitCommonDirectory(rule.match.gitRepository)
+      matchesGitRepository = projectGitCommonDirectory !== null &&
+        ruleGitCommonDirectory !== null &&
+        projectGitCommonDirectory === ruleGitCommonDirectory
     }
-    if (matchesPath && matchesRemote) return { environment: rule.environment, warnings }
+    let matchesRemote = true
+    if (rule.match.remote !== undefined || rule.match.remoteNamespace !== undefined) {
+      if (projectRemoteKey === undefined) {
+        projectRemoteKey = projectRemote(project)
+        if (projectRemoteKey === null) warnings.push(REMOTE_UNAVAILABLE_WARNING)
+      }
+      matchesRemote = projectRemoteKey !== null &&
+        (rule.match.remote === undefined || projectRemoteKey === rule.match.remote) &&
+        (rule.match.remoteNamespace === undefined ||
+          projectRemoteKey.startsWith(`${rule.match.remoteNamespace}/`))
+    }
+    if (matchesPath && matchesGitRepository && matchesRemote) {
+      return { environment: rule.environment, warnings }
+    }
   }
   return { environment: config.defaults.environment, warnings }
+}
+
+function selectEnvironment(config, project, explicitEnvironment, parentEnvironment) {
+  return selectEnvironmentFromCanonicalProject(
+    config,
+    requireProjectDirectory(project),
+    explicitEnvironment,
+    parentEnvironment,
+  )
 }
 
 const ESCALATION = { simple: 'routine', routine: 'complex', complex: 'complex', critical: 'critical' }
@@ -337,14 +370,19 @@ function resolveDispatch(config, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new ConfigError('dispatch input: object が必要である')
   }
-  const project = requireProjectRoot(input.project)
+  const project = requireProjectDirectory(input.project)
   if (!config.agentRoles || !Object.prototype.hasOwnProperty.call(config.agentRoles, input.role)) {
     throw new ConfigError('role: 正本に無い')
   }
   if (typeof input.provenance !== 'string' || input.provenance.length === 0) {
     throw new ConfigError('provenance: 非空 string が必要である')
   }
-  const environmentSelection = selectEnvironment(config, project, input.environment, input.parentEnvironment)
+  const environmentSelection = selectEnvironmentFromCanonicalProject(
+    config,
+    project,
+    input.environment,
+    input.parentEnvironment,
+  )
   const dutySelection = selectDuty(config, input.role)
   if (dutySelection.duty === 'review' && REVIEW_WORK_CLASS_ROLES.has(input.role) && input.workClass === undefined) {
     throw new ConfigError(`workClass: ${input.role} には work class が必要である`)
@@ -403,4 +441,4 @@ function resolveDispatch(config, input) {
   })
 }
 
-module.exports = { resolveExport, resolveDispatch, canonicalRemoteKey }
+module.exports = { resolveExport, resolveDispatch, selectEnvironment, canonicalRemoteKey }

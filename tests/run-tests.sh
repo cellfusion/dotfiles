@@ -18,9 +18,10 @@ tests=(
   test-agent-config-role-catalog.sh
   test-native-agent-defs.sh
   test-agent-config-routing.sh
+  test-agent-environment-routing.sh
+  test-agent-family-launch.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh
-  test-pi-model-context.sh
   test-agent-maintenance-commands.sh
   test-escalation-policy.sh
   test-escalation-controller.sh

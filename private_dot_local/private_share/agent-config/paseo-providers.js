@@ -83,6 +83,9 @@ function providerPatch(resolvedExport, entry) {
     AGENT_ENV: environment,
     CHEZMOI_AGENT_CONFIG_MANAGED: '1',
   }
+  if (family.environmentVariable !== null) {
+    patch.env[family.environmentVariable] = environment
+  }
 
   if (family.setup !== null) {
     const configEnv = Object.entries(family.setup.configDirectoryEnv)
