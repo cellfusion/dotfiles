@@ -4,3 +4,10 @@
 # ここに置けば chezmoi apply が配れる。
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export ZDOTDIR="$XDG_CONFIG_HOME/zsh"
+
+# native CLI と対象 runtime の launcher は noninteractive shell でも優先する。
+path=("$HOME/.local/bin" "${(@)path:#$HOME/.local/bin}")
+export PATH
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+path=("$BUN_INSTALL/bin" "${(@)path:#$BUN_INSTALL/bin}")
+export PATH

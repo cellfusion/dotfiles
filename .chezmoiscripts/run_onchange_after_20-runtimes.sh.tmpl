@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-# chezmoi / mise / bun / uv / rustup を native installer で入れる。
-#
-# どれも自己更新を持ち、Homebrew 版は別ビルドになる。brew の rustup に至っては
-# keg-only で toolchain を持たない。未導入のときだけ入れて、更新は各ツールに任せる。
-# 40-ai-clis と同じ方針である。
-#
-# brew には依存しないので、brew bundle の完了を待たずに走る。
-# マニフェストのハッシュは持たない。導入の有無だけを見る。
+# 公式 native 配布を導入し、更新は各ツールの self-update に任せる。
+# Brew の同名コマンドや mise の launcher を導入済み判定に使わない。
 set -eu
 
 {{ includeTemplate "install/preamble" }}
@@ -14,65 +8,68 @@ set -eu
 local_bin_env
 bun_env
 rust_env
+local_bin="$HOME/.local/bin"
+mkdir -p "$local_bin"
 
-# chezmoi は Brewfile から外したので、恒久的な chezmoi を置く経路はここだけである。
-# 新マシンの起点 `sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion` が
-# 置くのは実行したディレクトリの ./bin 配下であり、PATH には入らない。
-if command -v chezmoi >/dev/null 2>&1; then
-  printf 'chezmoi は導入済みなので飛ばす\n'
+if [ -x "$local_bin/chezmoi" ]; then
+  printf 'chezmoi の native 実体は導入済みなので飛ばす\n'
 else
   printf 'chezmoi を native installer で入れる\n'
-  # install script の既定の BINDIR は ./bin である。-b を渡さないと、.zshenv が PATH に
-  # 載せる ~/.local/bin ではなくカレントディレクトリ配下に置かれる。
-  # curl が落ちても sh -c "" は 0 で終わり、この || die は発火しない。
-  # 導入の成否は次の command -v で確かめる。
-  sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin" \
+  curl -fsLS https://get.chezmoi.io | sh -s -- -b "$local_bin" \
     || die 'chezmoi の導入に失敗した'
-  command -v chezmoi >/dev/null 2>&1 || die 'chezmoi を導入したが PATH に見つからない'
+  [ -x "$local_bin/chezmoi" ] || die 'chezmoi の native 実体が見つからない'
 fi
 
-if command -v mise >/dev/null 2>&1; then
-  printf 'mise は導入済みなので飛ばす\n'
+if [ -x "$local_bin/mise" ]; then
+  printf 'mise の native 実体は導入済みなので飛ばす\n'
 else
   printf 'mise を native installer で入れる\n'
-  curl -fsSL https://mise.run | sh || die 'mise の導入に失敗した'
-  command -v mise >/dev/null 2>&1 || die 'mise を導入したが PATH に見つからない'
+  curl -fsSL https://mise.run | MISE_INSTALL_PATH="$local_bin/mise" sh \
+    || die 'mise の導入に失敗した'
+  [ -x "$local_bin/mise" ] || die 'mise の native 実体が見つからない'
 fi
 
-if command -v bun >/dev/null 2>&1; then
-  printf 'bun は導入済みなので飛ばす\n'
+if [ -x "$BUN_INSTALL/bin/bun" ]; then
+  printf 'bun の native 実体は導入済みなので飛ばす\n'
 else
   printf 'bun を native installer で入れる\n'
+  # bun_env が導入先を先頭に置くので installer の PATH 追記は不要になる。
   curl -fsSL https://bun.sh/install | bash || die 'bun の導入に失敗した'
-  command -v bun >/dev/null 2>&1 || die 'bun を導入したが PATH に見つからない'
+  [ -x "$BUN_INSTALL/bin/bun" ] || die 'bun の native 実体が見つからない'
 fi
 
-if command -v uv >/dev/null 2>&1; then
-  printf 'uv は導入済みなので飛ばす\n'
+if [ -x "$local_bin/uv" ]; then
+  printf 'uv の native 実体は導入済みなので飛ばす\n'
 else
   printf 'uv を native installer で入れる\n'
-  # PATH の管理は .zshenv と preamble に一本化する。installer に shell の設定ファイルを
-  # 書き換えさせない。rustup の --no-modify-path と同じ意図である。
-  INSTALLER_NO_MODIFY_PATH=1 curl -LsSf https://astral.sh/uv/install.sh | sh \
+  curl -LsSf https://astral.sh/uv/install.sh \
+    | UV_INSTALL_DIR="$local_bin" UV_NO_MODIFY_PATH=1 sh \
     || die 'uv の導入に失敗した'
-  command -v uv >/dev/null 2>&1 || die 'uv を導入したが PATH に見つからない'
+  [ -x "$local_bin/uv" ] || die 'uv の native 実体が見つからない'
 fi
 
-if command -v rustup >/dev/null 2>&1; then
-  printf 'rustup は導入済みなので飛ばす\n'
+if [ -x "$CARGO_HOME/bin/rustup" ]; then
+  printf 'rustup の native 実体は導入済みなので飛ばす\n'
 else
   printf 'rustup を native installer で入れる\n'
-  # --no-modify-path: PATH の管理は .zshenv と preamble に一本化する。
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --no-modify-path || die 'rustup の導入に失敗した'
-  command -v rustup >/dev/null 2>&1 || die 'rustup を導入したが PATH に見つからない'
+  [ -x "$CARGO_HOME/bin/rustup" ] || die 'rustup の native 実体が見つからない'
 fi
 
-# rustup を入れただけでは toolchain が無く、cargo は存在しない。
-rust_env
-if command -v cargo >/dev/null 2>&1; then
-  printf 'rust の toolchain は導入済みなので飛ばす\n'
+# cargo の存在だけでは default/override toolchain が設定済みとは限らない。
+if "$CARGO_HOME/bin/rustup" show active-toolchain >/dev/null 2>&1; then
+  printf 'rust の選択済み toolchain は導入済みなので飛ばす\n'
 else
-  printf 'rust の toolchain を入れる\n'
-  rustup default stable || die 'rustup default stable に失敗した'
+  printf 'rust の default toolchain を入れる\n'
+  "$CARGO_HOME/bin/rustup" default stable || die 'rust の toolchain 導入に失敗した'
+fi
+
+if [ -x "$local_bin/herdr" ]; then
+  printf 'herdr の native 実体は導入済みなので飛ばす\n'
+else
+  printf 'herdr を公式 installer で入れる\n'
+  curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR="$local_bin" sh \
+    || die 'herdr の導入に失敗した'
+  [ -x "$local_bin/herdr" ] || die 'herdr の native 実体が見つからない'
 fi

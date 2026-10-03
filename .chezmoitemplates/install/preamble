@@ -26,10 +26,10 @@ die() {
   exit 1
 }
 
-# PATH の先頭に足す。既に入っていれば何もしない。
+# PATH の先頭に足す。後方に既にあっても native の優先順位を保証する。
 prepend_path() {
-  case ":$PATH:" in
-    *":$1:"*) ;;
+  case "$PATH" in
+    "$1"|"$1":*) ;;
     *)
       PATH="$1:$PATH"
       export PATH

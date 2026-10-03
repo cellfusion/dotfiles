@@ -17,7 +17,7 @@ SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取�
 |---|---|---|
 | Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
 | Homebrew | `~/.config/install/Brewfile`、`~/.config/install/third-party.txt` | `run_onchange_after_10-brew.sh` |
-| native installer（chezmoi・ランタイム） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
+| native installer（chezmoi・ランタイム・Herdr） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
@@ -305,7 +305,7 @@ repository から自動配布しない。
 
 ## 開発ツール
 
-mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理する。
+mise / bun / uv / rustup / chezmoi / herdr は native installer、go は mise が管理する。
 それぞれの節を見る。
 
 | ツール | 用途 |
@@ -350,7 +350,7 @@ mise / bun / uv / rustup / chezmoi は native installer、go は mise が管理�
 ## native installer
 
 自己更新を持つツール、または Homebrew 版が別ビルドになるツールは brew に寄せない。
-未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup は
+未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup / herdr は
 `run_onchange_after_20-runtimes.sh` が、claude / codex は
 `run_onchange_after_40-ai-clis.sh` が入れる。
 
@@ -362,8 +362,9 @@ chezmoi の install script の既定の BINDIR は `./bin`（実行時のカレ�
 | chezmoi | `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"` | 新マシンの起点になる。20-runtimes が未導入のときだけ入れる。brew 版を併せて入れると 2 本になる |
 | mise | `curl https://mise.run \| sh` | Homebrew 版は別ビルドで、公式の最適化されたリリースバイナリではない |
 | bun | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` で自己更新する |
-| uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `uv self update` で自己更新する |
+| uv | `curl -LsSf https://astral.sh/uv/install.sh \| UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh` | `uv self update` で自己更新する。installer に shell 設定を書き換えさせない |
 | rustup | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh -s -- -y --no-modify-path` | brew 版は keg-only で toolchain を持たない |
+| herdr | `curl -fsSL https://herdr.dev/install.sh \| sh` | 公式 checksum 検証付き installer。native 配布だけ `herdr update` で更新する |
 | claude | `curl -fsSL https://claude.ai/install.sh \| bash` | 自己更新を持つ |
 | codex | `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | 自己更新を持つ |
 | opencode | Homebrew（`anomalyco/tap/opencode`） | 自己更新を持たないので brew に置く |
@@ -375,6 +376,11 @@ cask に未着のバージョンを「更新あり」と表示する状態が起
 rustup に `--no-modify-path` を渡すのは、PATH の管理を `~/.config/zsh/.zshenv` と
 `.chezmoitemplates/install/preamble` に一本化するためである。rustup 自身に shell の
 設定ファイルを書き換えさせない。
+
+導入済み判定は PATH 上の同名コマンドではなく、native installer の実際の保存先を確認する。
+`~/.local/bin` の chezmoi / mise / uv / herdr、`$BUN_INSTALL/bin/bun`、
+`$CARGO_HOME/bin/rustup` が正本である。更新も正本を使い、Brew 版を self-update しない。
+chezmoi は `chezmoi upgrade`、mise は `mise self-update`、rustup は `rustup self update` で更新する。
 
 ## mise 管理
 
@@ -388,6 +394,11 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 | java | 25 | JVM ランタイム |
 | deno | 2.5 | Deno ランタイム |
 | go | 1.26 | Go ランタイム |
+
+pnpm / deno / go は `~/.local/bin` の launcher が native mise の `exec` を通して選ぶ。
+project ごとの mise 設定も尊重する。全 mise shims を PATH の先頭へ移す変更ではないため、
+Framework Python や Android Studio の JBR など、対象外 runtime の既存選択は変えない。
+`rustup` の launcher は native `$CARGO_HOME/bin/rustup` を選ぶ。
 
 ## npm グローバル
 
@@ -538,13 +549,14 @@ coderabbit (~/.local/bin), openclaw (npm),
 ### 重複
 corepack (npm, mise の pnpm 管理と重複)
 
-### brew と native installer の二重インストール
+### 既存の Brew コピーの整理
 
-`mise` / `bun` / `uv` / `rustup` は Homebrew と native installer の両方で入っており、
-brew 版は使われていない。Brewfile からは外したので新マシンでは入らないが、現マシンの
-brew 版は残っている。
+native / mise に割り当てた `bun mise uv rustup deno go pnpm chezmoi herdr` は
+Brewfile に載せない。既存の Brew コピーは apply だけでは削除しない。
+先に代替の保存先・version・動作と復元資材を確認し、対象を承認してから削除する。
+他の Brew パッケージの依存としての Python / OpenJDK / library は残す。
 
-    brew uninstall mise bun uv rustup
+    HOMEBREW_NO_AUTOREMOVE=1 brew uninstall bun mise uv rustup deno go pnpm chezmoi herdr
 
 `~/.bun/bin/bin` も、`BUN_INSTALL` の設定ミスでできた二重構造である。`.zshrc` を
 直したので参照されなくなった。
@@ -572,15 +584,9 @@ brew 版は残っている。
       hyperfine mint lazydocker git-filter-repo automake mkcert cloudflared \
       cmake ninja zig protobuf pandoc ffmpeg
 
-**`chezmoi` はこのコマンドに含めていない。** 現マシンの chezmoi は brew 版しか無く
-（`~/.local/bin/chezmoi` は存在しない）、そのまま消すと chezmoi が使えなくなる。
-先に native installer で入れ、`which chezmoi` が `~/.local/bin/chezmoi` を指すことを
-確かめてから brew 版を消す。`-b` を落とすと既定の `./bin` に入り、PATH に載らない。
-
-    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
-    hash -r
-    which chezmoi
-    brew uninstall chezmoi
+chezmoi の Brew コピーを除く前には `~/.local/bin/chezmoi --version` で native の実体を
+確認する。install script を使う場合は `-b "$HOME/.local/bin"` を指定する。
+既定の `./bin` に入っただけでは、native の恒久的な保存先を満たさない。
 
 削除するときの例。
 
