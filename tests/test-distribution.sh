@@ -109,5 +109,12 @@ assert_contains "$managed" '.config/claude/agents/escalation-judge.md' \
 assert_contains "$managed" '.config/opencode/agents/escalation-judge.md' \
   'OpenCode escalation judge agent を配る'
 
+for prefix in .agents .config/claude .config/opencode; do
+  for file in SKILL.md references/review-criteria.md references/reviewer-prompts.md; do
+    assert_contains "$managed" "$prefix/skills/technical-writing-review/$file" \
+      "technical writing review: $prefix/$file を配る"
+  done
+done
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"
 test "$TESTS_FAILED" -eq 0

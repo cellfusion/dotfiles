@@ -395,6 +395,24 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 現在は 1 つも無い。マニフェスト `~/.config/install/cargo-globals.txt` は
 コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。
 
+## 技術文章レビュー
+
+`technical-writing-review` は、GitHub の PR 本文・コメント、README、設計説明、手順を
+書く・推敲する・レビューするときに使う。日本語を中心に、可読性、読者に必要な説明、
+構成と図表を3つの読み取り専用サブエージェントで並列に確認し、親が指摘を統合する。
+コード差分の正しさを調べる `pr-review` とは別用途である。
+
+Codex 向けの `~/.agents/skills`、Claude Code の `~/.config/claude/skills`、
+OpenCode の `~/.config/opencode/skills` に、同じ本体とレビュー用 references を配る。
+明示的に使いたい場合は「technical-writing-review を使って、この PR 本文を書いて」
+などと依頼する。執筆依頼ではレビュー後の原稿、レビュー依頼では引用付きの指摘を返す。
+スキルの description に執筆時の発動条件を記載しているが、自動選択を常に保証するものではない。
+
+短いコメントに不要な背景や図を要求せず、API 名・条件・否定・元の語調を保持する。
+根拠のない性能値や確認結果は創作せず、確認事項として分離する。図表は理解を助ける場合だけ、
+種類・必要な要素・掲載位置を提案する。子が失敗した場合は不足した観点を明示する。
+スキルの選択だけでは、GitHub への投稿やファイルの書き換えは許可されない。
+
 ## 手動インストール
 
 マニフェストに載せていないが使っているもの。
