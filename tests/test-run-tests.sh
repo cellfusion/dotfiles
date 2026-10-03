@@ -37,6 +37,7 @@ expected_names=(
   test-manual-orchestration-contract.sh
   test-schemas.sh
   test-distribution.sh
+  test-natural-japanese.sh
   test-install-brewfile.sh
   test-install-scripts.sh
   test-manual-scripts.sh
@@ -78,7 +79,7 @@ assert_eq "$(cat "$order_file")" "$expected_order" \
   'runner: allowlist の順序をそのまま実行する'
 assert_not_contains "$(cat "$order_file")" sentinel \
   'runner: allowlist 外の sentinel を実行しない'
-assert_contains "$output" 'SUMMARY 37 0' \
+assert_contains "$output" 'SUMMARY 38 0' \
   'runner: 最終 SUMMARY に実行数と失敗数を出す'
 
 assert_summary
