@@ -2,6 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { DUTIES, COMPLEXITIES, SCHEMA_KEYWORDS } = require('./config-types.js')
 
 class ConfigError extends Error {
@@ -314,6 +315,30 @@ function assertSetupPaths(family, setup) {
   }
 }
 
+function gitCommonDirectory(directory) {
+  const result = spawnSync(
+    'git',
+    ['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } },
+  )
+  if (result.error) {
+    throw new ConfigError(`projectRouting rule: Git を起動できない (${result.error.code || 'spawn error'})`)
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || '').trim().replace(/\s+/g, ' ')
+    throw new ConfigError(`projectRouting rule: Git common directory を取得できない (${detail || `exit ${result.status}`})`)
+  }
+  const output = (result.stdout || '').trim()
+  if (!path.isAbsolute(output)) {
+    throw new ConfigError('projectRouting rule: Git common directory が絶対 path ではない')
+  }
+  try {
+    return fs.realpathSync.native(output)
+  } catch (error) {
+    throw new ConfigError(`projectRouting rule: Git common directory を canonicalize できない (${error.code || 'I/O'})`)
+  }
+}
+
 function assertSemantics(config) {
   if (!Object.prototype.hasOwnProperty.call(config.environments, config.defaults.environment)) {
     throw new ConfigError(`defaults.environment ${config.defaults.environment}: 未知の environment である`)
@@ -422,15 +447,22 @@ function assertSemantics(config) {
   const configEnvOwners = new Map()
   for (const [family, definition] of Object.entries(config.providers)) {
     const setup = definition.setup
-    if (setup === null) continue
-    const entries = Object.entries(setup.configDirectoryEnv)
-    if (entries.length !== 1) throw new ConfigError(`provider family ${family}: configDirectoryEnv は一つだけ必要である`)
-    for (const [name] of entries) {
+    if (setup !== null) {
+      const entries = Object.entries(setup.configDirectoryEnv)
+      if (entries.length !== 1) throw new ConfigError(`provider family ${family}: configDirectoryEnv は一つだけ必要である`)
+      for (const [name] of entries) {
+        assertConfigEnvName(name)
+        if (configEnvOwners.has(name)) throw new ConfigError(`config env ${name}: family 間で重複する`)
+        configEnvOwners.set(name, family)
+      }
+      assertSetupPaths(family, setup)
+    }
+    if (definition.environmentVariable !== undefined) {
+      const name = definition.environmentVariable
       assertConfigEnvName(name)
       if (configEnvOwners.has(name)) throw new ConfigError(`config env ${name}: family 間で重複する`)
       configEnvOwners.set(name, family)
     }
-    assertSetupPaths(family, setup)
   }
 
   const environments = Object.keys(config.environments)
@@ -478,25 +510,32 @@ function assertSemantics(config) {
     if (!Object.prototype.hasOwnProperty.call(config.environments, rule.environment)) {
       throw new ConfigError(`projectRouting rule: 未知の environment である`)
     }
-    const fields = Object.keys(rule.match)
-    if (fields.length === 0 || fields.some((field) => !['remote', 'path'].includes(field))) {
+    const matchFields = Object.keys(rule.match)
+    const hasInvalidMatchField = matchFields.some(
+      (field) => !['remote', 'remoteNamespace', 'path', 'gitRepository'].includes(field),
+    )
+    if (matchFields.length === 0 || hasInvalidMatchField) {
       throw new ConfigError('projectRouting rule: match field が不正である')
     }
-    if (typeof rule.match.path === 'string') {
-      if (!path.isAbsolute(rule.match.path)) throw new ConfigError('projectRouting rule: path は絶対 path である')
+    for (const field of ['path', 'gitRepository']) {
+      if (typeof rule.match[field] !== 'string') continue
+      const rulePath = rule.match[field]
+      if (!path.isAbsolute(rulePath)) throw new ConfigError(`projectRouting rule: ${field} は絶対 path である`)
       let canonicalPath
       try {
-        if (!fs.statSync(rule.match.path).isDirectory()) throw new Error('not a directory')
-        canonicalPath = fs.realpathSync.native(rule.match.path)
+        if (!fs.statSync(rulePath).isDirectory()) throw new Error('not a directory')
+        canonicalPath = fs.realpathSync.native(rulePath)
       } catch {
-        throw new ConfigError('projectRouting rule: path が存在しない')
+        throw new ConfigError(`projectRouting rule: ${field} が存在しない`)
       }
-      if (canonicalPath !== rule.match.path) throw new ConfigError('projectRouting rule: path は canonical path である')
+      if (canonicalPath !== rulePath) throw new ConfigError(`projectRouting rule: ${field} は canonical path である`)
+      if (field === 'gitRepository') gitCommonDirectory(rulePath)
     }
-    if (typeof rule.match.remote === 'string') {
-      const remoteParts = rule.match.remote.split('/').slice(1)
+    for (const field of ['remote', 'remoteNamespace']) {
+      if (typeof rule.match[field] !== 'string') continue
+      const remoteParts = rule.match[field].split('/').slice(1)
       if (remoteParts.some((part) => part === '.' || part === '..' || part.endsWith('.git'))) {
-        throw new ConfigError('projectRouting rule: remote path が不正である')
+        throw new ConfigError(`projectRouting rule: ${field} path が不正である`)
       }
     }
   }

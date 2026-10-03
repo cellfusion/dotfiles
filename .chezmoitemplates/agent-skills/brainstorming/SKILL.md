@@ -38,6 +38,9 @@ implementation plan without asking for another approval.
 Ask one question only when the unresolved choice would change behavior, scope, data, permissions,
 or external side effects. After the answer, continue with the agreed design.
 
+If a bounded change has consequential risks (public behavior, migration, permissions, or hard-to-reverse
+side effects), run `design-checkpoint-review` on the draft before implementation.
+
 ### Architectural
 
 Use the architectural route for a new subsystem, multiple layers, public contracts, migrations,
@@ -48,6 +51,10 @@ authentication, or several valid designs:
 3. recommend one and describe data flow, error handling, and verification
 4. create a specification or plan only when it will be used
 5. obtain a decision before implementation
+
+Before presenting a consequential design for approval, use `design-checkpoint-review` to check the
+draft against the original request, available issue and repository rules, and likely side effects.
+Keep the review focused on the design; do not turn minor bounded choices into a mandatory gate.
 
 Do not make child agents, preview tabs, or MAD mandatory when the scope does not justify them.
 
@@ -90,9 +97,11 @@ separate perspective, or user-requested delegation is worth the coordination cos
 - Independent tasks, multiple children, strict artifacts, or required isolation:
   `multi-agent-development`.
 - Finalized multi-stage architecture: `writing-plans`.
+- Consequential design checkpoint before implementation: `design-checkpoint-review`.
 - Unknown bug cause: `systematic-debugging`.
 
-This skill does not automatically chain the next skill. The parent chooses the execution route.
+This skill does not automatically chain an execution skill. The parent chooses the execution route;
+the design checkpoint applies only when the design has consequential risks.
 
 ## Re-evaluate when complexity appears
 

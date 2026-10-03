@@ -2,6 +2,9 @@
   "type": "object",
   "required": ["route", "workClass", "role", "complexity", "goal", "writeScope", "acceptanceCriteria", "verification", "needsBrainstorming", "needsUserDecision", "confidence", "reason"],
   "additionalProperties": false,
+  "if": { "properties": { "route": { "const": "direct" } }, "required": ["route"] },
+  "then": { "properties": { "role": { "type": "null" } } },
+  "else": { "properties": { "role": { "enum": ["implementer", "architectural-implementer"] } } },
   "properties": {
     "route": { "enum": ["direct", "single", "delivery"] },
     "workClass": { "enum": ["mechanical", "routine", "integration", "architectural"] },

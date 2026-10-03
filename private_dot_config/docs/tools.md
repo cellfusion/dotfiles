@@ -150,13 +150,17 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 1. environment の定義は `environments` に移し、`providers` はその environment で eligible な
    provider family の一覧だけにする。root `providers` には全 family の base record を持たせ、
    environment 側の eligibility だけを理由に base record を省略しない。
-2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。environment は
-   4 段で決まる。1 段目は明示した `--environment` である。2 段目は親の AI 環境名である。
-   3 段目は最初に一致した rule である。どれにも当たらなければ `defaults.environment` を使う。
-   親の AI 環境名は `AGENT_ENV` だけを読む。`AGENT_ENV_SESSION` は参照しない。`AGENT_ENV` が
-   未設定または空文字なら 2 段目を飛ばす。
-   親の AI 環境名が `environments` に無い名前のときは、`resolve` が終了コード 2 で終わり
-   stdout に JSON を出さない。
+2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。`match.path` は
+   canonical directory の完全一致、`match.remote` は同じ origin repository を持つ clone の一致である。
+   Organization / group 単位では `match.remoteNamespace` に `github.com/example-org` や
+   `gitlab.example/group/subgroup` を指定する。これは segment boundary を含む namespace prefix であり、
+   glob や単純な文字列 prefix ではない。`match.gitRepository` には存在する canonical absolute Git
+   directory を指定する。起動 cwd と rule の
+   `git rev-parse --path-format=absolute --git-common-dir` を比較するため、main checkout、linked worktree、
+   それぞれの subdirectory が同じ rule に一致し、同じ remote の別 clone は一致しない。複数 matcher は
+   AND であり、最初に一致した rule を使う。environment は明示 `--environment`、親 `AGENT_ENV`、rule、
+   `defaults.environment` の順で決まる。未知の explicit/parent environment は終了コード 2 で拒否し、
+   stdout に JSON を出さない。`AGENT_ENV_SESSION` は参照しない。
 3. 候補は `selection` の 16 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
    `author`、`implement`、`review`、`synthesize`、複雑度は `simple`、`routine`、`complex`、`critical` である。
    16 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、
@@ -167,11 +171,13 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 5. 品質不足時の model・effort の切り替えは、必要な duty と complexity にだけ
    `attemptPolicy.<duty>.<complexity>.levels` を追加する。`levels[0]` が初回、`mad-fix` の round 1 以降が
    次の level である。同じ level の `candidates` は availability fallback、level の順序は quality escalation として別々に扱う。設定した level が尽きた後は strict MAD の review 上限で停止する。
-6. `claude`、`codex`、`pi` 以外の provider family は、Paseo の provider record key に現れる literal な
-   family 名をそのまま root `providers` の key にする。`pi` は `PI_CODING_AGENT_DIR` を
-   `$HOME/.pi/agent`（非 primary は `$HOME/.pi/agent-<environment>`）へ materialize し、
-   `featureAllowlist` は `{}` とする。その他の family は `setup` を `null` とし、directory、env、
-   symlink、config を materialize しない。
+6. `claude`、`codex`、`pi`、`omp` 以外の provider family は、Paseo の provider record key に現れる
+   literal な family 名をそのまま root `providers` の key にする。`pi` は
+   `PI_CODING_AGENT_DIR` を `$HOME/.pi/agent`（非 primary は
+   `$HOME/.pi/agent-<environment>`）へ materialize し、`featureAllowlist` は `{}` とする。
+   OMP は `setup: null`、`environmentVariable: \"OMP_PROFILE\"` とし、選択 environment と同名の
+   named profile を使う。その他の family は `setup` を `null` とし、directory、symlink、config を
+   materialize しない。
 
 実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
 この移行手順でも、先に次の絶対 path を設定する。
@@ -227,31 +233,52 @@ stale な provider・directory は自動削除しない。auth と history の�
 
 ## agent で AI 環境を指定して起動する
 
-`~/.local/bin/agent` は AI 環境を指定して AI CLI を起動するラッパーである。
+`~/.local/bin/agent` は `~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して
+family と同名の AI CLI を `exec` する。
 
-    agent --provider=<provider-id> [引数...]
+```text
+agent --provider=<provider-id> [--] [args...]
+agent --family=<family> [--environment=<environment>] [--] [args...]
+```
 
-`<provider-id>` は `~/.config/chezmoi/agent-config.json` から materialize した id で、
-Paseo の provider record の key と同じ名前空間にある。既定環境の provider id は
-provider family の名前そのもの（`claude`）、それ以外の環境は `<family>-<環境名>`
-（`claude-lab`）である。
+`--provider` は既存の明示起動である。`<provider-id>` は Paseo provider record と同じ名前空間を使い、
+既定環境は family 名（`claude`）、それ以外は `<family>-<environment>`（`claude-lab`）である。
 
-ラッパーは `AGENT_ENV` に環境名を設定し、family の `setup.configDirectoryEnv` の key
-（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`PI_CODING_AGENT_DIR`）へ `setup.directoryPattern` を
-展開した絶対 path を設定してから、family と同じ名前のコマンドを `exec` で起動する。`setup` が
-`null` のfamily（`opencode`）では設定ディレクトリの変数を設定しない。自分のプロセスを
-残さないので、`paseo provider diagnostic` がコマンドを起動して version と auth を読む
-経路でも使える。
+`--family` は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
+`projectRouting.rules` rule、`defaults.environment` の順に選ぶ。たとえば
+`agent --family=codex --environment=pxgrid` は親や cwd rule と異なる `pxgrid` への明示切替を許す。
+ただし、その environment の `providers` に `codex` が無ければ起動しない。`--provider` と
+`--family` は併用できず、`--environment` は `--family` とだけ併用できる。
 
-正本は `AGENT_CONFIG`（未設定なら `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json`）
-から読む。`--provider` が無い、値が空、重複している、正本に無い id を渡した、正本を
-読めない、のいずれでも終了コード 2 で終わり、使える provider id の一覧を stderr に出す。
-`--` 以降の引数は family のコマンドへそのまま渡す。
+`match.gitRepository` は Git common directory を比較するため、登録した checkout の linked worktree と
+その subdirectory でも同じ environment を選ぶ。`match.remoteNamespace` は
+`github.com/example-org` のような正規化済み namespace を使い、その配下の全 repository に一致する。
+Git 外 cwd、無関係 repository、どの rule にも一致しない cwd は default environment を使う。
+Unknown environment、invalid config、ineligible family では default へ落とさず終了コード 2 で失敗する。
 
-zsh は解決できた AI 環境の変数だけを設定する。`AGENT_ENV` も `HERDR_SESSION` も
-定義済みの環境名でないシェルでは、その環境に含まれない AI CLI の通常起動は関数で塞がれるので、
-このラッパーで起動する。ただし Pi と Codex の管理用 `update` サブコマンドは直接実行できる
-（例: `pi update`、`codex update`）。
+正常時は `AGENT_ENV` と family の隔離変数を設定する。Claude は `CLAUDE_CONFIG_DIR`、Codex は
+`CODEX_HOME`、Pi は `PI_CODING_AGENT_DIR` を使う。OMP は `OMP_PROFILE=<environment>` を使う。
+OMP named profile は profile ごとの native config、session、`agent.db` を持ち、
+`PI_CODING_AGENT_DIR` を無視する。一つの profile には一方の account だけを login し、OMP の
+複数-account rotation で A/B を混ぜない。
+
+zsh の bare `claude`、`codex`、`pi`、`omp` は `agent --family=<family>` へ送る。`pi update` と
+`codex update` だけは実 CLI へ直接送る。`command claude`、absolute executable path、zsh 設定を
+読まない process は wrapper を bypass する。
+
+Orca terminal と Project Quick Command からは、たとえば次を実行する。
+
+```text
+agent --family=codex
+orca terminal create --worktree active --command "agent --family codex"
+```
+
+Orca 1.4.215 には shipped per-project launch profile がない。Agent picker、
+`worktree create --agent`、scheduled automation provider、orchestration worker は project rule から
+family/provider を自動選択しない。これらでは environment-specific provider id を明示する。
+Materialized provider と wrapper は `AGENT_ENV` を子へ継承するため、明示 `--environment` がない
+child resolve は親環境を保持する。Project-scoped Quick Command は Orca UI 設定であり、この
+repository から自動配布しない。
 
 ## core
 
@@ -374,6 +401,24 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 
 現在は 1 つも無い。マニフェスト `~/.config/install/cargo-globals.txt` は
 コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。
+
+## 技術文章レビュー
+
+`technical-writing-review` は、GitHub の PR 本文・コメント、README、設計説明、手順を
+書く・推敲する・レビューするときに使う。日本語を中心に、可読性、読者に必要な説明、
+構成と図表を3つの読み取り専用サブエージェントで並列に確認し、親が指摘を統合する。
+コード差分の正しさを調べる `pr-review` とは別用途である。
+
+Codex 向けの `~/.agents/skills`、Claude Code の `~/.config/claude/skills`、
+OpenCode の `~/.config/opencode/skills` に、同じ本体とレビュー用 references を配る。
+明示的に使いたい場合は「technical-writing-review を使って、この PR 本文を書いて」
+などと依頼する。執筆依頼ではレビュー後の原稿、レビュー依頼では引用付きの指摘を返す。
+スキルの description に執筆時の発動条件を記載しているが、自動選択を常に保証するものではない。
+
+短いコメントに不要な背景や図を要求せず、API 名・条件・否定・元の語調を保持する。
+根拠のない性能値や確認結果は創作せず、確認事項として分離する。図表は理解を助ける場合だけ、
+種類・必要な要素・掲載位置を提案する。子が失敗した場合は不足した観点を明示する。
+スキルの選択だけでは、GitHub への投稿やファイルの書き換えは許可されない。
 
 ## 手動インストール
 

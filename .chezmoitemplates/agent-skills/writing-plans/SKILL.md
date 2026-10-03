@@ -69,6 +69,10 @@ Before presenting it:
 Use an existing dependency validator when available. Do not silently discard validator findings.
 Reject them with rationale, preserve them as an unresolved constraint, or ask the user.
 
+If planning introduces a consequential design decision that was not already reviewed, use
+`design-checkpoint-review` on that decision before presenting the plan or starting implementation.
+Do not repeat a checkpoint for an unchanged, already reviewed design.
+
 ## Approval and preview
 
 Show the plan at its external absolute path. Obtain user approval before implementation when the plan
