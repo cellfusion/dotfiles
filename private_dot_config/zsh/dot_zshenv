@@ -41,5 +41,11 @@ export CABAL_DIR="$XDG_DATA_HOME"/cabal
 export DENO_INSTALL="$XDG_DATA_HOME/deno"
 export DENO_INSTALL_ROOT="$DENO_INSTALL"
 
+# .NET user tools。path_helper の /etc/paths.d では ~ が展開されない。
+case ":$PATH:" in
+  *":$HOME/.dotnet/tools:"*) ;;
+  *) export PATH="$PATH:$HOME/.dotnet/tools" ;;
+esac
+
 ### Rive ###
 export PATH="$HOME/.rive/bin:$PATH"

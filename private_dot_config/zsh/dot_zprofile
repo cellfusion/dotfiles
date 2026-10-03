@@ -13,7 +13,11 @@ export PATH
 
 # ANDROID_HOME は .zshenv で定義する（非 login shell でも要るため）
 
-export JAVA_HOME="$HOME/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+# 対話シェルだけでなく login shell のビルドも mise の Java を使う。
+if command -v mise >/dev/null 2>&1 && _java_home="$(mise where java)"; then
+  export JAVA_HOME="$_java_home"
+fi
+unset _java_home
 
 export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/33.0.1:$ANDROID_HOME/tools/bin"
 
