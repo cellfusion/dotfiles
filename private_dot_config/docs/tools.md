@@ -4,6 +4,13 @@
 `~/.config/install/` にあり、chezmoi のソースは
 `private_dot_config/install/` にある。
 
+`chezmoi init` では yabai、skhd、SketchyBar の使用を個別に選べる。設定は
+生成された `~/.config/chezmoi/chezmoi.toml` の `[data.windowManager]` に保存される。
+選択を変えるには再度 init する前にこの値を編集する。無効にすると新規導入と
+設定配布・サービス登録を省くが、既存のインストールや実行中のサービスは停止しない。
+SketchyBar を有効にして yabai を無効にした場合だけ `brew services` から起動する。
+SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取ジョブも省く。
+
 ## 管理方法
 
 | 経路 | マニフェスト | 実行するスクリプト |

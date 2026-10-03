@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Brewfile か third-party.txt が変わったときだけ実行される。
-# manifest hash: {{ printf "%s%s" (includeTemplate "install/brewfile" (dict "os" .chezmoi.os)) (includeTemplate "install/third-party" (dict "os" .chezmoi.os)) | sha256sum }}
+# manifest hash: {{ printf "%s%s" (includeTemplate "install/brewfile" (dict "os" .chezmoi.os "sketchybar" (or (not (hasKey . "windowManager")) (not (hasKey .windowManager "sketchybar")) .windowManager.sketchybar))) (includeTemplate "install/third-party" (dict "os" .chezmoi.os "yabai" (or (not (hasKey . "windowManager")) .windowManager.yabai) "skhd" (or (not (hasKey . "windowManager")) .windowManager.skhd) "sketchybar" (or (not (hasKey . "windowManager")) (not (hasKey .windowManager "sketchybar")) .windowManager.sketchybar))) | sha256sum }}
 set -eu
 
 {{ includeTemplate "install/preamble" }}

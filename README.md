@@ -7,8 +7,12 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion
 ```
 
 これ 1 本で chezmoi が入り、リポジトリが clone され、`chezmoi apply` まで走る。
+init 時に yabai / skhd / SketchyBar を環境ごとに個別に選ぶ（既定はすべて使用）。
+選ばなかったツールはインストール・設定配布・サービス登録を行わない。
+SketchyBar を使い yabai を使わない場合は、Homebrew のサービスとして起動する。
+既に導入済みのツールやサービスは選択を変更しても自動削除・停止されない。
 apply の中で Homebrew の導入、Brewfile の適用、ランタイムの導入、AI CLI の導入、
-sketchybar helper のビルド、yabai と skhd のサービス登録が順に実行される。
+選択時のみ SketchyBar helper のビルド、選択したサービスの登録が順に実行される。
 
 Homebrew の導入と cask のインストールで、sudo のパスワードを複数回聞かれる。
 

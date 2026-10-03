@@ -6,8 +6,8 @@
 # Homebrew 6 の tap trust に引っかからない。
 anomalyco/tap/opencode
 {{ if eq .os "darwin" -}}
-asmvik/formulae/yabai
-asmvik/formulae/skhd
+{{ if or (not (hasKey . "yabai")) .yabai }}asmvik/formulae/yabai{{ end }}
+{{ if or (not (hasKey . "skhd")) .skhd }}asmvik/formulae/skhd{{ end }}
 felixkratz/formulae/borders
-felixkratz/formulae/sketchybar
+{{ if or (not (hasKey . "sketchybar")) .sketchybar }}felixkratz/formulae/sketchybar{{ end }}
 {{ end -}}

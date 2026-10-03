@@ -26,5 +26,11 @@
 [git]
   autoAdd = true
 
+[data]
+  [data.windowManager]
+    yabai = {{ promptBoolOnce . "windowManager.yabai" "この環境で yabai を使用しますか？" true }}
+    skhd = {{ promptBoolOnce . "windowManager.skhd" "この環境で skhd を使用しますか？" true }}
+    sketchybar = {{ promptBoolOnce . "windowManager.sketchybar" "この環境で SketchyBar を使用しますか？" true }}
+
 {{ $extra := joinPath .chezmoi.homeDir ".config/chezmoi/private-data.toml" -}}
 {{ if stat $extra }}{{ include $extra }}{{ end }}
