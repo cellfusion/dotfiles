@@ -29,6 +29,7 @@ tests=(
   test-manual-orchestration-contract.sh
   test-schemas.sh
   test-distribution.sh
+  test-natural-japanese.sh
   test-install-brewfile.sh
   test-install-scripts.sh
   test-zsh-bootstrap.sh
