@@ -31,6 +31,7 @@ tests=(
   test-distribution.sh
   test-install-brewfile.sh
   test-install-scripts.sh
+  test-zsh-bootstrap.sh
   test-manual-scripts.sh
   test-tools-doc.sh
   test-instructions.sh

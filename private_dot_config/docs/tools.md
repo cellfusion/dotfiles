@@ -376,6 +376,23 @@ rustup に `--no-modify-path` を渡すのは、PATH の管理を `~/.config/zsh
 `.chezmoitemplates/install/preamble` に一本化するためである。rustup 自身に shell の
 設定ファイルを書き換えさせない。
 
+### zsh の初期化とシステム設定
+
+`~/.zshenv` は `ZDOTDIR` を選び、`~/.config/zsh/.zshenv` を明示的に読む。
+zsh は読み込み中に `ZDOTDIR` が変わっても、変更先の `.zshenv` を読み直さない。
+この手順で Android・Rust・Deno・AWS の参照先と `.NET` user tools の PATH を、
+非対話シェルにも設定する。回帰検査は `bash tests/test-zsh-bootstrap.sh`。
+
+`/etc/zshenv` で `ZDOTDIR` を無条件に上書きしない。Orca の準備完了通知用ラッパーが
+読まれなくなり、起動が15秒のタイムアウトまで待たされる。既存マシンに残っている
+代入は管理者権限で除く。`/etc/paths.d/dotnet-cli-tools` の `~/.dotnet/tools` も
+path_helper では展開されないため、バックアップを `/etc/paths.d` の外へ保存して除く。
+user tools の正しい PATH は chezmoi の `.zshenv` で管理する。
+
+login shell の `JAVA_HOME` は `.zprofile` が `mise where java` から取得する。
+Android Studio の導入場所や Homebrew の Java に固定しない。対話シェルでは
+既存の `mise activate zsh` も有効になる。
+
 ## mise 管理
 
 node / python / java / pnpm / deno / go は mise で管理し、Brewfile には載せない。

@@ -36,9 +36,6 @@ export OPENSSL_LIB_DIR="/opt/homebrew/opt/openssl@3/lib"
 export OPENSSL_INCLUDE_DIR="/opt/homebrew/opt/openssl@3/include"
 export OPENSSL_DIR="/opt/homebrew/opt/openssl@3"
 
-# .NET Core SDK tools
-export PATH="$PATH:$HOME/.dotnet/tools"
-
 # 1password cli
 source $HOME/.config/op/plugins.sh
 source ~/.op/plugins.sh
