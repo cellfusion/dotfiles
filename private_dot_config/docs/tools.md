@@ -395,9 +395,9 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 | deno | 2.5 | Deno ランタイム |
 | go | 1.26 | Go ランタイム |
 
-pnpm / deno / go は `~/.local/bin` の launcher が native mise の `exec` を通して選ぶ。
-project ごとの mise 設定も尊重する。全 mise shims を PATH の先頭へ移す変更ではないため、
-Framework Python や Android Studio の JBR など、対象外 runtime の既存選択は変えない。
+pnpm / deno / go は `~/.local/bin` の launcher が native mise の `which --tool` で実体を選ぶ。
+project ごとの mise 設定も尊重する。`mise exec` の全 runtime activation は使わず、
+子プロセスにも元の PATH / JAVA_HOME を引き継ぐため、Framework Python や JBR の選択は変えない。
 `rustup` の launcher は native `$CARGO_HOME/bin/rustup` を選ぶ。
 
 ## npm グローバル

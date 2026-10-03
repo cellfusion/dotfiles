@@ -1,3 +1,4 @@
 #!/bin/sh
 # 対象 runtime だけを mise に任せ、Python/Java の PATH は変更しない。
-exec "$HOME/.local/bin/mise" exec -- go "$@"
+runtime_bin=$("$HOME/.local/bin/mise" which go --tool go) || exit $?
+exec "$runtime_bin" "$@"
