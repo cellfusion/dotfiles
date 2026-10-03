@@ -1,1 +1,1 @@
-{{ includeTemplate "install/brewfile" (dict "os" .chezmoi.os) -}}
+{{ includeTemplate "install/brewfile" (dict "os" .chezmoi.os "sketchybar" (or (not (hasKey . "windowManager")) (not (hasKey .windowManager "sketchybar")) .windowManager.sketchybar)) -}}

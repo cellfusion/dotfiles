@@ -1,5 +1,21 @@
 .DS_Store
 .config/zsh/.zcompdump
+{{ if and (hasKey . "windowManager") (not .windowManager.yabai) }}
+.config/yabai
+.config/yabai/**
+{{ end }}
+{{ if and (hasKey . "windowManager") (not .windowManager.skhd) }}
+.config/skhd
+.config/skhd/**
+{{ end }}
+{{ if and (hasKey . "windowManager") (hasKey .windowManager "sketchybar") (not .windowManager.sketchybar) }}
+.config/sketchybar
+.config/sketchybar/**
+.config/top_bar
+.config/top_bar/**
+.local/bin/top_bar
+Library/LaunchAgents/com.cellfusion.sketchybar-usage-claude.plist
+{{ end }}
 
 .config/nvim/lazy-lock.json
 .config/sketchybar/helpers/menus/bin/menus

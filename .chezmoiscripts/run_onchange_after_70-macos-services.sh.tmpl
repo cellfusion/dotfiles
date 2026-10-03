@@ -7,7 +7,7 @@
 # yabai と skhd のサービス登録は brew では行われない。--start-service が
 # ~/Library/LaunchAgents に plist を書く。
 #
-# manifest hash: {{ list
+# manifest hash: {{ list (index . "windowManager")
     (include "private_dot_config/sketchybar/helpers/makefile")
     (include "private_dot_config/sketchybar/helpers/event_providers/makefile")
     (include "private_dot_config/sketchybar/helpers/menus/makefile")
@@ -38,6 +38,7 @@ set -eu
 # yabai / skhd は Homebrew が入れる。PATH に載せてからでないと command -v が偽になる。
 brew_env || die 'brew が見つからない。00-homebrew が失敗している'
 
+{{ if or (not (hasKey . "windowManager")) (not (hasKey .windowManager "sketchybar")) .windowManager.sketchybar -}}
 helpers="$HOME/.config/sketchybar/helpers"
 SBARLUA_REPOSITORY='https://github.com/FelixKratz/SbarLua.git'
 SBARLUA_COMMIT='437bd2031da38ccda75827cb'\
@@ -86,6 +87,7 @@ if pgrep -x sketchybar >/dev/null 2>&1; then
   command -v sketchybar >/dev/null 2>&1 || die 'sketchybar が見つからない。10-brew が失敗している'
   sketchybar --reload || die 'SbarLua 導入後の sketchybar reload に失敗した'
 fi
+{{ end -}}
 
 # --start-service は plist を書いてから起動する。既に登録済みなら触らない。
 start_service() {
@@ -112,9 +114,15 @@ start_service() {
   esac
 }
 
-# sketchybar は yabairc の末尾が起動する。ここでは触らない。
+# yabai が無い環境では SketchyBar を単独で起動する。
+{{ if or (not (hasKey . "windowManager")) .windowManager.yabai -}}
 start_service yabai com.asmvik.yabai.plist
+{{ else if or (not (hasKey . "windowManager")) (not (hasKey .windowManager "sketchybar")) .windowManager.sketchybar -}}
+brew services start sketchybar || die 'sketchybar のサービス登録に失敗した'
+{{ end -}}
+{{ if or (not (hasKey . "windowManager")) .windowManager.skhd -}}
 start_service skhd com.koekeishiya.skhd.plist
+{{ end -}}
 {{- else }}
 
 printf 'macOS 専用の処理なので飛ばす\n'

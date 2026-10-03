@@ -31,8 +31,10 @@ brew "grpcurl"
 {{ if eq .os "darwin" }}
 # --- macOS 専用 ---
 brew "coreutils"
+{{ if or (not (hasKey . "sketchybar")) .sketchybar }}
 # sketchybarrc の shebang が /opt/homebrew/opt/lua@5.4/bin/lua を指している。
 brew "lua@5.4"
+{{ end }}
 
 # --- モバイル・ネイティブ開発 ---
 brew "cocoapods"

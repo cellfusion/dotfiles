@@ -95,10 +95,12 @@ yabai -m rule --apply
 
 # --- 併走するプロセス ---------------------------------------------------
 # yabairc は yabai の起動ごとに実行されるため、多重起動しないようにする
-pgrep -x sketchybar >/dev/null || sketchybar &
-top_bar="$HOME/.local/bin/top_bar"
-if [ -x "$top_bar" ] && ! pgrep -x top_bar >/dev/null; then
-  "$top_bar" &
+if command -v sketchybar >/dev/null 2>&1; then
+  pgrep -x sketchybar >/dev/null || sketchybar &
+  top_bar="$HOME/.local/bin/top_bar"
+  if [ -x "$top_bar" ] && ! pgrep -x top_bar >/dev/null; then
+    "$top_bar" &
+  fi
 fi
 pgrep -x borders >/dev/null || borders &
 
