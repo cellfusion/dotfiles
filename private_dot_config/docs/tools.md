@@ -11,6 +11,11 @@
 SketchyBar を有効にして yabai を無効にした場合だけ `brew services` から起動する。
 SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取ジョブも省く。
 
+yabai の上余白は `~/.config/yabai/display-padding` が画面ごとに設定する。
+内蔵画面の `NSScreen.safeAreaInsets.top` が 0 より大きければノッチありと判断し、
+上余白を 0px にする。ノッチなしの内蔵画面と外部画面は、上部の SketchyBar 用に
+38px（バー34px + 隙間4px）を確保する。起動時・画面の接続変更時・スペース追加時に再設定する。
+
 ## 管理方法
 
 | 経路 | マニフェスト | 実行するスクリプト |

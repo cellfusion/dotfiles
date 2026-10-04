@@ -33,6 +33,7 @@ tests=(
   test-install-brewfile.sh
   test-install-scripts.sh
   test-zsh-bootstrap.sh
+  test-display-padding.sh
   test-manual-scripts.sh
   test-tools-doc.sh
   test-instructions.sh
