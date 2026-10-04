@@ -241,6 +241,11 @@ agent --provider=<provider-id> [--] [args...]
 agent --family=<family> [--environment=<environment>] [--] [args...]
 ```
 
+設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` または
+`--provider` の値をそのまま CLI 名として起動する。引数と既存の環境変数は引き継ぎ、
+`AGENT_ENV` や隔離用の変数は追加・変更しない。この場合、`--environment` は解決できないため
+終了コード 2 で失敗する。設定ファイルが不正、または未存在以外の理由で読めない場合も停止する。
+
 `--provider` は既存の明示起動である。`<provider-id>` は Paseo provider record と同じ名前空間を使い、
 既定環境は family 名（`claude`）、それ以外は `<family>-<environment>`（`claude-lab`）である。
 
