@@ -11,6 +11,11 @@
 SketchyBar を有効にして yabai を無効にした場合だけ `brew services` から起動する。
 SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取ジョブも省く。
 
+yabai の上余白は `~/.config/yabai/display-padding` が画面ごとに設定する。
+内蔵画面の `NSScreen.safeAreaInsets.top` が 0 より大きければノッチありと判断し、
+上余白を 0px にする。ノッチなしの内蔵画面と外部画面は、上部の SketchyBar 用に
+38px（バー34px + 隙間4px）を確保する。起動時・画面の接続変更時・スペース追加時に再設定する。
+
 ## 管理方法
 
 | 経路 | マニフェスト | 実行するスクリプト |
@@ -240,6 +245,11 @@ family と同名の AI CLI を `exec` する。
 agent --provider=<provider-id> [--] [args...]
 agent --family=<family> [--environment=<environment>] [--] [args...]
 ```
+
+設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` または
+`--provider` の値をそのまま CLI 名として起動する。引数と既存の環境変数は引き継ぎ、
+`AGENT_ENV` や隔離用の変数は追加・変更しない。この場合、`--environment` は解決できないため
+終了コード 2 で失敗する。設定ファイルが不正、または未存在以外の理由で読めない場合も停止する。
 
 `--provider` は既存の明示起動である。`<provider-id>` は Paseo provider record と同じ名前空間を使い、
 既定環境は family 名（`claude`）、それ以外は `<family>-<environment>`（`claude-lab`）である。
