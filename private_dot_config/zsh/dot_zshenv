@@ -49,3 +49,10 @@ esac
 
 ### Rive ###
 export PATH="$HOME/.rive/bin:$PATH"
+
+# ZDOTDIR を継承した shell はこちらの .zshenv から始まる。
+path=("$HOME/.local/bin" "${(@)path:#$HOME/.local/bin}")
+export PATH
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+path=("$BUN_INSTALL/bin" "${(@)path:#$BUN_INSTALL/bin}")
+export PATH

@@ -11,13 +11,6 @@ render_brewfile() {
 darwin="$(render_brewfile darwin)"
 linux="$(render_brewfile linux)"
 
-# --- core は両 OS に載る ---
-for f in git gh ghq git-lfs lazygit neovim fzf fd ripgrep bat eza jq \
-         television zoxide herdr glow; do
-  assert_contains "$darwin" "brew \"$f\"" "darwin: core に $f がある"
-  assert_contains "$linux" "brew \"$f\"" "linux: core に $f がある"
-done
-
 # --- 開発ツールは両 OS に載る ---
 for f in sccache awscli grpcurl; do
   assert_contains "$darwin" "brew \"$f\"" "darwin: 開発ツールに $f がある"

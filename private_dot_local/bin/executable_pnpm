@@ -1,0 +1,4 @@
+#!/bin/sh
+# 対象 runtime だけを mise に任せ、Python/Java の PATH は変更しない。
+runtime_bin=$("$HOME/.local/bin/mise" which pnpm --tool pnpm) || exit $?
+exec "$runtime_bin" "$@"

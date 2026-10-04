@@ -23,3 +23,7 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/33.0.1
 
 export NDKROOT="$ANDROID_HOME/ndk/25.1.8937393"
 export NDK_ROOT="$ANDROID_HOME/ndk/25.1.8937393"
+
+# brew shellenv の後も native/対象 runtime を優先し、Python・JAVA_HOME は変えない。
+path=("$HOME/.local/bin" "${(@)path:#$HOME/.local/bin}")
+export PATH
