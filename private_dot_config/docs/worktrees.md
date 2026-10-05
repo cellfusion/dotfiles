@@ -1,132 +1,105 @@
-# git worktree — herdr と worktrunk の分担
+# worktree — Herdr・OMP・Worktrunkの分担
 
-worktree まわりは 2 つのツールで分担している。
+| 用途 | 管理 | Herdrへの表示 |
+|---|---|---|
+| メインエージェントの作業隔離 | defaultブランチからHerdrでworktreeを作成 | 専用workspace |
+| PRレビュー | PRのbaseコミットからHerdrでworktreeを作成 | 専用workspace、root paneでOMP |
+| 子作業の書き込み分離 | Worktrunk (`wt`) | workspace・tab・paneを追加しない |
 
-| ツール | 担当 |
-|---|---|
-| herdr | worktree に紐づく workspace（端末）。人間が入って中の作業を見る |
-| worktrunk (`wt`) | worktree の置き場所、追跡外ファイルのコピー、依存インストール |
+通常の委譲はOMP内で済ませる。ユーザーが確認・介入したい作業、独立した対話、
+別CLIエージェントの実行にはHerdrの別paneを使う。**別paneと別worktreeは独立した判断**であり、
+書き込み分離だけを理由にpaneを増やさない。
 
-両者が同じパスを指すように、worktrunk 側のテンプレートを herdr のレイアウトに
-合わせてある。設定は `worktrunk/config.toml`（chezmoi ソース:
-`private_dot_config/worktrunk/config.toml`）。
+## メイン作業
 
-    worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
+リポジトリのdefaultブランチを確認し、解決したコミットを起点に作る。
+作業中のpaneを保持する場合は`--no-focus`を付ける。
 
-herdr も worktrunk もブランチ名のスラッシュをダッシュに置換するので、
-`feat/foo` はどちらから作っても `~/.herdr/worktrees/<repo>/feat-foo` になる。
+```sh
+herdr worktree create --cwd /path/to/repo --branch feat/example \
+  --base <default-commit> --label example --no-focus
+```
 
-user config には herdr との接続だけを置いている。
+応答のworktree path、workspace ID、root pane IDを使う。IDを推測しない。
+既に適切な隔離worktree内なら、もう一つ作らない。
 
-- `post-start` — 作られた worktree を `herdr worktree open` で workspace として開く
-- `pre-remove` — `wt remove` の前に対応する workspace を `herdr workspace close` で閉じる
+## 非表示の子worktree
 
-`herdr` の CLI は socket 経由なので、herdr の pane の外（背後で走る post- フック）
-からでも届く。
+`worktrunk/config.toml`は置き場所だけを設定する。Herdrへの自動open／closeフックは置かない。
 
-## リポジトリ側に置くもの
+```toml
+worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
+```
 
-worktree ごとのセットアップはリポジトリ側の 2 ファイルで決まる。どちらもコミットする。
+子へ必要な前提が含まれる親の確定コミットから分岐する。
 
-`.worktreeinclude` — コピーする追跡外ファイル。gitignore 構文で書く。
-git の機能ではなく worktrunk が読むファイルで、「gitignore されていて、かつここに
-書いてある」ものだけがコピー対象になる。
+```sh
+wt -C /path/to/repo switch --create child/example --base <parent-commit> \
+  --no-cd --no-hooks --format json
+```
 
-    .env*
-    node_modules/
+返されたJSONの`path`を子のcwdとして渡す。親のcwdは変えず、Herdrには開かない。
+`--no-hooks`によりプロジェクトのフックも実行しない。依存セットアップが必要なら、
+信頼済みの手順を別途明示的に実行する。
 
-`.config/wt.toml` — セットアップの手順。
+未コミット変更、`.env`、認証情報、履歴を自動コピーしない。
+子に必要な未コミット前提があれば、委譲開始前にその扱いを決める。
+成果はメイン作業ブランチへ取り込み、defaultへ自動mergeしない。
 
-    [[pre-start]]
-    copy = "wt step copy-ignored --require-include"
+MADで台帳を使う場合は`mad-worktree`がWorktrunkを呼び、path・branch・base・所有権・
+親checkoutの正規pathとブランチ・統合状態を記録する。親は名前付きブランチである必要がある。
+削除時も同じ管理経路を使い、記録した親checkoutとブランチへ戻ってから実行する。
+別checkoutや、親のブランチを切り替えた状態では削除しない。
+統合済みの判定には記録した親ブランチを使う。
 
-    [[pre-start]]
-    install = "npm ci"
+## PRレビュー
 
-`[[pre-start]]` を 2 つ並べると順に走る。1 つの `[pre-start]` テーブルに 2 つ
-書くと同時に走るので、コピーとインストールの順序が壊れる。
+Herdr内のリポジトリから次を実行する。
 
-**`pre-` を使う。** `post-` は背後で走って即座に戻るため、直後にテストを回す
-使い方（agent の worktree セットアップ）では未完了の作業ツリーに当たる。
-dev server のような常駐プロセスだけ `post-start` に置く。
+```sh
+pr-review 123
+pr-review https://github.com/owner/repo/pull/123 --quick
+```
 
-`--require-include` を付けると `.worktreeinclude` の無いリポジトリでは何もコピー
-しない。付けないと gitignore されているものが全部コピーされる。
+番号は現在のリポジトリに属するPRを指す。URLとローカルリポジトリが一致しなければ、
+環境作成前に停止する。PRのbase/headを固定し、base側でOMPを起動する。
+PR headの指示ファイルを起動時に読み込ませないためである。
 
-コピーは reflink（APFS の copy-on-write）なので、`node_modules` や `target/` でも
-実質ゼロコストで済む。
+レビュー用worktreeとworkspaceを作り、既存root paneでOMPと`pr-review`スキルを開始する。
+準備済み環境内では追加worktreeやOMPを作らない。
+OMPから委譲するときは`--no-focus`を付ける。
 
-## 使い方
+結果と環境は確認・追加質問用に残す。投稿や終了だけを理由に自動削除しない。
+GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked、unknownは完了ではなく、
+環境を保持して原因を確認する。
 
-人間:
+## 所有権と終了
 
-    wt switch -c feat/foo    # worktree 作成 → セットアップ → herdr workspace が開く
-    wt list
-    wt merge
-    wt remove feat/foo
+作成時に管理者（Herdr／Worktrunk／external）、絶対path、branch、base SHA、
+workspace/pane IDがあればそのID、統合状態を記録する。
 
-エージェント: `multi-agent-development` の `implement` と `spike` では、worktree を作るのは親である。
-選択した Paseo backend の create が `workspaceId` を要求するので、子を起動する前に workspace が
-存在している必要がある。親は台帳の `path` から diff を取るので、子が別の場所に worktree を作ると
-親が取る diff が空になる。worktree を作るのは `mad-worktree` であり、素の `git worktree add` を使う。
-置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` で、`MAD_STATE_DIR` の既定値は
-`~/.local/state/mad` である。MCP backend では `mcp__paseo__create_workspace` に、CLI backend では
-`paseo workspace create` に、作成済み worktree の絶対パスを local workspace として渡す。Paseo は
-worktree を作らず、既にある checkout に workspace を取り付けるだけである。どちらも herdr には
-登録しない。子は親が渡した worktree の中で働く。
+- Herdrで作ったworktreeはHerdr経路で終了する。
+- Worktrunkで作った子worktreeはWorktrunk経路で終了する。
+- 既存・外部所有のworktreeは削除しない。
+- 実行中、未保存、未統合、保留、所有権不明の場合は保持する。
+- force／clobberを標準にしない。ブランチ削除は別判断にする。
 
-追跡外ファイルのコピーと依存インストールは、リポジトリに `.config/wt.toml` があるときだけ
-`wt hook pre-start` が行う。`mad-worktree` は worktree を作った後にそのフックを 1 度呼ぶ。
-`wt` が入っていないときと `.config/wt.toml` が無いときは何もしない。
+`wt remove`は既定でブランチも削除し得るため、保持する場合は`--no-delete-branch`を付ける。
+自動化では`--no-hooks --foreground --format json`を使う。
 
-- claude の workspace trust は cwd の祖先から継承される。`${MAD_STATE_DIR}/worktrees`
-  を 1 度 trust すれば、以後すべての MAD の worktree でダイアログは出ない。trust の記録は
-  `CLAUDE_CONFIG_DIR`（この環境では `~/.config/claude`）側の `.claude.json` にある。
+## 成果物
 
-片付けは `mad-worktree remove --branch <branch>` で行う。ブランチも消すときだけ
-`--delete-branch` を足す。`mad-worktree` は `git branch -d` しか呼ばないので、取り込んでいない
-ブランチの削除は git が失敗させる。
+設計・実装計画・レビュー資料の保存先は
+`~/.agents/skills/_shared/scripts/agent-docs-dir`で解決する。
+`~/docs/<owner>/<repo>/`を同じリポジトリの全worktreeで共有する。
+認証情報や生の会話を台帳・監査ログへ保存しない。
 
-`wt hook <type>` は worktree を誰が作ったかを問わず動く。worktree の作成・統合・後始末の手順は
-`using-git-worktrees` スキルにある。`implement` recipe の親はこの規約に従う。
+PRレビューの実行情報と成果物は`pr-review`が作る私有runディレクトリに保存する。
+worktreeやworkspaceを閉じても成果物は残す。
 
-## エージェントの成果物の置き場所
+## Chezmoiの変更
 
-spec・実装プラン・SDD の作業物・レビュー package は
-`~/docs/<owner>/<repo>/` に置く。パスは
-`~/.agents/skills/_shared/scripts/agent-docs-dir` が返す。
-
-| サブディレクトリ | 置くもの |
-|---|---|
-| `specs/` | architectural な設計で作成する spec |
-| `plans/` | writing-plans が書く実装プラン |
-| `sdd/<plan-basename>/` | SDD の ledger・brief・report・review package |
-| `reviews/` | SDD 外の単発レビュー package |
-
-MAD の run ディレクトリは成果物ではなく実行時の状態なので、`~/docs/<owner>/<repo>/` には置かない。
-置き場所は `${MAD_STATE_DIR}/runs/<run-id>/` であり、`mad-progress list` はそこだけを走査する。
-
-`<owner>/<repo>` は本体チェックアウトの remote の URL から決まる。remote が 1 つも無ければ
-本体チェックアウトの絶対パスの末尾 2 要素を使う。worktree から呼んでも本体チェックアウトから
-呼んでも同じパスになるので、**成果物は同じリポジトリのすべての worktree で共有される**。
-リポジトリの作業ツリーの外にあるため、作業ツリーを掃除しても worktree を消しても残る。
-
-レビュー役の子は現在の作業ディレクトリの外を読めない engine 設定でも動く必要がある。子へ渡す
-review package と要件ファイルは、渡す直前に `<repo-root>/.agent-review/` へ複製し、複製先の
-絶対パスを渡す。実行ごとの staging directory `<repo-root>/.agent-review/run.XXXXXX/` だけを
-レビューの終了後に削除し、`.agent-review/` とその `.gitignore` は残す。global gitignore と
-自己無視の `.gitignore` の 2 段で無視される。
-
-MAD の worktree（`${MAD_STATE_DIR}/worktrees/`）とは別系統である。MAD の worktree の置き場所は
-`mad-worktree` が決める。
-
-## 注意点
-
-- `worktree-path` は user config 専用で、リポジトリ側の `.config/wt.toml` には
-  書けない。マシンごとの設定になる
-- user config のフックとリポジトリ側のフックは**並行に走る**。順序が要る処理は
-  同じファイルの中で `[[...]]` を並べる
-- `wt step relocate` は worktree を worktrunk の想定パスへ移動する。herdr の
-  workspace とパスがずれるので使わない
-- `herdr worktree open` はリポジトリの文脈が要る。`--path` だけでは
-  `worktree_not_found` になるので `--cwd <main worktree>` を併せて渡す
+`chezmoi apply`が読むのは`chezmoi source-path`の正本であり、隔離worktreeではない。
+実装・検証後、承認した変更だけを正本へ統合する。
+対象限定のdiffを確認し、明示許可を得てからapplyする。
+既存のユーザー変更や認証情報は取り込まない。

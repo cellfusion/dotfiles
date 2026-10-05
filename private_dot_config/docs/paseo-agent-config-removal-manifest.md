@@ -97,9 +97,9 @@ role catalog, not a restoration of the deleted legacy backend.
 | private_dot_config/opencode/agents/synthesizer.md.tmpl | Delete | — |
 | private_dot_config/opencode/agents/writer.md.tmpl | Delete | — |
 | private_dot_agents/skills/multi-agent-development/SKILL.md.tmpl | Keep | retained runtime contract |
-| private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate | Keep | retained runtime contract |
-| private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter | Keep | retained runtime contract |
-| private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate | Keep | retained runtime contract |
+| private_dot_agents/skills/multi-agent-development/scripts/executable_manual-orchestration-validate | Delete | superseded by OMP/Herdr workflow (2026-10-06) |
+| private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-mcp-adapter | Delete | retired Paseo workflow transport (2026-10-06) |
+| private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate | Rename | backend-neutral executable_plan-dependency-validate (2026-10-06) |
 | private_dot_agents/skills/_shared/scripts/executable_agent-docs-dir | Keep | retained runtime contract |
 | private_dot_agents/skills/_shared/scripts/executable_json-schema | Keep | retained runtime contract |
 | private_dot_config/claude/agents/architect.md | Keep | retained runtime contract |

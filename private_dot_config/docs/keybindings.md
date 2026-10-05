@@ -115,7 +115,7 @@ workspace を、`h` / `j` / `k` / `l` が pane を選ぶ。modifier を使わな
 | `Alt-g` | lazygit（popup、全画面） |
 | `Alt-e` | ファイル選択 → `$EDITOR`（`tv edit`） |
 | `Alt-c` | Claude Code を新しいタブで起動（claude を持たない環境では起動しない） |
-| `Alt-a` | agent-launcher（`tv agent-launcher`） |
+| `Alt-a` | Tuicr（`tuicr`、popup、全画面） |
 | `Alt-z` | ディレクトリ移動（`tv zoxide`） |
 | `Alt-t` | スクラッチ端末（popup、80%） |
 
@@ -133,6 +133,7 @@ workspace を、`h` / `j` / `k` / `l` が pane を選ぶ。modifier を使わな
 | `r` | リサイズモード |
 | `[` | コピーモード |
 | `t` | git worktree を作る |
+| `u` | アカウント使用枠（`agent-usage --wait`、popup） |
 | `1`..`9` | タブ 1-9 へ |
 | `Shift-T` | タブ名を変更 |
 | `Shift-X` | タブを閉じる |

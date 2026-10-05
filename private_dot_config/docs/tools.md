@@ -23,7 +23,6 @@ SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取�
 | npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
 | ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
-| Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
 
@@ -89,7 +88,7 @@ GUI のインストールダイアログが出て、入っていなければ `ch
     sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply cellfusion
 
 これ 1 本で終わる。chezmoi が入り、リポジトリが clone され、apply が走る。
-apply の中で上の表の 11 本が番号順に実行される。
+applyの中で上の表のスクリプトが番号順に実行される。
 
 この 1 本目の chezmoi は install script の既定の BINDIR、つまり実行したディレクトリの
 `./bin` に置かれる。PATH には載らない。恒久的な chezmoi は apply の中で 20-runtimes が
@@ -169,8 +168,8 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
    `backends` に `paseo` が含まれること、availability、`auto` mode、model、thinking option を確認し、
    最初に成立した候補を使う。これは availability fallback であり、品質不足時の再試行ではない。
 5. 品質不足時の model・effort の切り替えは、必要な duty と complexity にだけ
-   `attemptPolicy.<duty>.<complexity>.levels` を追加する。`levels[0]` が初回、`mad-fix` の round 1 以降が
-   次の level である。同じ level の `candidates` は availability fallback、level の順序は quality escalation として別々に扱う。設定した level が尽きた後は strict MAD の review 上限で停止する。
+   `attemptPolicy.<duty>.<complexity>.levels`を追加する。これは保持しているPaseo設定の選択方針であり、
+   通常のOMP内部委譲やHerdr起動をPaseoへ切り替える指示ではない。
 6. `claude`、`codex`、`pi`、`omp` 以外の provider family は、Paseo の provider record key に現れる
    literal な family 名をそのまま root `providers` の key にする。`pi` は
    `PI_CODING_AGENT_DIR` を `$HOME/.pi/agent`（非 primary は
@@ -183,30 +182,11 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 この移行手順でも、先に次の絶対 path を設定する。
 
 ```bash
-MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
-MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
-AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
-MAD_ADAPTER="$MAD_SCRIPTS/paseo-mcp-adapter"
-MAD_VALIDATE="$MAD_SCRIPTS/manual-orchestration-validate"
-MAD_PLAN_VALIDATE="$MAD_SCRIPTS/paseo-plan-dependency-validate"
-MAD_REVIEW_BUNDLE="$MAD_SCRIPTS/review-bundle"
-MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
-MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
-MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
-MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
-MAD_OUTCOME_RECORD="$MAD_SCRIPTS/mad-outcome-record"
-MAD_OUTCOME_IMPORT="$MAD_SCRIPTS/mad-outcome-import"
-TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
-MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
-MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
-MAD_ROUTE_SUMMARY="$MAD_SCRIPTS/mad-route-summary"
-MAD_RUN="$MAD_SCRIPTS/mad-run"
-MAD_PLAN_PARSER="$MAD_SCRIPTS/mad-plan-parser.js"
-MAD_ESCALATION_CONTROLLER="$MAD_SCRIPTS/mad-escalation-controller"
 MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
 ```
 
-`MAD_SCRIPTS`配下の15 scriptと共通 parser `mad-plan-parser.js`は`PATH`に依存しない。`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
 
 その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
 provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
@@ -455,100 +435,91 @@ OpenCode の `~/.config/opencode/skills` に、同じ本体とレビュー用 re
 AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` にあり、chezmoi の
 管理外である。
 
-paseo。複数のコーディングエージェントを走らせる macOS アプリで、`multi-agent-development`
-スキルが CLI の `paseo` を PATH に置くことを前提にする。アプリは https://paseo.sh/download
-から入れ、`/Applications/Paseo.app` に置く。CLI はアプリに同梱された
-`/Applications/Paseo.app/Contents/Resources/bin/paseo` で、`~/.local/bin/paseo` を
-そこへの symlink にする。前提バージョンは 0.6.1 以上で、2026-09-02 時点の現マシンは 0.7.0
-である。daemon はアプリが持つので、別に入れるものは無い。
+Paseoは既存の補助環境として残すが、通常の開発スキルの実行前提にはしない。
+Paseo本体や他プラグインは、この移行で停止・アンインストールしない。
 
-`multi-agent-development` は Paseo CLI を既定 backend とし、Paseo MCP は明示指定時だけ使う。選択した backend が利用できないときは run を開始せず、利用者へ状況を報告する。開始済みの子が失敗しても別 backend へ切り替えない。
+## Herdr・OMPの開発ワークフロー
 
-native roleはClaude Code、Codex、Piへ同じrole catalogから配る。Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも同時に配る。OpenCodeのnative agent定義はMADでは配らない。
+メインの実行環境はmainMBP。GhosttyでHerdrを開き、OMP、Neovim、LazyGit、Tuicrを使う。
+subMBPはGhostty／Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ接続する。
+Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。
 
-Paseo の child は CLI から見える。`paseo ls` が一覧と状態を出し、`paseo inspect <agent-id>` が
-1 つの子の詳細を出し、`paseo logs <agent-id>` が活動履歴を出す。MAD 親は raw activity を
-保存せず、選択した backend の adapter `wait-agent --child-ref <safe-id> --timeout <seconds>`
-を通じて検証済みの `idle`、`timeout`、`error` status だけを受け取る。止めるときは同じ
-backend の `stop-agent` を使い、終了後は child/workspace を archive する。
+- メイン作業はdefaultブランチからHerdrのworktree＋workspaceを作成する。
+- 通常の委譲はOMP内で済ませる。
+- 独立対話、ユーザー介入、別CLIエージェントにはHerdrの別paneを使う。
+- 書き込み分離だけならWorktrunkで子worktreeを作り、Herdrには表示しない。
+- worktreeの所有権、統合状態、終了手順は[worktrees.md](worktrees.md)に従う。
 
-実行は `"$MAD_ADAPTER"` の `list-providers`、provider ごとの `list-models`、0600 の
-availability snapshot、`"$MAD_GENERATOR" resolve`、0600 の create request、
-`"$MAD_VALIDATE" --prepare-create`、選択した backend の create 一回、accepted childRef に
-対する同じ backend の `wait-agent` 一回の順に進める。CLI backend は `paseo run --background --json`
-を adapter 経由で使い、features が空の launch だけを許可する。MCP backend は公式 MCP create tool
-を使う。attempt 完了後、独立した検証結果と集計 usage を `MAD_OUTCOME_RECORD` で mode 0600 の
-`MAD_OUTCOME_LOG` へ追記する。raw prompt、activity、credential、URL は保存しない。
-`--prepare-create` は request と attempt state と call log を検証してから、0600 の
-`mcp-create.prepared` を `O_EXCL` で作る。marker を取れた呼び出しだけが create を呼べるので、
-2 つの親が同時に検証を通っても create は一回で止まる。
-wait の raw response は adapter が `{status}` へ縮約し、attempt には 0600 の `wait-evidence.json` と
-sanitized call log だけを残す。各 JSON 成果物は run の attempt directory にだけ置く。
-snapshot と launch と `mcp-create.json` が検証できない場合、及び marker を取れない場合、create を呼ばない。
+`task-routing`と`multi-agent-development`はこの区分を使う。Orca専用スキルはOrcaを
+明示した作業だけに使い、通常の作業分割やhandoffからOrcaを起動しない。
+エージェントの権限やmodel設定を、端末を分けるためだけに変更しない。
 
-review/fix は task ごとに `max_rounds` を 4（round 0 の初回 review、round 1 から 3 の fix/re-review）へ固定する。
-review/fix child を create する前に `"$MAD_VALIDATE" --prepare-review` を通し、
-同じ task の scope file と admission marker を使う。scope 外の重要事項は observations に保持し、
-review/fix 中に新しい fix/review や hotfix node を起動しない。最終 gate で一つの decision request に
-まとめてユーザーへ確認し、scope 拡張は新しい run として開始する。
-observations は `--write-review-observations` で atomic 0600 に保存し、
-`--check-review-observations` で最終 gate 前に検査する。
+native roleはClaude Code、Codex、Piへ同じrole catalogから配る。
+Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、
+Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも配る。
 
-レビュー役へ渡す review package は `"$MAD_REVIEW_BUNDLE"` が組み立て、attempt の
-`review-package.diff` に mode 0600 で置く。1 行目の `# Review package: <base>..<head>` は
-40 桁の sha 2 つであり、レビュー役が正しい範囲を見たかを機械的に確認する手掛かりになる。
-レビュー結果を採用する前に `--check-review-package` で範囲を照合し、
-`--check-review-verdict` で verdict と findings の整合を確かめる。
-round 0 の結果を採用したら `cannotVerify` を 1 件ずつ解消して
-`<run-dir>/review-cannot-verify/<task>.json` に記録し、`--open-review-findings` で
-`<run-dir>/review-open-findings/<task>-round-1.json` を作り、
-`--check-review-cannot-verify` で記録と一覧の対応を検査する。
-round `N` の再レビューの結果からは `--advance-review-findings` で round `N+1` の一覧を作る。
-未解決の指摘を親が散文で引き継がない。
+### ツールの入口
 
-`MAD_RUN --dry-run` は保存済み fixture だけを使い、実 MCP の create、worktree、state write、`chezmoi apply` を実行しない。代表 run の plan、wave、role catalog を検証する。
-実 create は利用者が代表 run を明示承認した場合だけ行う。rollback は create 前なら request と
-snapshot を破棄し、create 後なら Paseo の子を archive して run の state に判断を残す。keybindings
-はこの移行で変更しないため `private_dot_config/docs/keybindings.md` を更新しない。
+| 入口 | 動作 |
+|---|---|
+| `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
+| `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
+| `pr-review <番号またはURL> [--quick]` | 専用Herdr環境を作り、root paneでOMPとPRレビュースキルを開始 |
+| `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
 
-`implement` と `spike` は node ごとに worktree を作る。作るのは `"$MAD_WORKTREE" create` であり、
-置き場所は `${MAD_STATE_DIR}/worktrees/<repo-name>/<branch-slug>` である。run ディレクトリは
-`${MAD_STATE_DIR}/runs/<run-id>/` に置き、作った worktree は run ディレクトリ直下の
-`worktrees.json` が持つ。片付けは `mad-worktree remove --branch <branch>` で行い、取り込んだ
-node にだけ `--delete-branch` を足す。remove に失敗した worktree がある run ディレクトリは、
-台帳を失うと対応が追えなくなるため消さない。run の進捗は
-`"$MAD_PROGRESS" status --run-dir <run-dir>` が出し、`"$MAD_PROGRESS" list` が
-`${MAD_STATE_DIR}/runs/` にある run を一覧にする。
+汎用agent-launcherは廃止し、別エージェントは必要な場面でHerdrから直接起動する。
+既存のClaude新tab起動、ファイル選択、zoxide、スクラッチ端末は維持する。
 
-### Paseo プラグイン pr-review
+### PRレビュー
 
-サイドバーの「PR レビュー」からプロジェクトと PR を選ぶと、worktree の workspace を
-1 つ作って `/pr-review <番号>` の agent を起動する。PR が `CLAUDE.md`、`CLAUDE.local.md`、
-`AGENTS.md` のいずれかの名前のファイルか、`.claude` か `.agents` の配下を、リポジトリの
-どの階層であれ変更している場合は、base から分岐した worktree に切り替え、workspace の
-title の先頭に `[base]` を付ける。レビューする agent が PR 側の指示を受け取らない
-ようにするためである。
+Herdr内の対象リポジトリで`pr-review 123`を実行する。
+OMPから委譲する場合は`--no-focus`を付け、元の作業へフォーカスを残す。
+番号は現在のリポジトリを使い、URLはローカルリポジトリとの一致を確認する。
 
-プラグインは trusted・unsandboxed なコードである。daemon 側のコードは daemon マシンの
-ファイル・プロセス・認証情報・ネットワークに触れられる。有効化は手で行う。
+事前に公式のライフサイクル連携を`herdr integration install omp`で導入する。
+起動コマンドはこの拡張を明示的に読み込み、専用root paneと私有sessionの報告を確認してから
+プロンプトを送る。拡張の自動検出や、sessionファイルの作成前後に依存しない。
 
-1. Paseo の Settings → Plugins → Enable plugins を開く
-2. `chezmoi apply` を実行する。`run_onchange_after_75-paseo-plugins.sh` が
-   `paseo plugin install` を実行する
-3. `paseo plugin ls` で `pr-review` が `running` になっていることを確認する
+レビュー用worktreeはPRのbase SHAから作る。head側の指示ファイルをOMP起動時に読み込ませない。
+準備済み情報と固定base/headを専用OMPへ渡し、同じ環境内でレビューを続ける。
+成果物とworkspaceは保持し、GitHubへの投稿は明示確認後に行う。
+起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
 
-Enable plugins より先に `chezmoi apply` を実行した場合、`run_onchange_after_75-paseo-plugins.sh`
-は「プラグインが無効なので飛ばす」で終わり、chezmoi はそれを実行済みとして記録する。
-以後スクリプトの内容が変わるまで再実行されないので、有効にした後で次を手で 1 回実行する。
+Paseoの旧PRレビュープラグインは配布・登録処理を退役した。
+稼働中のプラグインは自動停止しない。旧プラグインの停止・登録解除は、
+実環境へ変更を適用する際に対象を確認して行う。
+Paseo本体とアカウント設定は削除しない。
 
-```bash
-paseo plugin install "$HOME/.local/share/paseo-plugins/pr-review"
+### アカウント使用枠
+
+使用率、リセット時刻、取得時刻、情報源と鮮度を確認する。
+同じアカウントを複数エージェントが使う場合は共有枠であり、数値を合算しない。
+OMPは複数providerを使えるため、OMP固有の枠とは表示しない。
+取得できない値を0%にしない。古いキャッシュは最新値として表示しない。
+制限窓の長さが保存されていない旧キャッシュでは、長さを推測しない。
+
+収集器の管理元は`paseo_usage_plugin`リポジトリ。通常はOMPの使用枠と既存のnative
+Claude／Codexキャッシュを表示し、`agent-usage --refresh`で使用枠だけを強制更新する。
+`--cache-only`はnativeキャッシュのみを読み、providerへ問い合わせない。
+
+更新には`--limits-only --force`と能力照会に対応した新しい収集器が必要。
+旧収集器は未知の引数を無視して履歴処理を始めるため、ヘルプ照会も含めて実行しない。
+新しい収集器では、Paseo側で無効なnativeプロファイルも読めるが、providerの有効化、
+履歴・SQLite・アーカイブ処理、モデル呼び出し、認証情報の更新・コピーは行わない。
+キャッシュは私有の`~/.cache/agent-usage/account-limits/limits.json`へ分離する。
+
+収集器の配備前に検証する場合は、ビルド済みbundleを明示する。
+
+```sh
+AGENT_USAGE_HOME=/tmp/account-quota-check \
+  agent-usage --refresh --json --collector /absolute/path/to/dist/collector.cjs
 ```
 
-レビューに使う provider は、Paseo daemon の `process.env.AGENT_ENV` に応じて選ぶ。
-`default` なら無印 provider、それ以外なら `claude-<AGENT_ENV>` を優先し、無ければ
-`claude` にフォールバックする。環境名付き provider は `~/.paseo/config.json` の
-`agents.providers` に存在するものだけを使う。
+収集器の配備やlaunchd変更は、dotfilesのapplyとは別に判断する。
+認証切れ・無効化済みOAuthは`auth-required`、制限応答は`rate-limited`と表示する。
+失敗時は最後に取得できた値と取得時刻を保持し、最新値へ置き換えない。
+認証切れの場合は対象環境でサインインが必要で、認証情報を別環境へ自動コピーしない。
+セッション別トークン・費用集計はこの入口の対象外。
 
 ## 削除候補
 

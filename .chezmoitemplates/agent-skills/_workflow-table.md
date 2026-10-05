@@ -12,6 +12,11 @@ a skill.
 | Multi-layer design change | `task-routing` if route/delegation is unclear; `brainstorming` for unsettled design, `writing-plans` for multi-stage planning when needed |
 | Bug, failure, or unexpected behavior | `systematic-debugging` when root cause is unknown |
 | Existing implementation plan | `executing-plans` for a small sequential plan; `multi-agent-development` for parallel or independent review |
+| Ordinary bounded delegation | OMP internal child; no separate CLI or pane |
+| Independent CLI conversation or user intervention | `herdr`, existing cwd or one explicitly owned pane; agents do not steal focus |
+| Child write isolation only | `using-git-worktrees` hidden Worktrunk route; no Herdr workspace/tab/pane |
+| GitHub PR review | `pr-review` shell entry (agents use `--no-focus`); prepared context runs in the existing OMP root pane |
+| Explicit Orca request or Orca-managed operation | `orca-cli` or `orchestration` as appropriate; never infer this route from generic handoff/parallelism |
 | Implementation complete or integration requested | `finishing-a-development-branch` |
 | About to claim completion or test passage | `verification-before-completion` |
 | Code-review feedback received | `receiving-code-review` |

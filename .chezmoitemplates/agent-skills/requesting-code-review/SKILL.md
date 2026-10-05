@@ -28,6 +28,12 @@ Choose the lightest route that can answer the question:
 Do not dispatch a child merely because a review is required. Do not skip independent review for a
 major change merely because the diff looks familiar.
 
+Use OMP internal read-only delegation for ordinary independent review; it needs no pane or
+worktree. Use a Herdr CLI/pane only for an explicitly independent conversation. Write-isolated
+fixes use hidden Worktrunk separately, without creating a pane. Do not engage Orca for a generic
+review handoff. Normal GitHub PR review uses `pr-review --no-focus [--quick] <PR>` from agents;
+prepared review context stays in its existing OMP/root pane instead of creating another environment.
+
 ## When review is required
 
 Request review:
@@ -110,10 +116,10 @@ Require the reviewer to:
 - state which lenses and checks were not run and why
 - avoid changing, committing, or pushing source files
 
-For a single reviewer, use the current provider/runtime's read-only reviewer route. For MAD, use the
-`review` recipe and let its configured reviewer/synthesizer roles determine the available lenses.
-Do not invent a provider, model, role, or engine. Verify the returned result independently; a child
-claim of success is not evidence.
+For a single reviewer, use OMP's available read-only reviewer role. For multiple independent lenses,
+use the MAD `review` recipe with fixed packages and a parent integration owner. Keep model and
+permission defaults; do not invent a provider/engine or use old transport schemas to force a backend.
+Verify the returned result independently; a child claim of success is not evidence.
 
 ## 4. Adopt findings proportionally
 

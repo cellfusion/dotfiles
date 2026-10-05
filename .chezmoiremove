@@ -161,3 +161,20 @@ CLAUDE.md
 # MAD の worktree の置き場所は mad-worktree が決めるので、読む側がもう無い。
 # 配布済みの実体を回収する。人が使う .config/worktrunk/config.toml は残す。
 .config/worktrunk/agent.toml
+
+# 2026-10-06: agents launch directly through Herdr; Alt-a now opens Tuicr.
+.config/television/cable/custom-agent-launcher.toml
+
+# PR reviews now start in Herdr through pr-review; retire this plugin's code only.
+.local/share/paseo-plugins/pr-review
+
+# 2026-10-06: retire Paseo-only workflow transports; keep provider/auth state.
+.agents/skills/multi-agent-development/scripts/paseo-cli-adapter
+.agents/skills/multi-agent-development/scripts/paseo-mcp-adapter
+.agents/skills/multi-agent-development/scripts/manual-orchestration-validate
+.agents/skills/multi-agent-development/scripts/mad-run
+.agents/skills/multi-agent-development/scripts/mad-progress
+.agents/skills/multi-agent-development/scripts/mad-outcome-import
+.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate
+.agents/skills/task-routing/scripts/single-implementer
+.agents/skills/task-routing/scripts/mad-route-admit

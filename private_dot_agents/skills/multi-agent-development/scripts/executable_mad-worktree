@@ -4,16 +4,17 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { createHash } = require('node:crypto')
 const { spawnSync } = require('node:child_process')
 
 const USAGE = `usage: mad-worktree <subcommand> [options]
   create --repo <repo-root> --run-id <run-id> --node <node-id> --base <commit-ish>
   list   --repo <repo-root>
-  remove --repo <repo-root> --branch <branch> [--delete-branch]
-`
+  remove --repo <parent-root> --branch <branch> --integration <merged|declined> --inactive [--delete-branch]
 
-const SUBCOMMANDS = ['create', 'list', 'remove']
-const FLAGS = ['delete-branch', 'help']
+Creates hidden Worktrunk isolation without hooks, cwd changes, or a pane.
+Removal requires a recorded owner and the caller's saved/inactive integration decision.
+`
 
 function fail(message) {
   process.stderr.write(`mad-worktree: ${message}\n`)
@@ -25,134 +26,167 @@ function safeId(value) {
     /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
 }
 
-function parseOptions(argv) {
-  const options = {}
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index]
-    if (!token.startsWith('--')) fail(`unknown argument: ${token}`)
-    const name = token.slice(2)
-    if (FLAGS.includes(name)) {
-      options[name] = true
-      continue
-    }
-    const value = argv[index + 1]
-    if (value === undefined || value.startsWith('--')) fail(`--${name} requires a value`)
-    options[name] = value
-    index += 1
+function options(argv) {
+  const parsed = {}
+  const flags = new Set(['inactive', 'delete-branch', 'help'])
+  const values = new Set(['repo', 'run-id', 'node', 'base', 'branch', 'integration'])
+  for (let i = 0; i < argv.length; i += 1) {
+    const key = argv[i].startsWith('--') ? argv[i].slice(2) : ''
+    if (Object.hasOwn(parsed, key)) fail(`duplicate option: ${argv[i]}`)
+    if (flags.has(key)) parsed[key] = true
+    else if (values.has(key) && argv[i + 1] && !argv[i + 1].startsWith('--')) parsed[key] = argv[++i]
+    else fail(`unknown option or missing value: ${argv[i]}`)
   }
-  return options
+  return parsed
+}
+
+function run(command, args, cwd) {
+  return spawnSync(command, args, { cwd, encoding: 'utf8' })
 }
 
 function git(args, cwd) {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' })
-}
-
-function stateDir() {
-  const configured = process.env.MAD_STATE_DIR
-  if (typeof configured === 'string' && configured.length > 0) return configured
-  return path.join(os.homedir(), '.local', 'state', 'mad')
-}
-
-function repoRoot(value) {
-  if (typeof value !== 'string' || value.length === 0) fail('--repo is required')
-  const result = git(['rev-parse', '--show-toplevel'], value)
-  if (result.status !== 0) fail(`--repo is not a git repository: ${value}`)
+  const result = run('git', args, cwd)
+  if (result.error || result.status !== 0) fail(result.stderr?.trim() || 'git inspection failed')
   return result.stdout.trim()
 }
 
-function madWorktrees(root) {
-  const result = git(['worktree', 'list', '--porcelain'], root)
-  if (result.status !== 0) fail(result.stderr.trim() || 'git worktree list failed')
-  const entries = []
-  let current = null
-  for (const line of result.stdout.split('\n')) {
-    if (line.startsWith('worktree ')) {
-      current = { path: line.slice('worktree '.length), branch: null }
-    } else if (line.startsWith('branch ') && current !== null) {
-      current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '')
-    } else if (line.length === 0 && current !== null) {
-      entries.push(current)
-      current = null
-    }
-  }
-  if (current !== null) entries.push(current)
-  return entries.filter((entry) => typeof entry.branch === 'string' && entry.branch.startsWith('mad/'))
+function repository(value) {
+  if (!value) fail('--repo is required')
+  const root = fs.realpathSync(git(['rev-parse', '--show-toplevel'], value))
+  const common = fs.realpathSync(git(['rev-parse', '--path-format=absolute', '--git-common-dir'], root))
+  return { root, common }
+}
+// Git and Worktrunk can spell the same checkout through different directory aliases.
+// Removal JSON arrives after the child is gone, so resolve its surviving parent then.
+function canonicalLocation(value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail('worktree path must be absolute')
+  if (fs.existsSync(value)) return fs.realpathSync(value)
+  return path.join(fs.realpathSync(path.dirname(value)), path.basename(value))
 }
 
-// 追跡外ファイルのコピーと依存インストールは wt hook pre-start に任せる。hook は
-// worktree を誰が作ったかを問わず動く。リポジトリが .config/wt.toml を持たない場合と
-// wt が入っていない場合は何も実行しない。セットアップの失敗で worktree を消すと、
-// 作業ツリー自体は使えるのに実装役が入る場所を失う。親が続行するかを決める。
-function runSetup(worktreePath, root) {
-  if (!fs.existsSync(path.join(root, '.config', 'wt.toml'))) return { setup: 'skipped' }
-  const result = spawnSync('wt', ['hook', 'pre-start'], { cwd: worktreePath, encoding: 'utf8' })
-  if (result.error !== undefined) return { setup: 'skipped' }
-  if (result.status !== 0) {
-    return { setup: 'failed', setup_stderr: String(result.stderr || '').slice(0, 500) }
+
+function entries(root) {
+  const raw = git(['worktree', 'list', '--porcelain', '-z'], root)
+  const result = []
+  let entry
+  for (const field of raw.split('\0')) {
+    if (field.startsWith('worktree ')) {
+      entry = { path: field.slice(9), branch: null }
+      result.push(entry)
+    } else if (field.startsWith('branch ') && entry) entry.branch = field.slice(7).replace(/^refs\/heads\//, '')
   }
-  return { setup: 'ok' }
+  return result
 }
 
-function create(options) {
-  const root = repoRoot(options.repo)
-  if (!safeId(options['run-id'])) fail('--run-id must be a basename-safe id')
-  if (!safeId(options.node)) fail('--node must be a basename-safe id')
-  if (typeof options.base !== 'string' || options.base.length === 0) fail('--base is required')
-  const resolved = git(['rev-parse', '--verify', `${options.base}^{commit}`], root)
-  if (resolved.status !== 0) fail(`--base is not a commit: ${options.base}`)
-  const base = resolved.stdout.trim()
-  const branch = `mad/${options['run-id']}/${options.node}`
-  const target = path.join(stateDir(), 'worktrees', path.basename(root), branch.replace(/\//g, '-'))
-  if (fs.existsSync(target)) fail(`worktree path already exists: ${target}`)
-  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 })
-  const added = git(['worktree', 'add', '-b', branch, target, base], root)
-  if (added.status !== 0) fail(added.stderr.trim() || 'git worktree add failed')
-  const setup = runSetup(target, root)
-  process.stdout.write(`${JSON.stringify({ branch, path: target, base, ...setup })}\n`)
+function recordFile(repo, branch) {
+  const state = process.env.MAD_STATE_DIR || path.join(os.homedir(), '.local', 'state', 'mad')
+  if (!path.isAbsolute(state)) fail('MAD_STATE_DIR must be absolute')
+  const identity = createHash('sha256').update(repo.common).digest('hex')
+  const id = createHash('sha256').update(branch).digest('hex')
+  return path.join(state, 'ownership', identity, `${id}.json`)
 }
 
-function list(options) {
-  process.stdout.write(`${JSON.stringify(madWorktrees(repoRoot(options.repo)))}\n`)
+function save(file, record, exclusive = false) {
+  if (exclusive) {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+    fs.writeFileSync(file, JSON.stringify(record) + '\n', { flag: 'wx', mode: 0o600 })
+  } else {
+    const temporary = `${file}.${process.pid}.tmp`
+    fs.writeFileSync(temporary, JSON.stringify(record) + '\n', { flag: 'wx', mode: 0o600 })
+    fs.renameSync(temporary, file)
+  }
 }
 
-function remove(options) {
-  const root = repoRoot(options.repo)
-  const branch = options.branch
-  if (typeof branch !== 'string' || !branch.startsWith('mad/')) fail('--branch must start with mad/')
-  const entry = madWorktrees(root).find((candidate) => candidate.branch === branch)
-  let removed = false
-  if (entry !== undefined) {
-    const result = git(['worktree', 'remove', entry.path], root)
-    if (result.status !== 0) fail(result.stderr.trim() || 'git worktree remove failed')
-    removed = true
-  }
-  let branchDeleted = false
-  if (options['delete-branch'] === true) {
-    // 強制削除は使わない。取り込んでいないブランチを消すと実装を失う。
-    const deleted = git(['branch', '-d', branch], root)
-    branchDeleted = deleted.status === 0
-    if (!branchDeleted) {
-      process.stderr.write(`mad-worktree: branch is not deleted: ${deleted.stderr.trim()}\n`)
-    }
-  }
-  process.stdout.write(`${JSON.stringify({ branch, removed, branch_deleted: branchDeleted })}\n`)
+function json(result, operation, file) {
+  if (result.error || result.status !== 0) fail(`${operation} failed; preserve ownership record ${file} and inspect the same branch before resuming`)
+  try { return JSON.parse(result.stdout) } catch { fail(`${operation} returned invalid JSON; preserve ${file} and inspect, do not recreate`) }
 }
 
-function main(argv) {
-  const subcommand = argv[0]
-  if (subcommand === undefined || subcommand === '--help' || subcommand === 'help') {
-    process.stdout.write(USAGE)
-    return
+function create(opts) {
+  const repo = repository(opts.repo)
+  if (!safeId(opts['run-id']) || !safeId(opts.node)) fail('--run-id and --node must be safe IDs')
+  if (!opts.base || opts.base.startsWith('-')) fail('--base must name a commit')
+  const base = git(['rev-parse', '--verify', `${opts.base}^{commit}`], repo.root)
+  const parentBranch = git(['symbolic-ref', 'HEAD'], repo.root)
+  const branch = `mad/${opts['run-id']}/${opts.node}`
+  const exists = run('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repo.root)
+  if (exists.status !== 1) fail('branch already exists or collision inspection failed; create nothing')
+  const file = recordFile(repo, branch)
+  const record = {
+    owner: 'worktrunk', repository: repo.common, parentPath: repo.root, parentBranch, branch, base,
+    runId: opts['run-id'], node: opts.node, path: null, workspaceId: null, paneId: null,
+    integration: 'pending', liveness: 'unknown', cleanup: 'retained', status: 'creating',
+    createdAt: new Date().toISOString(), removed: false, branch_deleted: false,
   }
-  if (!SUBCOMMANDS.includes(subcommand)) fail(`unknown subcommand: ${subcommand}`)
-  const options = parseOptions(argv.slice(1))
-  if (options.help === true) {
-    process.stdout.write(USAGE)
-    return
+  // Reserve before mutation. An interrupted/ambiguous create cannot be silently repeated.
+  save(file, record, true)
+  const result = run('wt', ['-C', repo.root, 'switch', '--create', branch, '--base', base,
+    '--no-cd', '--no-hooks', '--format', 'json'], repo.root)
+  const response = json(result, 'Worktrunk creation', file)
+  if (response.action !== 'created' || response.created_branch !== true || response.branch !== branch ||
+      typeof response.path !== 'string' || !path.isAbsolute(response.path)) {
+    fail(`unexpected creation identity; preserve ${file} and inspect branch ${branch}`)
   }
-  if (subcommand === 'create') create(options)
-  else if (subcommand === 'list') list(options)
-  else remove(options)
+  record.path = fs.realpathSync(response.path)
+  record.status = 'created'
+  save(file, record)
+  if (git(['rev-parse', 'HEAD'], record.path) !== base ||
+      !entries(repo.root).some(entry => canonicalLocation(entry.path) === record.path && entry.branch === branch)) {
+    fail(`created checkout differs from recorded base/branch; preserve ${file}`)
+  }
+  process.stdout.write(JSON.stringify({ ...record, setup: 'skipped', ownershipRecord: file }) + '\n')
 }
 
-main(process.argv.slice(2))
+function remove(opts) {
+  const repo = repository(opts.repo)
+  if (!/^mad\/[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.branch || '')) fail('--branch must identify a task branch')
+  if (!['merged', 'declined'].includes(opts.integration) || !opts.inactive) fail('removal requires --integration merged|declined and --inactive after explicit cleanup approval')
+  if (opts['delete-branch'] && opts.integration !== 'merged') fail('declined work keeps its branch')
+  const file = recordFile(repo, opts.branch)
+  if (!fs.existsSync(file) || fs.lstatSync(file).isSymbolicLink()) fail('unknown ownership; retain the worktree')
+  const record = JSON.parse(fs.readFileSync(file, 'utf8'))
+  if (record.owner !== 'worktrunk' || record.repository !== repo.common || record.branch !== opts.branch ||
+      !path.isAbsolute(record.path || '') || record.status !== 'created' || record.removed) fail('ownership or creation state is unresolved; retain resources')
+  if (repo.root !== record.parentPath || git(['symbolic-ref', 'HEAD'], repo.root) !== record.parentBranch) fail('recorded parent checkout or branch changed; retain resources')
+  if (repo.root === fs.realpathSync(record.path)) fail('remove from outside the child worktree')
+  if (!entries(repo.root).some(entry => canonicalLocation(entry.path) === record.path && entry.branch === record.branch)) fail('checkout identity changed; retain resources')
+  if (git(['status', '--porcelain', '--untracked-files=all', '--ignored'], record.path)) fail('unsaved/ignored files remain; retain the worktree')
+  if (opts.integration === 'merged') {
+    const integrated = run('git', ['merge-base', '--is-ancestor', record.branch, record.parentBranch], repo.root)
+    if (integrated.status !== 0) fail('child is not integrated into the recorded parent branch; retain resources')
+  }
+  record.integration = opts.integration
+  record.liveness = 'inactive'
+  save(file, record)
+  const result = run('wt', ['-C', repo.root, 'remove', record.branch, '--no-delete-branch',
+    '--foreground', '--no-hooks', '--format', 'json'], repo.root)
+  const responses = json(result, 'Worktrunk removal', file)
+  if (!Array.isArray(responses) || responses.length !== 1) fail(`unexpected removal result; preserve ${file}`)
+  const response = responses[0]
+  if (response.branch !== record.branch || canonicalLocation(response.path) !== record.path ||
+      response.branch_outcome !== 'not_attempted' || fs.existsSync(record.path) ||
+      entries(repo.root).some(entry => canonicalLocation(entry.path) === record.path)) fail(`removal is unconfirmed; preserve ${file}`)
+  record.removed = true
+  record.cleanup = 'removed'
+  record.removedAt = new Date().toISOString()
+  save(file, record)
+  if (opts['delete-branch']) {
+    const deleted = run('git', ['branch', '-d', '--', record.branch], repo.root)
+    record.branch_deleted = deleted.status === 0
+    save(file, record)
+    if (!record.branch_deleted) process.stderr.write('mad-worktree: branch deletion refused; branch retained\n')
+  }
+  process.stdout.write(JSON.stringify({ branch: record.branch, removed: true, branch_deleted: record.branch_deleted, ownershipRecord: file }) + '\n')
+}
+
+try {
+  const [command, ...args] = process.argv.slice(2)
+  const opts = options(args)
+  if (!command || command === '--help' || command === 'help' || opts.help) process.stdout.write(USAGE)
+  else if (command === 'create') create(opts)
+  else if (command === 'remove') remove(opts)
+  else if (command === 'list') process.stdout.write(JSON.stringify(entries(repository(opts.repo).root).filter(entry => entry.branch?.startsWith('mad/'))) + '\n')
+  else fail(`unknown subcommand: ${command}`)
+} catch (error) {
+  fail(error instanceof Error ? error.message : 'operation failed; retain resources')
+}

@@ -5,7 +5,7 @@ const fs = require('node:fs')
 const { parsePlan, dependencyWaves } = require('./mad-plan-parser.js')
 
 function fail(message) {
-  process.stderr.write(`paseo-plan-dependency-validate: ${message}\n`)
+  process.stderr.write(`plan-dependency-validate: ${message}\n`)
   process.exitCode = 2
 }
 
@@ -23,7 +23,7 @@ function main(argv) {
 
   const plan = parsePlan(text)
   for (const warning of plan.warnings) {
-    process.stderr.write(`paseo-plan-dependency-validate: ${warning}\n`)
+    process.stderr.write(`plan-dependency-validate: ${warning}\n`)
   }
   const waves = dependencyWaves(plan.tasks)
   if (showWaves) {
