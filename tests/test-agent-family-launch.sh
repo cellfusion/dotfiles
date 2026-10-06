@@ -79,6 +79,32 @@ process.stdout.write(JSON.stringify({
     fs.writeFileSync(path.join(mockBin, family), mock, { mode: 0o755 })
   }
 
+  const missingConfig = path.join(temporary, 'missing.json')
+  for (const selector of ['--family', '--provider']) {
+    const direct = assertSuccess(
+      run(unrelated, missingConfig, mockBin, [selector, 'codex', '--', 'prompt with spaces'], {
+        AGENT_ENV: 'inherited',
+        CODEX_HOME: path.join(home, 'existing-codex'),
+      }),
+      `configless ${selector}`,
+    )
+    if (direct.binary !== 'codex' || direct.environment !== 'inherited' ||
+        direct.codex !== path.join(home, 'existing-codex') ||
+        JSON.stringify(direct.args) !== JSON.stringify(['prompt with spaces'])) {
+      throw new Error(`configless launch changed arguments or environment: ${JSON.stringify(direct)}`)
+    }
+  }
+  const configlessExplicit = run(unrelated, missingConfig, mockBin, ['--family', 'codex', '--environment', 'lab'])
+  if (configlessExplicit.status !== 2 || configlessExplicit.stdout !== '') {
+    throw new Error('configless explicit environment must not silently launch')
+  }
+  const malformedConfig = path.join(temporary, 'malformed.json')
+  fs.writeFileSync(malformedConfig, '{')
+  const malformed = run(unrelated, malformedConfig, mockBin, ['--family', 'codex'])
+  if (malformed.status !== 2 || malformed.stdout !== '') {
+    throw new Error('malformed config must not fall back to a direct launch')
+  }
+
   const value = structuredClone(sample)
   value.providers.omp = {
     displayName: 'OMP',

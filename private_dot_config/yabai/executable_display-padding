@@ -1,26 +1,31 @@
 #!/usr/bin/env sh
-# CoreGraphics で内蔵ディスプレイの位置を取得し、yabai の frame と照合する。
-builtin_frame=$(swift -e '
+# ノッチのある内蔵画面の位置を取得し、yabai の frame と照合する。
+notched_frames=$(swift -e '
+import AppKit
 import CoreGraphics
-var displays = [CGDirectDisplayID](repeating: 0, count: 32)
-var count: UInt32 = 0
-guard CGGetOnlineDisplayList(32, &displays, &count) == .success else { exit(1) }
-for display in displays.prefix(Int(count)) where CGDisplayIsBuiltin(display) != 0 {
+for screen in NSScreen.screens {
+    guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { exit(1) }
+    let display = CGDirectDisplayID(number.uint32Value)
+    guard CGDisplayIsBuiltin(display) != 0, screen.safeAreaInsets.top > 0 else { continue }
     let frame = CGDisplayBounds(display)
     print("\(Int(frame.origin.x))\t\(Int(frame.origin.y))\t\(Int(frame.width))\t\(Int(frame.height))")
 }
 ' 2>/dev/null) || exit 1
-[ -n "$builtin_frame" ] || exit 1
 
-# グローバル既定値は内蔵向け。各スペースの余白を再設定する。
-yabai -m config top_padding 0
+# ノッチなし・外部画面はバー34px + 隙間4pxを確保する。ノッチありだけ上余白なし。
+yabai -m config top_padding 38
 yabai -m query --displays | jq -r \
   '.[] | .frame as $frame | .spaces[] | [($frame.x | floor), ($frame.y | floor), ($frame.w | floor), ($frame.h | floor), .] | @tsv' |
 while IFS="$(printf '\t')" read -r x y w h space; do
-  if [ "$(printf '%s\t%s\t%s\t%s' "$x" "$y" "$w" "$h")" = "$builtin_frame" ]; then
-    padding=0
-  else
-    padding=38
-  fi
+  padding=38
+  frame="$(printf '%s\t%s\t%s\t%s' "$x" "$y" "$w" "$h")"
+  while IFS= read -r notched_frame; do
+    if [ "$frame" = "$notched_frame" ]; then
+      padding=0
+      break
+    fi
+  done <<EOF
+$notched_frames
+EOF
   yabai -m config --space "$space" top_padding "$padding"
 done

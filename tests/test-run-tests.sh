@@ -34,6 +34,7 @@ expected_names=(
   test-install-brewfile.sh
   test-install-scripts.sh
   test-zsh-bootstrap.sh
+  test-display-padding.sh
   test-instructions.sh
   test-paseo-legacy-removal.sh
   test-tests-not-distributed.sh
