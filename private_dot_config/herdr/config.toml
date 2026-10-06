@@ -46,6 +46,16 @@ toggle_sidebar = "ctrl+i"
 # (plugins.json は chezmoi 管理外なので、新しいマシンでは手で打つ必要がある)。
 close_pane = ""
 
+# Mobile: one Ctrl chord opens a searchable menu; existing launch keys stay.
+# Ctrl+g no longer reaches pane apps (shell abort / Neovim file information).
+[[keys.command]]
+key = "ctrl+g"
+type = "popup"
+command = "$HOME/.config/herdr/mobile-menu.sh"
+description = "mobile shortcut menu"
+width = "100%"
+height = "100%"
+
 [[keys.command]]
 key = "ctrl+q"
 type = "plugin_action"
@@ -53,7 +63,7 @@ command = "confirm-close-pane.confirm-close-pane"
 description = "Close pane (with confirmation)"
 
 # --- Launch shortcuts (mirror the old tmux M- keys) -------------------------
-# All of these open a temporary pane that closes when the tool exits.
+# Tools use popups or temporary panes; Claude keeps its independent tab.
 #
 # Reliability note: alt+<key> depends on the terminal. Ghostty is configured
 # with `macos-option-as-alt = true`, so Option presses arrive as Alt and reach
@@ -91,9 +101,11 @@ description = "claude (new tab)"
 
 [[keys.command]]
 key = "alt+a"
-type = "pane"
-command = "tv agent-launcher"
-description = "agent-launcher"
+type = "popup"
+command = "tuicr"
+description = "tuicr"
+width = "100%"
+height = "100%"
 
 [[keys.command]]
 key = "alt+z"
@@ -107,6 +119,14 @@ type = "popup"
 command = "exec \"${SHELL:-sh}\""
 description = "open scratch terminal"
 width = "80%"
+height = "80%"
+
+[[keys.command]]
+key = "prefix+u"
+type = "popup"
+command = "agent-usage --wait"
+description = "account usage limits"
+width = "100%"
 height = "80%"
 
 [ui]

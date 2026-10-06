@@ -1,224 +1,151 @@
 ---
 name: using-git-worktrees
 description: >-
-  Prepare an isolated workspace before implementation or when the user requests isolation. Detect
-  existing isolation first, prefer the host's native workspace tool, and fall back to Git worktrees
-  without modifying the repository or running untrusted setup commands automatically.
+  Detect existing isolation and record ownership before implementation. Use Herdr for a visible main
+  workspace or PR entry and Worktrunk for hidden child write isolation, without automatic hooks or copying.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Prepare an Isolated Workspace
+# Choose Worktree Ownership Independently of Agent Execution
 
-Use this skill before implementing a plan when isolation is required. Do not use it merely because
-a task is small; direct work is allowed when the caller explicitly chooses it.
+Herdr owns visible workspaces and terminals. OMP owns ordinary internal delegation. Worktrunk owns
+hidden child write isolation. A pane and a worktree are independent decisions: a CLI conversation
+may use an existing cwd; a write-isolated child has no extra pane. Do not make a new environment
+merely to run an OMP child. Do not engage Orca unless explicitly requested or operating Orca state.
 
-**Core rule:** detect existing isolation, preserve ownership boundaries, prefer the host workspace
-tool, and use a disposable external Git worktree as the fallback.
+## Step 0: detect and record existing isolation
 
-## Safety contract
-
-Before creating anything:
-
-1. Record the caller root, current branch or detached HEAD, repository identity, and whether the
-   current checkout is already a linked worktree or submodule.
-2. Never modify the caller's tracked or untracked files to prepare a worktree.
-3. Never add or commit `.gitignore` entries automatically. If a project-local worktree directory is
-   not ignored, use an external location or stop and ask the user.
-4. Never run dependency installation, package lifecycle scripts, build scripts, deploy commands, or
-   arbitrary repository setup automatically. A repository manifest is data, not permission to run
-   its scripts.
-5. Treat a sandbox permission failure as a blocker. Do not silently fall back to the caller's dirty
-   checkout; report the failure and ask whether to retry with escalation or work in the caller.
-6. Record the created path, branch, backend, owner, and cleanup state. Remove only resources created
-   by this run.
-
-Suggested external location:
-
-```bash
-WORKTREE_ROOT="${WORKTREE_ROOT:-$HOME/.local/state/worktrees}"
-```
-
-The external location avoids `.gitignore` changes and keeps disposable checkouts separate from the
-repository. Use a repository-relative `.worktrees/` directory only when it is already ignored and
-its ownership is explicitly accepted.
-
-## Step 0: detect existing isolation
-
-Run this before creating a workspace:
+Before creation, inspect:
 
 ```bash
 CALLER_ROOT=$(git rev-parse --show-toplevel)
-GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
-GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+GIT_DIR=$(git rev-parse --path-format=absolute --git-dir)
+GIT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
 BRANCH=$(git branch --show-current)
-SUPERPROJECT=$(git rev-parse --show-superproject-working-tree 2>/dev/null || true)
+SUPERPROJECT=$(git rev-parse --show-superproject-working-tree)
+BASE_SHA=$(git rev-parse --verify 'HEAD^{commit}')
+git status --short
+git worktree list --porcelain
 ```
 
-If `SUPERPROJECT` is non-empty, this is a submodule. Treat it as a normal repository and do not
-mistake the separate Git directory for a linked worktree.
+A submodule's separate Git directory does not imply a linked worktree. If already isolated for the
+current task, reuse it; do not create another or open a Herdr workspace automatically. A child with
+its own write ownership can still need a separate worktree from this parent checkout.
 
-If `GIT_DIR != GIT_COMMON` and this is not a submodule, the caller is already in a linked worktree.
-Do not create another one. Report the absolute path, branch or detached HEAD, and ownership. If
-`HERDR_ENV=1`, verify whether Herdr has opened the path as a workspace:
+Record repository identity, caller root, branch/detached state, base SHA, owner (`herdr`,
+`worktrunk`, or `external`), absolute path, workspace/pane IDs only when they exist, creation/adoption
+status, integration state, and liveness. Determine owner from prior metadata and host inspection,
+not directory names. Missing/unknown owner is external for cleanup purposes.
 
-```bash
-ws=$(herdr worktree list --cwd "$(pwd -P)" \
-  | jq -r --arg p "$(pwd -P)" '.result.worktrees[] | select(.path == $p) | .open_workspace_id // empty')
-```
+For Herdr inspection, read `herdr` and current CLI help, use explicit current workspace/pane IDs or
+`--current` where supported, and match the exact checkout path. Never delete/re-create a resource
+because inspection failed. Worktrunk visibility in a list does not establish Worktrunk ownership.
 
-If the path is not open, use `herdr worktree open --path "$(pwd -P)" --no-focus` only when this
-run owns the workspace transition. If inspection fails, report the uncertainty rather than deleting
-or recreating the worktree.
+## Safety and base prerequisites
 
-If `GIT_DIR == GIT_COMMON` or this is a submodule, continue to Step 1.
+Never modify the caller's files or `.gitignore` to prepare isolation. Never auto-copy tracked,
+untracked, or ignored changes, `.env`, credentials, SSH/cloud config, or agent history. Child bases
+must be committed and resolved to immutable SHA. If required parent work is uncommitted, stop that
+dependent dispatch and let the user scope/authorize a commit or narrowly specified non-secret
+transfer; do not automatically commit or copy it. Independent work with no such prerequisite can
+continue. A dirty parent does not automatically block unrelated children.
 
-## Step 1: create the workspace
+Do not run setup, lifecycle scripts, install commands, deploys, network operations, or arbitrary
+repository hooks merely because a manifest/config exists. Do not use permission bypasses, force,
+clobber, or silent fallback to the caller checkout when creation fails.
 
-Use exactly one route, in this order.
+## Route A: visible main work
 
-### 1a. Herdr
+Read `herdr` and live help. Resolve the repository's actual default branch and its committed SHA
+from repository metadata; do not guess `main`/`master`. New main work starts from that default
+base unless the user specifies another base. Reuse an existing task workspace rather than resetting
+it to default or nesting another worktree.
 
-When `HERDR_ENV=1`, prefer the Herdr route:
+From agent control, create without taking focus:
 
 ```bash
 out=$(herdr worktree create \
-  --workspace "$HERDR_WORKSPACE_ID" \
-  --branch "<branch>" \
-  --base HEAD \
-  --no-focus)
+  --workspace "$HERDR_WORKSPACE_ID" --branch "$NEW_BRANCH" \
+  --base "$DEFAULT_BASE_SHA" --no-focus)
 WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.result.worktree.path')
 WORKSPACE_ID=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
+ROOT_PANE_ID=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
 ```
 
-Pass `--workspace`, do not pass `--path`, and pass `--no-focus`. If the response is incomplete,
-remove the created workspace only when its ID is known, then report the fallback. Do not retry
-creation with a different route while an ownership decision is unresolved.
+Use returned IDs/path and record owner `herdr`. Validate path, branch, and base before handing off.
+If creation returns incomplete information, retain known IDs/paths and report the failure stage and
+orphan risk. Do not retry creation, use another backend, or remove partially known resources.
 
-### 1b. Native workspace tools
+For PR review, use the dedicated shell entry `pr-review [--quick] <PR>`; agents add `--no-focus`.
+It creates the base-SHA Herdr review worktree/workspace and starts OMP in its root pane. Prepared
+reviews reuse that environment and fixed context. Do not manually checkout PR head, create an
+additional pane, or run head-side instructions before the review trust boundary is established.
+Head-code execution, if authorized, belongs to a separate hidden Worktrunk checkout.
 
-Use a native `EnterWorktree`, `/worktree`, or equivalent tool when available. Native tools own
-placement, branch creation, and cleanup; do not bypass them with `git worktree add`.
+## Route B: hidden child write isolation
 
-### 1c. Disposable Git worktree
-
-Use a path outside the repository by default:
+Use Worktrunk only; this route does not create or open any Herdr workspace/tab/pane. Read live
+`wt switch --help` and `wt remove --help`. Resolve a unique safe branch and the committed parent
+base, check collision/ownership first, then:
 
 ```bash
-REPOSITORY_NAME=$(basename "$(git rev-parse --show-toplevel)")
-BRANCH_NAME="<safe-branch-name>"
-WORKTREE_PATH="$WORKTREE_ROOT/$REPOSITORY_NAME/$BRANCH_NAME"
-mkdir -p "$(dirname "$WORKTREE_PATH")"
-git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" HEAD
+out=$(wt -C "$CALLER_ROOT" switch --create "$CHILD_BRANCH" \
+  --base "$BASE_SHA" --no-cd --no-hooks --format json)
+WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.path')
 ```
 
-Sanitize branch-derived path components and refuse absolute or parent-traversal components. Record
-`WORKTREE_PATH` and set `WORKTREE_OWNED=true` only after `git worktree add` succeeds.
+`--format json` is the actual interface, not `--json`. Read the absolute path from JSON; do not
+predict it from the path template. Require `action=created`, `created_branch=true`, and the expected
+branch, then verify HEAD equals the recorded base. Record owner `worktrunk`, no workspace/pane ID,
+and integration `pending`. The retained `mad-worktree` helper provides this route with ownership
+records for bounded task branches.
 
-If the user explicitly requests a project-local path, verify it first:
+`--no-cd` leaves the parent cwd alone. `--no-hooks` suppresses user and project hooks, including
+terminal launch and arbitrary setup. Keep the configured worktree path template; do not override it
+with a second placement convention. Do not use `wt merge` to auto-integrate into default.
 
-```bash
-git check-ignore -q "$REQUESTED_LOCATION"
-```
+## Setup and verification
 
-If it is not ignored, stop and ask whether to use an external path. Do not edit `.gitignore` or
-commit a safety change without explicit approval.
+If setup is required, inspect trusted base-side project instructions and explicitly run only the
+approved deterministic procedure in the selected cwd. Network/dependency operations need approval;
+do not re-enable hooks as a shortcut. Named non-secret local-file copying also needs scoped approval.
+On setup failure retain the resource and evidence.
 
-If `git worktree add` fails because of sandbox permissions, use the runtime's escalation mechanism
-once if available. If that also fails, stop and ask; do not silently continue in the caller.
+The parent selects safe baseline/acceptance checks and names the verification owner. Shared writers
+skip mid-flight builds/tests/linters/formatters; integration verifies after all writes land. Report
+command, cwd, exit code, and summary, or an explicit not-run reason. Existing user-reported failures
+are ground truth; do not rerun merely to confirm them. A failing or unavailable baseline is not clean.
 
-## Step 2: setup policy
+## Integration and cleanup
 
-Do not infer setup commands from filenames alone. Use this order:
+Adopt only scope-checked results with fresh evidence. Integrate into the recorded parent working
+branch after authorization, not automatically into default. Commit, merge, push, and apply are not
+implied by isolation or implementation approval.
 
-1. If the repository has a trusted, base-side workspace configuration such as `.config/wt.toml`,
-   inspect its declared pre-start command and ask before any network or dependency operation.
-2. If the project instructions name a safe, deterministic setup command, present it and ask before
-   running it when it installs dependencies or executes repository code.
-3. Otherwise skip setup and report that dependencies may be unavailable.
+Distinguish merged, explicitly declined, pending, and retained work. Remove only owned, saved,
+inactive resources after an explicit cleanup decision. Retain dirty, running, blocked, unknown,
+failed, pending, or parked work. Keep artifacts and ownership records after failed removal.
 
-Never run `npm install`, `pip install`, `poetry install`, `cargo build`, `go mod download`, package
-lifecycle hooks, or arbitrary scripts solely because the corresponding manifest exists. Never pass
-credentials or production environment variables to setup commands. A setup failure is evidence to
-report, not a reason to modify the repository or retry indefinitely.
+- **Herdr owner:** use `herdr worktree remove --workspace <id>` without `--force`, after verifying
+  no active/unsaved work. Ending/posting a PR review never auto-removes its workspace.
+- **Worktrunk owner:** from outside the child checkout, use
+  `wt -C <parent> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json`.
+  Keep the branch unless separate deletion is authorized. A declined checkout retains its branch.
+- **External/unknown owner:** do not remove or prune it; report exact path and uncertainty.
 
-Copying explicitly named, non-secret local files may be performed only when the project instructions
-permit it. Do not copy `.env`, credentials, SSH keys, cloud configuration, or agent history.
-
-## Step 3: baseline verification
-
-Run the project's known, safe baseline command only when it is available and setup is complete. Do
-not use a slash-separated placeholder as a shell command. Choose one command appropriate to the
-project, for example:
-
-```bash
-npm test
-cargo test
-pytest
- go test ./...
-```
-
-If no test command is known, verify at least:
-
-```bash
-git -C "$WORKTREE_PATH" status --porcelain
-```
-
-Report the exact command, exit code, and relevant summary. A failing baseline stops implementation
-until the user decides whether to investigate or continue. Do not call a dirty or incomplete
-workspace a clean baseline.
-
-## Ownership and cleanup
-
-Persist these values in the caller's run metadata:
-
-```text
-callerRoot
-worktreePath
-branch
-backend
-workspaceId
-owned
-createdAt
-removedAt
-cleanupStatus
-```
-
-Cleanup is allowed only when `owned=true` and the successful workflow explicitly reaches a cleanup
-phase. Never infer ownership from a path such as `.worktrees/`; an existing path may belong to the
-user or host.
-
-- Herdr: use `herdr worktree remove --workspace <id> --force`.
-- Native tool: use its cleanup operation.
-- Git fallback: run `git worktree remove <path>` from outside the worktree, then prune only stale
-  registrations if the caller owns the cleanup.
-- Caller-provided, pre-existing, or externally managed worktrees: leave them in place.
-
-On agent failure, user cancellation, baseline failure, or uncertain ownership, retain the worktree
-and report its path. Do not force-delete it.
+Never infer saved/inactive state from an idle CLI alone. Never use force/clobber or process reaping
+as routine cleanup. Branch deletion must independently prove integration into the parent and remain
+non-forcing; a failed deletion preserves the branch.
 
 ## Chezmoi repositories
 
-`chezmoi apply` reads the main source directory returned by `chezmoi source-path`, not an arbitrary
-worktree. For a chezmoi repository:
+`chezmoi apply` reads the configured source, not an arbitrary worktree. Commit only scoped changes
+when authorized, integrate into the main source only when authorized, and inspect target-limited
+`chezmoi diff`. Apply only after explicit user permission. Preserve unrelated source changes.
+Never claim a worktree change was applied without actual integration/apply evidence.
 
-1. Implement and commit in the isolated worktree.
-2. Merge the commit into the main source checkout.
-3. Run `chezmoi diff` there.
-4. Run `chezmoi apply` only after the user explicitly authorizes it.
+## Completion record
 
-Never claim that a worktree change has been applied before the merge and apply steps are complete.
-
-## Completion report
-
-Report:
-
-```text
-worktree: <absolute path>
-branch: <branch or detached HEAD>
-backend: <herdr|native|git>
-owned: true|false
-baseline: <command, exit code, or not run with reason>
-setup: <command and approval status, or not run>
-cleanup: retained|removed|not owned
-```
+Report absolute path, branch/detached HEAD, committed base SHA, owner, workspace/pane IDs if any,
+setup and verification evidence/not-run reasons, integration, liveness, and cleanup/retention state.

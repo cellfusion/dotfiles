@@ -14,9 +14,4 @@ assert_contains "$ignore" $'\nCLAUDE.md\n' '.chezmoiignore は repository-local 
 remove="$(cat "$REPO_ROOT/.chezmoiremove")"
 assert_contains "$remove" $'\nCLAUDE.md\n' '.chezmoiremove は home-level CLAUDE.md を回収する'
 
-claude_md="$(cat "$REPO_ROOT/CLAUDE.md")"
-assert_contains "$claude_md" 'tests/lib/assert.sh' 'CLAUDE.md は共通 assert の場所を書く'
-assert_contains "$claude_md" 'bash tests/run-tests.sh' 'CLAUDE.md は runner の回し方を書く'
-assert_contains "$claude_md" 'bash tests/test-tools-doc.sh' 'CLAUDE.md は単体実行の例を書く'
-
 assert_summary

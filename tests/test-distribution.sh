@@ -31,8 +31,6 @@ assert_contains "$managed" '.agents/agent-defs/schemas/plan-auditor.json' \
   'plan-auditor schema を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/task-brief' \
   'task-brief を配る'
-assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-run' \
-  'mad-run を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-plan-parser.js' \
   'mad plan parser を配る'
 assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
@@ -51,8 +49,6 @@ assert_contains "$managed" '.config/opencode/agents/intake-router.md' \
   'distribute OpenCode intake-router agent'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-worktree' \
   'mad-worktree を配る'
-assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-progress' \
-  'mad-progress を配る'
 
 for role in implementer task-reviewer plan-auditor intake-router architectural-implementer escalation-judge re-reviewer final-reviewer spec-author plan-author synthesizer reviewer researcher review-synthesizer; do
   assert_contains "$managed" ".agents/agent-defs/prompts/$role.md" \
@@ -84,16 +80,8 @@ assert_contains "$managed" '.agents/agent-defs/schemas/escalation-judge.json' \
   'escalation judge schema を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/escalation-policy' \
   'escalation policy script を配る'
-assert_contains "$managed" '.agents/skills/task-routing/scripts/single-implementer' \
-  'single implementer script を配る'
-assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/paseo-cli-adapter' \
-  'paseo CLI adapter を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-record' \
   'mad outcome recorder を配る'
-assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-outcome-import' \
-  'mad outcome importer を配る'
-assert_contains "$managed" '.agents/skills/task-routing/scripts/mad-route-admit' \
-  'mad route admission を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-route-record' \
   'mad route recorder を配る'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-route-summary' \

@@ -24,9 +24,10 @@ Use `executing-plans` only when all of these are true:
 
 Otherwise stop and select MAD or ask the user.
 
-Write changes in an isolated workspace by default using `using-git-worktrees`. Stay in the current
-checkout only when the user explicitly accepts that risk and the change is safe to make there. The
-worktree skill owns setup, baseline policy, ownership, and cleanup; do not duplicate or bypass it.
+Reuse the existing approved task workspace; do not create nested isolation. If a visible main
+workspace is missing, `using-git-worktrees` selects Herdr from the actual default branch. Hidden
+Worktrunk isolation is only for a distinct writer ownership boundary and creates no extra pane.
+The worktree skill owns base prerequisites, setup, ownership, and cleanup.
 
 ## Step 1: read and critique the plan
 
@@ -47,8 +48,8 @@ For every task:
 1. mark it `in_progress`
 2. re-read the task's scope and constraints
 3. implement only that task
-4. run its specified verification
-5. inspect the task diff, changed files, and working-tree status
+4. run its specified verification only if this session owns that check; shared-worktree children skip mid-flight checks and return the commands to the integration owner
+5. inspect only the task's diff and changed files, preserving unrelated concurrent/user changes
 6. compare the result with acceptance criteria
 7. mark it complete only with evidence
 

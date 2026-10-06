@@ -1,137 +1,96 @@
 ---
 name: multi-agent-development
 description: >-
-  Run multiple child agents, parallel tasks, isolated worktrees, or independent review through the
-  configured Paseo CLI or MCP backend. Do not use it for a single local task or ordinary conversation.
+  Coordinate multiple OMP internal children or independent reviews with bounded scopes and artifacts.
+  Use Herdr only for independent CLI interaction and Worktrunk only for hidden write isolation.
+  Skip a single local task or a small sequential plan.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Use Multi-Agent Development Only When It Helps
+# Coordinate Development Through OMP
 
-MAD is an execution recipe for a parent coordinating multiple children. It is not a requirements
-interpreter, complexity oracle, or replacement for the parent's decisions.
+The parent owns decomposition, shared contracts, integration, adoption, and completion. MAD is not
+an architecture oracle or permission to start a second orchestration environment.
 
-## When to use MAD
+## Admission
 
-Use MAD only when at least one is true:
+Use multiple agents when independent slices or independent review perspectives provide a real
+benefit, or when the user explicitly requests parallel work. Scope inline first. Map files,
+dependencies, shared interfaces, and the integration owner before dispatch. Do not create a child
+for a trivial edit, one direct question, or a slice already open in the parent.
 
-- independent tasks can run in parallel
-- separate research, implementation, and review improves quality or time
-- each task requires an isolated worktree
-- long-running work must be removed from the parent's conversation
-- the user explicitly requests multiple agents
+A small sequential plan belongs to `executing-plans`. One justified bounded child uses the ordinary
+OMP internal tool without delivery machinery. Start delivery phases only when the actual task needs
+them; spec and plan are not mandatory child roles.
 
-Do not use MAD when:
+## Execution and placement
 
-- one task can be implemented directly
-- a small sequential plan fits `executing-plans`
-- child coordination costs more than the work
-- the parent can inspect the diff and verification directly
+Default to OMP internal delegation, using the current runtime's documented task/agent interface.
+Preserve existing model and permission defaults. Do not run Paseo create/wait adapters, provider
+snapshots, or transport-specific request schemas to authorize an OMP child.
 
-Not using MAD is a valid result. Choose direct work or `executing-plans` when it is safer or faster.
+Choose write placement independently:
 
-## Parent responsibilities
+- shared existing cwd: disjoint write scopes, one integration owner, and no mid-flight checks;
+- separate writes: a hidden Worktrunk child worktree from the committed parent base, with no Herdr
+  workspace/tab/pane;
+- separate CLI/user conversation: Herdr pane in the appropriate existing cwd; add a worktree only
+  when write isolation is also needed.
 
-Only the parent decides:
-
-- whether MAD is appropriate
-- recipe, tasks, dependencies, and concurrency
-- child role, scope, artifacts, and complexity
-- review adoption, retries, escalation, and stopping
-- when to ask the user
-
-Never adopt a child based only on its success message. Independently inspect artifacts, diff, tests,
-scope, status, and schema.
+Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace.
+Orca skills apply only to an explicit Orca request or operations on Orca-managed state; ordinary
+parallelism, handoff, or child worktrees do not engage Orca.
 
 ## Recipes
 
-| Recipe | Use when | Completion |
+| Recipe | Reason to select it | Completion |
 |---|---|---|
-| `research` | independent research perspectives are useful | parent integrates all evidence |
-| `fanout` | independent implementation tasks can run in parallel | all adoption decisions are complete |
-| `review` | independent review lenses are needed | package and verdict are verified |
-| `delivery` | spec, plan, implementation, task review, and final review are required | every phase and integration is verified |
-| `refine` | a bounded existing artifact needs improvement | scope-limited diff is verified |
+| research | independent research perspectives | parent reconciles evidence and limitations |
+| fanout | independent implementation slices | every adoption/integration decision recorded |
+| review | independent read-only review lenses | fixed package and verdict independently checked |
+| delivery | multi-stage integration and review gates | required phases and integrated behavior verified |
+| refine | bounded improvement of an existing artifact | approved scope and fresh evidence satisfied |
 
-`spec` and `plan` are phases of delivery, not independent recipes. The parent may write a small
-spec or plan directly.
+## Before dispatch
 
-## Lightweight routes
+Record run purpose, unique artifact directory, child contracts, committed base, execution/placement
+routes, resource ownership, dependencies, verification owner, and finite attempt limits. Assign
+exact files and non-goals. Define expected results and acceptance before creation, not after a child
+returns. Resolve uncommitted prerequisite changes before delegation: the user must scope and
+authorize any transfer; never automatically copy the parent's dirty tree or secret local files.
 
-Do not start full delivery automatically:
-
-1. **single child** for one isolated research or implementation task
-2. **fanout** for independent children
-3. **delivery** only when multiple phases and integration gates are justified
-
-A single child can use the ordinary Paseo route without the strict MAD contract. Use the strict
-contract only for a multi-child run that needs its state and artifact guarantees.
-
-## Before a strict run
-
-Record:
-
-- run purpose and recipe
-- each node's input, output, responsibilities, and allowed write scope
-- dependencies and parallel waves
-- success and stop conditions
-- required user decisions
-- selected backend and whether fallback is allowed
-
-Do not delegate this decision to a child. The configured backend is either `paseo-cli` or
-`paseo-mcp`; select one at run start and keep it for the entire run. If the selected strict backend
-is unavailable before the run starts, work directly or ask the user. Do not switch backends or retry
-the same create after a strict run has started.
-
-## Strict delivery preparation
-
-Apply the strict contract only after choosing a strict MAD delivery run. Initialize the distributed
-script paths from the installed skill directory and use the current shared manual contract:
-
-```bash
-MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
-MAD_SHARE="${MAD_SHARE:-$HOME/.local/share/agent-config}"
-AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
-MAD_BACKEND="${MAD_BACKEND:-paseo-cli}"
-MAD_TASK_BRIEF="$MAD_SCRIPTS/task-brief"
-MAD_STATE_DIR="${MAD_STATE_DIR:-$HOME/.local/state/mad}"
-MAD_WORKTREE="$MAD_SCRIPTS/mad-worktree"
-MAD_PROGRESS="$MAD_SCRIPTS/mad-progress"
-MAD_OUTCOME_LOG="${MAD_OUTCOME_LOG:-$MAD_STATE_DIR/metrics/attempt-outcomes.jsonl}"
-PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)}"
-```
-
-The strict contract owns provider/model discovery, request validation, state, call logs, worktrees,
-review scope, escalation, and outcome recording. Run the dependency gate before the `plan-auditor`;
-the `plan-auditor` is a one-shot gate before the first implementer. Do not reconstruct provider, model, features, or request payloads in the parent. Use the installed `paseo-cli` backend by default and select
-`paseo-mcp` explicitly when provider-specific features are required.
+Dispatch genuine independent slices in one batch. Sequence only real dependencies. Each child
+receives only its goal, trusted requirement paths, interfaces, scope, cwd, result expectations, and
+stop conditions. Children do not inherit authorization to commit, push, apply, install, or spawn.
 
 ## During execution
 
-For a strict run:
+Consume actual runtime completion notifications; do not poll while useful work remains. Wait only
+when blocked. Record actual child/resource IDs and artifact paths. Read-only reviewers receive fixed
+packages and cannot edit, execute untrusted code, or start children. Writers cannot widen scope.
 
-1. create unique run and attempt directories; never overwrite another attempt
-2. fix role, prompt, schema, scope, and base for each child
-3. record create, wait, stop, worktree, and retry counts
-4. validate every child artifact against schema and scope
-5. record the parent's adoption decision at each phase boundary
-6. do not widen review scope without a new decision
-7. treat timeout, transport failure, and unknown state as unresolved, never successful
-8. stop when the configured attempt or round limit is reached
+With shared writes, children skip builds, tests, linters, formatters, and smoke checks; the parent
+runs once after all slices land. For isolated children, name the approved checks and whether the
+child or parent runs them, so verification never races integration.
 
-Use `mad-worktree` for strict worktree isolation and pass the returned absolute path to the selected
-Paseo workspace. Do not let Paseo silently create a different Git worktree.
+Launch errors, timeout, blocked, and unknown states are unresolved. Preserve exact paths/IDs and
+failure stages. Inspect the same resources before resuming; do not retry creation, change execution
+backend, or delete resources to conceal uncertainty.
 
-## Review and fix boundaries
+## Review, adoption, and completion
 
-Use a fixed review package and immutable base/head identity for each review. Keep review findings in
-the configured review artifacts. A fix child may change only files in the approved scope and must
-produce fresh verification. A second review must use a fresh package; never review a stale diff.
+Build fixed review packages using the retained `review-bundle` helper and immutable recorded
+base/head identity. Validate finding IDs, evidence, changed files, and scope before authorizing fixes.
+A fix child receives only approved files and findings. New revisions require fresh review packages.
 
-## Completion
+Only the parent adopts results and integrates into the parent work branch, never automatically into
+the default branch. Do not commit/merge/push/apply without authorization. Conflicts preserve child
+branches, ownership records, artifacts, and pending integration; stop dependent work until resolved.
 
-The parent independently validates the final run state, adopted artifacts, tests, review verdict,
-changed files, scope, integration, and worktree removal. A child report is not completion evidence.
+Before completion, independently check affected callers, acceptance, scope, artifacts, fresh
+verification, review verdicts, and integration state. Retaining an explicitly parked worktree is a
+valid outcome; it is not a reason to force cleanup or pretend integration succeeded. Report every
+remaining blocked/unknown resource and any intentionally retained work.
 
 {{ includeTemplate "agent-skills/_manual-orchestration.md" . }}

@@ -22,7 +22,7 @@ git rev-parse --git-dir
 - Question: "`{{ .artifact }}` is at `<path>`. May I {{ .nextLabel }} with this content?"
 - Options:
 {{- if $worktree }}
-  - **Approve and delegate via worktree** — create a new workspace and hand off {{ .nextLabel }} (Herdr only)
+  - **Approve and delegate via worktree** — create a visible Herdr workspace and hand off to OMP there (independent interaction only; hidden write isolation uses Worktrunk)
 {{- end }}
   - **Approve and continue** — proceed to {{ .nextLabel }}
   - **Approve only** — retain the {{ .artifact }} and stop

@@ -1,6 +1,0 @@
-{
-  "id": "pr-review",
-  "requirements": {
-    "paseo": ">=0.8.0"
-  }
-}

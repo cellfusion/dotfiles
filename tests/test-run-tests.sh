@@ -14,14 +14,9 @@ cp "$runner" "$fixture/run-tests.sh"
 
 expected_names=(
   test-mad-task-brief.sh
-  test-mad-run.sh
   test-mad-plan-parser.sh
-  test-single-implementer.sh
-  test-paseo-cli-adapter.sh
   test-mad-outcome.sh
-  test-mad-outcome-import.sh
   test-mad-route.sh
-  test-mad-route-admit.sh
   test-agent-config-policy.sh
   test-agent-config-role-catalog.sh
   test-native-agent-defs.sh
@@ -30,11 +25,9 @@ expected_names=(
   test-agent-family-launch.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh
-  test-agent-maintenance-commands.sh
   test-escalation-policy.sh
   test-escalation-controller.sh
-  test-paseo-plan-dependency-validate.sh
-  test-manual-orchestration-contract.sh
+  test-plan-dependency-validate.sh
   test-schemas.sh
   test-distribution.sh
   test-natural-japanese.sh
@@ -42,16 +35,12 @@ expected_names=(
   test-install-scripts.sh
   test-zsh-bootstrap.sh
   test-display-padding.sh
-  test-manual-scripts.sh
-  test-tools-doc.sh
   test-instructions.sh
   test-paseo-legacy-removal.sh
   test-tests-not-distributed.sh
   test-mad-worktree.sh
-  test-mad-progress.sh
-  test-mad-worktrees-ledger.sh
-  test-mad-worktree-contract-doc.sh
-  test-mad-worktree-location-doc.sh
+  test-pr-review.sh
+  test-agent-usage.sh
   test-run-tests.sh
 )
 expected_order="$(printf '%s\n' "${expected_names[@]}")"

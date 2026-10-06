@@ -35,11 +35,17 @@ brew bundle --file ~/.config/install/Brewfile --no-upgrade
 | Multiplexer | [Herdr](https://herdr.dev/) | Terminal multiplexer for coding agents |
 | Editor | [Neovim](https://neovim.io/) (LazyVim) | Primary editor |
 | Git | [lazygit](https://github.com/jesseduffield/lazygit) | Terminal UI for git |
+| Review | Tuicr | Interactive diff review |
+| Worktrees | [Worktrunk](https://worktrunk.dev/) | Invisible write isolation for child tasks |
 | Finder | [television](https://github.com/alexpasmantier/television) | Fuzzy finder (tv) |
 | Window Manager | [yabai](https://github.com/koekeishiya/yabai) + [skhd](https://github.com/koekeishiya/skhd) | Tiling window manager + hotkey daemon (macOS) |
-| AI | [Claude Code](https://claude.ai/code) | AI coding assistant |
+| AI | OMP / [Claude Code](https://claude.ai/code) / Codex | OMP-first development; independent agents in Herdr panes |
 | Bar | [SketchyBar](https://github.com/FelixKratz/SketchyBar) | Custom menu bar (macOS) |
 | Japanese Input | [AquaSKK](https://github.com/codefirst/aquaskk) | SKK input method |
+
+メイン作業とPRレビューはHerdrの専用worktree＋workspaceで実行する。
+通常の委譲はOMP内、書き込み分離だけが必要な子作業はWorktrunkで作り、Herdrには表示しない。
+subMBPは`herdr --remote`でmainMBP側へ接続する。Android端末にはMoshiを使う。
 
 ## Documentation
 
