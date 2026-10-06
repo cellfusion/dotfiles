@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
+import { homedir } from "node:os";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
 // Paseo の daemon はデスクトップアプリから起動されるため、ログインシェルの PATH を
-// 継承するとは限らない。Homebrew の既定の場所を明示的に足す。
-const SEARCH_PATH = ["/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""]
+// 継承するとは限らない。mise の launcher を Homebrew より先に解決する。
+const SEARCH_PATH = [`${homedir()}/.local/bin`, "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""]
   .filter((entry) => entry.length > 0)
   .join(":");
 

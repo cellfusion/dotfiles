@@ -1,0 +1,52 @@
+#!/bin/sh
+# ~/.local/bin の symlink から起動し、対象 CLI だけを mise に解決させる。
+# 全 runtime を activate しないので、親が選んだ Python / JAVA_HOME を保持する。
+name=${0##*/}
+case "$name" in
+  gh) tool=aqua:cli/cli ;;
+  ghq) tool=aqua:x-motemen/ghq ;;
+  git-lfs) tool=aqua:git-lfs/git-lfs ;;
+  lazygit) tool=aqua:jesseduffield/lazygit ;;
+  wt) tool=github:max-sixty/worktrunk ;;
+  nvim) tool=aqua:neovim/neovim ;;
+  fzf) tool=aqua:junegunn/fzf ;;
+  fd) tool=aqua:sharkdp/fd ;;
+  rg) tool=aqua:BurntSushi/ripgrep ;;
+  bat) tool=aqua:sharkdp/bat ;;
+  glow) tool=aqua:charmbracelet/glow ;;
+  eza) tool=cargo:eza ;;
+  jq) tool=aqua:jqlang/jq ;;
+  tv) tool=aqua:alexpasmantier/television ;;
+  zoxide) tool=aqua:ajeetdsouza/zoxide ;;
+  sccache) tool=aqua:mozilla/sccache ;;
+  aws|aws_completer) tool=aqua:aws/aws-cli ;;
+  grpcurl) tool=aqua:fullstorydev/grpcurl ;;
+  opencode) tool=github:anomalyco/opencode ;;
+  pi) tool=npm:@earendil-works/pi-coding-agent ;;
+  wrangler) tool=npm:wrangler ;;
+  firebase) tool=npm:firebase-tools ;;
+  mcp-hub) tool=npm:mcp-hub ;;
+  *) printf 'mise-tool: 未対応のコマンド: %s\n' "$name" >&2; exit 2 ;;
+esac
+mise="$HOME/.local/bin/mise"
+
+# 管理された Pi の自己更新は使わず、グローバルの mise 設定から更新する。
+if [ "$name" = pi ] && [ "${1-}" = update ]; then
+  shift
+  cd "${XDG_CONFIG_HOME:-$HOME/.config}/mise" || exit $?
+  exec "$mise" upgrade "$tool" "$@"
+fi
+
+case "$tool" in
+  npm:*)
+    # which --tool も他の有効 tool の bin を検索するため、旧 npm グローバルを拾う。
+    # npm backend の install root から選び、Node 側に残った旧コピーを使わない。
+    install_dir=$("$mise" where "$tool") || exit $?
+    binary="$install_dir/bin/$name"
+    node_dir=$("$mise" where node) || exit $?
+    PATH="$node_dir/bin:$PATH"
+    export PATH
+    ;;
+  *) binary=$("$mise" which "$name" --tool "$tool") || exit $? ;;
+esac
+exec "$binary" "$@"

@@ -4,7 +4,6 @@
 #
 # Brewfile と分けてある。fully-qualified 名で入れると tap と trust が自動で付くので、
 # Homebrew 6 の tap trust に引っかからない。
-anomalyco/tap/opencode
 {{ if eq .os "darwin" -}}
 {{ if or (not (hasKey . "yabai")) .yabai }}asmvik/formulae/yabai{{ end }}
 {{ if or (not (hasKey . "skhd")) .skhd }}asmvik/formulae/skhd{{ end }}

@@ -20,12 +20,12 @@ SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取�
 | native installer（chezmoi・ランタイム・Herdr） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
-| npm | `~/.config/install/npm-globals.txt` | `run_onchange_after_50-npm-globals.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
 | ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
 | Paseo プラグイン | `~/.local/share/paseo-plugins/pr-review/` のソース | `run_onchange_after_75-paseo-plugins.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
+| Paseo managed profiles | agent-config と provider projection のソース | `run_onchange_after_91-paseo-managed-profiles.sh` |
 
 マニフェストを持つスクリプトは、そのハッシュを埋め込んでいる。マニフェストを
 書き換えたときだけ `chezmoi apply` で走る。マニフェストを持たない 4 本
@@ -34,6 +34,10 @@ SketchyBar 無効時は Lua 5.4、SbarLua、helper、top_bar と使用量採取�
 実行するのはインストールだけで、既に入っているものの upgrade は行わない。
 `brew bundle` は既定で outdated な formula もまとめて upgrade するため、
 `--no-upgrade` を付けている。更新したいときは `brew upgrade` を手で回す。
+
+日常 CLI は原則 mise、Homebrew は Git・GNU coreutils・macOS 統合・ライブラリ・
+移行経路を確定していないモバイル開発ツールに絞る。自己更新ツールと構築の起点は
+native installer に残す。Brewfile から外しても、既存の Brew / npm コピーは削除しない。
 
 手で回すこともできる。
 
@@ -262,9 +266,10 @@ OMP named profile は profile ごとの native config、session、`agent.db` を
 `PI_CODING_AGENT_DIR` を無視する。一つの profile には一方の account だけを login し、OMP の
 複数-account rotation で A/B を混ぜない。
 
-zsh の bare `claude`、`codex`、`pi`、`omp` は `agent --family=<family>` へ送る。`pi update` と
-`codex update` だけは実 CLI へ直接送る。`command claude`、absolute executable path、zsh 設定を
-読まない process は wrapper を bypass する。
+zsh の bare `claude`、`codex`、`pi`、`omp` は `agent --family=<family>` へ送る。
+`pi update` は launcher からグローバル設定の `mise upgrade npm:@earendil-works/pi-coding-agent`、
+`codex update` は native CLI へ送る。`command claude`、absolute executable path、
+zsh 設定を読まない process は family wrapper を bypass する。
 
 Orca terminal と Project Quick Command からは、たとえば次を実行する。
 
@@ -305,7 +310,7 @@ repository から自動配布しない。
 
 ## 開発ツール
 
-mise / bun / uv / rustup / chezmoi / herdr は native installer、go は mise が管理する。
+mise / bun / uv / rustup / chezmoi / herdr は native installer、go と下記 CLI は mise が管理する。
 それぞれの節を見る。
 
 | ツール | 用途 |
@@ -367,7 +372,6 @@ chezmoi の install script の既定の BINDIR は `./bin`（実行時のカレ�
 | herdr | `curl -fsSL https://herdr.dev/install.sh \| sh` | 公式 checksum 検証付き installer。native 配布だけ `herdr update` で更新する |
 | claude | `curl -fsSL https://claude.ai/install.sh \| bash` | 自己更新を持つ |
 | codex | `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | 自己更新を持つ |
-| opencode | Homebrew（`anomalyco/tap/opencode`） | 自己更新を持たないので brew に置く |
 
 claude と codex を brew に寄せない理由はもう 1 つある。Homebrew の `claude-code`
 cask は stable チャネルを追う一方、アプリ内の更新通知は latest チャネルを見るため、
@@ -401,7 +405,9 @@ Android Studio の導入場所や Homebrew の Java に固定しない。対話�
 
 ## mise 管理
 
-node / python / java / pnpm / deno / go は mise で管理し、Brewfile には載せない。
+node / python / java / pnpm / deno / go と日常 CLI を mise で管理し、Brewfile には載せない。
+`run_onchange_after_30-mise.sh` はグローバル設定のディレクトリから install する。
+呼び出し元 project の設定や `--bump` は使わない。
 
 | ツール | バージョン | 用途 |
 |---|---|---|
@@ -412,23 +418,46 @@ node / python / java / pnpm / deno / go は mise で管理し、Brewfile には�
 | deno | 2.5 | Deno ランタイム |
 | go | 1.26 | Go ランタイム |
 
-pnpm / deno / go は `~/.local/bin` の launcher が native mise の `which --tool` で実体を選ぶ。
-project ごとの mise 設定も尊重する。`mise exec` の全 runtime activation は使わず、
-子プロセスにも元の PATH / JAVA_HOME を引き継ぐため、Framework Python や JBR の選択は変えない。
-`rustup` の launcher は native `$CARGO_HOME/bin/rustup` を選ぶ。
+### 日常 CLI
 
-## npm グローバル
+以下はすべて `latest` を追う。バージョン範囲を持つランタイムとは更新方針が異なる。
 
-| ツール | 用途 |
+| backend | ツール |
 |---|---|
-| wrangler | Cloudflare Workers の CLI |
-| firebase-tools | Firebase CLI |
-| mcp-hub | MCP サーバーのハブ |
+| Aqua | gh、ghq、git-lfs、lazygit、Neovim、fzf、fd、ripgrep、bat、glow、jq、television、zoxide、sccache、AWS CLI、grpcurl |
+| GitHub release | worktrunk（`wt`）、OpenCode |
+| Cargo | eza（macOS 向けの配布バイナリがないため rustup の toolchain でビルド） |
+| npm | Pi、wrangler、firebase-tools、mcp-hub |
+
+`~/.local/bin` の各 CLI は `mise-tool` への symlink である。CLI だけを解決して exec するため、
+SketchyBar など PATH が狭い process でも起動でき、全 runtime の activation は不要になる。
+pnpm / deno / go は既存の専用 launcher、rustup は native `$CARGO_HOME/bin/rustup` を選ぶ。
+project ごとの mise 設定は尊重する。
+
+npm CLI は `mise where` が返す専用 install root の `bin` を使い、選択された Node の
+`bin` だけを PATH の先頭に追加する。`mise which --tool` は他の有効 tool も検索し、
+Node に残った旧 npm グローバルを拾うため、npm CLI の解決には使わない。
+Python の PATH と親の JAVA_HOME は変更しない。AWS CLI は `symlink_bins = true` で
+同梱 Python を `mise activate` / `mise exec` の PATH にも公開しない。
+
+### 更新と移行
+
+`mise upgrade` は指定されたバージョン範囲を維持する。`pnpm = "10.16.1"` は完全固定なので、
+通常の upgrade では進まない。`--bump` は config.toml を書き換えるため、chezmoi の実 target に
+定期ジョブから使わず、範囲変更は source で行う。定期更新ジョブはまだ配布していない。
+
+既存マシンでは、移行前に native mise を `~/.local/bin/mise self-update` で更新する。
+2025.12.13 では gh 2.102.0 の attestation 応答を読み取れず導入に失敗し、
+隔離環境の mise 2026.10.2 では検証を有効にしたまま導入できた。検証を無効化しない。
+
+CLI の導入・version・シェル連携と、GUI / 非対話 process からの起動を確認してから
+既存 Brew / npm コピーの削除を判断する。apply でパッケージの uninstall は行わない。
+旧 npm グローバルのマニフェストと専用 installer は廃止し、Pi の更新も mise に集約する。
 
 ## cargo 管理
 
-現在は 1 つも無い。マニフェスト `~/.config/install/cargo-globals.txt` は
-コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。
+直接 cargo install するツールは無い。マニフェスト `~/.config/install/cargo-globals.txt` は
+コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。eza は mise の Cargo backend が管理する。
 
 ## 技術文章レビュー
 
@@ -568,8 +597,8 @@ corepack (npm, mise の pnpm 管理と重複)
 
 ### 既存の Brew コピーの整理
 
-native / mise に割り当てた `bun mise uv rustup deno go pnpm chezmoi herdr` は
-Brewfile に載せない。既存の Brew コピーは apply だけでは削除しない。
+native / mise に割り当てたツールは Brewfile に載せない。既存の Brew コピーは
+apply だけでは削除しない。日常 CLI の移行対象は上の「mise 管理」にある。
 先に代替の保存先・version・動作と復元資材を確認し、対象を承認してから削除する。
 他の Brew パッケージの依存としての Python / OpenJDK / library は残す。
 

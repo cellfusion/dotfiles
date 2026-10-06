@@ -11,11 +11,6 @@ render_brewfile() {
 darwin="$(render_brewfile darwin)"
 linux="$(render_brewfile linux)"
 
-# --- 開発ツールは両 OS に載る ---
-for f in sccache awscli grpcurl; do
-  assert_contains "$darwin" "brew \"$f\"" "darwin: 開発ツールに $f がある"
-  assert_contains "$linux" "brew \"$f\"" "linux: 開発ツールに $f がある"
-done
 
 # --- third-party は Brewfile に載せない ---
 # non-official tap の formula は third-party.txt へ分けた。10-brew が fully-qualified 名で
@@ -36,11 +31,10 @@ tp_darwin="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "install/third-party" (dict "os" "darwin") }}')"
 tp_linux="$(chezmoi execute-template --source "$CHEZMOI_SOURCE" \
   '{{ includeTemplate "install/third-party" (dict "os" "linux") }}')"
-for f in anomalyco/tap/opencode asmvik/formulae/yabai asmvik/formulae/skhd \
+for f in asmvik/formulae/yabai asmvik/formulae/skhd \
          felixkratz/formulae/borders felixkratz/formulae/sketchybar; do
   assert_contains "$tp_darwin" "$f" "third-party: darwin に $f がある"
 done
-assert_contains "$tp_linux" 'anomalyco/tap/opencode' "third-party: linux に opencode がある"
 assert_not_contains "$tp_linux" 'asmvik' "third-party: linux に macOS 専用が無い"
 assert_not_contains "$tp_linux" 'felixkratz' "third-party: linux に macOS 専用が無い"
 

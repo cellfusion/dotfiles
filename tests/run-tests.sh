@@ -22,7 +22,6 @@ tests=(
   test-agent-family-launch.sh
   test-agent-config-review-routing.sh
   test-agent-pi-environment.sh
-  test-agent-maintenance-commands.sh
   test-escalation-policy.sh
   test-escalation-controller.sh
   test-paseo-plan-dependency-validate.sh

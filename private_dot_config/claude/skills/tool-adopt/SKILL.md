@@ -75,7 +75,7 @@ Automatic actions:
 Once tool adoption is complete, record it in `private_dot_config/docs/tools.md`:
 
 - Add a row to the table matching the installation route (core / dev-tools / macOS-only, etc.).
-- Add to the manifest: `.chezmoitemplates/install/brewfile` for Homebrew,
-  `private_dot_config/mise/config.toml` for mise,
-  `private_dot_config/install/npm-globals.txt` for npm,
-  `private_dot_config/install/cargo-globals.txt` for cargo.
+- Prefer `private_dot_config/mise/config.toml` for supported everyday CLI tools, including npm packages via `npm:<package>`.
+- Reserve `.chezmoitemplates/install/brewfile` for OS integration, apps, libraries, and tools without a verified mise route.
+- Keep native self-updating tools on their existing installer route; do not also add them to mise or npm globals.
+- `private_dot_config/install/cargo-globals.txt` is only for direct cargo installs, not mise's Cargo backend.

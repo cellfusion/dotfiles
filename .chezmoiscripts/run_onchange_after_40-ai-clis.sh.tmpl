@@ -11,18 +11,18 @@ set -eu
 
 local_bin_env
 
-if command -v claude >/dev/null 2>&1; then
-  printf 'claude は導入済みなので飛ばす\n'
+if [ -x "$HOME/.local/bin/claude" ]; then
+  printf 'claude の native 実体は導入済みなので飛ばす\n'
 else
   printf 'claude を native installer で入れる\n'
   curl -fsSL https://claude.ai/install.sh | bash || die 'claude の導入に失敗した'
-  command -v claude >/dev/null 2>&1 || die 'claude を導入したが PATH に見つからない'
+  [ -x "$HOME/.local/bin/claude" ] || die 'claude の native 実体が見つからない'
 fi
 
-if command -v codex >/dev/null 2>&1; then
-  printf 'codex は導入済みなので飛ばす\n'
+if [ -x "$HOME/.local/bin/codex" ]; then
+  printf 'codex の native 実体は導入済みなので飛ばす\n'
 else
   printf 'codex を native installer で入れる\n'
   curl -fsSL https://chatgpt.com/codex/install.sh | sh || die 'codex の導入に失敗した'
-  command -v codex >/dev/null 2>&1 || die 'codex を導入したが PATH に見つからない'
+  [ -x "$HOME/.local/bin/codex" ] || die 'codex の native 実体が見つからない'
 fi

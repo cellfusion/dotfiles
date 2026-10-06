@@ -5,3 +5,32 @@ pnpm = "10.16.1"
 java = "25"
 deno = "2.5"
 go = "1.26"
+
+# 日常 CLI。macOS サービス・ライブラリと native 自己更新ツールはここに含めない。
+"aqua:cli/cli" = "latest"
+"aqua:x-motemen/ghq" = "latest"
+"aqua:git-lfs/git-lfs" = "latest"
+"aqua:jesseduffield/lazygit" = "latest"
+"github:max-sixty/worktrunk" = { version = "latest", bin = "wt" }
+"aqua:neovim/neovim" = "latest"
+"aqua:junegunn/fzf" = "latest"
+"aqua:sharkdp/fd" = "latest"
+"aqua:BurntSushi/ripgrep" = "latest"
+"aqua:sharkdp/bat" = "latest"
+"aqua:charmbracelet/glow" = "latest"
+# eza は macOS の配布バイナリを持たないため rustup の toolchain でビルドする。
+"cargo:eza" = "latest"
+"aqua:jqlang/jq" = "latest"
+"aqua:alexpasmantier/television" = "latest"
+"aqua:ajeetdsouza/zoxide" = "latest"
+"aqua:mozilla/sccache" = "latest"
+# mise activate / exec でも AWS 同梱の Python を PATH に公開しない。
+"aqua:aws/aws-cli" = { version = "latest", symlink_bins = true }
+"aqua:fullstorydev/grpcurl" = "latest"
+"github:anomalyco/opencode" = { version = "latest", asset_pattern = "opencode-{{ os() | replace(from='macos', to='darwin') }}-{{ arch() }}.*" }
+
+# npm グローバルではなく、mise がツールごとに管理する。
+"npm:@earendil-works/pi-coding-agent" = "latest"
+"npm:wrangler" = "latest"
+"npm:firebase-tools" = "latest"
+"npm:mcp-hub" = "latest"
