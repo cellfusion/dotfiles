@@ -99,6 +99,7 @@ Config: `herdr/config.toml`（`chezmoi apply` 後に `herdr server reload-config
 | `Ctrl-n` | 新しい workspace |
 | `Ctrl-i` | サイドバーの表示切替 |
 | `Ctrl-q` | pane を閉じる（確認プロンプトあり） |
+| `Ctrl-g` | モバイル向けショートカットメニュー（popup、全画面） |
 
 `Alt-w` の picker（herdr の workspace navigation surface）の中では、`↑` / `↓` が
 workspace を、`h` / `j` / `k` / `l` が pane を選ぶ。modifier を使わないので pane 内の
@@ -107,6 +108,25 @@ workspace を、`h` / `j` / `k` / `l` が pane を選ぶ。modifier を使わな
 `Ctrl-q` は herdr-confirm-close-pane プラグイン経由。`Close this pane? (y/n):` が出て、
 `y` で閉じ、それ以外のキーと Esc で取り消す。ビルトインの `close_pane` は無効化してあるので
 `prefix+x` では閉じない。
+
+`Ctrl-g` のメニューは文字入力で絞り込み、`↑` / `↓` → `Enter` で実行する。
+`Esc` で閉じる。workspace / worktree の一覧で `Esc` を押すとメインメニューへ戻る。
+必要なコマンドは `fzf` / `jq` / `herdr` と各ツール。追加のプラグイン登録は不要。
+ツールは呼び出し元 pane のディレクトリで起動する。
+
+| メニュー | 動作 |
+|----------|------|
+| lazygit | Git 操作。終了すると popup が閉じる |
+| tuicr | コードレビュー。終了すると popup が閉じる |
+| television | `tv edit` でファイルをプレビュー・選択し `$EDITOR` で開く |
+| Workspace — list / switch | workspace 一覧から選択して切り替える |
+| Worktree — list / open / switch | 現在のリポジトリの checkout 一覧。開いているものは切替、未オープンなら workspace として開く |
+| Worktree — create | branch 名を入力して作成・切替。既存 branch は checkout、新規 branch は Herdr の既定 base から作成。空入力で戻る |
+| Tab — create | 呼び出し元 workspace に新しいタブを作り切り替える |
+| Scratch terminal | 一時的なシェル。`exit` で popup を閉じる |
+
+workspace / worktree / tab の閉鎖・削除は、モバイルでの誤操作を避けるため含めない。
+失敗時はエラーを表示し、`Enter` を押すまで popup を残す。
 
 ### 起動ショートカット（prefix なし）
 
@@ -221,6 +241,7 @@ Config: `zsh/dot_zshrc`。**`bindkey` によるカスタマイズは無い。す
 | `Ctrl-n` | down-line-or-history | `↓` |
 | `Ctrl-i` | expand-or-complete | `Tab` |
 | `Alt-w` | copy-region-as-kill | なし |
+| `Ctrl-g` | send-break（入力取消） | `Ctrl-c`（実行中なら割り込み） |
 
 ---
 
@@ -243,6 +264,7 @@ Config: `lazygit/config.yml`。**キーバインドのカスタマイズは無�
 | `Ctrl-h` / `Ctrl-l` | Herdr（タブ移動） | Neovim の `<C-h>` `<C-l>`、zsh の backward-delete-char / clear-screen |
 | `Alt-w` | Herdr（workspace picker） | zsh の copy-region-as-kill |
 | `Ctrl-t` / `Ctrl-n` / `Ctrl-i` / `Ctrl-q` | Herdr | zsh の transpose-chars / down-line-or-history / expand-or-complete / push-line |
+| `Ctrl-g` | Herdr（モバイルメニュー） | zsh の send-break、Neovim のファイル情報（`:file` で代替） |
 | `Ctrl-Tab` / `Ctrl-Shift-Tab` | Ghostty が unbind | 誰にも届かない（意図的） |
 
 ---
