@@ -4,10 +4,10 @@ font-size = 16.0
 font-feature = -dlig
 
 # Window Settings
-# yabai でタイルするためタイトルバーを隠してシンプルに。角丸・ボーダーは残る
-macos-titlebar-style = "hidden"
-# titlebar hidden 下では信号機ボタンも消えるため無効化
-# macos-window-buttons = "visible"
+# 上部ボタンは表示し、タイトルバーを背景になじませる。
+# 再読み込み後の新しいウィンドウに反映される。
+macos-titlebar-style = "transparent"
+macos-window-buttons = "visible"
 # タイリング時にウィンドウの影を消す (SIP 無効化不要・アプリ自身が影を落とさない)
 macos-window-shadow = false
 window-theme = "system"
