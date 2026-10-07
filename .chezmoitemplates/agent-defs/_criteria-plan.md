@@ -122,9 +122,10 @@ git commit -m "feat: add specific feature"
 ### タスクの複雑度
 
 各タスクは `**Depends on:**` の直後に `**Complexity:**` と `**Work class:**` を持つ。
-`Complexity` の値は `simple`、`routine`、`complex`、`critical` のいずれかであり、親はこの値を
-`agent-config resolve` の `--complexity` へ渡す。`Work class` の値は `mechanical`、`routine`、
-`integration`、`architectural` のいずれかであり、implementer の prompt overlay と停止条件を決める。
+`Complexity` の値は `simple`、`routine`、`complex`、`critical` のいずれかであり、
+レビューの深さと判断範囲を示す。これを理由に既存の model／権限設定を変更しない。
+`Work class` の値は `mechanical`、`routine`、`integration`、`architectural` のいずれかであり、
+implementer の prompt overlay と停止条件を決める。
 古い plan に `Work class` が無い場合は `simple → mechanical`、`routine → routine`、
 `complex → integration`、`critical → architectural` で補完する。
 

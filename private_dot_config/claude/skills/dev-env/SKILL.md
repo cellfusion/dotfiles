@@ -3,7 +3,7 @@ name: dev-env
 description: >-
   Operational procedures specific to this development environment. Covers Cloudflare account
   switching, CLI authentication and secret retrieval via 1Password, and environment variables
-  per AI environment (herdr / Paseo). Read before tasks touching deployments, credentials,
+  per AI environment (Herdr). Read before tasks touching deployments, credentials,
   environment variables, or account switching. Can also be invoked manually with /dev-env.
 ---
 

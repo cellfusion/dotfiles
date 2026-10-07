@@ -7,20 +7,8 @@ Choose the first matching route:
 
 | Condition | Route |
 |---|---|
-| `$PASEO_AGENT_ID` is non-empty | Show a Paseo file link |
 | `$HERDR_ENV` is `1` | Open the file in a separate Herdr tab |
 | Neither | Skip preview and continue to the approval gate |
-
-Check `$PASEO_AGENT_ID` first. When both are set, the user is viewing Paseo.
-
-### Paseo
-
-```text
-[View artifact](/absolute/path/artifact.md)
-```
-
-Do not create a terminal, run `glow`, or launch a fallback terminal in Paseo. Use `[View plan]` for a
-plan artifact.
 
 ### Herdr
 

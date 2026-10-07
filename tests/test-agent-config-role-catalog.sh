@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentRoles、prompt/schema、resolver の role catalog を同じ正本から検証する。
+# Validate the shared native-agent role catalog and its prompt/schema artifacts.
 set -u
 
 source "$(dirname "$0")/lib/assert.sh"
@@ -10,7 +10,6 @@ const path = require('node:path')
 const source = process.argv[2]
 const configPath = path.join(source, 'private_dot_local/private_share/agent-config/agent-config.sample.json')
 const { validateConfig } = require(path.join(source, 'private_dot_local/private_share/agent-config/config-validator.js'))
-const { resolveDispatch } = require(path.join(source, 'private_dot_local/private_share/agent-config/resolver.js'))
 
 const config = validateConfig(fs.readFileSync(configPath, 'utf8')).config
 const requiredRoles = [
@@ -36,25 +35,13 @@ for (const role of requiredRoles) {
   if (!Object.prototype.hasOwnProperty.call(config.agentRoles, role)) missing.push(`config:${role}`)
   if (!fs.existsSync(path.join(promptDir, `${role}.md`))) missing.push(`prompt:${role}`)
   if (!fs.existsSync(path.join(schemaDir, `${role}.json`))) missing.push(`schema:${role}`)
-  try {
-    resolveDispatch(config, {
-      project: source,
-      role,
-      provenance: 'catalog-test',
-      complexity: 'routine',
-      workClass: 'routine',
-      round: 0,
-    })
-  } catch (error) {
-    missing.push(`resolve:${role}:${error instanceof Error ? error.message : String(error)}`)
-  }
 }
 if (missing.length > 0) throw new Error(missing.join('\n'))
 NODE
 then
-  _pass 'active role catalog has config, prompt, schema, and resolver entries'
+  _pass 'active role catalog has config, prompt, and schema entries'
 else
-  _fail 'active role catalog has config, prompt, schema, and resolver entries'
+  _fail 'active role catalog has config, prompt, and schema entries'
 fi
 
 assert_summary

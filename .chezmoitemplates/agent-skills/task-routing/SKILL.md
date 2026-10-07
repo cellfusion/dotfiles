@@ -21,9 +21,7 @@ skill does not implement code or approve a design. A clear local change needs no
    Use a hidden Worktrunk child worktree only when separate write ownership is required.
 
 A separate pane does not require a new worktree. A separate worktree does not require a pane,
-workspace, tab, or separate CLI. Combine these only when both needs are established. Ordinary
-handoff, parallelism, or the word “worktree” does not select Orca. Read `orca-cli` or `orchestration`
-only when the user explicitly requests Orca or the task explicitly operates on Orca-managed state.
+workspace, tab, or separate CLI. Combine these only when both needs are established.
 
 ## Bounded task contract
 

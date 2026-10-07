@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a personal dotfiles repository managed with chezmoi. It holds configuration for
 Neovim, the Ghostty terminal, the Herdr multiplexer, the yabai / skhd / sketchybar window
-management stack, zsh, and the AI coding agents (Claude Code, Codex, opencode).
+management stack, zsh, and the AI coding agents (OMP, Claude Code, Codex).
 
 ## Common Commands
 
@@ -53,10 +53,12 @@ git push
     - `lua/plugins/` - Plugin configurations split by functionality
   - `ghostty/`, `herdr/`, `zsh/` - terminal, multiplexer, shell
   - `yabai/`, `skhd/`, `borders/`, `sketchybar/` - macOS window management and status bar
-  - `claude/`, `codex/`, `opencode/` - AI coding agent configuration
-  - `docs/` - tool inventory, keybindings, worktree notes, the Paseo history
-    workaround and the SketchyBar usage collector, distributed to `~/.config/docs/`
+  - `claude/`, `codex/` - AI coding agent configuration
+  - `docs/` - tool inventory, keybindings, worktree notes and the SketchyBar usage collector,
+    distributed to `~/.config/docs/`
 - `private_dot_agents/` - shared skills and agent definitions distributed to `~/.agents`
+- `private_dot_omp/agent/private_config.yml` - default OMP settings distributed to `~/.omp/agent/config.yml`;
+  authentication, databases, sessions, profiles and host extensions are not shared
 - `.chezmoitemplates/` - templates shared across targets (Brewfile, agent skills, MCP lists)
 - `.chezmoiscripts/` - install scripts run by `chezmoi apply` when a manifest changes
 - `Library/LaunchAgents/` - macOS launch agents

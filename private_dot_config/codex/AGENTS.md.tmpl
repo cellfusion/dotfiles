@@ -20,18 +20,7 @@ type: `feat` new feature / `fix` bug fix / `refactor` refactoring without behavi
 
 In code mode, MCP tools do not appear in the standard tool listing. Invoke them from the `exec` JS sandbox using `tools.mcp__<server>__<tool>`.
 
-- Paseo skills (`~/.agents/skills/paseo/SKILL.md`) list bare names like `list_agents`, but the actual invocation name is `tools.mcp__paseo__list_agents`.
-- When operating Paseo, prefer MCP tools over the `paseo` CLI.
 - If unsure of available tool names, inspect via `Object.keys(tools)` in `exec`. Never claim "MCP is unavailable" simply because tools do not appear in the default tool list.
-
-## Spawning Paseo Child Agents
-
-Before calling `create_agent`, invoke `agent-config resolve` and copy the returned `mad-launch-spec` properties (`provider`, `model`, `modeId`, `thinkingOptionId`, `features`). Never select provider and model manually.
-
-- Pass `--role` matching names in authoritative `agentRoles`. Role dictates duty.
-- Choose `--complexity` based on task weight: `simple` for narrow checks, `routine` for standard implementation, investigation, and task reviews, `complex` for architectural decisions, `critical` for final reviews before integration and multi-layer structural changes.
-- Exit code 4 signifies candidates are exhausted; do not speculate, report reason to user and stop.
-- Environment is determined by CLI; defaults to parent's AI environment if `--environment` is omitted.
 
 ## Chezmoi
 

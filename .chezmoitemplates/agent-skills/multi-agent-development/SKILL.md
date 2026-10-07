@@ -27,8 +27,8 @@ them; spec and plan are not mandatory child roles.
 ## Execution and placement
 
 Default to OMP internal delegation, using the current runtime's documented task/agent interface.
-Preserve existing model and permission defaults. Do not run Paseo create/wait adapters, provider
-snapshots, or transport-specific request schemas to authorize an OMP child.
+Preserve existing model and permission defaults. Do not use provider snapshots or
+transport-specific request schemas to authorize an OMP child.
 
 Choose write placement independently:
 
@@ -38,9 +38,8 @@ Choose write placement independently:
 - separate CLI/user conversation: Herdr pane in the appropriate existing cwd; add a worktree only
   when write isolation is also needed.
 
-Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace.
-Orca skills apply only to an explicit Orca request or operations on Orca-managed state; ordinary
-parallelism, handoff, or child worktrees do not engage Orca.
+Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace
+or start a second orchestration runtime for ordinary delegation.
 
 ## Recipes
 

@@ -29,6 +29,18 @@ for flags in -c -lc -ic -lic; do
   assert_eq "$output" "$expected" "$flags: toolchain paths do not depend on inherited environment"
 done
 
+# Optional integrations must not break a new interactive shell or replace its SSH agent.
+cp "$CHEZMOI_SOURCE/private_dot_config/zsh/dot_zshrc" "$home/.config/zsh/.zshrc"
+for flags in -ic -lic; do
+  status=0
+  output="$(env -i HOME="$home" PATH=/usr/bin:/bin TERM=xterm-256color \
+    TERM_PROGRAM=kiro SSH_AUTH_SOCK="$tmp/existing-agent.sock" \
+    /bin/zsh "$flags" 'printf "%s\n" "$SSH_AUTH_SOCK"' 2>&1)" || status=$?
+  assert_eq "$status" 0 "$flags: missing optional tools do not prevent shell startup"
+  assert_eq "$output" "$tmp/existing-agent.sock" \
+    "$flags: no startup errors and the existing SSH agent is preserved"
+done
+
 status=0
 output="$(env -i HOME="$home" ZDOTDIR="$home/.config/zsh" PATH=/usr/bin:/bin \
   /bin/zsh -c "$probe" 2>&1)" || status=$?

@@ -17,7 +17,7 @@ try { route = require(path.join(shareDir, 'mad-route.js')) } catch { fail('route
 let raw
 try { raw = fs.readFileSync(input, 'utf8') } catch { fail('input log is unavailable') }
 const records = raw.split('\n').filter(Boolean).map((line) => {
-  try { return route.assertRouteV1(JSON.parse(line)) } catch { fail('input log contains an invalid route record') }
+  try { return route.assertRouteV1(JSON.parse(line), true) } catch { fail('input log contains an invalid route record') }
 })
 const countBy = (values) => Object.fromEntries([...new Set(values)].sort().map((key) => [key, values.filter((value) => value === key).length]))
 const models = Object.entries(records.reduce((map, record) => {

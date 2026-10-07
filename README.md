@@ -47,6 +47,10 @@ brew bundle --file ~/.config/install/Brewfile --no-upgrade
 通常の委譲はOMP内、書き込み分離だけが必要な子作業はWorktrunkで作り、Herdrには表示しない。
 subMBPは`herdr --remote`でmainMBP側へ接続する。Android端末にはMoshiを使う。
 
+OMP のデフォルト設定は `private_dot_omp/agent/private_config.yml` から
+`~/.omp/agent/config.yml` へ共有する。環境別 profile、認証、履歴、DB は共有しない。
+通常の `omp` 起動は Claude／Codex の環境切替から独立している。
+
 ## Documentation
 
 - [Keybindings Cheat Sheet](private_dot_config/docs/keybindings.md) —

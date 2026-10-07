@@ -27,10 +27,8 @@ go = "1.26"
 # mise activate / exec でも AWS 同梱の Python を PATH に公開しない。
 "aqua:aws/aws-cli" = { version = "latest", symlink_bins = true }
 "aqua:fullstorydev/grpcurl" = "latest"
-"github:anomalyco/opencode" = { version = "latest", asset_pattern = "opencode-{{ os() | replace(from='macos', to='darwin') }}-{{ arch() }}.*" }
 
 # npm グローバルではなく、mise がツールごとに管理する。
-"npm:@earendil-works/pi-coding-agent" = "latest"
 "npm:wrangler" = "latest"
 "npm:firebase-tools" = "latest"
 "npm:mcp-hub" = "latest"

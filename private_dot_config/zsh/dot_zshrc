@@ -7,16 +7,18 @@ export HISTFILE="$XDG_STATE_HOME"/zsh/history
 export FZF_DEFAULT_OPTS="--color=fg:#c0caf5,bg:-1,hl:#ff9e64,fg+:#c0caf5,bg+:#283457,hl+:#ff9e64,info:#7aa2f7,prompt:#7dcfff,pointer:#bb9af7,marker:#9ece6a,spinner:#bb9af7,header:#565f89"
 
 # television (replaces fzf shell integration: Ctrl-T, Ctrl-R)
-eval "$(tv init zsh | grep -v 'compdef')"
+if command -v tv >/dev/null 2>&1; then
+  eval "$(tv init zsh | grep -v 'compdef')"
 
-# tv's smart_autocomplete only completes an existing token. On an empty prompt it
-# falls back to `zle ${fzf_default_completion:-expand-or-complete}`, which dumps
-# every command ("do you wish to see all 4275 possibilities?"). Send it nowhere
-# instead. The fallback also returns early without re-enabling bracketed paste,
-# so do that here.
-_tv_noop() { _enable_bracketed_paste }
-zle -N tv-noop _tv_noop
-fzf_default_completion=tv-noop
+  # tv's smart_autocomplete only completes an existing token. On an empty prompt it
+  # falls back to `zle ${fzf_default_completion:-expand-or-complete}`, which dumps
+  # every command ("do you wish to see all 4275 possibilities?"). Send it nowhere
+  # instead. The fallback also returns early without re-enabling bracketed paste,
+  # so do that here.
+  _tv_noop() { _enable_bracketed_paste }
+  zle -N tv-noop _tv_noop
+  fzf_default_completion=tv-noop
+fi
 
 # ~/.local/bin (custom scripts)
 export PATH="$HOME/.local/bin:$PATH"
@@ -37,9 +39,11 @@ export OPENSSL_INCLUDE_DIR="/opt/homebrew/opt/openssl@3/include"
 export OPENSSL_DIR="/opt/homebrew/opt/openssl@3"
 
 # 1password cli
-source $HOME/.config/op/plugins.sh
-source ~/.op/plugins.sh
-export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+[[ -r "$HOME/.config/op/plugins.sh" ]] && source "$HOME/.config/op/plugins.sh"
+[[ -r "$HOME/.op/plugins.sh" ]] && source "$HOME/.op/plugins.sh"
+if [[ -S "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ]]; then
+  export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+fi
 
 # Ruby
 export PATH="/opt/homebrew/opt/ruby/bin:$PATH"
@@ -61,7 +65,9 @@ esac
 # pnpm end
 
 # zoxide
-eval "$(zoxide init zsh)"
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
 
 # The next line updates PATH for the Google Cloud SDK.
 if [ -f "$HOME/Downloads/google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/Downloads/google-cloud-sdk/path.zsh.inc"; fi
@@ -84,14 +90,18 @@ alias h2='$(npm prefix -s)/node_modules/.bin/shopify hydrogen'
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-[[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
+if [[ "$TERM_PROGRAM" == "kiro" ]] && command -v kiro >/dev/null 2>&1; then
+  _kiro_integration="$(kiro --locate-shell-integration-path zsh)"
+  [[ -r "$_kiro_integration" ]] && source "$_kiro_integration"
+  unset _kiro_integration
+fi
 
 # Added by LM Studio CLI (lms)
 export PATH="$PATH:$HOME/.lmstudio/bin"
 # End of LM Studio CLI section
 
 # SuperCollider
-source ${HOME}/.ghcup/env
+[[ -r "$HOME/.ghcup/env" ]] && source "$HOME/.ghcup/env"
 alias sclang="/Applications/SuperCollider.app/Contents/MacOS/sclang"
 alias scsynth="/Applications/SuperCollider.app/Contents/Resources/scsynth"
 
@@ -114,7 +124,7 @@ alias ss='tv herdr-sessions'
 # fvm
 export PATH="$HOME/fvm/bin:$PATH"
 
-. "$HOME/.local/share/../bin/env"
+[[ -r "$HOME/.local/bin/env" ]] && source "$HOME/.local/bin/env"
 
 
 # worktrunk (wt) — git worktree manager。ディレクトリ移動と補完に必要

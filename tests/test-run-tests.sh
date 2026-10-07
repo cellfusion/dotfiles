@@ -17,14 +17,11 @@ expected_names=(
   test-mad-plan-parser.sh
   test-mad-outcome.sh
   test-mad-route.sh
-  test-agent-config-policy.sh
   test-agent-config-role-catalog.sh
   test-native-agent-defs.sh
-  test-agent-config-routing.sh
   test-agent-environment-routing.sh
   test-agent-family-launch.sh
-  test-agent-config-review-routing.sh
-  test-agent-pi-environment.sh
+  test-agent-config-setup.sh
   test-escalation-policy.sh
   test-escalation-controller.sh
   test-plan-dependency-validate.sh

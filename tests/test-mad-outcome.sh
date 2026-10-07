@@ -23,7 +23,7 @@ cat > "$record" <<'JSON'
     "workClass": "routine",
     "complexity": "routine",
     "role": "implementer",
-    "backend": "paseo-cli",
+    "backend": "omp-internal",
     "provider": "codex",
     "model": "gpt-5.6-luna",
     "effort": "xhigh",
@@ -41,7 +41,7 @@ cat > "$record" <<'JSON'
     "cachedInputTokens": 800,
     "outputTokens": 250,
     "costUsd": null,
-    "source": "paseo-inspect"
+    "source": "omp"
   },
   "toolLoopCount": 4,
   "toolLoopSource": "manual",

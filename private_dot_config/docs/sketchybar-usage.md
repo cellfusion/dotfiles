@@ -136,11 +136,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cellfusion.sketchyba
 
 ## MAD の残量確認も読む
 
-`usage.sh` の 9 列の出力は SketchyBar の表示専用である。Paseo の子を作る前に、親は
-adapter の `list-providers` と provider ごとの `list-models` で discovery を行い、選んだ agent profile
-の provider/model/mode を availability snapshot と create request に記録する。profile の prompt/schema
-境界は MAD の現行 role asset が担い、残量の推測で provider の優先順位を変更しない。列の並びを変えると
-状態バーの表示が壊れるため、widget の互換性を保つ。
+`usage.sh` の 9 列の出力は SketchyBar の表示専用である。
+OMP 内部委譲は OMP の model／権限設定を使い、使用率表示から model を選ばない。
+列の並びを変えると状態バーの表示が壊れるため、widget の互換性を保つ。
 
 ## 色の決め方
 

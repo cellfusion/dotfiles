@@ -3,7 +3,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { DUTIES, COMPLEXITIES, SCHEMA_KEYWORDS } = require('./config-types.js')
 
 class ConfigError extends Error {
   constructor(message) {
@@ -32,25 +31,8 @@ const SETUP_TABLE = {
     symlinks: ['agents', 'AGENTS.md', 'rules'],
     preservedMutable: ['config.toml'],
   },
-  pi: {
-    configDirectoryEnv: { PI_CODING_AGENT_DIR: 'pi' },
-    directoryPattern: {
-      primary: '$HOME/.pi/agent',
-      nonPrimary: '$HOME/.pi/agent-<environment>',
-    },
-    symlinks: ['agents', 'extensions'],
-    preservedMutable: [],
-  },
 }
 const KNOWN_SETUP_FAMILIES = Object.keys(SETUP_TABLE)
-// v1 で宣言してよい feature key と scalar 型を family ごとに固定する。
-// 表にない family は空の allowlist だけを持てる。
-const FEATURE_ALLOWLIST_TABLE = {
-  claude: { fast_mode: 'boolean' },
-  codex: { fast_mode: 'boolean' },
-}
-const SECRET_SUBSTRINGS = ['credential', 'token', 'key', 'password', 'secret', 'auth', 'session', 'cookie', 'history']
-const RESERVED_ENV_NAMES = ['agent_env', 'chezmoi_agent_config_managed', 'paseo_managed', 'xdg_config_home', 'home']
 const SCHEMA_PATH = path.join(__dirname, 'agent-config.schema.json')
 
 function isObject(value) {
@@ -183,97 +165,8 @@ function assertFamilyRegistry(family, definition) {
       throw new ConfigError(`provider family ${family}: setup table と一致しない`)
     }
   }
-  const allowed = Object.prototype.hasOwnProperty.call(FEATURE_ALLOWLIST_TABLE, family)
-    ? FEATURE_ALLOWLIST_TABLE[family]
-    : {}
-  for (const [key, scalar] of Object.entries(definition.featureAllowlist)) {
-    assertFeatureKey(key)
-    if (!Object.prototype.hasOwnProperty.call(allowed, key)) {
-      throw new ConfigError(`provider family ${family}: featureAllowlist の key ${key} は v1 で許可されない`)
-    }
-    if (allowed[key] !== scalar) {
-      throw new ConfigError(`provider family ${family}: featureAllowlist の ${key} は ${allowed[key]} でなければならない`)
-    }
-  }
 }
 
-function assertFeatureKey(key) {
-  const lowered = key.toLowerCase()
-  for (const substring of SECRET_SUBSTRINGS) {
-    if (lowered.includes(substring)) throw new ConfigError(`feature key ${key}: 秘密情報を示す語を含む`)
-  }
-}
-
-function assertConfigEnvName(name) {
-  if (RESERVED_ENV_NAMES.includes(name.toLowerCase())) throw new ConfigError(`config env ${name}: 予約名である`)
-}
-
-function candidateLists(config) {
-  const lists = []
-  for (const duty of DUTIES) {
-    for (const complexity of COMPLEXITIES) {
-      lists.push({
-        location: `selection.${duty}.${complexity}`,
-        environment: null,
-        duty,
-        complexity,
-        candidates: config.selection[duty][complexity].candidates,
-      })
-    }
-  }
-  for (const [environment, definition] of Object.entries(config.environments)) {
-    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
-      for (const [complexity, slot] of Object.entries(byComplexity)) {
-        lists.push({
-          location: `environments.${environment}.selection.${duty}.${complexity}`,
-          environment,
-          duty,
-          complexity,
-          candidates: slot.candidates,
-        })
-      }
-    }
-  }
-  if (config.singleSelection) {
-    for (const [complexity, slot] of Object.entries(config.singleSelection.implement)) {
-      lists.push({
-        location: `singleSelection.implement.${complexity}`,
-        environment: null,
-        duty: 'implement',
-        complexity,
-        candidates: slot.candidates,
-      })
-    }
-  }
-  for (const [name, selection] of Object.entries({
-    routingSelection: config.routingSelection,
-    escalationSelection: config.escalationSelection,
-  })) {
-    if (selection) {
-      lists.push({
-        location: name,
-        environment: null,
-        duty: 'review',
-        complexity: 'simple',
-        candidates: selection.candidates,
-      })
-    }
-  }
-  for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
-    for (const [complexity, policy] of Object.entries(byComplexity)) {
-      policy.levels.forEach((level, index) => {
-        lists.push({
-          location: `attemptPolicy.${duty}.${complexity}.levels[${index}]`,
-          environment: null,
-          duty,
-          complexity,
-          candidates: level.candidates,
-        })
-      })
-    }
-  }
-  return lists
-}
 
 function assertPathList(family, listName, values) {
   const paths = values.map((value) => {
@@ -344,167 +237,27 @@ function assertSemantics(config) {
     throw new ConfigError(`defaults.environment ${config.defaults.environment}: 未知の environment である`)
   }
 
-  for (const list of candidateLists(config)) {
-    for (const candidate of list.candidates) {
-      if (!Object.prototype.hasOwnProperty.call(config.providers, candidate.provider)) {
-        throw new ConfigError(`${list.location}: 未知の provider ${candidate.provider} である`)
-      }
-    }
-  }
-
-  for (const [family, definition] of Object.entries(config.providers)) {
-    if (!Array.isArray(definition.backends) || definition.backends.length === 0) {
-      throw new ConfigError(`providers.${family}: backends が空である`)
-    }
-    if (new Set(definition.backends).size !== definition.backends.length) {
-      throw new ConfigError(`providers.${family}: backends が重複する`)
-    }
-  }
-
-  for (const list of candidateLists(config)) {
-    if (list.candidates.length === 0) continue
-    const hasPaseoCandidate = list.candidates.some((candidate) =>
-      config.providers[candidate.provider].backends.includes('paseo'))
-    if (!hasPaseoCandidate) throw new ConfigError(`${list.location}: backends に paseo を持つ候補が無い`)
-  }
-
+  for (const [family, definition] of Object.entries(config.providers)) assertFamilyRegistry(family, definition)
   for (const [environment, definition] of Object.entries(config.environments)) {
     for (const provider of definition.providers) {
       if (!Object.prototype.hasOwnProperty.call(config.providers, provider)) {
         throw new ConfigError(`environment ${environment}: 未知の provider ${provider} である`)
       }
     }
-    for (const [duty, byComplexity] of Object.entries(definition.selection || {})) {
-      for (const [complexity, slot] of Object.entries(byComplexity)) {
-        for (const candidate of slot.candidates) {
-          if (!definition.providers.includes(candidate.provider)) {
-            throw new ConfigError(`environment ${environment}/${duty}/${complexity}: candidate provider が eligibility にない`)
-          }
-        }
-      }
-    }
-    if (config.singleSelection) {
-      for (const [complexity, slot] of Object.entries(config.singleSelection.implement)) {
-        if (!slot.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
-          throw new ConfigError(`singleSelection ${environment}/implement/${complexity}: candidate provider が eligibility にない`)
-        }
-      }
-    }
-    for (const [name, selection] of Object.entries({
-      routingSelection: config.routingSelection,
-      escalationSelection: config.escalationSelection,
-    })) {
-      if (selection && !selection.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
-        throw new ConfigError(`${name} ${environment}: candidate provider が eligibility にない`)
-      }
-    }
-    for (const [duty, byComplexity] of Object.entries(config.attemptPolicy || {})) {
-      for (const [complexity, policy] of Object.entries(byComplexity)) {
-        for (const [index, level] of policy.levels.entries()) {
-          if (!level.candidates.some((candidate) => definition.providers.includes(candidate.provider))) {
-            throw new ConfigError(`attemptPolicy ${environment}/${duty}/${complexity}/levels[${index}]: candidate provider が eligibility にない`)
-          }
-        }
-      }
-    }
   }
 
-  for (const list of candidateLists(config)) {
-    const providers = new Set()
-    for (const candidate of list.candidates) {
-      if (providers.has(candidate.provider)) throw new ConfigError(`${list.location}: provider が同じ枠に重複する`)
-      providers.add(candidate.provider)
-    }
-  }
-
-  for (const role of Object.values(config.agentRoles)) {
-    if (role.duty !== undefined && !DUTIES.includes(role.duty)) throw new ConfigError('agentRoles: duty が不正である')
-  }
-
-  for (const list of candidateLists(config)) {
-    for (const candidate of list.candidates) {
-      const definition = config.providers[candidate.provider]
-      for (const key of Object.keys(definition.featureAllowlist)) assertFeatureKey(key)
-      for (const key of Object.keys(candidate.features)) {
-        assertFeatureKey(key)
-        if (!Object.prototype.hasOwnProperty.call(definition.featureAllowlist, key)) {
-          throw new ConfigError(`${list.location}: features の key ${key} が allowlist にない`)
-        }
-        const expected = definition.featureAllowlist[key]
-        const actual = candidate.features[key]
-        const valid = expected === 'boolean'
-          ? typeof actual === 'boolean'
-          : expected === 'string'
-            ? typeof actual === 'string'
-            : expected === 'integer'
-              ? typeof actual === 'number' && Number.isInteger(actual) && Number.isFinite(actual)
-              : false
-        if (!valid) throw new ConfigError(`${list.location}: features の scalar 型が allowlist と違う`)
-      }
-    }
-  }
-
-  const configEnvOwners = new Map()
+  const physicalPaths = new Set()
   for (const [family, definition] of Object.entries(config.providers)) {
-    const setup = definition.setup
-    if (setup !== null) {
-      const entries = Object.entries(setup.configDirectoryEnv)
-      if (entries.length !== 1) throw new ConfigError(`provider family ${family}: configDirectoryEnv は一つだけ必要である`)
-      for (const [name] of entries) {
-        assertConfigEnvName(name)
-        if (configEnvOwners.has(name)) throw new ConfigError(`config env ${name}: family 間で重複する`)
-        configEnvOwners.set(name, family)
-      }
-      assertSetupPaths(family, setup)
-    }
-    if (definition.environmentVariable !== undefined) {
-      const name = definition.environmentVariable
-      assertConfigEnvName(name)
-      if (configEnvOwners.has(name)) throw new ConfigError(`config env ${name}: family 間で重複する`)
-      configEnvOwners.set(name, family)
+    assertSetupPaths(family, definition.setup)
+    for (const [environment, eligible] of Object.entries(config.environments)) {
+      if (!eligible.providers.includes(family)) continue
+      const pattern = environment === config.defaults.environment
+        ? definition.setup.directoryPattern.primary
+        : definition.setup.directoryPattern.nonPrimary.replace('<environment>', environment)
+      if (physicalPaths.has(pattern)) throw new ConfigError(`generated physical path ${pattern}: provenance が衝突する`)
+      physicalPaths.add(pattern)
     }
   }
-
-  const environments = Object.keys(config.environments)
-  const firstEnvironment = config.defaults.environment
-  const generatedIds = new Map()
-  const physicalPaths = new Map()
-  const addGeneratedId = (providerId, provenance) => {
-    const previousId = generatedIds.get(providerId)
-    if (previousId && previousId !== provenance) {
-      throw new ConfigError(`generated provider id ${providerId}: provenance が衝突する`)
-    }
-    generatedIds.set(providerId, provenance)
-  }
-  const addPhysicalPath = (physicalPath, provenance) => {
-    const previousPath = physicalPaths.get(physicalPath)
-    if (previousPath && previousPath !== provenance) {
-      throw new ConfigError(`generated physical path ${physicalPath}: provenance が衝突する`)
-    }
-    physicalPaths.set(physicalPath, provenance)
-  }
-
-  for (const [family, definition] of Object.entries(config.providers)) {
-    const provenance = `${family}/${firstEnvironment}`
-    addGeneratedId(family, provenance)
-    if (definition.setup !== null) {
-      addPhysicalPath(definition.setup.directoryPattern.primary, provenance)
-    }
-  }
-
-  for (const environment of environments) {
-    if (environment === firstEnvironment) continue
-    for (const family of config.environments[environment].providers) {
-      const provenance = `${family}/${environment}`
-      addGeneratedId(`${family}-${environment}`, provenance)
-      const setup = config.providers[family].setup
-      if (setup !== null) {
-        addPhysicalPath(setup.directoryPattern.nonPrimary.replace('<environment>', environment), provenance)
-      }
-    }
-  }
-
-  for (const [family, definition] of Object.entries(config.providers)) assertFamilyRegistry(family, definition)
 
   for (const rule of config.projectRouting.rules) {
     if (!Object.prototype.hasOwnProperty.call(config.environments, rule.environment)) {
@@ -550,8 +303,6 @@ function parseAndSchema(rawText) {
     throw new ConfigError('input: JSON として parse できない')
   }
   const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, 'utf8'))
-  const unsupported = Object.keys(schema).filter((key) => !SCHEMA_KEYWORDS.includes(key))
-  if (unsupported.length > 0) throw new ConfigError('schema: 未対応 keyword がある')
   const errors = validateAgainstSchema(schema, parsed, '')
   if (errors.length > 0) throw new ConfigError(`schema: ${errors[0]}`)
   return parsed

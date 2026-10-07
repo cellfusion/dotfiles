@@ -57,7 +57,7 @@ function assertOutcomeV1(value) {
   }
   if (!['mechanical', 'routine', 'integration', 'architectural'].includes(value.route.workClass)) throw new Error('route.workClass is invalid')
   if (!['simple', 'routine', 'complex', 'critical'].includes(value.route.complexity)) throw new Error('route.complexity is invalid')
-  if (!['paseo-cli', 'paseo-mcp'].includes(value.route.backend)) throw new Error('route.backend is invalid')
+  if (!['omp-internal', 'herdr-cli'].includes(value.route.backend)) throw new Error('route.backend is invalid')
   if (!['initial', 'retry', 'escalation'].includes(value.route.trigger)) throw new Error('route.trigger is invalid')
   nonNegativeInteger(value.route.policyLevel, 'route.policyLevel')
   nonNegativeInteger(value.route.round, 'route.round')
@@ -70,10 +70,10 @@ function assertOutcomeV1(value) {
   if (!exactKeys(value.usage, USAGE_KEYS)) throw new Error('usage keys are invalid')
   for (const field of ['inputTokens', 'cachedInputTokens', 'outputTokens']) nonNegativeInteger(value.usage[field], `usage.${field}`)
   nonNegativeNumberOrNull(value.usage.costUsd, 'usage.costUsd')
-  if (!['paseo-inspect', 'paseo-logs', 'manual', 'unavailable'].includes(value.usage.source)) throw new Error('usage.source is invalid')
+  if (!['omp', 'manual', 'unavailable'].includes(value.usage.source)) throw new Error('usage.source is invalid')
 
   if (value.toolLoopCount !== null) nonNegativeInteger(value.toolLoopCount, 'toolLoopCount')
-  if (!['paseo-logs', 'manual', 'unavailable'].includes(value.toolLoopSource)) throw new Error('toolLoopSource is invalid')
+  if (!['omp', 'manual', 'unavailable'].includes(value.toolLoopSource)) throw new Error('toolLoopSource is invalid')
   if (value.toolLoopCount === null && value.toolLoopSource !== 'unavailable') {
     throw new Error('null toolLoopCount requires unavailable source')
   }

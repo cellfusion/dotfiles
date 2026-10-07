@@ -4,10 +4,8 @@
 <dict>
     <key>Label</key>
     <string>com.cellfusion.sketchybar-usage-claude</string>
-    <!-- SketchyBar の usage ウィジェットが読む Claude のキャッシュを更新する。
-         Paseo は Claude Code を非対話で起動し、statusLine を実行しないため、
-         キャッシュを書く経路がこのジョブだけになる。
-         背景は ~/.config/docs/sketchybar-usage.md にある。 -->
+    <!-- Legacy Claude cache collector. Disabled; the shared agent-usage job replaces it.
+         Background: ~/.config/docs/sketchybar-usage.md -->
     <key>ProgramArguments</key>
     <array>
         <string>{{ .chezmoi.homeDir }}/.config/sketchybar/helpers/usage_collect_claude.sh</string>

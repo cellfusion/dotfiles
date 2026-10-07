@@ -25,7 +25,6 @@ rg -n -i -F -e '検索語' -g '*.md' -- "$HOME/docs/research"
 
 - `~/.agents/skills/research/SKILL.md`
 - `~/.config/claude/skills/research/SKILL.md`
-- `~/.config/opencode/skills/research/SKILL.md`
 
 スキルの自動選択はエージェント側の発見方式に依存する。スキル名の指定だけでは、配布先を見ていない起動には届かない。
 
