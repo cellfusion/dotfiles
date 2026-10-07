@@ -162,6 +162,10 @@ CLAUDE.md
 # 配布済みの実体を回収する。人が使う .config/worktrunk/config.toml は残す。
 .config/worktrunk/agent.toml
 
+# 2026-10-06: npm CLI は mise/config.toml へ集約した。旧マニフェストだけ回収する。
+# 既存の npm / Brew インストールは動作確認と承認なしに削除しない。
+.config/install/npm-globals.txt
+
 # 2026-10-06: agents launch directly through Herdr; Alt-a now opens Tuicr.
 .config/television/cable/custom-agent-launcher.toml
 

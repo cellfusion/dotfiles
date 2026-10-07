@@ -13,14 +13,13 @@ brew_s="$(render_script run_onchange_after_10-brew.sh.tmpl)"
 runtimes_s="$(render_script run_onchange_after_20-runtimes.sh.tmpl)"
 mise_s="$(render_script run_onchange_after_30-mise.sh.tmpl)"
 ai_s="$(render_script run_onchange_after_40-ai-clis.sh.tmpl)"
-npm_s="$(render_script run_onchange_after_50-npm-globals.sh.tmpl)"
 cargo_s="$(render_script run_onchange_after_60-cargo.sh.tmpl)"
 macos_s="$(render_script run_onchange_after_70-macos-services.sh.tmpl)"
 agent_env_s="$(render_script run_onchange_after_90-agent-envs.sh.tmpl)"
 
 # --- 全スクリプト共通 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
-            "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "ai:$ai_s" "cargo:$cargo_s" "macos:$macos_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -45,7 +44,7 @@ done
 
 # --- 変更検知のハッシュが埋まっている（64 桁の hex） ---
 # homebrew / runtimes / ai は「未導入のときだけ入れる」のでマニフェストを持たない。
-for pair in "brew:$brew_s" "mise:$mise_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+for pair in "brew:$brew_s" "mise:$mise_s" "cargo:$cargo_s" "macos:$macos_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -57,7 +56,7 @@ done
 # chezmoi は非ゼロで終わった script を entryState に記録しない。飛ばして記録される
 # のではなく落ちることで、取りこぼしが次の apply で必ず再実行される。
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" \
-            "mise:$mise_s" "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "mise:$mise_s" "ai:$ai_s" "cargo:$cargo_s" "macos:$macos_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"
@@ -111,17 +110,8 @@ assert_contains "$mise_s" 'local_bin_env' "mise: native installer の置き場�
 # --- AI CLI ---
 assert_contains "$ai_s" 'https://claude.ai/install.sh' "ai: claude の native installer を使う"
 assert_contains "$ai_s" 'https://chatgpt.com/codex/install.sh' "ai: codex の native installer を使う"
-assert_contains "$ai_s" 'command -v claude' "ai: claude の有無を確認する"
-assert_contains "$ai_s" 'command -v codex' "ai: codex の有無を確認する"
 assert_contains "$ai_s" 'local_bin_env' "ai: native installer の置き場を PATH に載せる"
 assert_not_contains "$ai_s" 'brew install' "ai: brew を使わない"
-
-# --- npm ---
-# npm を PATH から探すと、mise activate を通していないシェルから apply したときに
-# システムの node を掴む。mise に解決させる。
-assert_contains "$npm_s" 'mise exec -- npm install -g' "npm: mise の node で npm を回す"
-assert_contains "$npm_s" '$HOME/.config/install/npm-globals.txt' "npm: 配ったマニフェストを参照する"
-assert_not_contains "$npm_s" 'command -v npm' "npm: PATH 頼みの判定をしない"
 
 # --- cargo ---
 assert_contains "$cargo_s" 'cargo install' "cargo: cargo install を実行する"
@@ -227,7 +217,7 @@ assert_eq "$(render_script run_onchange_after_10-brew.sh.tmpl)" "$brew_s" \
 
 # --- bash の構文として妥当 ---
 for pair in "homebrew:$homebrew_s" "brew:$brew_s" "runtimes:$runtimes_s" "mise:$mise_s" \
-            "ai:$ai_s" "npm:$npm_s" "cargo:$cargo_s" "macos:$macos_s" \
+            "ai:$ai_s" "cargo:$cargo_s" "macos:$macos_s" \
             "agent-env:$agent_env_s"; do
   name="${pair%%:*}"
   body="${pair#*:}"

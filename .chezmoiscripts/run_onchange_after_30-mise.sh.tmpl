@@ -7,9 +7,13 @@ set -eu
 
 local_bin_env
 
-if ! command -v mise >/dev/null 2>&1; then
-  die 'mise が見つからない。20-runtimes が失敗している'
-fi
+mise="$HOME/.local/bin/mise"
+[ -x "$mise" ] || die 'native mise が見つからない。20-runtimes が失敗している'
+config_dir="$XDG_CONFIG_HOME/mise"
+[ -f "$config_dir/config.toml" ] || die "mise の config.toml が見つからない: $config_dir"
 
+# apply の呼び出し元 project ではなくグローバル設定から導入する。
+cd "$config_dir"
+rust_env
 printf 'mise install を実行する\n'
-mise install
+"$mise" install

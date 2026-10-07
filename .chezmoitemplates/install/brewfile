@@ -4,29 +4,6 @@
 
 # --- core / OS 共通 CLI ---
 brew "git"
-brew "gh"
-brew "ghq"
-brew "git-lfs"
-brew "lazygit"
-brew "worktrunk"
-brew "neovim"
-brew "fzf"
-brew "fd"
-brew "ripgrep"
-brew "bat"
-brew "glow"
-brew "eza"
-brew "jq"
-brew "television"
-brew "zoxide"
-
-# --- 開発ツール ---
-# mise / bun / uv / rustup / herdr は 20-runtimes が native installer で入れる。
-# node / python / java / pnpm / deno / go は mise が入れる。
-# chezmoi は 20-runtimes が get.chezmoi.io で ~/.local/bin に入れる。
-brew "sccache"
-brew "awscli"
-brew "grpcurl"
 {{ if eq .os "darwin" }}
 # --- macOS 専用 ---
 brew "coreutils"

@@ -11,7 +11,8 @@
 #
 # AI CLI の通常起動は agent-config の cwd-aware resolver に通す。Static shell
 # environment だけでは Orca worktree の移動後や project rule を追跡できないためである。
-# Pi / Codex の update だけは管理操作なので実 CLI へ直接通す。
+# Pi / Codex の update は管理操作なので family resolver を通さない。
+# Pi の launcher は mise upgrade、Codex は native CLI の update を実行する。
 
 _agent_env_apply() {
   case "$1" in

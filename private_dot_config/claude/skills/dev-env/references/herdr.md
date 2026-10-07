@@ -50,7 +50,8 @@ The statically switched variables are `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_COD
 Normal AI CLI launches do not rely on that static eligibility list: matching zsh functions invoke
 `agent --family=<family>`, whose order is explicit `--environment`, parent `AGENT_ENV`, the first
 matching project rule, then `defaults.environment`. The selected environment must allow the family.
-`pi update` and `codex update` bypass the wrapper as management operations.
+`pi update` and `codex update` bypass the family wrapper as management operations.
+The Pi launcher upgrades its mise-managed package from the global config directory; Codex uses its native updater.
 
 ## Adding an Environment
 
