@@ -95,6 +95,13 @@ Choose execution based on plan structure:
 
 Re-read the approved plan immediately before handoff. Pass its absolute path, not copied prose.
 
+Ordinary delegation stays inside OMP. State execution and write placement independently in the
+handoff: reuse the existing approved workspace; use hidden Worktrunk only for separate writer
+ownership, with no extra pane. A visible independent CLI/user conversation uses Herdr and OMP in
+its existing or newly approved root pane. Generic handoff does not select Orca. Record the committed
+base and any prerequisite decisions; do not automatically copy uncommitted parent changes or grant
+commit/push/apply permissions. Name the integration/verification owner for shared writes.
+
 ## Completion
 
 A plan is complete when it is saved, self-reviewed, validated, and either approved for execution or

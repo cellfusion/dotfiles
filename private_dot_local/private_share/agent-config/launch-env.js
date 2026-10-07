@@ -48,7 +48,8 @@ function readConfig() {
   let text
   try {
     text = fs.readFileSync(file, 'utf8')
-  } catch {
+  } catch (error) {
+    if (error.code === 'ENOENT') return null
     fail(`${file}: 読めない`)
   }
   try {
@@ -136,6 +137,22 @@ function familyEntry(config, family, explicitEnvironment) {
 
 function main(argv) {
   const config = readConfig()
+  if (config === null) {
+    if (argv.length === 1 && argv[0] === '--list') return
+    let binary
+    if (argv.length === 1 && !argv[0].startsWith('--')) {
+      binary = argv[0]
+    } else if (argv.length === 2 && ['--provider', '--family'].includes(argv[0])) {
+      binary = argv[1]
+    } else if (argv.length === 4 && argv[0] === '--family' && argv[2] === '--environment') {
+      fail('--environment: agent-config.json が無いため環境を解決できない')
+    } else {
+      fail('引数は --provider <id>、--family <family>、--list のいずれかである')
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(binary)) fail('起動する CLI 名が不正である')
+    process.stdout.write(`binary ${binary}\n`)
+    return
+  }
   const byId = providerIndex(config)
   const ids = [...byId.keys()].sort()
   if (argv.length === 1 && argv[0] === '--list') {

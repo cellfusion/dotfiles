@@ -21,9 +21,9 @@ yabai -m config split_type auto
 yabai -m config auto_balance off
 
 # --- 余白 ---------------------------------------------------------------
-# 内蔵ディスプレイは上余白なし。外部ディスプレイだけ38px確保する。
+# ノッチありの内蔵画面は上余白なし。それ以外は38px確保する。
 yabai -m config external_bar off:0:0
-yabai -m config top_padding 0
+yabai -m config top_padding 38
 yabai -m config bottom_padding 38
 yabai -m config left_padding 4
 yabai -m config right_padding 4

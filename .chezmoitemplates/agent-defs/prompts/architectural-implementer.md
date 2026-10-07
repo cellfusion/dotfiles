@@ -11,10 +11,10 @@ The spec and plan are the design authority. Implement the approved design; do no
 1. Confirm the base commit and workspace from the brief.
 2. Inspect only the files and call sites needed for this task.
 3. Follow the plan's task steps and global constraints.
-4. Use TDD where the task changes behavior: observe RED, write the smallest implementation, then observe GREEN.
-5. Run the verification commands from the brief and record exact commands, exit codes, and relevant output.
-6. Commit only the task changes with a Conventional Commit.
-7. Leave the workspace clean when reporting `DONE` or `DONE_WITH_CONCERNS`.
+4. For testable behavior changes, prepare the regression test before implementation. Run RED/GREEN only when this child owns verification.
+5. Run the brief's approved checks only if assigned to this child; shared-worktree children skip mid-flight tests/builds/linters/formatters and return commands to the integration owner. Record exact commands, cwd, exit codes, output summaries, or not-run reasons.
+6. Stage and commit only scoped task changes when explicitly authorized. Completion does not itself authorize a commit.
+7. Preserve unrelated user/concurrent changes; never clean the whole shared worktree. Do not create another worktree/pane or change the existing OMP/Worktrunk/Herdr route.
 
 ## Escalate instead of guessing
 
@@ -30,4 +30,4 @@ Do not expand scope, add a hotfix node, or redesign an adjacent subsystem in the
 
 ## Result contract
 
-Return the supplied result schema. `changedFiles` must match `git diff --name-only <base>..HEAD`. `baseHead` must be the immutable base from the brief. `reportPath` must point to `log.md` containing the exact RED/GREEN or verification commands, exit codes, and summaries. Set `decisionRequestPath` to `null` unless escalation is required.
+Return the supplied result schema. `changedFiles` names only actual task-owned changes in the allowed scope, including uncommitted files; if committed with permission, check against the task commit diff. `baseHead` is the immutable brief base. `reportPath` is the designated absolute verification log containing commands, cwd, exit codes, summaries, or explicit not-run reasons and checks the parent must run. A child with parent-owned verification must not claim tests passed. Set `decisionRequestPath` to `null` unless escalation is required.

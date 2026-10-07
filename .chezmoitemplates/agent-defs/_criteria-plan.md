@@ -98,7 +98,7 @@ export function fn(input: string): string {
 実行: `npm test -- path/to/test.ts -t 'specific behavior'`
 期待: PASS
 
-- [ ] **Step 5: コミットする**
+- [ ] **Step 5: 明示的に許可された場合だけコミットする**
 
 ```bash
 git add tests/path/test.ts src/path/file.ts
@@ -106,11 +106,14 @@ git commit -m "feat: add specific feature"
 ```
 ````
 
+検証の実行担当を plan に明記する。共有 worktree の子は上の実行ステップを途中で走らせず、
+テストと検証コマンドを統合担当へ渡す。実装承認だけでは staging、commit、push、apply は許可されない。
+
 ### タスクの依存
 
 各タスクは、先に完了していなければ始められないタスクを `**Depends on:**` で宣言する。先行が無ければ `なし` と書く。
 
-これは実行順の指定ではなく、**同時に走らせてよいタスクを見分けるため**の宣言である。依存の無いタスクどうしは別々の worktree で並行に実装される。
+これは実行順の指定ではなく、**同時に走らせてよいタスクを見分けるため**の宣言である。依存の無いタスクは OMP 内で並行に進める。書き込み所有権の分離が必要な場合だけ非表示の Worktrunk worktree を使い、pane は追加しない。共有 worktree なら変更範囲を分け、統合・検証担当を 1 人に定める。
 
 - **Interfaces の Consumes に他タスクの Produces が出てくるなら、そのタスクを Depends on に書く。** 例外なく
 - **`Files:` が重なるタスクは並行にできない。** 同じファイルを触る 2 つのタスクは、どちらかがもう一方に依存する形にする
@@ -134,14 +137,14 @@ git commit -m "feat: add specific feature"
   判断を含む
 
 行を書かないタスクは `routine` として扱われる。値を書き間違えると
-`paseo-plan-dependency-validate` が exit 2 で拒む。
+`plan-dependency-validate` が exit 2 で拒む。
 
 旧い `standard` は `routine` へ読み替え、stderr に warning を出す互換入力である。新しい
 plan では `simple`、`routine`、`complex`、`critical` のいずれかへ更新する。
 
 `Depends on` を書かないタスクは、それより前の全タスク全部に依存するものとして扱われる（＝直列）。安全側には倒れるが、並行の余地は失われる。
 
-依存の検証は `~/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate PLAN_FILE` が行う。循環、存在しないタスク参照、同じ wave でのファイル重複を検出する。
+依存の検証は `~/.agents/skills/multi-agent-development/scripts/plan-dependency-validate PLAN_FILE` が行う。循環、存在しないタスク参照、同じ wave でのファイル重複を検出する。
 
 ### placeholder を書かない
 
@@ -162,6 +165,6 @@ plan では `simple`、`routine`、`complex`、`critical` のいずれかへ更�
 2. **placeholder 走査** — 上の「placeholder を書かない」に挙げたパターンを探して直す
 3. **型の整合** — 後のタスクで使った型・シグネチャ・プロパティ名が、前のタスクで定義したものと一致するか。Task 3 で `clearLayers()`、Task 7 で `clearFullLayers()` になっていればバグ
 
-4. **依存の整合** — `~/.agents/skills/multi-agent-development/scripts/paseo-plan-dependency-validate PLAN_FILE` を実行する。エラーが出たら直す。あわせて、Consumes に他タスクの Produces が出てくるのに Depends on に書いていないタスクが無いかを目視で確かめる
+4. **依存の整合** — `~/.agents/skills/multi-agent-development/scripts/plan-dependency-validate PLAN_FILE` を実行する。エラーが出たら直す。あわせて、Consumes に他タスクの Produces が出てくるのに Depends on に書いていないタスクが無いかを目視で確かめる
 
 見つけたその場で直す。再レビューは不要。タスクの無い spec 要件が見つかったらタスクを足す。

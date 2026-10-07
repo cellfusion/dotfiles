@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+'use strict'
+const fs = require('node:fs')
+const path = require('node:path')
+const candidates = [path.join(__dirname, '..', 'share', 'agent-usage'), path.join(__dirname, '..', 'private_share', 'agent-usage')]
+const directory = candidates.find(candidate => fs.existsSync(path.join(candidate, 'runtime.js')))
+if (!directory) {
+  process.stderr.write('agent-usage: managed runtime unavailable\n')
+  process.exitCode = 1
+} else {
+  require(path.join(directory, 'runtime.js')).main(process.argv.slice(2)).then(code => { process.exitCode = code }).catch(() => {
+    process.stderr.write('agent-usage: invalid arguments or unavailable terminal; see --help\n')
+    process.exitCode = 2
+  })
+}

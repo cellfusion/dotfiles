@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Paseo MAD plan の dependency、wave、code fence 契約を検証する。
+# Validate plan dependencies, waves, and code-fence handling.
 set -u
 
 TESTS_FAILED=0
@@ -31,13 +31,13 @@ assert_contains() {
   esac
 }
 
-validator="$(cd "$(dirname "$0")/.." && pwd)/private_dot_agents/skills/multi-agent-development/scripts/executable_paseo-plan-dependency-validate"
+validator="$(cd "$(dirname "$0")/.." && pwd)/private_dot_agents/skills/multi-agent-development/scripts/executable_plan-dependency-validate"
 fixtures="$(cd "$(dirname "$0")/.." && pwd)/tests/fixtures/agent-config/mad/plans"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 cat > "$tmp/valid.md" <<'PLAN'
-# Paseo MAD plan
+# Development plan
 
 ### Task 1: prepare
 

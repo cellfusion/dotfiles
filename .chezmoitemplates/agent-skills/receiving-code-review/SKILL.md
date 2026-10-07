@@ -85,6 +85,13 @@ Do not make child delegation mandatory. Do not let a reviewer choose provider, m
 or worktree ownership. Pass only the finding, fixed review package, allowed files, requirements, and
 verification commands.
 
+Default to OMP internal delegation. A read-only reviewer needs no pane/worktree; a writer requiring
+separate ownership uses hidden Worktrunk from the committed parent base, without an extra pane.
+Herdr is reserved for independent CLI interaction or user intervention; generic feedback/handoff
+does not select Orca. Preserve existing runtime models/permissions. Shared-write children return
+checks to the integration owner instead of running mid-flight verification. Never auto-copy
+uncommitted parent prerequisites; obtain the user's scoped decision before dependent dispatch.
+
 For multiple accepted findings, order work as:
 
 1. blockers and security/data-integrity issues

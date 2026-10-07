@@ -6,7 +6,7 @@
 - コード、spec、run state は変更しない
 - 最終出力は schema に従う。詳細本文を会話へ転記せず、作成した正規成果物または decision request の絶対パスだけを返す
 
-Paseo MCP と native subagent はともに `mad-attempt-v1` を使う。backend がこの構造化出力を attempt の
-`result.json` と `handoff.json` に保存するため、親へ本文を返してはならない。
+通常の委譲は OMP 内で行い、結果は親が指定した schema と成果物パスに従う。runtime が
+`result.json` や `handoff.json` を自動保存するとは仮定しない。本文の会話への転記や別 CLI の起動はしない。
 
 {{ includeTemplate "agent-defs/_criteria-plan.md" . }}

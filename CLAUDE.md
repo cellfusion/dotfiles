@@ -28,7 +28,7 @@ nvim
 bash tests/run-tests.sh
 
 # Run one test
-bash tests/test-tools-doc.sh
+bash tests/test-mad-worktree.sh
 ```
 
 `tests/` is not distributed; `.chezmoiignore` lists `tests` and `tests/**`. Each test file is

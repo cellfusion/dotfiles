@@ -1,82 +1,76 @@
 ## Delegate through a worktree
 
-Use this section only when the approval gate explicitly selects worktree delegation. Create a new
-workspace and start the delegated Claude session there. Keep the parent pane open.
+Use this route only when the approval gate explicitly selects a visible independent Herdr handoff.
+Ordinary bounded delegation stays inside OMP; write isolation alone uses hidden Worktrunk without a
+pane. Keep the parent pane open. `HERDR_ENV=1` was verified by the approval gate.
 
-`HERDR_ENV=1` was already verified by the approval gate.
+### 1. Re-read and scope the artifact
 
-### 1. Re-read the artifact
+The on-disk artifact is canonical after any preview edits. Re-read its absolute path. Record goal,
+allowed files, acceptance, verification owner, and constraints. Do not turn approval of a plan into
+permission to commit, push, apply, install, or operate externally.
 
-The preview editor may have allowed manual edits. Re-read the file from disk; on-disk content is
-canonical.
+Read `using-git-worktrees` and `herdr`, then the current CLI help. Reuse an existing approved task
+workspace if one exists; do not create a duplicate. Record known ownership, cwd, branch, workspace,
+and pane. Unknown ownership or creation state requires inspection, not replacement.
 
-### 2. Choose a branch
+### 2. Choose the branch and base
 
-Remove the date from the plan filename and use `feat/<feature-name>`. For example,
-`2026-08-14-worktree-handoff.md` becomes `feat/worktree-handoff`.
+Use a unique safe branch such as `feat/<feature-name>`. Resolve the specified base to a commit SHA;
+new main work defaults to the actual repository default branch, not guessed `main` or `master`.
+A child continuing committed parent work uses its explicitly recorded parent base instead.
 
-```bash
-git rev-parse --verify "feat/<feature-name>" 2>/dev/null
-```
+Check branch collision and prerequisites before creation. If required work is uncommitted, obtain a
+user-scoped commit/transfer decision; never auto-copy the dirty tree or secret local files. A branch
+collision stops creation and returns to the gate without modifying the existing branch.
 
-If the branch exists, create nothing, report the collision, and return to the approval gate.
-
-### 3. Create the Herdr workspace
-
-Run this as one shell block and read every value from the response:
+### 3. Create one Herdr workspace
 
 ```bash
 out=$(herdr worktree create \
-  --workspace "$HERDR_WORKSPACE_ID" \
-  --branch "feat/<feature-name>" \
-  --base HEAD \
-  --label "<feature-name>" \
-  --no-focus)
+  --workspace "$HERDR_WORKSPACE_ID" --branch "$NEW_BRANCH" \
+  --base "$BASE_SHA" --label "$FEATURE_LABEL" --no-focus)
 ws=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
 pane=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
 path=$(printf '%s' "$out" | jq -er '.result.worktree.path')
 ```
 
-Always pass `--workspace` and `--no-focus`; do not pass `--path`. If any value is empty or null,
-remove the workspace only when `ws` is known. If it is unknown, report the orphan risk and return to
-the gate. Record workspace ID, pane, path, branch, and ownership.
+Use returned values, never predicted paths/IDs. Validate the checkout and base. Record owner
+`herdr`, branch, base SHA, absolute path, workspace/root pane, integration `pending`, and liveness.
+Incomplete JSON or failure after creation preserves all known IDs/paths and artifacts. Do not retry
+creation, fallback to another owner/backend, or automatically remove a partially created workspace.
 
-Values from this shell block are not available in later shell calls. Use the validated literal values
-in subsequent commands; never predict a path or ID.
+### 4. Start OMP in the root pane
 
-### 4. Start the delegated agent
-
-```bash
-herdr agent start "<safe-agent-name>" --kind claude --pane "$pane"
-```
-
-Sanitize the agent name to `[a-z][a-z0-9_-]{0,31}`. Do not add permission-bypass flags. The agent
-must stop for approval when approval is required.
-
-### 5. Send the initial prompt
+The new root pane must be at its shell prompt. Use a unique name matching
+`[a-z][a-z0-9_-]{0,31}` and a fresh private run-specific OMP session directory outside the repo:
 
 ```bash
-herdr agent prompt "<safe-agent-name>" "<bounded prompt>" --wait --timeout 120000
+herdr agent start "$AGENT_NAME" --kind omp --pane "$pane" -- \
+  --cwd "$path" --session-dir "$SESSION_DIR"
 ```
 
-Include only:
+Keep existing models and permissions. Do not create another agent pane or re-create the worktree.
+Read OMP's current help before passing arguments. Readiness means ready for input, not task success.
 
-- the plan's absolute path
-- instruction to implement it using the `multi-agent-development` implement recipe
-- statement that the worktree already exists and must not be recreated
-- the existing worktree branch name
+### 5. Submit a bounded initial request
 
-Do not paste conversation history, credentials, or raw review output. A timeout is not proof of
-failure; inspect agent state and artifacts before deciding.
+```bash
+herdr agent prompt "$AGENT_NAME" "$BOUNDED_REQUEST" --wait --until working --timeout 120000
+```
 
-### 6. Report and wait
+The request names only the absolute trusted plan/artifact path, task scope, actual cwd/branch/base,
+verification owner, and constraints. Explicitly state that this environment already exists and must
+not be re-created. Select `executing-plans` for a sequential plan or `multi-agent-development` for
+independent slices; do not invent an “implement” recipe or force a multi-agent run. Do not depend
+on slash-command interpretation. Never paste conversation history, credentials, or raw review logs.
 
-Report workspace ID, absolute worktree path, branch, agent name, and current status. Do not close the
-parent pane. The user may continue using it.
+A timeout, blocked/unknown state, or unconfirmed receipt is unresolved. Inspect the same agent,
+pane, and artifact directory before any resume; never submit again or launch another CLI blindly.
 
-### Failure handling
+### 6. Handoff record
 
-Before `agent start`, cleanup is safe only for the worktree created by this run and only when its
-workspace ID is known. After `agent start`, never force-remove the workspace because the delegated
-session may still be running. Report that the agent may be active and that receipt of the initial
-prompt is unconfirmed. Keep the workspace and return to the approval gate.
+Report exact workspace/root pane IDs, absolute checkout and artifact/session paths, branch, base,
+owner, agent name, and observed readiness/submission status. Keep the parent available. Independent
+work remains in the owned environment for inspection; ending a prompt is not permission to delete
+it. Cleanup follows the ownership skill only after explicit saved/inactive/integration decisions.

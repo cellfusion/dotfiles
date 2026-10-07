@@ -1,186 +1,114 @@
 ---
 name: task-routing
 description: >-
-  Select the execution route, work class, and implementation role for a development request.
-  Skip it for clear local changes; use it only when direct, single-agent, and delivery paths need to be distinguished.
+  Select direct work, OMP internal delegation, or multi-agent delivery when the route is unclear.
+  Choose independent Herdr interaction and hidden Worktrunk write isolation separately; skip clear local changes.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
-# Route a Request to an Execution Path
+# Route a Development Request
 
-task-routing is the entry point for turning a user request into an implementation task packet. It does not implement code, approve designs, or execute the MAD strict contract. Skip it for a clear local change: the parent may implement directly or start one lightweight `implementer` child.
+The parent decides the goal, scope, acceptance criteria, and verification before dispatch. This
+skill does not implement code or approve a design. A clear local change needs no routing ceremony.
 
-## Task packet
+## Make three independent decisions
 
-Use a packet with finite values. Do not put free-form provider or model choices in it.
+1. **Execution:** direct parent work, one OMP internal child, or multiple OMP internal children.
+2. **Interaction:** remain internal by default. Use a Herdr pane only for user intervention,
+   independent conversation, or an explicitly required separate CLI.
+3. **Writes:** use the existing checkout with disjoint scopes and one integration owner when safe.
+   Use a hidden Worktrunk child worktree only when separate write ownership is required.
 
-```json
-{
-  "route": "direct|single|delivery",
-  "workClass": "mechanical|routine|integration|architectural",
-  "role": "null (direct)|implementer|architectural-implementer",
-  "complexity": "simple|routine|complex|critical",
-  "goal": "...",
-  "writeScope": ["..."],
-  "acceptanceCriteria": ["..."],
-  "verification": ["..."],
-  "needsBrainstorming": false,
-  "needsUserDecision": false,
-  "confidence": "high|medium|low",
-  "reason": "..."
-}
-```
+A separate pane does not require a new worktree. A separate worktree does not require a pane,
+workspace, tab, or separate CLI. Combine these only when both needs are established. Ordinary
+handoff, parallelism, or the word “worktree” does not select Orca. Read `orca-cli` or `orchestration`
+only when the user explicitly requests Orca or the task explicitly operates on Orca-managed state.
 
-Do not set `confidence: high` while `writeScope`, `acceptanceCriteria`, or `verification` is unknown. Set `needsUserDecision: true` when guessing would change the result.
+## Bounded task contract
 
-## Route admission audit
+Before any child starts, specify:
 
-Record every decision made by task-routing, including `direct`, before executing its selected path. Clear local changes that skip this skill are not admitted and do not appear in this log; do not start routing solely to record them. Initialize the local recorder once:
+- goal, work class, trusted requirement/plan paths
+- exact allowed files and non-goals
+- acceptance criteria and verification commands, including who runs them
+- cwd, repository, committed base SHA, execution route, and worktree owner if applicable
+- required result/artifact paths and finite retry/review limits
+- consequential decisions that require the user rather than guessing
 
-```bash
-TASK_ROUTING_SCRIPTS="${TASK_ROUTING_SCRIPTS:-$HOME/.agents/skills/task-routing/scripts}"
-MAD_SCRIPTS="${MAD_SCRIPTS:-$HOME/.agents/skills/multi-agent-development/scripts}"
-MAD_ROUTE_ADMIT="$TASK_ROUTING_SCRIPTS/mad-route-admit"
-MAD_ROUTE_RECORD="$MAD_SCRIPTS/mad-route-record"
-MAD_ROUTE_LOG="${MAD_ROUTE_LOG:-$HOME/.local/state/mad/metrics/route-decisions.jsonl}"
-```
+Use the shared audit trail to record the route, ownership decision, and safe artifact references.
+Do not invent provider/model metadata for OMP or run a legacy transport admission wrapper. Keep
+existing model and permission defaults; the task contract does not choose a provider, model, or
+permission bypass. Do not pass conversation history, credentials, or unrelated plans.
 
-Run the admission wrapper before starting the selected path. It validates the finite packet, adds a `routeId`, writes the mode `0600` route decision, and emits the admitted packet:
+If scope or acceptance is unclear, inspect the repository first. Use an available read-only internal
+research role only for a genuinely unmapped slice. Resolve a consequential unknown before starting
+a writer; a router cannot approve architecture or expand scope.
 
-```bash
-"$MAD_ROUTE_ADMIT" \
-  --packet "$PACKET" --output "$ADMITTED_PACKET" \
-  --route-record "$MAD_ROUTE_LOG" \
-  --backend "$MAD_BACKEND" --provider "$PROVIDER" \
-  --model "$MODEL" --effort "$EFFORT"
-```
+## Choose the smallest useful route
 
-For `direct`, set `role: null` and omit backend/provider/model/effort. The admitted packet retains the null role; the route-decision log uses `parent` to identify the executor (its record contract requires a string). Use the admitted packet for the selected path and pass its `routeId` into any child outcome record. Do not include the raw request, prompt, repository contents, credentials, or URLs. This log is the denominator for *admitted* route statistics, not all requests; child attempt results belong in `mad-attempt-outcome`.
+### Direct
 
-## Who creates the packet
+Implement directly when one known flow and a handful of files can be changed and verified safely.
+Use `brainstorming` only for a real unresolved design choice, not to restate a clear request.
 
-- If the request is clear and confidence is high, the parent creates the packet directly
-- If confidence is medium or low, or several routes are plausible, start the read-only `intake-router` role
-- Give `intake-router` only the raw request and the minimum repository context. It returns a packet under its schema and never changes code or configuration
-- Resolve the `intake-router` launch from `agent-config.routingSelection`. Do not let the router choose a provider, model, or effort
-- If the router returns `needsUserDecision: true` or `confidence: low`, do not create an implementation child; ask the parent to resolve the decision
+### Single child
 
-## Route selection
+Use one internal child only when a distinct ownership/context boundary justifies it, not for a small
+edit or a direct question already open in the parent. Do not add plan-auditor or multi-round delivery
+machinery for one bounded task.
 
-### direct
+1. Fix the child contract and artifact expectations.
+2. If write isolation is needed, use `using-git-worktrees`' hidden Worktrunk route from the recorded
+   committed parent base. Otherwise explicitly assign disjoint writes in the existing cwd.
+3. Dispatch through OMP's actual internal tool, using its documented cwd and role interface. Read
+   the live tool help if unclear; do not substitute a separate CLI or guess a cwd parameter.
+4. The child changes only its scope and returns changes, evidence, and unresolved conditions.
+   Commit, push, apply, dependency setup, and external writes still require explicit authorization.
+5. The parent independently checks artifacts, changed files, scope, acceptance, and verification.
+   In shared work, children skip tests/builds/linters/formatters; the integration owner runs once
+   after all writes land. Do not call a child success message verification.
 
-The parent implements directly when:
+### Delivery
 
-- one existing flow is being changed
-- the change touches one or two files
-- the requested behavior is clear
-- there is no external operation, public contract, or design choice
+Use `writing-plans` for finalized multi-stage work and `multi-agent-development` for genuinely
+independent implementation or review slices. Map dependencies/shared contracts before dispatch;
+parallelize independent slices, serialize only real dependencies. Do not delegate the top-level
+integration decision. An existing plan does not automatically justify multiple phases or agents.
 
-### single
+## Work class
 
-Delegate one implementation to one child. Do not start full MAD, plan-auditor, or a task review loop.
+- **mechanical:** a fixed local update following existing patterns; no new design.
+- **routine:** a few files within a settled design.
+- **integration:** connect callers/layers with explicit contracts and error handling.
+- **architectural:** consequential new contracts or multiple valid designs; settle those decisions
+  before implementation, using design review where required.
 
-- the change is clear but should be isolated from the parent's context
-- implementation and verification should run in a separate session
-- there is one task and no parallelism
+Use the runtime's available role most specific to the task. Do not turn model names or effort
+levels into roles. Agent/provider configuration used by other tools remains separate from routing.
 
-The single-child procedure is:
+## Independent CLI interaction
 
-1. Create a packet with `confidence: high`, `route: single`, `workClass`, `writeScope`, `acceptanceCriteria`, and `verification`
-2. If the child writes files, create one dedicated Paseo worktree; never let it write to the parent's working tree
-3. Pass only the `implementer` prompt, schema, and packet absolute paths. Do not pass the full conversation or an unrelated plan
-4. Add the prompt overlay for the packet's `workClass`
-5. The child implements, tests, commits, and writes a report
-6. The parent independently checks status, commit, diff, changed files, scope, and test output
-7. If the result cannot be adopted, use evidence to choose retry, `escalation-judge`, direct repair, or a user decision
+Read the `herdr` skill and current CLI help. Use an explicitly identified existing pane/cwd or create
+one owned pane with `--no-focus` from agent control. Start the required CLI with its existing
+permissions/models. Send only the bounded request and absolute trusted artifact paths; record pane,
+agent identity, readiness, and submitted status. Do not leave OMP to re-create its environment merely
+to delegate. Launch failure or unknown prompt receipt preserves the pane and artifacts; inspect the
+same resource instead of creating another or falling back to another backend.
 
-A single-child launch failure is not a strict MAD run failure. Do not add unlimited children or switch backends; return to direct implementation or report the situation to the user.
+Normal GitHub PR review goes through `pr-review --no-focus [--quick] <PR>` from agent control.
+A prepared review workspace executes the `pr-review` skill in its existing OMP/root pane; it does
+not create another worktree, pane, or OMP session. A shell user invokes the command without
+`--no-focus` when they want the new review workspace focused.
 
-### Single implementer launch contract
+## Bounded escalation
 
-When a single route starts a write child, the parent follows this order:
+A deterministic failure (missing dependency, invalid result, timeout, known test failure) needs an
+evidence-based correction or decision, not an escalation child. For semantic uncertainty, an
+available read-only reviewer/judge may assess the fixed inputs and permitted options. It cannot
+change provider, permissions, ownership, scope, or the attempt budget.
 
-1. Save the packet as a mode `0600` absolute file and validate it with the `intake-router` schema
-2. Create one Paseo worktree and obtain its `workspaceId`
-3. Run `~/.agents/skills/task-routing/scripts/single-implementer prepare` with the packet, config, project, snapshot, workspace ID, attempt directory, implementer prompt, and schema. The default backend is `paseo-cli`; it resolves the launch and writes a private `single-cli.json`
-4. Read and validate `single-cli.json` for `paseo-cli` or `single-create.json` for `paseo`; do not reconstruct provider, model, effort, or features in the parent
-5. For the `paseo` backend, call `mcp__paseo__create_agent` exactly once with `single-create.json`. Do not substitute another backend in that mode
-6. For the `paseo-cli` backend, run `~/.agents/skills/task-routing/scripts/single-implementer run-cli --request <single-cli.json>`. The CLI request must use a CLI-compatible selection with empty provider features
-7. After completion, independently check `status`, `baseHead`, commit, `changedFiles`, clean worktree state, acceptance criteria, and verification
-8. If the result cannot be adopted, do not send unlimited follow-ups to the same child; choose `escalation-judge`, direct repair, or a user decision
-
-The single route does not use MAD plan-audit, waves, or task review/fix admission. It still requires independent validation of the child commit, diff, tests, and scope.
-
-The CLI backend is the default transport for both single route and strict MAD. Use `--backend paseo` explicitly when the MCP path is required. CLI is not a fallback after a run has started, and a CLI launch must not silently discard provider features.
-
-## Escalation judge
-
-Use `escalation-judge` only when a failed attempt or review result requires semantic judgment. Do not start it for deterministic failures such as timeout, invalid schema, missing commit, or a known test failure.
-
-1. Save the attempt result, review findings, test evidence, work class, current level, and available levels as absolute read-only inputs
-2. Resolve `escalation-judge` through `agent-config` with `--provenance escalation` and the `escalationSelection` launch policy
-3. Give the judge only those inputs and its prompt/schema; it returns an `escalation` packet
-4. Run `~/.agents/skills/multi-agent-development/scripts/escalation-policy` to validate the packet against the current level, maximum level, work class, and target role
-5. For a permitted next attempt, run `mad-escalation-controller`, then call `agent-config resolve --role <role> --provenance mad-fix --complexity <complexity> --work-class <workClass> --round <round> --attempt-level <attemptLevel>` and pass the resolved launch unchanged
-6. For `ask_user` or `stop`, do not create a child; preserve the evidence and request the decision or stop the run
-
-The judge recommends an action and level. It never chooses a provider or model directly, and it cannot increase the attempt budget.
-
-### delivery
-
-Use `writing-plans` and `multi-agent-development` only when multi-stage design, implementation, and review are needed.
-
-- independent tasks can run in parallel
-- worktree isolation is required
-- multiple layers or a public contract must be integrated
-- task review and final review are required
-
-## Work-class selection
-
-### mechanical
-
-Follow the existing implementation pattern exactly. String replacements, path changes, and small fixed-shape edits belong here. Do not add abstractions or redesign behavior; stop or escalate when a question appears.
-
-### routine
-
-Change a few files within the existing design. Inspect the target code, existing tests, and acceptance criteria before implementing.
-
-### integration
-
-Connect multiple layers, packages, or callers. Check contracts, data flow, error handling, and integration tests. Do not guess how components connect.
-
-### architectural
-
-Use this for a new subsystem, public contract, schema, authentication, migration, or multiple valid design options. Do not let the implementer invent the design. Run `spec-author`, `plan-author`, and `plan-auditor` first, then start `architectural-implementer` or a strong `implementer`.
-
-## Role selection
-
-Use the common `implementer` role with a work-class overlay when the artifact contract, permissions, and stop conditions are the same. Use a separate role only when one of these changes:
-
-- whether design decisions are allowed
-- write scope or permissions
-- artifact schema
-- review path or stop conditions
-
-Model, effort, and attempt level belong to `attemptPolicy`, not to role names. When `escalation-judge` is used, it may recommend a level and work class but must not freely choose a provider or model.
-
-## User decisions and brainstorming
-
-Ask the user only when:
-
-- the requested behavior is not determined by the request
-- scope, a public contract, a destructive action, or an external side effect would change
-- an architectural design option remains
-- confidence is low and no safe assumption is available
-
-When `needsBrainstorming` is true, clarify purpose, constraints, and success criteria before using brainstorming. Do not start brainstorming for a clear local change.
-
-## Terminal conditions
-
-- `direct`: the parent implements and runs appropriate verification
-- `single`: start one implementer child and have the parent adopt its artifacts
-- `delivery`: when design is unsettled, use `brainstorming` first; use `writing-plans` for multi-stage planning and `multi-agent-development` only when parallel tasks or independent review are needed. Start only the next skill the task requires, not an automatic chain
-- `needsUserDecision`: create a decision request and do not start implementation
-
-Do not ask endless routing questions. Once goal, scope, acceptance criteria, and verification are sufficient, continue to the selected route.
+Record the initial attempt and a finite repair limit before dispatch. Default to one repair attempt
+for a single task; use the bounded MAD review policy for delivery. Preserve each failed attempt and
+its artifacts. Do not relaunch after unknown/timeout until liveness and ownership are established.
+At the limit, report unresolved evidence and the precise required decision; never retry indefinitely.

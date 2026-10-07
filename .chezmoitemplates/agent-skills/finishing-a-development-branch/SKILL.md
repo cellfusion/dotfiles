@@ -62,9 +62,9 @@ WORKTREE_PATH=$(git rev-parse --show-toplevel)
 BRANCH=$(git branch --show-current)
 ```
 
-Use run metadata from `using-git-worktrees`, MAD, Herdr, or the native tool to determine ownership.
-Do not infer ownership only from a directory name. A linked worktree can be user-owned even when it
-is under `.worktrees/`.
+Use recorded owner (`herdr`, `worktrunk`, or `external`), absolute path, branch, base SHA,
+workspace/pane IDs when present, integration, and liveness from `using-git-worktrees` or MAD.
+Do not infer ownership from directory names or Worktrunk listing visibility.
 
 Classify the environment:
 
@@ -86,6 +86,9 @@ If it cannot be established, ask:
 > Which branch should receive this work?
 
 Do not merge into a guessed base.
+
+For a hidden child worktree, the target is the recorded parent working branch, not the repository
+default. Do not use `wt merge` to change this target. A retained or pending child is not integrated.
 
 ## Step 4: present choices and wait
 
@@ -178,13 +181,16 @@ resources, and force-delete the branch. If confirmation is absent or differs, re
 Cleanup is allowed only after successful local merge plus post-merge verification, or after exact
 `discard` confirmation. Never clean after push/PR or retain.
 
-Use recorded ownership and backend:
+Use recorded ownership and confirm saved/inactive state before removal:
 
-- Herdr: `herdr worktree remove --workspace <workspace-id> --force`.
-- Native workspace: use the native cleanup operation.
-- Git worktree created by this run: from outside it, run `git worktree remove <path>` and prune
-  stale registrations only when owned.
-- Caller-owned or host-owned worktree: leave it untouched.
+- Herdr: `herdr worktree remove --workspace <workspace-id>` without force; retain active or unknown panes.
+- Worktrunk: from the parent, `wt -C <parent-path> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json`.
+- External, unknown, or caller-owned worktree: leave it untouched; never infer ownership from a prefix.
+
+Keep declined branches and all review artifacts. Branch deletion is separately authorized and
+non-forcing by default, after proving integration into the parent branch. Retained, pending, dirty,
+running, failed, blocked, or unknown resources cannot be removed. Do not use force, clobber, or
+process reaping as routine cleanup, and never auto-remove a PR workspace after posting a review.
 
 If cleanup fails, retain all metadata and report the path and failure. Do not retry destructively.
 

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -eu
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+for runtime in "$self_dir/../share/pr-review/runtime.js" "$self_dir/../private_share/pr-review/runtime.js"; do
+  if [ -f "$runtime" ]; then
+    exec node "$runtime" "$@"
+  fi
+done
+printf 'pr-review: runtime.js not found beside installed command or chezmoi source\n' >&2
+exit 2
