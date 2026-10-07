@@ -63,7 +63,8 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   for (const [config, args] of [
     [missing, ['--family=codex', '--environment=lab']],
     [malformed, ['--family=codex']],
-    [configPath, ['--family=omp']], [configPath, ['--family=pi']], [configPath, ['--family=opencode']],
+    [configPath, ['--family=omp', '--environment=lab']],
+    [configPath, ['--family=pi']], [configPath, ['--family=opencode']],
     [configPath, ['--provider=codex']], [configPath, ['--environment=lab']],
     [configPath, ['--family=codex', '--family=claude']], [configPath, ['--family=codex', '--environment=missing']],
   ]) {
@@ -75,6 +76,16 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   const ineligiblePath = path.join(temporary, 'ineligible.json')
   fs.writeFileSync(ineligiblePath, JSON.stringify(ineligibleValue))
   if (run(ineligiblePath, mockBin, ['--family=codex']).status !== 2) throw new Error('ineligible CLI launched')
+
+  // OMP must ignore missing, malformed, and environment-specific agent configuration.
+  for (const config of [missing, malformed, configPath]) {
+    const result = successful(run(config, mockBin, ['--family=omp'], {
+      AGENT_ENV: 'lab', OMP_PROFILE: 'lab', PI_CODING_AGENT_DIR: '/old/pi',
+    }), 'agent OMP')
+    if (result.binary !== 'omp' || result.profile !== null || result.storage !== null) {
+      throw new Error('agent OMP did not use native default state')
+    }
+  }
 
   // Exercise the rendered shell function, not a resolver-based OMP launch.
   const rendered = spawnSync('chezmoi', ['execute-template', '--source', source], {

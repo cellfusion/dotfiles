@@ -195,11 +195,11 @@ Claude／Codex の環境ディレクトリを準備する。`setup` は共有設
 
 ## agent で AI 環境を指定して起動する
 
-`~/.local/bin/agent` は `~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して
-family と同名の AI CLI を `exec` する。
+`~/.local/bin/agent` は Claude／Codex の環境選択と、OMP のデフォルト設定での起動に対応する。
+Claude／Codex は `~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して CLI を `exec` する。
 
 ```text
-agent --family=<family> [--environment=<environment>] [--] [args...]
+agent --family=claude|codex|omp [--environment=<environment>] [--] [args...]
 ```
 
 設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` の
@@ -209,11 +209,11 @@ Claude／Codex CLI をそのまま起動する。引数と既存の環境変数�
 
 `--provider` による旧 Paseo provider ID の起動は廃止した。
 
-`--family` は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
+Claude／Codex は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
 `projectRouting.rules` rule、`defaults.environment` の順に選ぶ。たとえば
 `agent --family=codex --environment=pxgrid` は親や cwd rule と異なる `pxgrid` への明示切替を許す。
 ただし、その environment の `providers` に `codex` が無ければ起動しない。
-`--environment` は `--family` とだけ併用できる。
+`--environment` は `--family=claude` または `--family=codex` とだけ併用できる。
 
 `match.gitRepository` は Git common directory を比較するため、登録した checkout の linked worktree と
 その subdirectory でも同じ environment を選ぶ。`match.remoteNamespace` は
@@ -227,7 +227,11 @@ Codex は `CODEX_HOME` を使う。
 zsh の bare `claude`、`codex` は `agent --family=<family>` へ送る。
 `codex update` は native CLI へ送る。`command claude`、absolute executable path、
 zsh 設定を読まない process は family wrapper を bypass する。
-OMP はこの環境 resolver を通さず、デフォルト設定から起動する。
+`agent --family=omp -- [args...]` と bare `omp` は、この環境 resolver を通さずに起動する。
+`OMP_PROFILE` と `PI_CODING_AGENT_DIR` を解除し、`~/.omp/agent/config.yml` のデフォルト設定を使う。
+OMP の起動に `agent-config.json` は不要で、ファイルが不正でも参照しない。
+`--environment` は受け付けない。明示的なプロファイル指定が必要なら、`--` の後に
+OMP 自身の `--profile <name>` を渡す。
 
 
 ## core
