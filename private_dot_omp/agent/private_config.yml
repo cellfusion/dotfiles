@@ -1,0 +1,54 @@
+modelRoles:
+  default: openai-codex/gpt-6.1-sol:low
+  commit: openai-codex/gpt-6-luna:auto
+  smol: openai-codex/gpt-6-luna:medium
+symbolPreset: nerd
+setupVersion: 2
+steeringMode: one-at-a-time
+followUpMode: one-at-a-time
+interruptMode: immediate
+tui:
+  vimMode: true
+  vimModeDisplay: text
+  resizeScrollback: rebuild
+  reactions: true
+  tight: false
+loop:
+  mode: prompt
+doubleEscapeAction: rewind
+composer:
+  recallClearedDrafts: true
+  shape: pi
+  tokenRate: true
+treeFilterMode: default
+spelling:
+  autocorrect: false
+emojiAutocomplete: false
+contextPromotion:
+  enabled: false
+branchSummary:
+  enabled: false
+compaction:
+  enabled: true
+  experimentalContextManagement: false
+edit:
+  mode: hashline
+lsp:
+  formatOnWrite: true
+dev:
+  autoqaConsent: granted
+colorBlindMode: true
+statusLine:
+  preset: default
+  contextLine: embedded
+  transparent: false
+terminal:
+  showProgress: false
+display:
+  subagentLivePreview: false
+  showTokenUsage: true
+  showTurnTime: true
+hideThinkingBlock: false
+includeWorkspaceTree: false
+codexResets:
+  autoRedeem: "yes"

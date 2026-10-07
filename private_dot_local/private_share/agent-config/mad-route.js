@@ -7,6 +7,8 @@ const contract = require('./mad-contract.js')
 const TOP_KEYS = ['version', 'type', 'routeId', 'recordedAt', 'route', 'workClass', 'complexity', 'role', 'confidence', 'reasonCode', 'backend', 'provider', 'model', 'effort', 'delegated']
 const WORK_CLASSES = ['mechanical', 'routine', 'integration', 'architectural']
 const COMPLEXITIES = ['simple', 'routine', 'complex', 'critical']
+const BACKENDS = ['omp-internal', 'herdr-cli']
+const HISTORICAL_BACKENDS = ['paseo-cli', 'paseo-mcp']
 
 function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 function exactKeys(value, keys) { return isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort()) }
@@ -14,7 +16,7 @@ function safeString(value, label) {
   if (typeof value !== 'string' || value.length === 0 || value.includes('\n') || value.includes('\r') || value.includes('://')) throw new Error(`${label} must be a non-empty safe string`)
 }
 function nullableString(value, label) { if (value !== null) safeString(value, label) }
-function assertRouteV1(value) {
+function assertRouteV1(value, historical = false) {
   if (!exactKeys(value, TOP_KEYS) || value.version !== 1 || value.type !== 'mad-route-decision') throw new Error('route record has invalid top-level keys')
   safeString(value.routeId, 'routeId')
   safeString(value.recordedAt, 'recordedAt')
@@ -25,7 +27,8 @@ function assertRouteV1(value) {
   safeString(value.role, 'role')
   if (!['low', 'medium', 'high'].includes(value.confidence)) throw new Error('confidence is invalid')
   safeString(value.reasonCode, 'reasonCode')
-  if (value.backend !== null && !['paseo-cli', 'paseo-mcp'].includes(value.backend)) throw new Error('backend is invalid')
+  if (value.backend !== null && !BACKENDS.includes(value.backend) &&
+      !(historical && HISTORICAL_BACKENDS.includes(value.backend))) throw new Error('backend is invalid')
   for (const field of ['provider', 'model', 'effort']) nullableString(value[field], field)
   if (typeof value.delegated !== 'boolean') throw new Error('delegated must be boolean')
   return value

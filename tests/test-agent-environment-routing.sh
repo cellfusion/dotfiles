@@ -12,7 +12,7 @@ const { spawnSync } = require('node:child_process')
 const source = process.argv[2]
 const share = path.join(source, 'private_dot_local/private_share/agent-config')
 const { validateConfig, ConfigError } = require(path.join(share, 'config-validator.js'))
-const { resolveDispatch, selectEnvironment } = require(path.join(share, 'resolver.js'))
+const { selectEnvironment } = require(path.join(share, 'resolver.js'))
 const samplePath = path.join(share, 'agent-config.sample.json')
 const sample = JSON.parse(fs.readFileSync(samplePath, 'utf8'))
 const temporary = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-environment-routing-')))
@@ -93,14 +93,6 @@ try {
     throw new Error('parent environment did not override project rule')
   }
 
-  const dispatch = resolveDispatch(config, {
-    project: path.join(linked, 'nested'),
-    role: 'implementer',
-    provenance: 'routing-test',
-    complexity: 'routine',
-    round: 0,
-  })
-  if (dispatch.selection.environment !== 'lab') throw new Error('dispatch rejected or misrouted a worktree subdirectory')
 
   const originalPath = process.env.PATH
   process.env.PATH = ''

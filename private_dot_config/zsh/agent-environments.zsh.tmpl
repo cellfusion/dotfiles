@@ -1,26 +1,23 @@
-{{- /* herdr セッションごとの AI 環境を解決する。定義は
-       ~/.config/chezmoi/private-data.toml の [[data.environments]] にある。
-       配列の先頭が primary で、サフィックスの無いディレクトリを使う。
-       定義が無いマシン（private-data.toml を置いていない場合）では、
-       claude と pi を持つ default 環境 1 つとして描画する。 */ -}}
-{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "pi")) -}}
+{{- /* Claude/Codex environments come from private-data.toml.
+       The first environment uses the unsuffixed configuration directories. */ -}}
+{{- $envs := list (dict "session" "default" "label" "P1" "agents" (list "claude" "codex")) -}}
 {{- if hasKey . "environments" }}{{ $envs = .environments }}{{ end }}
 # chezmoi が生成する。直接編集しない。
 # 元: private_dot_config/zsh/agent-environments.zsh.tmpl
 # 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
 #
-# AI CLI の通常起動は agent-config の cwd-aware resolver に通す。Static shell
-# environment だけでは Orca worktree の移動後や project rule を追跡できないためである。
-# Pi / Codex の update は管理操作なので family resolver を通さない。
-# Pi の launcher は mise upgrade、Codex は native CLI の update を実行する。
+# Claude/Codex use the cwd-aware environment resolver; OMP uses its native default.
 
 _agent_env_apply() {
   case "$1" in
 {{- range $i, $env := $envs }}
 {{- $suffix := ternary (printf "_%s" $env.session) "" (ne $i 0) }}
-{{- $piSuffix := ternary (printf "-%s" $env.session) "" (ne $i 0) }}
 {{- $wrangler := ternary (printf ".wrangler-%s" $env.session) ".wrangler" (ne $i 0) }}
 {{- $cf := dig "cloudflareAccountId" "" $env }}
+{{- $agents := list }}
+{{- range $family := list "claude" "codex" }}
+{{- if has $family $env.agents }}{{ $agents = append $agents $family }}{{ end }}
+{{- end }}
     {{ $env.session }})
 {{- if has "claude" $env.agents }}
       export CLAUDE_CONFIG_DIR="$XDG_CONFIG_HOME/claude{{ $suffix }}"
@@ -32,11 +29,6 @@ _agent_env_apply() {
 {{- else }}
       unset CODEX_HOME
 {{- end }}
-{{- if has "pi" $env.agents }}
-      export PI_CODING_AGENT_DIR="$HOME/.pi/agent{{ $piSuffix }}"
-{{- else }}
-      unset PI_CODING_AGENT_DIR
-{{- end }}
       export WRANGLER_HOME="$XDG_CONFIG_HOME/{{ $wrangler }}"
 {{- if $cf }}
       export CLOUDFLARE_ACCOUNT_ID="{{ $cf }}"
@@ -44,7 +36,7 @@ _agent_env_apply() {
       unset CLOUDFLARE_ACCOUNT_ID
 {{- end }}
       export AGENT_ENV_SESSION="{{ $env.session }}"
-      export AGENT_ENV_AGENTS="{{ join " " $env.agents }}"
+      export AGENT_ENV_AGENTS="{{ join " " $agents }}"
       ;;
 {{- end }}
     *) return 1 ;;
@@ -52,11 +44,10 @@ _agent_env_apply() {
 }
 
 # 環境名は AGENT_ENV が正で、HERDR_SESSION は herdr が注入する別名である。
-# Paseo は HERDR_SESSION を持たないので、provider 定義が AGENT_ENV を注入する。
 # 定義の無い名前と、どちらも未設定の場合は、どの環境も読み込まない。先頭環境へ
 # 落とすと、指定し忘れがそのまま別の環境での作業になる。
 _agent_env_clear() {
-  unset CLAUDE_CONFIG_DIR CODEX_HOME PI_CODING_AGENT_DIR WRANGLER_HOME CLOUDFLARE_ACCOUNT_ID AGENT_ENV_SESSION
+  unset CLAUDE_CONFIG_DIR CODEX_HOME WRANGLER_HOME CLOUDFLARE_ACCOUNT_ID AGENT_ENV_SESSION
   export AGENT_ENV_AGENTS=""
 }
 _agent_env_apply "${AGENT_ENV:-${HERDR_SESSION:-}}" || _agent_env_clear
@@ -75,14 +66,7 @@ codex() {
   command agent --family=codex -- "$@"
 }
 
-pi() {
-  if [ "${1-}" = update ]; then
-    command pi "$@"
-    return $?
-  fi
-  command agent --family=pi -- "$@"
-}
 
 omp() {
-  command agent --family=omp -- "$@"
+  (unset OMP_PROFILE PI_CODING_AGENT_DIR; command omp "$@")
 }

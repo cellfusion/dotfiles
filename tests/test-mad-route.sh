@@ -21,8 +21,8 @@ cat > "$record" <<'JSON'
   "role": "implementer",
   "confidence": "high",
   "reasonCode": "single_task_low_parallelism",
-  "backend": "paseo-cli",
-  "provider": "pi",
+  "backend": "omp-internal",
+  "provider": "openai-codex",
   "model": "openai-codex/gpt-5.6-luna",
   "effort": "xhigh",
   "delegated": true
@@ -55,5 +55,24 @@ MAD_ROUTE_SHARE_DIR="$root/private_dot_local/private_share/agent-config" \
   bash -c '"$1" --record "$2" --output "$3"' _ "$recorder" "$bad" "$output" >/dev/null 2>&1 || status=$?
 assert_eq "$status" 2 '不正な route を拒否する'
 assert_eq "$(wc -l < "$output" | tr -d ' ')" 1 '拒否時に route log を追記しない'
+
+# Persisted history remains readable, but retired backends cannot write new records.
+legacy="$tmp/legacy.json"
+jq '.backend = "paseo-cli" | .routeId = "legacy-route" | .route = "delivery" | .model = "historic-model"' \
+  "$record" > "$legacy"
+chmod 600 "$legacy"
+status=0
+MAD_ROUTE_SHARE_DIR="$root/private_dot_local/private_share/agent-config" \
+  "$recorder" --record "$legacy" --output "$output" >/dev/null 2>&1 || status=$?
+assert_eq "$status" 2 '退役 backend の新規記録を拒否する'
+jq -c . "$legacy" >> "$output"
+status=0
+summary_out="$(MAD_ROUTE_SHARE_DIR="$root/private_dot_local/private_share/agent-config" \
+  "$summary" --input "$output" 2>&1)" || status=$?
+assert_eq "$status" 0 '既存の退役 backend 履歴と新しい OMP 記録を一緒に集計できる'
+if [ "$status" -eq 0 ]; then
+  assert_eq "$(printf '%s' "$summary_out" | jq -r '.records')" 2 '履歴と新規記録の両方を数える'
+  assert_eq "$(printf '%s' "$summary_out" | jq -r '.routes.delivery')" 1 '過去の delivery 記録を保持する'
+fi
 
 assert_summary

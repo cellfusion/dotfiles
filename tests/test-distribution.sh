@@ -37,16 +37,12 @@ assert_contains "$managed" '.agents/skills/task-routing/SKILL.md' \
   'distribute task-routing skill'
 assert_contains "$managed" '.config/claude/skills/task-routing/SKILL.md' \
   'distribute Claude task-routing skill'
-assert_contains "$managed" '.config/opencode/skills/task-routing/SKILL.md' \
-  'distribute OpenCode task-routing skill'
 assert_contains "$managed" '.agents/agent-defs/prompts/intake-router.md' \
   'distribute intake-router prompt'
 assert_contains "$managed" '.agents/agent-defs/schemas/intake-router.json' \
   'distribute intake-router schema'
 assert_contains "$managed" '.config/claude/agents/intake-router.md' \
   'distribute Claude intake-router agent'
-assert_contains "$managed" '.config/opencode/agents/intake-router.md' \
-  'distribute OpenCode intake-router agent'
 assert_contains "$managed" '.agents/skills/multi-agent-development/scripts/mad-worktree' \
   'mad-worktree を配る'
 
@@ -59,21 +55,13 @@ for role in implementer task-reviewer plan-auditor intake-router architectural-i
     "Claude native role: agents/$role.md を配る"
   assert_contains "$managed" ".config/codex/agents/$role.toml" \
     "Codex native role: agents/$role.toml を配る"
-  assert_contains "$managed" ".pi/agent/agents/$role.md" \
-    "Pi native role: agents/$role.md を配る"
 done
-assert_contains "$managed" '.pi/agent/extensions/subagent/index.ts' \
-  'Pi subagent extension を配る'
-assert_contains "$managed" '.pi/agent/extensions/subagent/agents.ts' \
-  'Pi subagent discovery を配る'
 assert_contains "$managed" '.agents/agent-defs/prompts/architectural-implementer.md' \
   'architectural implementer prompt を配る'
 assert_contains "$managed" '.agents/agent-defs/schemas/architectural-implementer.json' \
   'architectural implementer schema を配る'
 assert_contains "$managed" '.config/claude/agents/architectural-implementer.md' \
   'Claude architectural implementer agent を配る'
-assert_contains "$managed" '.config/opencode/agents/architectural-implementer.md' \
-  'OpenCode architectural implementer agent を配る'
 assert_contains "$managed" '.agents/agent-defs/prompts/escalation-judge.md' \
   'escalation judge prompt を配る'
 assert_contains "$managed" '.agents/agent-defs/schemas/escalation-judge.json' \
@@ -94,10 +82,8 @@ assert_contains "$managed" '.local/share/agent-config/mad-outcome.js' \
   'mad outcome contract を配る'
 assert_contains "$managed" '.config/claude/agents/escalation-judge.md' \
   'Claude escalation judge agent を配る'
-assert_contains "$managed" '.config/opencode/agents/escalation-judge.md' \
-  'OpenCode escalation judge agent を配る'
 
-for prefix in .agents .config/claude .config/opencode; do
+for prefix in .agents .config/claude; do
   for file in SKILL.md references/review-criteria.md references/reviewer-prompts.md; do
     assert_contains "$managed" "$prefix/skills/technical-writing-review/$file" \
       "technical writing review: $prefix/$file を配る"

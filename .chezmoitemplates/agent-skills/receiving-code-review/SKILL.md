@@ -87,8 +87,8 @@ verification commands.
 
 Default to OMP internal delegation. A read-only reviewer needs no pane/worktree; a writer requiring
 separate ownership uses hidden Worktrunk from the committed parent base, without an extra pane.
-Herdr is reserved for independent CLI interaction or user intervention; generic feedback/handoff
-does not select Orca. Preserve existing runtime models/permissions. Shared-write children return
+Herdr is reserved for independent CLI interaction or user intervention.
+Preserve existing runtime models/permissions. Shared-write children return
 checks to the integration owner instead of running mid-flight verification. Never auto-copy
 uncommitted parent prerequisites; obtain the user's scoped decision before dependent dispatch.
 

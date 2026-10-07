@@ -12,7 +12,7 @@ description: >-
 Herdr owns visible workspaces and terminals. OMP owns ordinary internal delegation. Worktrunk owns
 hidden child write isolation. A pane and a worktree are independent decisions: a CLI conversation
 may use an existing cwd; a write-isolated child has no extra pane. Do not make a new environment
-merely to run an OMP child. Do not engage Orca unless explicitly requested or operating Orca state.
+merely to run an OMP child. Do not start a second orchestration runtime for ordinary delegation.
 
 ## Step 0: detect and record existing isolation
 

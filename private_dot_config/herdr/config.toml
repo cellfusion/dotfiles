@@ -140,4 +140,4 @@ delivery = "herdr"
 [experimental]
 kitty_graphics = true
 reveal_hidden_cursor_for_cjk_ime = true
-cjk_ime_agents = ["claude", "pi", "codex"]
+cjk_ime_agents = ["claude", "omp", "codex"]

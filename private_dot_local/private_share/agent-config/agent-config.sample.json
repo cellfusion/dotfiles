@@ -1,81 +1,21 @@
 {
-  "version": 2,
-  "defaults": { "environment": "primary", "complexity": "routine" },
+  "version": 3,
+  "defaults": { "environment": "primary" },
   "providers": {
-    "claude": { "displayName": "Claude", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
-    "codex": { "displayName": "Codex", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md", "rules"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": { "fast_mode": "boolean" } },
-    "opencode": { "displayName": "OpenCode", "backends": ["paseo"], "setup": null, "featureAllowlist": {} },
-    "pi": { "displayName": "Pi", "backends": ["paseo"], "setup": { "configDirectoryEnv": { "PI_CODING_AGENT_DIR": "pi" }, "directoryPattern": { "primary": "$HOME/.pi/agent", "nonPrimary": "$HOME/.pi/agent-<environment>" }, "symlinks": ["agents", "extensions"], "preservedMutable": [], "existingPathPolicy": "reject-real-or-wrong-symlink" }, "featureAllowlist": {} },
-    "omp": { "displayName": "OMP", "backends": ["paseo"], "setup": null, "environmentVariable": "OMP_PROFILE", "featureAllowlist": {} }
-  },
-  "selection": {
-    "author": {
-      "simple": { "notes": "sample: 定型の文書を書く", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "routine": { "notes": "sample: 通常の spec と plan を書く", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: 設計判断を伴う spec を書く", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "critical": { "notes": "sample: 前例のない設計を spec に起こす", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
-    },
-    "implement": {
-      "simple": { "notes": "sample: 文字列の置き換えだけを行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "routine": { "notes": "sample: 通常の実装を行う", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: 契約の key set を変える実装を行う", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "critical": { "notes": "sample: 複数の層にまたがる実装を行う", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
-    },
-    "review": {
-      "simple": { "notes": "sample: 指摘の解消を判定する", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "routine": { "notes": "sample: タスクの差分をレビューする", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: branch 全体をレビューする", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "critical": { "notes": "sample: 取り込み前の最終レビューを行う", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
-    },
-    "synthesize": {
-      "simple": { "notes": "sample: 短い統合を行う", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "routine": { "notes": "sample: 通常の統合を行う", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-      "complex": { "notes": "sample: 食い違う結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] },
-      "critical": { "notes": "sample: 判断が割れた結果を統合する", "candidates": [{ "provider": "claude", "model": "sample-deep", "effort": "max", "features": { "fast_mode": false } }] }
-    }
-  },
-  "singleSelection": {
-    "implement": {
-      "simple": { "notes": "sample: CLI single implementer", "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-      "routine": { "notes": "sample: CLI routine implementation", "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": {} }] },
-      "complex": { "notes": "sample: CLI integration implementation", "candidates": [{ "provider": "codex", "model": "sample-think", "effort": "high", "features": {} }] },
-      "critical": { "notes": "sample: CLI critical implementation", "candidates": [{ "provider": "codex", "model": "sample-deep", "effort": "max", "features": {} }] }
-    }
-  },
-  "routingSelection": {
-    "notes": "sample: classify requests into task packets",
-    "candidates": [
-      { "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }
-    ]
-  },
-  "escalationSelection": {
-    "notes": "sample: choose bounded escalation actions",
-    "candidates": [
-      { "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }
-    ]
-  },
-  "attemptPolicy": {
-    "implement": {
-      "simple": {
-        "levels": [
-          { "candidates": [{ "provider": "codex", "model": "sample-light", "effort": "medium", "features": {} }] },
-          { "candidates": [{ "provider": "codex", "model": "sample-work", "effort": "high", "features": { "fast_mode": true } }] },
-          { "candidates": [{ "provider": "claude", "model": "sample-think", "effort": "high", "features": { "fast_mode": false } }] }
-        ]
-      }
-    }
+    "claude": { "displayName": "Claude", "setup": { "configDirectoryEnv": { "CLAUDE_CONFIG_DIR": "claude" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/claude", "nonPrimary": "$XDG_CONFIG_HOME/claude_<environment>" }, "symlinks": ["agents", "commands", "skills", "hooks", "CLAUDE.md", "settings.json"], "preservedMutable": [".claude.json"], "existingPathPolicy": "reject-real-or-wrong-symlink" } },
+    "codex": { "displayName": "Codex", "setup": { "configDirectoryEnv": { "CODEX_HOME": "codex" }, "directoryPattern": { "primary": "$XDG_CONFIG_HOME/codex", "nonPrimary": "$XDG_CONFIG_HOME/codex_<environment>" }, "symlinks": ["agents", "AGENTS.md", "rules"], "preservedMutable": ["config.toml"], "existingPathPolicy": "reject-real-or-wrong-symlink" } }
   },
   "environments": {
-    "primary": { "providers": ["claude", "codex", "opencode", "pi", "omp"], "selection": {} },
-    "lab": { "providers": ["claude", "codex", "omp"], "selection": { "implement": { "routine": { "candidates": [{ "provider": "codex", "model": "sample-lab-work", "effort": "high", "features": { "fast_mode": false } }] } } } }
+    "primary": { "providers": ["claude", "codex"] },
+    "lab": { "providers": ["claude", "codex"] }
   },
   "agentRoles": {
     "implementer": { "duty": "implement", "access": "write", "description": "実装と検証を行う", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["implementer"] },
     "task-reviewer": { "duty": "review", "access": "read", "description": "タスクの差分をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "plan-auditor": { "duty": "review", "access": "read", "description": "実装前のプラン矛盾を監査する", "artifactContract": "mad-attempt-v1", "deliveryDuties": [] },
-    "intake-router": { "duty": "review", "launchPolicy": "routing", "access": "read", "description": "Classify requests into task packets", "artifactContract": "task-packet-v1", "deliveryDuties": [] },
+    "intake-router": { "duty": "review", "access": "read", "description": "Classify requests into task packets", "artifactContract": "task-packet-v1", "deliveryDuties": [] },
     "architectural-implementer": { "duty": "implement", "access": "write", "description": "Execute approved architectural plans", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["architectural-implementer"] },
-    "escalation-judge": { "duty": "review", "launchPolicy": "escalation", "access": "read", "description": "Choose bounded escalation actions", "artifactContract": "mad-escalation-v1", "deliveryDuties": [] },
+    "escalation-judge": { "duty": "review", "access": "read", "description": "Choose bounded escalation actions", "artifactContract": "mad-escalation-v1", "deliveryDuties": [] },
     "re-reviewer": { "duty": "review", "access": "read", "description": "指摘の解消を判定する", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "final-reviewer": { "duty": "review", "access": "read", "description": "ブランチ全体をレビューする", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["reviewer"] },
     "spec-author": { "duty": "author", "access": "write", "description": "spec を書く", "artifactContract": "mad-attempt-v1", "deliveryDuties": ["spec-author"] },

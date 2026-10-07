@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# 正本を検証してから、Paseo の生成 CLI を実行する。
-#
-# hash には directory setup の入力を全部入れる。symlink の一覧は
-# config-validator.js の SETUP_TABLE にあるので、hash から漏らすと一覧を変えても
-# 展開結果が変わらず、chezmoi がこのスクリプトを再実行しない。2 つ目以降の
-# AI 環境に symlink が作られないまま apply が成功してしまう。
+# Validate the retained environment configuration and set up shared Claude/Codex files.
 #
 # manifest hash: {{ list
     (include "private_dot_local/private_share/agent-config/config-validator.js")
     (include "private_dot_local/private_share/agent-config/directory-setup.js")
-    (include "private_dot_local/private_share/agent-config/config-types.js")
     (include "private_dot_local/private_share/agent-config/agent-config.schema.json")
+    (include "private_dot_local/bin/executable_agent-config")
     | join "" | sha256sum }}
 set -eu
 
@@ -19,40 +14,11 @@ set -eu
 local_bin_env
 
 input="$XDG_CONFIG_HOME/chezmoi/agent-config.json"
-target="$HOME/.paseo/config.json"
-agent_config_share="$HOME/.local/share/agent-config"
-generator='agent-config'
 
-# target がまだ無い初回 apply では、directory setup も行わず generator の skip に任せる。
-if [ -f "$input" ] && [ -f "$target" ]; then
-  run_node() {
-    if command -v mise >/dev/null 2>&1; then
-      mise exec -- node "$@"
-    else
-      node "$@"
-    fi
-  }
-  run_node -e '
-    try {
-      const fs = require("node:fs")
-      const input = process.argv[1]
-      const xdgConfigHome = process.argv[2]
-      const validatorPath = process.argv[3]
-      const setupPath = process.argv[4]
-      const { validateConfig } = require(validatorPath)
-      const { setupDirectories } = require(setupPath)
-      const { config } = validateConfig(fs.readFileSync(input, "utf8"))
-      setupDirectories(config, { xdgConfigHome, defaultEnvironment: config.defaults.environment })
-    } catch (error) {
-      process.stderr.write(`agent environment setup: ${error instanceof Error ? error.message : "失敗した"}\n`)
-      process.exitCode = error && Number.isInteger(error.exitCode) ? error.exitCode : 2
-    }
-  ' "$input" "$XDG_CONFIG_HOME" \
-    "$agent_config_share/config-validator.js" "$agent_config_share/directory-setup.js"
-fi
-
-if command -v mise >/dev/null 2>&1; then
-  mise exec -- "$generator" write-paseo
-else
-  "$generator" write-paseo
+if [ -f "$input" ]; then
+  if command -v mise >/dev/null 2>&1; then
+    mise exec -- agent-config --input "$input" setup
+  else
+    agent-config --input "$input" setup
+  fi
 fi

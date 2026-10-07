@@ -1,54 +1,34 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.test/schemas/agent-config-v2.json",
-  "title": "Paseo agent configuration v2",
+  "$id": "https://example.test/schemas/agent-config-v3.json",
+  "title": "Claude and Codex environment configuration",
   "type": "object",
-  "required": ["version", "defaults", "providers", "selection", "environments", "agentRoles", "projectRouting"],
+  "required": ["version", "defaults", "providers", "environments", "agentRoles", "projectRouting"],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "defaults": {
-      "type": "object",
-      "required": ["environment", "complexity"],
-      "additionalProperties": false,
-      "properties": {
-        "environment": { "type": "string", "minLength": 1 },
-        "complexity": { "const": "routine" }
-      }
+      "type": "object", "required": ["environment"], "additionalProperties": false,
+      "properties": { "environment": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" } }
     },
     "providers": {
-      "type": "object",
-      "minProperties": 1,
+      "type": "object", "minProperties": 1, "additionalProperties": false,
       "patternProperties": {
-        "^[a-z][a-z0-9_-]*$": {
-          "type": "object",
-          "required": ["displayName", "backends", "setup", "featureAllowlist"],
-          "additionalProperties": false,
+        "^(claude|codex)$": {
+          "type": "object", "required": ["displayName", "setup"], "additionalProperties": false,
           "properties": {
             "displayName": { "type": "string", "minLength": 1 },
-            "backends": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1 }
-            },
             "setup": {
-              "type": ["object", "null"],
+              "type": "object",
               "required": ["configDirectoryEnv", "directoryPattern", "symlinks", "preservedMutable", "existingPathPolicy"],
               "additionalProperties": false,
               "properties": {
                 "configDirectoryEnv": {
-                  "type": "object",
-                  "minProperties": 1,
-                  "patternProperties": {
-                    "^[A-Z][A-Z0-9_]*$": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
-                  },
-                  "additionalProperties": false
+                  "type": "object", "minProperties": 1, "additionalProperties": false,
+                  "patternProperties": { "^[A-Z][A-Z0-9_]*$": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" } }
                 },
                 "directoryPattern": {
-                  "type": "object",
-                  "required": ["primary", "nonPrimary"],
-                  "additionalProperties": false,
+                  "type": "object", "required": ["primary", "nonPrimary"], "additionalProperties": false,
                   "properties": {
                     "primary": { "type": "string", "minLength": 1 },
                     "nonPrimary": { "type": "string", "minLength": 1 }
@@ -58,620 +38,49 @@
                 "preservedMutable": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
                 "existingPathPolicy": { "const": "reject-real-or-wrong-symlink" }
               }
-            },
-            "environmentVariable": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
-            "featureAllowlist": {
-              "type": "object",
-              "patternProperties": {
-                "^[a-z][a-z0-9_-]*$": { "enum": ["boolean", "string", "integer"] }
-              },
-              "additionalProperties": false
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "selection": {
-      "type": "object",
-      "required": ["author", "implement", "review", "synthesize"],
-      "additionalProperties": false,
-      "properties": {
-        "author": {
-          "type": "object",
-          "required": ["simple", "routine", "complex", "critical"],
-          "additionalProperties": false,
-          "properties": {
-            "simple": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "routine": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "complex": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "critical": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "implement": {
-          "type": "object",
-          "required": ["simple", "routine", "complex", "critical"],
-          "additionalProperties": false,
-          "properties": {
-            "simple": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "routine": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "complex": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "critical": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "review": {
-          "type": "object",
-          "required": ["simple", "routine", "complex", "critical"],
-          "additionalProperties": false,
-          "properties": {
-            "simple": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "routine": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "complex": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "critical": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "synthesize": {
-          "type": "object",
-          "required": ["simple", "routine", "complex", "critical"],
-          "additionalProperties": false,
-          "properties": {
-            "simple": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "routine": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "complex": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
-            },
-            "critical": {
-              "type": "object",
-              "required": ["candidates"],
-              "additionalProperties": false,
-              "properties": {
-                "notes": { "type": "string", "minLength": 1 },
-                "candidates": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["provider", "model", "effort", "features"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "provider": { "type": "string", "minLength": 1 },
-                      "model": { "type": "string", "minLength": 1 },
-                      "effort": { "type": "string", "minLength": 1 },
-                      "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                    }
-                  }
-                }
-              }
             }
           }
         }
       }
     },
     "environments": {
-      "type": "object",
-      "minProperties": 1,
+      "type": "object", "minProperties": 1, "additionalProperties": false,
       "patternProperties": {
         "^[a-z][a-z0-9_-]*$": {
-          "type": "object",
-          "required": ["providers"],
-          "additionalProperties": false,
+          "type": "object", "required": ["providers"], "additionalProperties": false,
           "properties": {
-            "providers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-            "selection": {
-              "type": "object",
-              "additionalProperties": false,
-              "patternProperties": {
-                "^(author|implement|review|synthesize)$": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "patternProperties": {
-                    "^(simple|routine|complex|critical)$": {
-                      "type": "object",
-                      "required": ["candidates"],
-                      "additionalProperties": false,
-                      "properties": {
-                        "notes": { "type": "string", "minLength": 1 },
-                        "candidates": {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": "object",
-                            "required": ["provider", "model", "effort", "features"],
-                            "additionalProperties": false,
-                            "properties": {
-                              "provider": { "type": "string", "minLength": 1 },
-                              "model": { "type": "string", "minLength": 1 },
-                              "effort": { "type": "string", "minLength": 1 },
-                              "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "providers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["claude", "codex"] } }
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "agentRoles": {
-      "type": "object",
-      "minProperties": 1,
+      "type": "object", "minProperties": 1, "additionalProperties": false,
       "patternProperties": {
         "^[a-z][a-z0-9_-]*$": {
-          "type": "object",
-          "required": ["access", "description", "artifactContract", "deliveryDuties"],
-          "additionalProperties": false,
+          "type": "object", "required": ["access", "description", "artifactContract", "deliveryDuties"], "additionalProperties": false,
           "properties": {
             "access": { "enum": ["read", "write"] },
             "description": { "type": "string", "minLength": 1 },
             "artifactContract": { "type": "string", "minLength": 1 },
             "deliveryDuties": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "duty": { "enum": ["author", "implement", "review", "synthesize"] },
-            "launchPolicy": { "enum": ["selection", "routing", "escalation"] }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "singleSelection": {
-      "type": "object",
-      "required": ["implement"],
-      "additionalProperties": false,
-      "properties": {
-        "implement": {
-          "type": "object",
-          "required": ["simple", "routine", "complex", "critical"],
-          "additionalProperties": false,
-          "properties": {
-            "simple": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
-            "routine": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
-            "complex": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } },
-            "critical": { "type": "object", "required": ["candidates"], "additionalProperties": false, "properties": { "notes": { "type": "string", "minLength": 1 }, "candidates": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["provider", "model", "effort", "features"], "additionalProperties": false, "properties": { "provider": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 }, "effort": { "type": "string", "minLength": 1 }, "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false } } } } } }
-          }
-        }
-      }
-    },
-    "routingSelection": {
-      "type": "object",
-      "required": ["candidates"],
-      "additionalProperties": false,
-      "properties": {
-        "notes": { "type": "string", "minLength": 1 },
-        "candidates": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["provider", "model", "effort", "features"],
-            "additionalProperties": false,
-            "properties": {
-              "provider": { "type": "string", "minLength": 1 },
-              "model": { "type": "string", "minLength": 1 },
-              "effort": { "type": "string", "minLength": 1 },
-              "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-            }
-          }
-        }
-      }
-    },
-    "escalationSelection": {
-      "type": "object",
-      "required": ["candidates"],
-      "additionalProperties": false,
-      "properties": {
-        "notes": { "type": "string", "minLength": 1 },
-        "candidates": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["provider", "model", "effort", "features"],
-            "additionalProperties": false,
-            "properties": {
-              "provider": { "type": "string", "minLength": 1 },
-              "model": { "type": "string", "minLength": 1 },
-              "effort": { "type": "string", "minLength": 1 },
-              "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-            }
-          }
-        }
-      }
-    },
-    "attemptPolicy": {
-      "type": "object",
-      "additionalProperties": false,
-      "patternProperties": {
-        "^(author|implement|review|synthesize)$": {
-          "type": "object",
-          "additionalProperties": false,
-          "patternProperties": {
-            "^(simple|routine|complex|critical)$": {
-              "type": "object",
-              "required": ["levels"],
-              "additionalProperties": false,
-              "properties": {
-                "levels": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "object",
-                    "required": ["candidates"],
-                    "additionalProperties": false,
-                    "properties": {
-                      "candidates": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                          "type": "object",
-                          "required": ["provider", "model", "effort", "features"],
-                          "additionalProperties": false,
-                          "properties": {
-                            "provider": { "type": "string", "minLength": 1 },
-                            "model": { "type": "string", "minLength": 1 },
-                            "effort": { "type": "string", "minLength": 1 },
-                            "features": { "type": "object", "patternProperties": { "^[a-z][a-z0-9_-]*$": { "type": ["boolean", "string", "number"] } }, "additionalProperties": false }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "duty": { "enum": ["author", "implement", "review", "synthesize"] }
           }
         }
       }
     },
     "projectRouting": {
-      "type": "object",
-      "required": ["rules"],
-      "additionalProperties": false,
+      "type": "object", "required": ["rules"], "additionalProperties": false,
       "properties": {
         "rules": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["name", "environment", "match"],
-            "additionalProperties": false,
+            "type": "object", "required": ["name", "environment", "match"], "additionalProperties": false,
             "properties": {
               "name": { "type": "string", "minLength": 1 },
               "environment": { "type": "string", "minLength": 1 },
               "match": {
-                "type": "object",
-                "minProperties": 1,
-                "additionalProperties": false,
+                "type": "object", "minProperties": 1, "additionalProperties": false,
                 "properties": {
                   "remote": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$" },
                   "remoteNamespace": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$" },

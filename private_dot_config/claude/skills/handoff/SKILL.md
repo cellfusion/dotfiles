@@ -13,7 +13,7 @@ When context pressure mounts, hand over the baton before quality degrades by **l
 
 ## Prerequisites and Initiation Criteria
 
-- **Prerequisite**: Only active under herdr management (`HERDR_ENV=1`). If unset, rely on standard auto-compact and do not run this procedure. Never start herdr in environments where `HERDR_ENV` is not `1`, including Paseo.
+- **Prerequisite**: Only active under herdr management (`HERDR_ENV=1`). If unset, rely on standard auto-compact and do not run this procedure. Never start herdr in environments where `HERDR_ENV` is not `1`.
 - **Rule of thumb: when context usage is judged to exceed approximately 60%**. Since Claude cannot obtain exact token usage numbers, this is a heuristic self-assessment. **If auto-compact or context limit warnings appear, it is definitely the time to hand off immediately**.
 - Even under pressure, **never hand off in the middle of an atomic work step**. If editing, complete up to a clean boundary or document uncommitted modifications explicitly in the handoff document before proceeding.
 

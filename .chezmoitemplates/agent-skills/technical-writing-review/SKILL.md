@@ -45,7 +45,7 @@ Launch these three read-only child agents concurrently through the available run
 
 Use a generic read-only review task when named roles are unavailable; these are review lenses,
 not required installed agent names. Follow the active host's lifecycle rules. Do not hard-code a
-Paseo/Orca CLI, provider, model, or a second orchestration implementation. A short comment still
+provider, model, or a second orchestration implementation. A short comment still
 gets three lenses, each scoped to that comment and its thread; do not turn it into a full PR report.
 Children must not edit, publish, run code, spawn more children, or see one another's findings.
 

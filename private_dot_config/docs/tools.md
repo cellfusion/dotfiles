@@ -29,7 +29,6 @@ yabai の上余白は `~/.config/yabai/display-padding` が画面ごとに設定
 | ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
 | AI 環境ディレクトリ | `~/.config/chezmoi/agent-config.json` の `environments` | `run_onchange_after_90-agent-envs.sh` |
-| 旧 Paseo managed profiles の回収 | agent-config の回収処理のソース | `run_onchange_after_91-paseo-managed-profiles.sh` |
 
 マニフェストを持つスクリプトは、そのハッシュを埋め込んでいる。マニフェストを
 書き換えたときだけ `chezmoi apply` で走る。マニフェストを持たない 4 本
@@ -120,7 +119,7 @@ Homebrew の導入と cask のインストールで、sudo のパスワードを
    ホットキーは効かない
 2. **`~/.config/chezmoi/private-data.toml` の配置**。Cloudflare のアカウント ID、AWS プロファイル、
    1Password のパス、再汚染テストの禁止語を持つ。無くても apply は通り、各テンプレートは既定値で
-   描画される。Paseo の AI 環境、tier、provider、model は下の `agent-config.json` へ移す。
+   描画される。Claude／Codex の環境と project rule は下の `agent-config.json` で管理する。
 3. **1Password へのサインイン**。AWS の `credential_process` が `op read` を呼ぶ
 4. **AquaSKK の導入と入力ソースへの追加**。2026-08-27 に Brewfile から外したので
    apply では入らない。手で入れたうえで、システム設定 → キーボード → 入力ソース で
@@ -144,81 +143,55 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 `~/.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events`
 を足す。makefile が ad-hoc 署名を打っているので、付与は再ビルドをまたいで保持される。
 
-## Paseo agent config の移行
+## OMP の共有設定
 
-旧 `~/.config/chezmoi/private-data.toml` にある Paseo の環境・project rule・tier・model・provider の
-設定は自動変換しない。秘密、credential、auth、history の値を公開 sample や報告へ写さず、利用者が
-`$XDG_CONFIG_HOME/chezmoi/agent-config.json`（`XDG_CONFIG_HOME` 未設定時は
-`$HOME/.config/chezmoi/agent-config.json`）へ手で移す。公開 schema と sample は
-`~/.local/share/agent-config/agent-config.schema.json` と
-`~/.local/share/agent-config/agent-config.sample.json` で確認する。
+`~/.omp/agent/config.yml` は `private_dot_omp/agent/private_config.yml` から mode 0600 で配布する。
+全マシンでデフォルト環境の model、TUI、composer、編集・圧縮設定を共有する。
+`composer.shape: pi` は OMP の表示スタイル名であり、Pi CLI の導入は不要である。
 
-移行時は次の対応にする。
+通常の `omp` 起動は `OMP_PROFILE` と `PI_CODING_AGENT_DIR` を外して native CLI を実行する。
+Claude／Codex の環境や cwd routing から OMP profile を選ばない。
+`command omp` や絶対パスから起動する場合は wrapper を通らないため、これらの変数を設定しない。
+明示的な `--profile` は OMP 本体の機能として使えるが、profile の設定は配布しない。
 
-1. environment の定義は `environments` に移し、`providers` はその environment で eligible な
-   provider family の一覧だけにする。root `providers` には全 family の base record を持たせ、
-   environment 側の eligibility だけを理由に base record を省略しない。
-2. project rule は `projectRouting.rules` に移し、旧設定の優先順のまま上から並べる。`match.path` は
-   canonical directory の完全一致、`match.remote` は同じ origin repository を持つ clone の一致である。
-   Organization / group 単位では `match.remoteNamespace` に `github.com/example-org` や
-   `gitlab.example/group/subgroup` を指定する。これは segment boundary を含む namespace prefix であり、
-   glob や単純な文字列 prefix ではない。`match.gitRepository` には存在する canonical absolute Git
-   directory を指定する。起動 cwd と rule の
-   `git rev-parse --path-format=absolute --git-common-dir` を比較するため、main checkout、linked worktree、
-   それぞれの subdirectory が同じ rule に一致し、同じ remote の別 clone は一致しない。複数 matcher は
-   AND であり、最初に一致した rule を使う。environment は明示 `--environment`、親 `AGENT_ENV`、rule、
-   `defaults.environment` の順で決まる。未知の explicit/parent environment は終了コード 2 で拒否し、
-   stdout に JSON を出さない。`AGENT_ENV_SESSION` は参照しない。
-3. 候補は `selection` の 16 枠に移す。枠の key は `<duty>.<complexity>` であり、duty は
-   `author`、`implement`、`review`、`synthesize`、複雑度は `simple`、`routine`、`complex`、`critical` である。
-   16 枠すべてを必須とする。環境ごとの上書きは `environments.<環境>.selection` に枠単位で書き、
-   書かなかった枠は共通の `selection` を使う。role の `duty` と候補の順序も保持する。
-4. model と provider の優先順位は各枠の `candidates` 配列の順序にする。先頭から provider の
-   `backends` に `paseo` が含まれること、availability、`auto` mode、model、thinking option を確認し、
-   最初に成立した候補を使う。これは availability fallback であり、品質不足時の再試行ではない。
-5. 品質不足時の model・effort の切り替えは、必要な duty と complexity にだけ
-   `attemptPolicy.<duty>.<complexity>.levels`を追加する。これは保持しているPaseo設定の選択方針であり、
-   通常のOMP内部委譲やHerdr起動をPaseoへ切り替える指示ではない。
-6. `claude`、`codex`、`pi`、`omp` 以外の provider family は、Paseo の provider record key に現れる
-   literal な family 名をそのまま root `providers` の key にする。`pi` は
-   `PI_CODING_AGENT_DIR` を `$HOME/.pi/agent`（非 primary は
-   `$HOME/.pi/agent-<environment>`）へ materialize し、`featureAllowlist` は `{}` とする。
-   OMP は `setup: null`、`environmentVariable: \"OMP_PROFILE\"` とし、選択 environment と同名の
-   named profile を使う。その他の family は `setup` を `null` とし、directory、symlink、config を
-   materialize しない。
+認証、`agent.db`、履歴、session、cache、`~/.omp/profiles/` は chezmoi 管理外である。
+Herdr／Moshi の拡張は各マシンで導入し、ホスト固有の拡張や認証を設定ファイルと一緒にコピーしない。
+新マシンでは OMP 本体を導入し、各 provider に個別にログインする。
 
-実 target は直接変更せず、まず `~/.paseo/config.json` の mode 0600 の copy を絶対 path で用意する。
-この移行手順でも、先に次の絶対 path を設定する。
+OMP の設定画面や `omp config` で変更した内容はローカル設定に保存される。
+共有する変更は chezmoi ソースにも反映し、対象限定の `chezmoi diff ~/.omp/agent/config.yml` で確認する。
+ソースへ取り込まないローカル変更は、次の明示的な apply で上書きされる。
+現在の設定を取り込む場合も、認証情報やマシン固有のパスが追加されていないか確認してから行う。
+
+## Claude／Codex の環境設定
+
+`~/.config/chezmoi/agent-config.json` はローカルの環境定義であり、chezmoi 管理外である。
+公開 schema と sample は `~/.local/share/agent-config/agent-config.schema.json` と
+`~/.local/share/agent-config/agent-config.sample.json` に配布する。
+OMP の共有設定とは別で、Claude／Codex の認証・履歴の分離だけに使う。
+
+旧 Paseo 用 version 2 からは、apply 前にローカル定義を version 3 へ変更する。
+`defaults.environment`、Claude／Codex の `displayName` と `setup`、`agentRoles`、
+`environments` の `providers`、`projectRouting.rules` を残す。
+環境ごとの provider 一覧から Pi、opencode、OMP を外し、root `providers` も Claude／Codex だけにする。
+`selection`、`singleSelection`、`routingSelection`、`attemptPolicy`、
+provider の `backends`、`featureAllowlist`、`environmentVariable`、環境ごとの `selection`、
+role の `launchPolicy` は削除する。
+公開 sample を参照し、認証や個人の project path を公開ソースへ写さない。
 
 ```bash
-MAD_GENERATOR="${MAD_GENERATOR:-$HOME/.local/bin/agent-config}"
-AGENT_CONFIG="${AGENT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json}"
+source_dir="$(chezmoi source-path)"
+node "$source_dir/private_dot_local/bin/executable_agent-config" \
+  --input "$HOME/.config/chezmoi/agent-config.json" validate
 ```
 
-`AGENT_CONFIG`は`~/.local/share/agent-config`ではなく、chezmoiの正本を指す。
+この検証は統合済みの新しいソースから実行する。旧配布済み CLI には `validate` が無いため、
+apply 前の確認には使わない。apply 後は `agent-config ... validate` で同じ検証を行える。
 
-その copy に対して次の順序で確認する。`"$MAD_GENERATOR" resolve` は正本、project、role、
-provenance、匿名 availability snapshot を検査して候補を解決するだけで target は書かない。
-global option は subcommand より前に置くため、実際の呼び出しは
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> resolve \
---project <absolute-project> --role <role> --provenance <provenance> --snapshot <absolute-snapshot>` とする。
+不正な定義を default にフォールバックさせない。検証が通ってから、明示承認した apply で
+Claude／Codex の環境ディレクトリを準備する。`setup` は共有設定への symlink を作り、
+既存の認証・履歴を保存する。実体や別の symlink と衝突した場合は停止し、自動上書きしない。
 
-次に `"$MAD_GENERATOR" write-paseo --diff` で copy に対する managed projection だけを確認する。明示的な
-copy path を付けた実際の呼び出しは
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo --diff` とする。
-差分が意図どおりなら、同じ明示的な copy path に対して試行 write を行う。
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo` の後、
-`"$MAD_GENERATOR" write-paseo --check` を
-`"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-copy> write-paseo --check` として実行する。
-`--check` が 0 になることを確認するまで実 target へ write しない。0 は一致または成功、1 は差分、
-2 は入力・path・schema などの不備、4 は候補が尽きたことを表す。`--diff` と `--check` は target を
-書き換えない。
-
-copy の `--check` が 0 になった後、利用者が内容を確認して明示承認した場合だけ、同じ正本に対して
-flags なしの `"$MAD_GENERATOR" --input <absolute-input> --paseo-config <absolute-target> write-paseo` を
-実 target へ実行する。実 target の path を省略して既定値へ向ける手順は書かない。legacy との衝突、
-stale な provider・directory は自動削除しない。auth と history の有無を利用者が確認した
-うえで、必要な処理を手で行う。最後の `chezmoi apply` も利用者の明示許可がある場合だけ実行する。
 
 ## agent で AI 環境を指定して起動する
 
@@ -226,23 +199,21 @@ stale な provider・directory は自動削除しない。auth と history の�
 family と同名の AI CLI を `exec` する。
 
 ```text
-agent --provider=<provider-id> [--] [args...]
 agent --family=<family> [--environment=<environment>] [--] [args...]
 ```
 
-設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` または
-`--provider` の値をそのまま CLI 名として起動する。引数と既存の環境変数は引き継ぎ、
+設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` の
+Claude／Codex CLI をそのまま起動する。引数と既存の環境変数は引き継ぎ、
 `AGENT_ENV` や隔離用の変数は追加・変更しない。この場合、`--environment` は解決できないため
 終了コード 2 で失敗する。設定ファイルが不正、または未存在以外の理由で読めない場合も停止する。
 
-`--provider` は既存の明示起動である。`<provider-id>` は Paseo provider record と同じ名前空間を使い、
-既定環境は family 名（`claude`）、それ以外は `<family>-<environment>`（`claude-lab`）である。
+`--provider` による旧 Paseo provider ID の起動は廃止した。
 
 `--family` は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
 `projectRouting.rules` rule、`defaults.environment` の順に選ぶ。たとえば
 `agent --family=codex --environment=pxgrid` は親や cwd rule と異なる `pxgrid` への明示切替を許す。
-ただし、その environment の `providers` に `codex` が無ければ起動しない。`--provider` と
-`--family` は併用できず、`--environment` は `--family` とだけ併用できる。
+ただし、その environment の `providers` に `codex` が無ければ起動しない。
+`--environment` は `--family` とだけ併用できる。
 
 `match.gitRepository` は Git common directory を比較するため、登録した checkout の linked worktree と
 その subdirectory でも同じ environment を選ぶ。`match.remoteNamespace` は
@@ -250,30 +221,14 @@ agent --family=<family> [--environment=<environment>] [--] [args...]
 Git 外 cwd、無関係 repository、どの rule にも一致しない cwd は default environment を使う。
 Unknown environment、invalid config、ineligible family では default へ落とさず終了コード 2 で失敗する。
 
-正常時は `AGENT_ENV` と family の隔離変数を設定する。Claude は `CLAUDE_CONFIG_DIR`、Codex は
-`CODEX_HOME`、Pi は `PI_CODING_AGENT_DIR` を使う。OMP は `OMP_PROFILE=<environment>` を使う。
-OMP named profile は profile ごとの native config、session、`agent.db` を持ち、
-`PI_CODING_AGENT_DIR` を無視する。一つの profile には一方の account だけを login し、OMP の
-複数-account rotation で A/B を混ぜない。
+正常時は `AGENT_ENV` と family の隔離変数を設定する。Claude は `CLAUDE_CONFIG_DIR`、
+Codex は `CODEX_HOME` を使う。
 
-zsh の bare `claude`、`codex`、`pi`、`omp` は `agent --family=<family>` へ送る。
-`pi update` は launcher からグローバル設定の `mise upgrade npm:@earendil-works/pi-coding-agent`、
+zsh の bare `claude`、`codex` は `agent --family=<family>` へ送る。
 `codex update` は native CLI へ送る。`command claude`、absolute executable path、
 zsh 設定を読まない process は family wrapper を bypass する。
+OMP はこの環境 resolver を通さず、デフォルト設定から起動する。
 
-Orca terminal と Project Quick Command からは、たとえば次を実行する。
-
-```text
-agent --family=codex
-orca terminal create --worktree active --command "agent --family codex"
-```
-
-Orca 1.4.215 には shipped per-project launch profile がない。Agent picker、
-`worktree create --agent`、scheduled automation provider、orchestration worker は project rule から
-family/provider を自動選択しない。これらでは environment-specific provider id を明示する。
-Materialized provider と wrapper は `AGENT_ENV` を子へ継承するため、明示 `--environment` がない
-child resolve は親環境を保持する。Project-scoped Quick Command は Orca UI 設定であり、この
-repository から自動配布しない。
 
 ## core
 
@@ -296,7 +251,6 @@ repository から自動配布しない。
 | television | ファジーファインダー |
 | zoxide | 賢い cd |
 | herdr | ターミナルマルチプレクサ |
-| opencode | AI コーディングエージェント |
 
 ## 開発ツール
 
@@ -383,9 +337,12 @@ zsh は読み込み中に `ZDOTDIR` が変わっても、変更先の `.zshenv` 
 この手順で Android・Rust・Deno・AWS の参照先と `.NET` user tools の PATH を、
 非対話シェルにも設定する。回帰検査は `bash tests/test-zsh-bootstrap.sh`。
 
-`/etc/zshenv` で `ZDOTDIR` を無条件に上書きしない。Orca の準備完了通知用ラッパーが
-読まれなくなり、起動が15秒のタイムアウトまで待たされる。既存マシンに残っている
-代入は管理者権限で除く。`/etc/paths.d/dotnet-cli-tools` の `~/.dotnet/tools` も
+1Password のプラグイン、ghcup、uv の環境ファイルは、読み取り可能な場合だけ読み込む。
+`tv`、`zoxide`、`mise`、`wt`、Kiro の shell integration はコマンドがある場合だけ初期化する。
+1Password の SSH agent socket が無いマシンでは、既存の `SSH_AUTH_SOCK` を維持する。
+
+`/etc/zshenv` で `ZDOTDIR` を無条件に上書きしない。既存マシンに残っている代入は
+管理者権限で除く。`/etc/paths.d/dotnet-cli-tools` の `~/.dotnet/tools` も
 path_helper では展開されないため、バックアップを `/etc/paths.d` の外へ保存して除く。
 user tools の正しい PATH は chezmoi の `.zshenv` で管理する。
 
@@ -415,9 +372,9 @@ node / python / java / pnpm / deno / go と日常 CLI を mise で管理し、Br
 | backend | ツール |
 |---|---|
 | Aqua | gh、ghq、git-lfs、lazygit、Neovim、fzf、fd、ripgrep、bat、glow、jq、television、zoxide、sccache、AWS CLI、grpcurl |
-| GitHub release | worktrunk（`wt`）、OpenCode |
+| GitHub release | worktrunk（`wt`） |
 | Cargo | eza（macOS 向けの配布バイナリがないため rustup の toolchain でビルド） |
-| npm | Pi、wrangler、firebase-tools、mcp-hub |
+| npm | wrangler、firebase-tools、mcp-hub |
 
 `~/.local/bin` の各 CLI は `mise-tool` への symlink である。CLI だけを解決して exec するため、
 SketchyBar など PATH が狭い process でも起動でき、全 runtime の activation は不要になる。
@@ -442,7 +399,7 @@ Python の PATH と親の JAVA_HOME は変更しない。AWS CLI は `symlink_bi
 
 CLI の導入・version・シェル連携と、GUI / 非対話 process からの起動を確認してから
 既存 Brew / npm コピーの削除を判断する。apply でパッケージの uninstall は行わない。
-旧 npm グローバルのマニフェストと専用 installer は廃止し、Pi の更新も mise に集約する。
+旧 npm グローバルのマニフェストと専用 installer は廃止した。
 
 ## cargo 管理
 
@@ -456,8 +413,8 @@ CLI の導入・version・シェル連携と、GUI / 非対話 process からの
 構成と図表を3つの読み取り専用サブエージェントで並列に確認し、親が指摘を統合する。
 コード差分の正しさを調べる `pr-review` とは別用途である。
 
-Codex 向けの `~/.agents/skills`、Claude Code の `~/.config/claude/skills`、
-OpenCode の `~/.config/opencode/skills` に、同じ本体とレビュー用 references を配る。
+OMP／Codex 向けの `~/.agents/skills` と Claude Code の `~/.config/claude/skills` に、
+同じ本体とレビュー用 references を配る。
 明示的に使いたい場合は「technical-writing-review を使って、この PR 本文を書いて」
 などと依頼する。執筆依頼ではレビュー後の原稿、レビュー依頼では引用付きの指摘を返す。
 スキルの description に執筆時の発動条件を記載しているが、自動選択を常に保証するものではない。
@@ -474,9 +431,6 @@ OpenCode の `~/.config/opencode/skills` に、同じ本体とレビュー用 re
 AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` にあり、chezmoi の
 管理外である。
 
-Paseoは既存の補助環境として残すが、通常の開発スキルの実行前提にはしない。
-Paseo本体や他プラグインは、この移行で停止・アンインストールしない。
-
 ## Herdr・OMPの開発ワークフロー
 
 メインの実行環境はmainMBP。GhosttyでHerdrを開き、OMP、Neovim、LazyGit、Tuicrを使う。
@@ -489,13 +443,14 @@ Android端末にはMoshiを使う。接続元へ認証や履歴を複製しな�
 - 書き込み分離だけならWorktrunkで子worktreeを作り、Herdrには表示しない。
 - worktreeの所有権、統合状態、終了手順は[worktrees.md](worktrees.md)に従う。
 
-`task-routing`と`multi-agent-development`はこの区分を使う。Orca専用スキルはOrcaを
-明示した作業だけに使い、通常の作業分割やhandoffからOrcaを起動しない。
-エージェントの権限やmodel設定を、端末を分けるためだけに変更しない。
+`task-routing` と `multi-agent-development` はこの区分を使う。
+エージェントの権限や model 設定を、端末を分けるためだけに変更しない。
 
-native roleはClaude Code、Codex、Piへ同じrole catalogから配る。
-Claude Codeは`~/.config/claude/agents`、Codexは`$CODEX_HOME/agents`、
-Piは`$PI_CODING_AGENT_DIR/agents`を使う。Piのsubagent extensionも配る。
+native role は Claude Code、Codex へ同じ role catalog から配る。
+Claude Code は `~/.config/claude/agents`、Codex は `$CODEX_HOME/agents` を使う。
+
+MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規に受け付ける。
+集計器は移行前の既存ログも読み取るが、退役 backend での新しい記録は拒否する。
 
 ### ツールの入口
 
@@ -524,10 +479,11 @@ OMPから委譲する場合は`--no-focus`を付け、元の作業へフォー�
 成果物とworkspaceは保持し、GitHubへの投稿は明示確認後に行う。
 起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
 
-Paseoの旧PRレビュープラグインは配布・登録処理を退役した。
-稼働中のプラグインは自動停止しない。旧プラグインの停止・登録解除は、
-実環境へ変更を適用する際に対象を確認して行う。
-Paseo本体とアカウント設定は削除しない。
+Orca、Paseo、Pi、opencode の設定配布・起動連携は退役した。
+`.chezmoiremove` は以前配布した個別ファイルと Orca の OMP 拡張だけを回収する。
+認証・履歴を含むディレクトリやインストール済みアプリは削除しない。
+Paseo の履歴採取ジョブが稼働している場合は、削除対象を apply する前に
+`launchctl bootout gui/$(id -u)/com.cellfusion.paseo-link-claude-history` で停止する。
 
 ### アカウント使用枠
 

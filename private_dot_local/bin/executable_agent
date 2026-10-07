@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# AI 環境を指定または working directory から解決して AI CLI を起動する。
-#   agent --provider=<provider-id> [引数...]
-#   agent --family=<family> [--environment=<environment>] [引数...]
-# --provider は materialize 済み id で環境を明示する。--family は explicit
-# environment、親 AGENT_ENV、project rule、default の順で環境を選ぶ。
-# 解決した環境変数を設定したあと exec で AI CLI に置き換わる。自分のプロセスは
-# 残さない。paseo provider diagnostic が version と auth を読む経路で使うため、
-# 標準入出力も終了コードもそのまま通す。
+# Launch Claude or Codex using an explicit, parent, project, or default environment.
 set -eu
 
 self_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -18,27 +11,14 @@ for candidate in "$self_dir/../share/agent-config" "$self_dir/../private_share/a
   fi
 done
 if [ -z "$share" ]; then
-  printf 'agent: launch-env.js を見つけられない\n' >&2
+  printf 'agent: launch-env.js not found\n' >&2
   exit 2
 fi
-
 usage_error() {
   printf 'agent: %s\n' "$1" >&2
-  printf 'agent: 使い方: agent --provider=<provider-id> [引数...]\n' >&2
-  printf 'agent:         agent --family=<family> [--environment=<environment>] [引数...]\n' >&2
-  if ids="$(node "$share/launch-env.js" --list 2>&1)"; then
-    if [ -n "$ids" ]; then
-      printf 'agent: 使える provider id: %s\n' "$(printf '%s' "$ids" | tr '\n' ' ')" >&2
-    fi
-  else
-    printf 'agent: provider 一覧を取得できない\n' >&2
-    [ -z "$ids" ] || printf '%s\n' "$ids" >&2
-  fi
+  printf 'usage: agent --family=claude|codex [--environment=<name>] -- [arguments...]\n' >&2
   exit 2
 }
-
-provider=""
-provider_seen=0
 family=""
 family_seen=0
 environment=""
@@ -46,95 +26,40 @@ environment_seen=0
 forward=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --)
-      shift
-      forward+=("$@")
-      break
-      ;;
-    --provider=*)
-      [ "$provider_seen" -eq 0 ] || usage_error '--provider は 1 回だけ指定する'
-      provider_seen=1
-      provider="${1#--provider=}"
-      ;;
-    --provider)
-      [ "$provider_seen" -eq 0 ] || usage_error '--provider は 1 回だけ指定する'
-      provider_seen=1
-      [ "$#" -ge 2 ] || usage_error '--provider に値がない'
-      provider="$2"
-      shift
-      ;;
+    --) shift; forward+=("$@"); break ;;
     --family=*)
-      [ "$family_seen" -eq 0 ] || usage_error '--family は 1 回だけ指定する'
-      family_seen=1
-      family="${1#--family=}"
-      ;;
+      [ "$family_seen" -eq 0 ] || usage_error '--family may only be specified once'
+      family_seen=1; family="${1#--family=}" ;;
     --family)
-      [ "$family_seen" -eq 0 ] || usage_error '--family は 1 回だけ指定する'
-      family_seen=1
-      [ "$#" -ge 2 ] || usage_error '--family に値がない'
-      family="$2"
-      shift
-      ;;
+      [ "$family_seen" -eq 0 ] || usage_error '--family may only be specified once'
+      [ "$#" -ge 2 ] || usage_error '--family needs a value'
+      family_seen=1; family="$2"; shift ;;
     --environment=*)
-      [ "$environment_seen" -eq 0 ] || usage_error '--environment は 1 回だけ指定する'
-      environment_seen=1
-      environment="${1#--environment=}"
-      ;;
+      [ "$environment_seen" -eq 0 ] || usage_error '--environment may only be specified once'
+      environment_seen=1; environment="${1#--environment=}" ;;
     --environment)
-      [ "$environment_seen" -eq 0 ] || usage_error '--environment は 1 回だけ指定する'
-      environment_seen=1
-      [ "$#" -ge 2 ] || usage_error '--environment に値がない'
-      environment="$2"
-      shift
-      ;;
-    *)
-      forward+=("$1")
-      ;;
+      [ "$environment_seen" -eq 0 ] || usage_error '--environment may only be specified once'
+      [ "$#" -ge 2 ] || usage_error '--environment needs a value'
+      environment_seen=1; environment="$2"; shift ;;
+    --provider|--provider=*) usage_error '--provider is not supported' ;;
+    *) forward+=("$1") ;;
   esac
   shift
 done
-
-if [ "$provider_seen" -eq 1 ] && [ "$family_seen" -eq 1 ]; then
-  usage_error '--provider と --family は同時に指定できない'
-fi
-[ "$environment_seen" -eq 0 ] || [ "$family_seen" -eq 1 ] ||
-  usage_error '--environment には --family が要る'
-if [ "$provider_seen" -eq 0 ] && [ "$family_seen" -eq 0 ]; then
-  usage_error '--provider または --family が要る'
-fi
-[ "$provider_seen" -eq 0 ] || [ -n "$provider" ] || usage_error '--provider の値が空である'
-[ "$family_seen" -eq 0 ] || [ -n "$family" ] || usage_error '--family の値が空である'
-[ "$environment_seen" -eq 0 ] || [ -n "$environment" ] || usage_error '--environment の値が空である'
-
-# 解決に失敗したときの説明は launch-env.js が stderr へ出す。
-launch_args=()
-if [ "$provider_seen" -eq 1 ]; then
-  launch_args=(--provider "$provider")
-else
-  launch_args=(--family "$family")
-  [ "$environment_seen" -eq 0 ] || launch_args+=(--environment "$environment")
-fi
-if ! assignments="$(node "$share/launch-env.js" "${launch_args[@]}")"; then
-  exit 2
-fi
-
+case "$family" in claude|codex) ;; *) usage_error '--family must be claude or codex' ;; esac
+[ "$environment_seen" -eq 0 ] || [ -n "$environment" ] || usage_error '--environment needs a value'
+launch_args=(--family "$family")
+[ "$environment_seen" -eq 0 ] || launch_args+=(--environment "$environment")
+if ! assignments="$(node "$share/launch-env.js" "${launch_args[@]}")"; then exit 2; fi
 binary=""
 while IFS=' ' read -r kind key value; do
   case "$kind" in
     binary) binary="$key" ;;
     env) export "$key=$value" ;;
-    *)
-      printf 'agent: launch-env.js の出力が不正である\n' >&2
-      exit 2
-      ;;
+    *) printf 'agent: invalid launch-env.js output\n' >&2; exit 2 ;;
   esac
 done <<EOF
 $assignments
 EOF
-
-if [ -z "$binary" ]; then
-  printf 'agent: 起動する CLI が決まらない\n' >&2
-  exit 2
-fi
-
+[ -n "$binary" ] || usage_error 'no CLI selected'
 exec "$binary" ${forward[@]+"${forward[@]}"}

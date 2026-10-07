@@ -14,27 +14,6 @@ Environment-specific prerequisites not covered in skills:
 - **Specification changes precede code** — Update formal documentation (`docs/`) before implementation to prevent divergence between specs and code. Place specs in `~/docs/<owner>/<repo>/specs/` and implementation plans in `~/docs/<owner>/<repo>/plans/`. Paths are returned by `~/.agents/skills/_shared/scripts/agent-docs-dir`. Destinations lie outside the repository working tree; keep `docs/` reserved exclusively for repository-formal documentation.
 - **Verification Commands** — `/verify` (build, types, lint, tests) and `/pre-commit-review` (security and quality). Step 1 of `finishing-a-development-branch` runs these checks.
 
-## Spawning Paseo Child Agents
-
-Before calling `mcp__paseo__create_agent`, invoke `agent-config resolve` and copy the returned `mad-launch-spec` properties (`provider`, `model`, `modeId`, `thinkingOptionId`, `features`) directly into `create_agent`. Never guess or choose provider and model independently.
-
-```bash
-agent-config --input "${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/agent-config.json" resolve \
-  --project "$PWD" --role "$ROLE" --provenance "$PROVENANCE" \
-  --complexity "$COMPLEXITY" --round "$ROUND" --snapshot "$SNAPSHOT"
-```
-
-Pass `--role` matching names in authoritative `agentRoles`. The role dictates duty. Choose `--complexity` based on task weight:
-
-- `simple` — Narrowly scoped confirmations and predetermined routine work
-- `routine` — Standard implementation, investigation, and task-level reviews (default)
-- `complex` — Work involving architectural decisions
-- `critical` — Final reviews before integration and multi-layer design changes
-
-Exit code 0 outputs `mad-launch-spec`. Exit code 4 signifies candidates are exhausted; do not speculate on provider/model, report reasons to user, and halt. Exit code 2 indicates invalid input or snapshot.
-
-In `multi-agent-development` delivery, the child's duty is determined by its role, and complexity is determined by `**Complexity:**` in plan tasks, so parent agents must not choose candidates.
-
 ## Shell Execution
 
 Do not run long-running processes (development servers, watchers, etc.) directly in the Bash tool. Starting them in the Bash tool can leave orphan background processes invisible to the user. Running them in a dedicated terminal allows the user to inspect status and terminate cleanly.
@@ -43,20 +22,18 @@ Destination is determined by environment in order of precedence:
 
 | Condition | Route |
 |---|---|
-| `$PASEO_AGENT_ID` is non-empty | Create terminal with `paseo terminal create --cwd "$PWD" --name <purpose> --json`, run via `paseo terminal send-keys <id> '<command>' Enter`. Capture with `paseo terminal capture`, cleanup with `paseo terminal kill` |
 | `$HERDR_ENV` is `1` | Split adjacent pane via `herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus`, run with `herdr pane run <pane_id> '<command>'`. Do not use `--current` (avoids opening in user-focused workspace) |
 | Neither | Run via Bash tool's `run_in_background` |
 
-- **Do not launch multiplexers on your own.** Never start herdr in environments where `$HERDR_ENV` is not `1`. Do not open terminals to start herdr and run panes inside. Likewise, do not create Paseo terminals if `$PASEO_AGENT_ID` is empty.
+- **Do not launch multiplexers on your own.** Never start herdr in environments where `$HERDR_ENV` is not `1`. Do not open terminals to start herdr and run panes inside.
 - Run ephemeral commands (`ls`, `git`, `grep`, one-off builds or tests) directly in the Bash tool. This routing rule strictly applies to persistent processes.
-- For persistent processes, do not append `; exit` to commands passed to `paseo terminal send-keys`.
 
 ## Session Handoff
 
 Only perform under herdr management (`HERDR_ENV=1`). When context fills up, launch a clean successor session in a new herdr pane before degradation occurs, passing a handoff document. See the **`/handoff` skill** for procedures.
 
 - **Trigger**: When `HERDR_ENV=1` and context usage is judged to exceed ~60%. Definitely trigger if auto-compact / context limit warnings appear.
-- **Do not trigger**: When `HERDR_ENV=1` is unset (including Paseo; rely on standard auto-compact). In the middle of atomic steps. Immediately after a handoff (complete at least one concrete work step first).
+- **Do not trigger**: When `HERDR_ENV=1` is unset (rely on standard auto-compact). In the middle of atomic steps. Immediately after a handoff (complete at least one concrete work step first).
 
 ## Conventional Commits
 
