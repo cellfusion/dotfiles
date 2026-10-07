@@ -1,22 +1,10 @@
 #!/usr/bin/env bash
-# Launch Claude or Codex using an explicit, parent, project, or default environment.
+# Launch Claude/Codex in a selected environment, or OMP in its native default state.
 set -eu
 
-self_dir="$(cd "$(dirname "$0")" && pwd)"
-share=""
-for candidate in "$self_dir/../share/agent-config" "$self_dir/../private_share/agent-config"; do
-  if [ -f "$candidate/launch-env.js" ]; then
-    share="$(cd "$candidate" && pwd)"
-    break
-  fi
-done
-if [ -z "$share" ]; then
-  printf 'agent: launch-env.js not found\n' >&2
-  exit 2
-fi
 usage_error() {
   printf 'agent: %s\n' "$1" >&2
-  printf 'usage: agent --family=claude|codex [--environment=<name>] -- [arguments...]\n' >&2
+  printf 'usage: agent --family=claude|codex|omp [--environment=<name>] -- [arguments...]\n' >&2
   exit 2
 }
 family=""
@@ -46,8 +34,27 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
-case "$family" in claude|codex) ;; *) usage_error '--family must be claude or codex' ;; esac
+case "$family" in
+  omp)
+    [ "$environment_seen" -eq 0 ] || usage_error 'OMP uses default state; --environment is not supported'
+    unset OMP_PROFILE PI_CODING_AGENT_DIR
+    exec omp ${forward[@]+"${forward[@]}"} ;;
+  claude|codex) ;;
+  *) usage_error '--family must be claude, codex, or omp' ;;
+esac
 [ "$environment_seen" -eq 0 ] || [ -n "$environment" ] || usage_error '--environment needs a value'
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+share=""
+for candidate in "$self_dir/../share/agent-config" "$self_dir/../private_share/agent-config"; do
+  if [ -f "$candidate/launch-env.js" ]; then
+    share="$(cd "$candidate" && pwd)"
+    break
+  fi
+done
+if [ -z "$share" ]; then
+  printf 'agent: launch-env.js not found\n' >&2
+  exit 2
+fi
 launch_args=(--family "$family")
 [ "$environment_seen" -eq 0 ] || launch_args+=(--environment "$environment")
 if ! assignments="$(node "$share/launch-env.js" "${launch_args[@]}")"; then exit 2; fi
