@@ -68,5 +68,5 @@ codex() {
 
 
 omp() {
-  (unset OMP_PROFILE PI_CODING_AGENT_DIR; command omp "$@")
+  (unset OMP_PROFILE PI_CODING_AGENT_DIR; PI_FORCE_IMAGE_PROTOCOL="${PI_FORCE_IMAGE_PROTOCOL:-kitty}" command omp "$@")
 }
