@@ -153,6 +153,10 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 Claude／Codex の環境や cwd routing から OMP profile を選ばない。
 `command omp` や絶対パスから起動する場合は wrapper を通らないため、これらの変数を設定しない。
 明示的な `--profile` は OMP 本体の機能として使えるが、profile の設定は配布しない。
+通常の `omp` と `agent --family=omp` は `PI_FORCE_IMAGE_PROTOCOL=kitty` を既定値にし、
+Herdr 内でも画像表示を有効にする。接続先の端末と Herdr の Kitty graphics 対応が必要になる。
+明示的な指定は保持するため、無効にする場合は `PI_FORCE_IMAGE_PROTOCOL=off omp` で起動する。
+`command omp` や絶対パスでの直接起動には、この既定値は付かない。
 
 認証、`agent.db`、履歴、session、cache、`~/.omp/profiles/` は chezmoi 管理外である。
 Herdr／Moshi の拡張は各マシンで導入し、ホスト固有の拡張や認証を設定ファイルと一緒にコピーしない。

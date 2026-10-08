@@ -38,6 +38,7 @@ case "$family" in
   omp)
     [ "$environment_seen" -eq 0 ] || usage_error 'OMP uses default state; --environment is not supported'
     unset OMP_PROFILE PI_CODING_AGENT_DIR
+    export PI_FORCE_IMAGE_PROTOCOL="${PI_FORCE_IMAGE_PROTOCOL:-kitty}"
     exec omp ${forward[@]+"${forward[@]}"} ;;
   claude|codex) ;;
   *) usage_error '--family must be claude, codex, or omp' ;;
