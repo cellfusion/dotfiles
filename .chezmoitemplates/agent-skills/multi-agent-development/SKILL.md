@@ -26,7 +26,9 @@ them; spec and plan are not mandatory child roles.
 
 ## Execution and placement
 
-Default to OMP internal delegation, using the current runtime's documented task/agent interface.
+Default to OMP internal delegation for same-repository work, using the current runtime's documented
+task/agent interface. For cross-repository changes, use each target repository's Herdr workspace
+and owner through `agent-communication`, not internal children editing foreign checkouts.
 Preserve existing model and permission defaults. Do not use provider snapshots or
 transport-specific request schemas to authorize an OMP child.
 
@@ -40,6 +42,10 @@ Choose write placement independently:
 
 Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace
 or start a second orchestration runtime for ordinary delegation.
+
+Read `agent-communication` for recipient identity, bounded requests, reply correlation and uncertain
+delivery. Reuse appropriate idle repository owners; do not interrupt unrelated work. Repository
+owners verify locally, while the parent reconciles contracts and verifies the combined behavior.
 
 ## Recipes
 

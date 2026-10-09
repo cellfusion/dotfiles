@@ -15,8 +15,9 @@ skill does not implement code or approve a design. A clear local change needs no
 ## Make three independent decisions
 
 1. **Execution:** direct parent work, one OMP internal child, or multiple OMP internal children.
-2. **Interaction:** remain internal by default. Use a Herdr pane only for user intervention,
-   independent conversation, or an explicitly required separate CLI.
+2. **Interaction:** remain internal for same-repository work by default. Cross-repository changes
+   use the target repository's Herdr workspace and owner through `agent-communication`. Also use
+   Herdr for user intervention or an explicitly required independent conversation/CLI.
 3. **Writes:** use the existing checkout with disjoint scopes and one integration owner when safe.
    Use a hidden Worktrunk child worktree only when separate write ownership is required.
 
@@ -93,6 +94,11 @@ permissions/models. Send only the bounded request and absolute trusted artifact 
 agent identity, readiness, and submitted status. Do not leave OMP to re-create its environment merely
 to delegate. Launch failure or unknown prompt receipt preserves the pane and artifacts; inspect the
 same resource instead of creating another or falling back to another backend.
+
+For another repository, read `agent-communication` and resolve that repository's actual workspace
+and agent identity. Reuse an appropriate idle owner or start OMP there without focus; do not use an
+internal child in the parent's checkout to edit another repository. Send only the common contract
+and bounded scope. Each owner verifies locally; the parent verifies cross-repository integration.
 
 Normal GitHub PR review goes through `pr-review --no-focus [--quick] <PR>` from agent control.
 A prepared review workspace executes the `pr-review` skill in its existing OMP/root pane; it does

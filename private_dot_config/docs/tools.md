@@ -446,13 +446,24 @@ subMBPはGhostty／Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ
 Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。
 
 - メイン作業はdefaultブランチからHerdrのworktree＋workspaceを作成する。
-- 通常の委譲はOMP内で済ませる。
-- 独立対話、ユーザー介入、別CLIエージェントにはHerdrの別paneを使う。
+- 同一リポジトリの通常の委譲はOMP内で済ませる。
+- 別リポジトリの変更は、そのリポジトリのHerdr workspaceの担当へ依頼する。
+  適合するidle担当を再利用し、いなければ対象workspaceでOMPをno-focus起動する。
+- 独立対話、ユーザー介入、別CLIエージェントにもHerdrの別paneを使う。
 - 書き込み分離だけならWorktrunkで子worktreeを作り、Herdrには表示しない。
 - worktreeの所有権、統合状態、終了手順は[worktrees.md](worktrees.md)に従う。
 
 `task-routing` と `multi-agent-development` はこの区分を使う。
 エージェントの権限や model 設定を、端末を分けるためだけに変更しない。
+
+`agent-communication` は宛先確認、依頼・質問・補足の受け渡しと返答の照合を担当する。
+共通手順は `~/.agents/skills/agent-communication/SKILL.md`、OMP／Herdrの操作資料は
+同ディレクトリの `references/` にあり、Claude側にも同じテンプレートから配る。
+workspace名だけで選ばず、実際のrepository／cwd／agent sessionと作業範囲を確認する。
+作業中の別担当へ割り込まず、依頼IDを返答と照合する。idleやtimeoutだけで完了・未送信と判断しない。
+担当は各repositoryを検証し、親は契約の一致と結合動作を確認する。
+渡すのは必要な契約と担当範囲だけで、会話全体・認証情報は渡さない。
+同じ文脈の再利用で重複調査を避けるが、トークン削減量は保証しない。
 
 native role は Claude Code、Codex へ同じ role catalog から配る。
 Claude Code は `~/.config/claude/agents`、Codex は `$CODEX_HOME/agents` を使う。
@@ -488,8 +499,11 @@ OMPから委譲する場合は`--no-focus`を付け、元の作業へフォー�
 起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
 
 Orca、Paseo、Pi、opencode の設定配布・起動連携は退役した。
-`.chezmoiremove` は以前配布した個別ファイルと Orca の OMP 拡張だけを回収する。
-認証・履歴を含むディレクトリやインストール済みアプリは削除しない。
+基本の作業環境は Herdr と OMP とし、Claude／Codex の直接起動も残す。
+`.chezmoiremove` は以前配布した個別ファイルと Orca の OMP 拡張を回収する。
+Orca／Paseo のアプリ、CLI、専用スキル（Orca 版 `computer-use` を含む）は、
+明示承認のもとホスト側で撤去する。chezmoi はアプリのアンインストールを行わない。
+認証・会話履歴・作業リポジトリは残し、旧アプリの保存データを一括削除しない。
 Paseo の履歴採取ジョブが稼働している場合は、削除対象を apply する前に
 `launchctl bootout gui/$(id -u)/com.cellfusion.paseo-link-claude-history` で停止する。
 
