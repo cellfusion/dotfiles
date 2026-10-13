@@ -15,7 +15,7 @@ a skill.
 | Ordinary bounded delegation | OMP internal child; no separate CLI or pane |
 | Independent CLI conversation or user intervention | `herdr`, existing cwd or one explicitly owned pane; agents do not steal focus |
 | Child write isolation only | `using-git-worktrees` hidden Worktrunk route; no Herdr workspace/tab/pane |
-| GitHub PR review | `pr-review` shell entry (agents use `--no-focus`); prepared context runs in the existing OMP root pane |
+| GitHub PR review | `pr-review` shell entry (agents use `--no-focus`); prepared context runs in the existing OMP/Orca terminal |
 | Implementation complete or integration requested | `finishing-a-development-branch` |
 | About to claim completion or test passage | `verification-before-completion` |
 | Code-review feedback received | `receiving-code-review` |

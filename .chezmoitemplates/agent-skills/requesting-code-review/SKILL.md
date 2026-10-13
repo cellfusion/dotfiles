@@ -32,7 +32,7 @@ Use OMP internal read-only delegation for ordinary independent review; it needs 
 worktree. Use a Herdr CLI/pane only for an explicitly independent conversation. Write-isolated
 fixes use hidden Worktrunk separately, without creating a pane.
 Normal GitHub PR review uses `pr-review --no-focus [--quick] <PR>` from agents;
-prepared review context stays in its existing OMP/root pane instead of creating another environment.
+prepared review context stays in its existing OMP/Orca terminal instead of creating another environment.
 
 ## When review is required
 

@@ -101,9 +101,9 @@ internal child in the parent's checkout to edit another repository. Send only th
 and bounded scope. Each owner verifies locally; the parent verifies cross-repository integration.
 
 Normal GitHub PR review goes through `pr-review --no-focus [--quick] <PR>` from agent control.
-A prepared review workspace executes the `pr-review` skill in its existing OMP/root pane; it does
-not create another worktree, pane, or OMP session. A shell user invokes the command without
-`--no-focus` when they want the new review workspace focused.
+A prepared review worktree executes the `pr-review` skill in its existing OMP/Orca terminal; it
+does not create another worktree, terminal, or OMP session. A shell user omits `--no-focus` to reveal
+the new review worktree. Normal launch also works from a plain terminal in the matching repository.
 
 ## Bounded escalation
 

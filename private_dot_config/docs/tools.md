@@ -477,7 +477,7 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 |---|---|
 | `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
 | `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
-| `pr-review <番号またはURL> [--quick]` | 専用Herdr環境を作り、root paneでOMPとPRレビュースキルを開始 |
+| `pr-review <番号またはURL> [--quick]` | PR base SHA の Orca worktree を作り、専用 terminal で私有 session の OMP を開始 |
 | `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
 
 汎用agent-launcherは廃止し、別エージェントは必要な場面でHerdrから直接起動する。
@@ -485,25 +485,28 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 
 ### PRレビュー
 
-Herdr内の対象リポジトリで`pr-review 123`を実行する。
-OMPから委譲する場合は`--no-focus`を付け、元の作業へフォーカスを残す。
-番号は現在のリポジトリを使い、URLはローカルリポジトリとの一致を確認する。
+Orca に登録済みの対象リポジトリで `pr-review 123` を実行する。通常の端末からも起動でき、
+Herdr の環境変数や拡張は不要。OMP から呼ぶ場合は `--no-focus` を付ける。
+番号は現在のリポジトリを使い、URL はローカルリポジトリとの一致を確認する。
 
-事前に公式のライフサイクル連携を`herdr integration install omp`で導入する。
-起動コマンドはこの拡張を明示的に読み込み、専用root paneと私有sessionの報告を確認してから
-プロンプトを送る。拡張の自動検出や、sessionファイルの作成前後に依存しない。
+Orca CLI はセッションの `ORCA_CLI_COMMAND`、開発版では `orca-dev`、
+Linux の Orca 外では `orca-ide`、それ以外では `orca` を使う。別ビルドへ自動切替しない。
+`orca-cli` スキルと、その CLI が返すバージョン一致ガイドで操作契約を確認する。
+worktree の setup は `skip`。専用 terminal へ `--session-dir` と `autoResume: false` を渡し、
+TUI の準備と terminal/worktree の一致を確認してから要求を送る。
+送信 receipt の `accepted` は入力受理、`turn_started` は開始の証拠であり、レビュー完了ではない。
 
 レビュー用worktreeはPRのbase SHAから作る。head側の指示ファイルをOMP起動時に読み込ませない。
 準備済み情報と固定base/headを専用OMPへ渡し、同じ環境内でレビューを続ける。
 成果物とworkspaceは保持し、GitHubへの投稿は明示確認後に行う。
 起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
 
-Orca、Paseo、Pi、opencode の設定配布・起動連携は退役した。
-基本の作業環境は Herdr と OMP とし、Claude／Codex の直接起動も残す。
-`.chezmoiremove` は以前配布した個別ファイルと Orca の OMP 拡張を回収する。
-Orca／Paseo のアプリ、CLI、専用スキル（Orca 版 `computer-use` を含む）は、
-明示承認のもとホスト側で撤去する。chezmoi はアプリのアンインストールを行わない。
-認証・会話履歴・作業リポジトリは残し、旧アプリの保存データを一括削除しない。
+PR レビューの起動には現在の Orca CLI を使う。以前の Orca 設定・OMP 拡張は復活させない。
+Paseo、Pi、opencode の設定配布・起動連携は退役した。
+`.chezmoiremove` は以前配布した個別ファイルと旧 Orca OMP 拡張を回収する。
+Orca CLI とバージョン一致ガイドを読む `orca-cli` スキルは PR レビューに必要なので撤去しない。
+旧アプリの撤去には明示承認が必要。chezmoi はアプリのアンインストールを行わない。
+認証・会話履歴・作業リポジトリは残し、保存データを一括削除しない。
 Paseo の履歴採取ジョブが稼働している場合は、削除対象を apply する前に
 `launchctl bootout gui/$(id -u)/com.cellfusion.paseo-link-claude-history` で停止する。
 
