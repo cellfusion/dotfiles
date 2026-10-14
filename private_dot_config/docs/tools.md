@@ -414,6 +414,32 @@ CLI の導入・version・シェル連携と、GUI / 非対話 process からの
 直接 cargo install するツールは無い。マニフェスト `~/.config/install/cargo-globals.txt` は
 コメント行だけで、`run_onchange_after_60-cargo.sh` は何も入れない。eza は mise の Cargo backend が管理する。
 
+## PR本文の作成と承認
+
+`create-pr` は、ブランチ全体の差分・履歴・関連資料を調べ、変更の種類に合うタイトルと
+PR本文を作る。不具合修正では発生条件・原因・修正前後・回帰確認、新機能では利用者の
+課題・利用方法・設計理由・制約を中心に説明する。API、UI、リファクタリング、性能、
+データ移行、設定・CI、依存関係、文書・テストにも対応し、混在する変更は必要な観点を組み合わせる。
+
+APIの変更では、影響する各エンドポイントの意図、必要な入力、成功・主要なエラーレスポンスの
+例、認証・互換性を記載する。仕様のみの変更と実装済みの動作を区別し、不明な意図や未実行の
+確認結果を補って書かない。
+
+「create-pr を使って、このブランチのPR本文を作って」と依頼する。これはシェルコマンドではない。
+OMP／Codexには `~/.agents/skills/create-pr/`、Claude Codeには
+`~/.config/claude/skills/create-pr/` を同じテンプレートから配る。
+
+本文は原則 `~/.local/state/create-pr/runs/<run>/<revision>/body.md` に保存する。
+同じ場所の `context.json` にタイトル・作成先・base/headのSHA・本文ハッシュ、
+`evidence.md` に根拠と確認状況を残す。表示した版について明示的に作成を承認するまでは、
+draftを含めてPRを作成しない。「本文はOK」と「PRを作成」は別の判断であり、保存のみも選べる。
+本文・タイトル・作成先・SHAなどが変わったら再確認する。commit・push・fork・既存PRの編集、
+添付アップロード・merge・chezmoi applyは別の許可が必要。
+
+スキルはエージェントへの手順であり、公開を技術的に遮断する仕組みではない。
+ホスト側の権限確認は有効にしておく。`finishing-a-development-branch` のpush/PR経路でも、
+push後にこの本文確認・承認の手順を通す。
+
 ## 技術文章レビュー
 
 `technical-writing-review` は、GitHub の PR 本文・コメント、README、設計説明、手順を
