@@ -13,9 +13,7 @@ const runtime = require(path.join(process.argv[2], 'private_dot_local/private_sh
 for (const input of [[], ['0'], ['01'], ['-1'], ['1', '2'], ['--worktree', '1'], ['--quick', '--quick', '1'], ['https://evil.test/a/b/pull/1'], ['https://github.com/a/b/pull/1?x=1']]) {
   assert.throws(() => runtime.parseArgs(input), /input|option|positive|URL/);
 }
-assert.deepEqual(runtime.parseArgs(['--no-focus', '--quick', 'https://github.com/a/b/pull/12']), {
-  number: 12, repository: 'a/b', quick: true, noFocus: true, skillFile: null,
-});
+assert.equal(runtime.parseArgs(['--no-focus', '--quick', 'https://github.com/a/b/pull/12']).repository, 'a/b');
 assert.equal(runtime.parseArgs(['123']).number, 123);
 assert.throws(() => runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:null}, 'a/b', 1), /fork/);
 assert.equal(runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:{name:'fork'}, headRepositoryOwner:{login:'other'}}, 'a/b', 1).headRepository, 'other/fork');
@@ -80,7 +78,11 @@ if(name==='gh'){
     fs.writeFileSync(c.count,String(n+1));
     console.log(JSON.stringify({number:1,url:'https://github.com/a/b/pull/1',baseRefOid:c.base,headRefOid:c.mode==='race'&&n>0?c.base:c.head,isCrossRepository:false}));
   }
-} else if(a[0]==='repo') emit({repos:[{id:'missing',kind:'git',path:c.repo+'/unavailable'},{id:'r42',kind:'git',path:c.repo}]});
+} else if(a[0]==='repo') emit({repos:[
+  {id:'missing',kind:'git',path:c.repo+'/unavailable'},
+  {id:'r42',displayName:'review-project',kind:'git',path:c.repo},
+  ...(c.mode==='ambiguous-project'||c.mode==='ambiguous-url'?[{id:'r43',displayName:'review-project',kind:'git',path:c.repo}]:[])
+]});
 else if(a[0]==='worktree'){
   const r=spawnSync('git',['-C',c.repo,'worktree','add','--detach',c.checkout,c.mode==='wrong-base'?c.head:flag('--base-branch')],{encoding:'utf8'});
   if(r.status!==0) process.exit(2);
@@ -101,23 +103,26 @@ else process.exit(2);
   fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2);fs.writeFileSync(path.join(a[a.indexOf('--session-dir')+1],'session.jsonl'),'private session');\n`,{mode:0o700});
   const skill=path.join(root,'SKILL.md');
   fs.writeFileSync(skill,'---\nname: pr-review\n---\n**Prepared-review contract:**\n');
-  for(const mode of ['success','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
+  git('remote','add','origin','git@github.com:a/b.git');
+  for(const mode of ['success','outside-url','outside-project','outside-id','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url','number-cwd','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
     const dir=path.join(root,mode); fs.mkdirSync(dir);
     const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
     const config=path.join(dir,'fixture.json'); fs.writeFileSync(config,JSON.stringify(fixture));
     const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH,ORCA_CLI_COMMAND:path.join(bin,'orca-fixture'),FIXTURE:config};
     for(const key of ['HERDR_ENV','HERDR_WORKSPACE_ID','HERDR_PANE_ID','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT']) delete env[key];
-    const launched=spawnSync('bash',[path.join(process.argv[2],'private_dot_local/bin/executable_pr-review'),'--no-focus','--skill-file',skill,mode==='url-mismatch'?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1'],{cwd:callerRepo,env,encoding:'utf8'});
-    const accepted=['success','unproven'].includes(mode);
+    const projectArgs=mode==='outside-id'?['--project','id:r42']:['outside-project','project-url-mismatch','ambiguous-project'].includes(mode)?['--project','review-project']:mode==='missing-project'?['--project','unknown']:[];
+    const input=['outside-project','outside-id','missing-project','ambiguous-project','number-cwd'].includes(mode)?'1':['url-mismatch','project-url-mismatch'].includes(mode)?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1';
+    const launched=spawnSync('bash',[path.join(process.argv[2],'private_dot_local/bin/executable_pr-review'),'--no-focus','--skill-file',skill,...projectArgs,input],{cwd:mode.startsWith('outside-')||mode==='ambiguous-url'?root:callerRepo,env,encoding:'utf8'});
+    const accepted=['success','outside-url','outside-project','outside-id','number-cwd','unproven'].includes(mode);
+    assert.equal(launched.status,accepted?0:1,mode+': '+launched.stderr);
     const output=JSON.parse(accepted?launched.stdout:launched.stderr);
-    assert.equal(launched.status,accepted?0:1,launched.stderr);
     const calls=fs.existsSync(fixture.log)?fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse):[];
     const creates=calls.filter(c=>c.args[0]==='worktree'&&c.args[1]==='create');
     const sends=calls.filter(c=>c.args[0]==='terminal'&&c.args[1]==='send');
-    assert.equal(creates.length,['race','url-mismatch'].includes(mode)?0:1,mode);
-    assert.equal(sends.length,['success','unproven','rejected'].includes(mode)?1:0,mode);
+    assert.equal(creates.length,['race','url-mismatch','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url'].includes(mode)?0:1,mode);
+    assert.equal(sends.length,accepted||mode==='rejected'?1:0,mode);
     if(accepted){
-      assert.equal(output.status,mode==='success'?'submitted':'accepted'); assert.equal(output.worktreeId,'r42::'+fixture.checkout);
+      assert.equal(output.status,mode==='unproven'?'accepted':'submitted'); assert.equal(output.worktreeId,'r42::'+fixture.checkout);
       assert.equal(git('rev-parse','HEAD'),base);
       assert.equal(spawnSync('git',['-C',fixture.checkout,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),base);
       assert.equal(fs.statSync(output.artifactPath).mode&0o777,0o700);

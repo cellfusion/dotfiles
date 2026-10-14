@@ -477,7 +477,7 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 |---|---|
 | `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
 | `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
-| `pr-review <番号またはURL> [--quick]` | PR base SHA の Orca worktree を作り、専用 terminal で私有 session の OMP を開始 |
+| `pr-review [--project <名前またはid:repoId>] [--quick] <番号またはURL>` | 登録済みプロジェクトを解決し、PR base SHA の Orca worktree と専用 OMP terminal を作成 |
 | `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
 
 汎用agent-launcherは廃止し、別エージェントは必要な場面でHerdrから直接起動する。
@@ -485,9 +485,21 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 
 ### PRレビュー
 
-Orca に登録済みの対象リポジトリで `pr-review 123` を実行する。通常の端末からも起動でき、
-Herdr の環境変数や拡張は不要。OMP から呼ぶ場合は `--no-focus` を付ける。
-番号は現在のリポジトリを使い、URL はローカルリポジトリとの一致を確認する。
+PR URL を渡すと、現在のディレクトリに関係なく Orca の登録済みプロジェクトから対象を探す。
+`--project` はプロジェクトの表示名の完全一致、または `id:<repoId>` で対象を指定する。
+起動用の新規ワークスペースや、対象ディレクトリへの移動は不要。
+
+```bash
+pr-review https://github.com/owner/repository/pull/123
+pr-review --project my-project 123
+pr-review --project id:<repoId> 123
+```
+
+`repoId` は `orca repo list --json` で確認する。未登録・複数一致は worktree 作成前に停止する。
+同名プロジェクトは ID で指定する。URL と `--project` を併用した場合はリポジトリの一致を確認する。
+番号だけの `pr-review 123` は従来どおり現在のリポジトリを使う。
+通常の端末からも起動でき、Herdr の環境変数や拡張は不要。
+OMP から呼ぶ場合は `--no-focus` を付ける。
 
 Orca CLI はセッションの `ORCA_CLI_COMMAND`、開発版では `orca-dev`、
 Linux の Orca 外では `orca-ide`、それ以外では `orca` を使う。別ビルドへ自動切替しない。

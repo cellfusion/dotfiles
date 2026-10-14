@@ -11,7 +11,7 @@ const SHA = /^[0-9a-f]{40}$/;
 const URL = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*)\/pull\/([1-9][0-9]*)\/?$/;
 
 function parseArgs(args) {
-  const result = { number: null, repository: null, quick: false, noFocus: false, skillFile: null };
+  const result = { number: null, repository: null, quick: false, noFocus: false, skillFile: null, project: null };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--quick' || arg === '--no-focus') {
@@ -21,6 +21,9 @@ function parseArgs(args) {
     } else if (arg === '--skill-file') {
       if (result.skillFile || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('invalid skill-file option');
       result.skillFile = path.resolve(args[++i]);
+    } else if (arg === '--project') {
+      if (result.project || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error('invalid project option');
+      result.project = args[++i];
     } else {
       if (result.number !== null || arg.startsWith('-')) throw new Error('invalid input or unknown option');
       const match = arg.match(URL);
@@ -95,11 +98,16 @@ function validateContext(file, cwd = process.cwd(), env = process.env) {
 }
 
 function recordFailure(run, stage, error, resources) {
-  const reason = stage === 'agent-readiness'
+  const projectReasons = {
+    missing: 'No matching registered Orca project. Use --project <name|id:repoId>; no review worktree was created.',
+    ambiguous: 'Multiple registered Orca projects match. Use --project id:<repoId>; no review worktree was created.',
+    mismatch: 'The selected project does not match the PR URL; no review worktree was created.',
+  };
+  const reason = projectReasons[resources.projectResolutionError] || (stage === 'agent-readiness'
     ? 'OMP terminal readiness was not proven; resources retained before prompt submission.'
     : stage === 'agent-prompt'
       ? 'Prompt submission was not proven; inspect the recorded terminal and receipt before resuming. Do not resend automatically.'
-      : 'Stage failed; resources retained. Inspect the existing Orca worktree before resuming.';
+      : 'Stage failed; resources retained. Inspect the existing Orca worktree before resuming.');
   const result = { version: 1, status: 'blocked', stage, at: new Date().toISOString(), ...resources, artifactPath: run, reason };
   // Never copy external command output, environment, or exception text into metadata.
   if (run) fs.writeFileSync(path.join(run, 'startup.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
@@ -116,22 +124,49 @@ async function launch(args) {
     const skill = options.skillFile || path.join(os.homedir(), '.agents/skills/pr-review/SKILL.md');
     const skillText = fs.readFileSync(skill, 'utf8');
     if (!fs.statSync(skill).isFile() || !/^name: pr-review$/m.test(skillText) || !skillText.includes('**Prepared-review contract:**') || /\{\{/.test(skillText)) throw new Error('rendered prepared pr-review skill required');
-    stage = 'repository';
-    const callerRoot = fs.realpathSync(git(process.cwd(), 'rev-parse', '--show-toplevel'));
-    resources.callerRoot = callerRoot;
-    const repository = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], callerRoot);
-    if (!REPOSITORY.test(repository) || (options.repository && !sameRepository(options.repository, repository))) throw new Error('local repository and PR URL mismatch');
     stage = 'orca-repository';
+    const repos = orcaResult(orca, ['repo', 'list'], process.cwd()).repos;
+    const registrations = repos.filter(repo => repo.kind === 'git' && typeof repo.path === 'string' && path.isAbsolute(repo.path));
+    let matches;
+    if (options.project) {
+      matches = registrations.filter(repo => options.project.startsWith('id:')
+        ? repo.id === options.project.slice(3)
+        : repo.displayName === options.project);
+    } else if (options.repository) {
+      matches = registrations.filter(repo => {
+        try {
+          const identity = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], repo.path);
+          return sameRepository(identity, options.repository);
+        } catch { return false; } // Unavailable unrelated registrations cannot select a project.
+      });
+    } else {
+      const root = fs.realpathSync(git(process.cwd(), 'rev-parse', '--show-toplevel'));
+      const commonDir = fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+      matches = registrations.filter(repo => {
+        try {
+          return fs.realpathSync(git(repo.path, 'rev-parse', '--path-format=absolute', '--git-common-dir')) === commonDir;
+        } catch { return false; }
+      });
+    }
+    if (matches.length === 0) {
+      resources.projectResolutionError = 'missing';
+      throw new Error('matching registered Orca project required');
+    }
+    if (matches.length !== 1) {
+      resources.projectResolutionError = 'ambiguous';
+      throw new Error('multiple Orca projects match');
+    }
+    const selected = matches[0];
+    const callerRoot = fs.realpathSync(git(selected.path, 'rev-parse', '--show-toplevel'));
+    resources.callerRoot = callerRoot;
+    resources.repoId = selected.id;
+    stage = 'repository';
+    const repository = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], callerRoot);
+    if (!REPOSITORY.test(repository) || (options.repository && !sameRepository(options.repository, repository))) {
+      resources.projectResolutionError = 'mismatch';
+      throw new Error('selected project and PR URL mismatch');
+    }
     const repositoryGitDir = fs.realpathSync(git(callerRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
-    const repos = orcaResult(orca, ['repo', 'list'], callerRoot).repos;
-    const matches = repos.filter(repo => {
-      if (repo.kind !== 'git' || !path.isAbsolute(repo.path)) return false;
-      try {
-        return fs.realpathSync(git(repo.path, 'rev-parse', '--path-format=absolute', '--git-common-dir')) === repositoryGitDir;
-      } catch { return false; } // Unavailable unrelated registrations do not select this repository.
-    });
-    if (matches.length !== 1) throw new Error('matching local Orca repository required');
-    resources.repoId = matches[0].id;
     const fields = 'number,url,baseRefOid,headRefOid,headRepository,headRepositoryOwner,isCrossRepository';
     const metadata = () => jsonCommand('gh', ['pr', 'view', String(options.number), '--repo', repository, '--json', fields], callerRoot);
     stage = 'metadata';
@@ -215,7 +250,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(validateContext(process.argv[3]), null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nRequires a local matching repository registered in Orca, its CLI/runtime, gh and OMP. No Herdr environment or integration is required. Failures retain all created resources.\n');
+    process.stdout.write('Usage: pr-review [--project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nPR URLs resolve a registered Orca project from any directory. --project selects an exact project name or id; numbers without --project use the cwd repository. Requires Orca CLI/runtime, gh and OMP. No clone or Herdr integration. Failures retain all created resources.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

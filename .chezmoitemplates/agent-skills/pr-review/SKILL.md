@@ -14,7 +14,7 @@ description: >-
 A normal request routes to the shell command:
 
 ```text
-pr-review [--quick] [--no-focus] <positive-number|GitHub-PR-URL>
+pr-review [--project <name|id:repoId>] [--quick] [--no-focus] <positive-number|GitHub-PR-URL>
 ```
 
 The command validates input and the matching local GitHub repository, fixes base/head SHAs,
@@ -27,8 +27,12 @@ The terminal command sets `umask 077` before executing OMP; the Orca host does n
 entry process's umask. This also keeps newly written session files private.
 The command submits an explicit skill-read request; it does not rely on slash commands at startup.
 Shell users omit `--no-focus` to reveal the new worktree. Agents MUST pass `--no-focus`.
-Numbers use the cwd repository; URLs must match it. No clone, alternate backend, head checkout,
-startup fallback, or second review agent environment is allowed.
+PR URLs resolve the matching registered Orca repository from any cwd. `--project` selects an
+exact Orca project display name or `id:<repoId>` from any cwd; if a URL is also given, its
+repository must match that project. Numbers without `--project` use the cwd repository.
+Missing or ambiguous matches stop before worktree creation; use `--project id:<repoId>` to
+disambiguate. No starter workspace, clone, alternate backend, head checkout, startup fallback,
+or second review agent environment is allowed.
 
 The matching local repository must be registered in Orca. The caller may be an Orca session or
 an ordinary terminal; no Herdr environment or lifecycle extension is required. The command selects
