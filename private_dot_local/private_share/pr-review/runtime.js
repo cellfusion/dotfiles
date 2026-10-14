@@ -45,6 +45,15 @@ function privateWrite(file, value) {
   fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 }
 function sameRepository(a, b) { return a.toLowerCase() === b.toLowerCase(); }
+function orcaCommand(env = process.env, platform = process.platform) {
+  return env.ORCA_CLI_COMMAND || (env.ORCA_DEV_REPO_ROOT ? 'orca-dev' : platform === 'linux' && !env.ORCA_TERMINAL_HANDLE ? 'orca-ide' : 'orca');
+}
+function shellQuote(value) { return "'" + value.replace(/'/g, "'\\''") + "'"; }
+function orcaResult(binary, args, cwd) {
+  const response = jsonCommand(binary, [...args, '--json'], cwd);
+  if (response.ok !== true || !response.result) throw new Error('Orca request failed');
+  return response.result;
+}
 
 function validateMetadata(data, repository, number) {
   if (!data || !REPOSITORY.test(repository) || data.number !== number || !SHA.test(data.baseRefOid) || !SHA.test(data.headRefOid) || typeof data.isCrossRepository !== 'boolean') throw new Error('invalid PR metadata');
@@ -69,11 +78,12 @@ function validateContext(file, cwd = process.cwd(), env = process.env) {
   if (!path.isAbsolute(file)) throw new Error('context path must be absolute');
   checkPrivate(file, false);
   const context = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (context.version !== 1 || context.owner !== 'herdr') throw new Error('invalid context version or owner');
+  if (context.version !== 2 || context.owner !== 'orca') throw new Error('invalid context version or owner');
   if (!/^[a-zA-Z0-9_-]+$/.test(context.runId) || !REPOSITORY.test(context.repository) || !REPOSITORY.test(context.headRepository) || !Number.isSafeInteger(context.prNumber) || context.prNumber < 1 || !SHA.test(context.baseSha) || !SHA.test(context.headSha) || typeof context.quick !== 'boolean') throw new Error('invalid context identity');
   if (!path.isAbsolute(context.worktreePath) || !path.isAbsolute(context.artifactPath) || path.dirname(fs.realpathSync(file)) !== fs.realpathSync(context.artifactPath)) throw new Error('invalid context artifact paths');
   checkPrivate(context.artifactPath, true);
-  if (env.HERDR_ENV !== '1' || !context.workspaceId || !context.rootPaneId || env.HERDR_WORKSPACE_ID !== context.workspaceId || env.HERDR_PANE_ID !== context.rootPaneId) throw new Error('prepared workspace/root pane mismatch');
+  if (typeof context.worktreeId !== 'string' || !context.worktreeId.endsWith(`::${context.worktreePath}`) || context.worktreeId.indexOf('::') < 1) throw new Error('invalid prepared worktree identity');
+  if (!context.terminalHandle || env.ORCA_WORKTREE_ID !== context.worktreeId || env.ORCA_TERMINAL_HANDLE !== context.terminalHandle) throw new Error('prepared worktree/terminal mismatch');
   if (fs.realpathSync(cwd) !== fs.realpathSync(context.worktreePath)) throw new Error('prepared cwd mismatch');
   const root = fs.realpathSync(git(cwd, 'rev-parse', '--show-toplevel'));
   if (root !== fs.realpathSync(context.worktreePath)) throw new Error('prepared cwd mismatch');
@@ -85,11 +95,11 @@ function validateContext(file, cwd = process.cwd(), env = process.env) {
 }
 
 function recordFailure(run, stage, error, resources) {
-  const reason = stage === 'omp-integration'
-    ? 'Install the official lifecycle integration with herdr integration install omp before starting a review.'
-    : stage === 'agent-readiness'
-      ? 'OMP lifecycle integration did not report the isolated root session; resources retained before prompt submission.'
-      : 'Stage failed; resources retained. Inspect the existing workspace before resuming.';
+  const reason = stage === 'agent-readiness'
+    ? 'OMP terminal readiness was not proven; resources retained before prompt submission.'
+    : stage === 'agent-prompt'
+      ? 'Prompt submission was not proven; inspect the recorded terminal and receipt before resuming. Do not resend automatically.'
+      : 'Stage failed; resources retained. Inspect the existing Orca worktree before resuming.';
   const result = { version: 1, status: 'blocked', stage, at: new Date().toISOString(), ...resources, artifactPath: run, reason };
   // Never copy external command output, environment, or exception text into metadata.
   if (run) fs.writeFileSync(path.join(run, 'startup.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
@@ -98,17 +108,10 @@ function recordFailure(run, stage, error, resources) {
 
 async function launch(args) {
   const options = parseArgs(args);
-  let stage = 'dependencies'; let run = null; const resources = { owner: 'herdr', workspaceId: null, rootPaneId: null, worktreePath: null };
+  const orca = orcaCommand();
+  let stage = 'dependencies'; let run = null; const resources = { owner: 'orca', worktreeId: null, terminalHandle: null, worktreePath: null, orcaCommand: orca };
   try {
-    if (process.env.HERDR_ENV !== '1') throw new Error('Herdr environment required');
-    for (const binary of ['git', 'gh', 'herdr', 'omp']) command('/usr/bin/env', ['which', binary]);
-    stage = 'omp-integration';
-    const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
-    const agentDir = configuredAgentDir
-      ? path.resolve(configuredAgentDir.replace(/^~(?=\/|$)/, os.homedir()))
-      : path.join(os.homedir(), '.omp', 'agent');
-    const lifecycleExtension = path.join(agentDir, 'extensions', 'herdr-omp-agent-state.ts');
-    if (!fs.statSync(lifecycleExtension).isFile()) throw new Error('official OMP integration required');
+    for (const binary of ['git', 'gh', orca, 'omp']) command('/usr/bin/env', ['which', binary]);
     stage = 'skill-source';
     const skill = options.skillFile || path.join(os.homedir(), '.agents/skills/pr-review/SKILL.md');
     const skillText = fs.readFileSync(skill, 'utf8');
@@ -118,6 +121,17 @@ async function launch(args) {
     resources.callerRoot = callerRoot;
     const repository = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], callerRoot);
     if (!REPOSITORY.test(repository) || (options.repository && !sameRepository(options.repository, repository))) throw new Error('local repository and PR URL mismatch');
+    stage = 'orca-repository';
+    const repositoryGitDir = fs.realpathSync(git(callerRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+    const repos = orcaResult(orca, ['repo', 'list'], callerRoot).repos;
+    const matches = repos.filter(repo => {
+      if (repo.kind !== 'git' || !path.isAbsolute(repo.path)) return false;
+      try {
+        return fs.realpathSync(git(repo.path, 'rev-parse', '--path-format=absolute', '--git-common-dir')) === repositoryGitDir;
+      } catch { return false; } // Unavailable unrelated registrations do not select this repository.
+    });
+    if (matches.length !== 1) throw new Error('matching local Orca repository required');
+    resources.repoId = matches[0].id;
     const fields = 'number,url,baseRefOid,headRefOid,headRepository,headRepositoryOwner,isCrossRepository';
     const metadata = () => jsonCommand('gh', ['pr', 'view', String(options.number), '--repo', repository, '--json', fields], callerRoot);
     stage = 'metadata';
@@ -141,41 +155,49 @@ async function launch(args) {
     fs.mkdirSync(path.join(run, 'sessions'), { mode: 0o700 });
     privateWrite(path.join(run, 'omp-config.yml'), 'autoResume: false\n');
     stage = 'worktree-create';
-    resources.branch = `review/pr-${options.number}-${runId.slice(-12)}`;
+    resources.name = `pr-review-${options.number}-${runId.slice(-12)}`;
     privateWrite(path.join(run, 'attempt.json'), { runId, repository, prNumber: options.number, ...fixed, ...resources });
-    const creationCommand = spawnSync('herdr', ['worktree', 'create', '--cwd', callerRoot, '--branch', resources.branch, '--base', fixed.baseSha, '--label', `pr-review-${options.number}`, options.noFocus ? '--no-focus' : '--focus'], { encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
+    const creationCommand = spawnSync(orca, ['worktree', 'create', '--repo', `id:${resources.repoId}`, '--name', resources.name, '--base-branch', fixed.baseSha, '--no-parent', '--setup', 'skip', '--pr', String(options.number), ...(options.noFocus ? [] : ['--activate']), '--json'], { cwd: callerRoot, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
     let creation;
     try { creation = JSON.parse(creationCommand.stdout); } catch { creation = null; }
-    resources.workspaceId = creation?.result?.workspace?.workspace_id || null;
-    resources.rootPaneId = creation?.result?.root_pane?.pane_id || null;
+    resources.worktreeId = creation?.result?.worktree?.id || null;
     resources.worktreePath = creation?.result?.worktree?.path || null;
+    resources.branch = creation?.result?.worktree?.branch || null;
     privateWrite(path.join(run, 'resources.json'), resources);
-    if (creationCommand.error || creationCommand.status !== 0) throw new Error('Herdr worktree creation failed; inspect recorded branch before resuming');
-    if (!resources.workspaceId || !resources.rootPaneId || !resources.worktreePath || !path.isAbsolute(resources.worktreePath)) throw new Error('incomplete Herdr creation response');
+    if (creationCommand.error || creationCommand.status !== 0 || creation?.ok !== true) throw new Error('Orca worktree creation failed; inspect recorded resources before resuming');
+    if (!resources.worktreeId || !resources.worktreePath || !path.isAbsolute(resources.worktreePath) || resources.worktreeId !== `${resources.repoId}::${resources.worktreePath}`) throw new Error('incomplete Orca creation response');
     stage = 'checkout-verify';
-    if (git(resources.worktreePath, 'rev-parse', 'HEAD') !== fixed.baseSha || git(resources.worktreePath, 'status', '--porcelain')) throw new Error('Herdr base checkout mismatch');
-    const context = { version: 1, runId, repository, prNumber: options.number, ...fixed, ...resources, artifactPath: run, quick: options.quick, callerRoot, repositoryGitDir: fs.realpathSync(git(callerRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir')) };
+    const root = resources.worktreePath;
+    if (git(root, 'rev-parse', 'HEAD') !== fixed.baseSha || git(root, 'status', '--porcelain') || fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')) !== repositoryGitDir || fs.realpathSync(git(root, 'rev-parse', '--absolute-git-dir')) === repositoryGitDir) throw new Error('Orca base checkout mismatch');
+    stage = 'agent-start';
+    // Custom argv is required for a fresh, run-private OMP session; --agent cannot forward it.
+    const argv = ['env', '-u', 'OMP_PROFILE', '-u', 'PI_CODING_AGENT_DIR', 'omp', '--cwd', root, '--session-dir', path.join(run, 'sessions'), '--config', path.join(run, 'omp-config.yml')];
+    const terminalCommand = spawnSync(orca, ['terminal', 'create', '--worktree', `id:${resources.worktreeId}`, '--title', resources.name, '--command', `umask 077; exec ${argv.map(shellQuote).join(' ')}`, '--json'], { cwd: callerRoot, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
+    let terminalResponse;
+    try { terminalResponse = JSON.parse(terminalCommand.stdout); } catch { terminalResponse = null; }
+    resources.terminalHandle = terminalResponse?.result?.terminal?.handle || null;
+    fs.writeFileSync(path.join(run, 'resources.json'), JSON.stringify(resources, null, 2) + '\n', { mode: 0o600 });
+    if (terminalCommand.error || terminalCommand.status !== 0 || terminalResponse?.ok !== true || !resources.terminalHandle) throw new Error('Orca terminal creation failed; inspect retained resources');
+    const context = { version: 2, runId, repository, prNumber: options.number, ...fixed, ...resources, artifactPath: run, quick: options.quick, callerRoot, repositoryGitDir };
     const contextFile = path.join(run, 'prepared-context.json'); privateWrite(contextFile, context);
     privateWrite(path.join(run, 'runtime.js'), fs.readFileSync(__filename, 'utf8'));
     // Copy the selected trusted skill so a source-render smoke never needs chezmoi apply.
     const skillFile = path.join(run, 'SKILL.md'); privateWrite(skillFile, skillText);
-    stage = 'agent-start';
-    const agentName = `pr-${options.number}-${runId.slice(-8)}`.slice(0, 32);
-    command('herdr', ['agent', 'start', agentName, '--kind', 'omp', '--pane', resources.rootPaneId, '--timeout', '60000', '--', '--extension', lifecycleExtension, '--cwd', resources.worktreePath, '--session-dir', path.join(run, 'sessions'), '--config', path.join(run, 'omp-config.yml')]);
     stage = 'agent-readiness';
-    const ready = jsonCommand('herdr', ['agent', 'get', agentName]).result?.agent;
-    const session = ready?.agent_session;
-    const isolatedSessionRoot = fs.realpathSync(path.join(run, 'sessions')) + path.sep;
-    if (ready?.agent !== 'omp' || ready.pane_id !== resources.rootPaneId || !['idle', 'done'].includes(ready.agent_status) || fs.realpathSync(ready.foreground_cwd || ready.cwd) !== fs.realpathSync(resources.worktreePath)
-      || session?.source !== 'herdr:omp' || session.kind !== 'path' || !path.isAbsolute(session.value)
-      // OMP reserves a session path before its first message creates the file.
-      || !path.join(fs.realpathSync(path.dirname(session.value)), path.basename(session.value)).startsWith(isolatedSessionRoot)) throw new Error('OMP root pane readiness or lifecycle session mismatch');
+    let ready = orcaResult(orca, ['terminal', 'wait', '--terminal', resources.terminalHandle, '--for', 'tui-idle', '--timeout-ms', '60000'], callerRoot);
+    if (ready.wait?.satisfied !== true) ready = orcaResult(orca, ['terminal', 'wait', '--terminal', resources.terminalHandle, '--for', 'tui-idle', '--timeout-ms', '120000'], callerRoot);
+    if (ready.wait?.satisfied !== true) throw new Error('OMP terminal not ready');
+    const state = orcaResult(orca, ['terminal', 'show', '--terminal', resources.terminalHandle], callerRoot).terminal;
+    if (state?.handle !== resources.terminalHandle || state.worktreeId !== resources.worktreeId || !state.connected || !state.writable || fs.realpathSync(state.worktreePath) !== fs.realpathSync(root)) throw new Error('OMP terminal identity mismatch');
+    assertSameRevision(fixed, validateMetadata(metadata(), repository, options.number));
+    if (git(root, 'rev-parse', 'HEAD') !== fixed.baseSha || git(root, 'status', '--porcelain')) throw new Error('prepared base checkout is changed');
     stage = 'agent-prompt';
-    const prompt = `Read the trusted pr-review skill at ${JSON.stringify(skillFile)} and execute its prepared-review contract now, using context ${JSON.stringify(contextFile)}. Validate with node ${JSON.stringify(path.join(run, 'runtime.js'))} validate-context ${JSON.stringify(contextFile)} first. Review only fixed PR ${repository}#${options.number}. Remain in this root pane/base checkout; do not create another visible workspace, worktree, pane, or agent environment. Preserve substantive review and security checks. Never post without explicit user confirmation.`;
-    command('herdr', ['agent', 'prompt', agentName, prompt, '--wait', '--until', 'working', '--until', 'blocked', '--until', 'unknown', '--timeout', '15000']);
-    const state = jsonCommand('herdr', ['agent', 'get', agentName]).result?.agent;
-    if (state?.agent !== 'omp' || state.pane_id !== resources.rootPaneId || !['working', 'idle', 'done'].includes(state.agent_status)) throw new Error('OMP startup blocked or unknown');
-    const result = { status: 'submitted', stage: 'agent-prompt', runId, repository, prNumber: options.number, ...resources, artifactPath: run, contextFile, agentName };
+    const prompt = `Read the trusted pr-review skill at ${JSON.stringify(skillFile)} and execute its prepared-review contract now, using context ${JSON.stringify(contextFile)}. Validate with node ${JSON.stringify(path.join(run, 'runtime.js'))} validate-context ${JSON.stringify(contextFile)} first. Review only fixed PR ${repository}#${options.number}. Remain in this Orca terminal/base checkout; do not create another visible workspace, worktree, terminal, or agent environment. Preserve substantive review and security checks. Never post without explicit user confirmation.`;
+    const receipt = orcaResult(orca, ['terminal', 'send', '--terminal', resources.terminalHandle, '--text', prompt, '--enter', '--wait-submit', '15'], callerRoot);
+    privateWrite(path.join(run, 'submission.json'), receipt);
+    if (receipt.send?.handle !== resources.terminalHandle || receipt.send.accepted !== true) throw new Error('OMP prompt not accepted');
+    const status = receipt.send.prompt?.stages?.includes('turn_started') ? 'submitted' : 'accepted';
+    const result = { status, stage: 'agent-prompt', runId, repository, prNumber: options.number, ...resources, artifactPath: run, contextFile, submission: receipt };
     privateWrite(path.join(run, 'startup.json'), result);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } catch (error) {
@@ -185,7 +207,7 @@ async function launch(args) {
   }
 }
 
-module.exports = { parseArgs, validateMetadata, assertSameRevision, validateContext, recordFailure };
+module.exports = { parseArgs, validateMetadata, assertSameRevision, validateContext, recordFailure, orcaCommand };
 if (require.main === module) {
   if (process.argv[2] === 'validate-context') {
     try {
@@ -193,7 +215,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(validateContext(process.argv[3]), null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nRequires a local matching repository and Herdr. Failures retain all created resources.\n');
+    process.stdout.write('Usage: pr-review [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nRequires a local matching repository registered in Orca, its CLI/runtime, gh and OMP. No Herdr environment or integration is required. Failures retain all created resources.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

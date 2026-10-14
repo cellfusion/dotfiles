@@ -1,9 +1,9 @@
-# worktree — Herdr・OMP・Worktrunkの分担
+# worktree — Herdr・Orca・OMP・Worktrunkの分担
 
-| 用途 | 管理 | Herdrへの表示 |
+| 用途 | 管理 | 表示 |
 |---|---|---|
 | メインエージェントの作業隔離 | defaultブランチからHerdrでworktreeを作成 | 専用workspace |
-| PRレビュー | PRのbaseコミットからHerdrでworktreeを作成 | 専用workspace、root paneでOMP |
+| PRレビュー | PRのbaseコミットからOrcaでworktreeを作成 | Orca worktree、専用terminalでOMP |
 | 子作業の書き込み分離 | Worktrunk (`wt`) | workspace・tab・paneを追加しない |
 
 通常の委譲はOMP内で済ませる。ユーザーが確認・介入したい作業、独立した対話、
@@ -54,7 +54,7 @@ MADで台帳を使う場合は`mad-worktree`がWorktrunkを呼び、path・branc
 
 ## PRレビュー
 
-Herdr内のリポジトリから次を実行する。
+Orca に登録済みのリポジトリから実行する。Orca 外の通常の端末でもよい。
 
 ```sh
 pr-review 123
@@ -65,9 +65,11 @@ pr-review https://github.com/owner/repo/pull/123 --quick
 環境作成前に停止する。PRのbase/headを固定し、base側でOMPを起動する。
 PR headの指示ファイルを起動時に読み込ませないためである。
 
-レビュー用worktreeとworkspaceを作り、既存root paneでOMPと`pr-review`スキルを開始する。
-準備済み環境内では追加worktreeやOMPを作らない。
-OMPから委譲するときは`--no-focus`を付ける。
+Orca のレビュー用 worktree を `--setup skip` で作り、専用 terminal で OMP とスキルを開始する。
+私有 session ディレクトリと `autoResume: false` で履歴を分離し、Herdr 拡張は使わない。
+準備済み環境内では追加 worktree や OMP を作らない。OMP から呼ぶときは `--no-focus` を付ける。
+返された完全な `worktreeId`、`terminalHandle`、私有成果物の path と送信 receipt を記録する。
+`accepted` は入力受理だけを示す。開始未確認なら同じ terminal を確認し、自動で再送しない。
 
 結果と環境は確認・追加質問用に残す。投稿や終了だけを理由に自動削除しない。
 GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked、unknownは完了ではなく、
@@ -75,10 +77,11 @@ GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked
 
 ## 所有権と終了
 
-作成時に管理者（Herdr／Worktrunk／external）、絶対path、branch、base SHA、
-workspace/pane IDがあればそのID、統合状態を記録する。
+作成時に管理者（Herdr／Orca／Worktrunk／external）、絶対path、branch、base SHA、
+workspace/pane ID または Orca worktreeId/terminalHandle、統合状態を記録する。
 
 - Herdrで作ったworktreeはHerdr経路で終了する。
+- Orca で作ったレビュー環境は、明示的な終了承認後に Orca 経路で終了する。成果物は残す。
 - Worktrunkで作った子worktreeはWorktrunk経路で終了する。
 - 既存・外部所有のworktreeは削除しない。
 - 実行中、未保存、未統合、保留、所有権不明の場合は保持する。

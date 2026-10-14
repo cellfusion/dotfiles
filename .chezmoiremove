@@ -169,7 +169,7 @@ CLAUDE.md
 # 2026-10-06: agents launch directly through Herdr; Alt-a now opens Tuicr.
 .config/television/cable/custom-agent-launcher.toml
 
-# PR reviews now start in Herdr through pr-review; retire this plugin's code only.
+# PR reviews now start in Orca through pr-review; retire this plugin's code only.
 .local/share/paseo-plugins/pr-review
 
 # 2026-10-06: retire Paseo-only workflow transports; keep provider/auth state.
@@ -184,7 +184,6 @@ CLAUDE.md
 .agents/skills/task-routing/scripts/mad-route-admit
 
 # 2026-10-07: retire Orca/Paseo/Pi/opencode integration leaves, not auth/history roots.
-.agents/skills/orca-cli/SKILL.md
 .agents/skills/orchestration/SKILL.md
 .omp/agent/extensions/orca-agent-status.ts
 .omp/agent/extensions/orca-prefill.ts

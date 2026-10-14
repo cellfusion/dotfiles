@@ -33,14 +33,16 @@ A submodule's separate Git directory does not imply a linked worktree. If alread
 current task, reuse it; do not create another or open a Herdr workspace automatically. A child with
 its own write ownership can still need a separate worktree from this parent checkout.
 
-Record repository identity, caller root, branch/detached state, base SHA, owner (`herdr`,
-`worktrunk`, or `external`), absolute path, workspace/pane IDs only when they exist, creation/adoption
-status, integration state, and liveness. Determine owner from prior metadata and host inspection,
-not directory names. Missing/unknown owner is external for cleanup purposes.
+Record repository identity, caller root, branch/detached state, base SHA, owner (`herdr`, `orca`,
+`worktrunk`, or `external`), absolute path, workspace/pane IDs or Orca worktreeId/terminalHandle
+when they exist, creation/adoption status, integration state, and liveness. Determine owner from
+prior metadata and host inspection, not directory names. Unknown owner is external for cleanup.
 
 For Herdr inspection, read `herdr` and current CLI help, use explicit current workspace/pane IDs or
 `--current` where supported, and match the exact checkout path. Never delete/re-create a resource
 because inspection failed. Worktrunk visibility in a list does not establish Worktrunk ownership.
+For Orca review ownership, read `orca-cli` and its version-matched guide. Match the full returned
+worktreeId and absolute checkout path using the selected CLI; do not require Herdr metadata.
 
 ## Safety and base prerequisites
 
@@ -78,9 +80,9 @@ If creation returns incomplete information, retain known IDs/paths and report th
 orphan risk. Do not retry creation, use another backend, or remove partially known resources.
 
 For PR review, use the dedicated shell entry `pr-review [--quick] <PR>`; agents add `--no-focus`.
-It creates the base-SHA Herdr review worktree/workspace and starts OMP in its root pane. Prepared
-reviews reuse that environment and fixed context. Do not manually checkout PR head, create an
-additional pane, or run head-side instructions before the review trust boundary is established.
+It creates the base-SHA Orca review worktree and starts a run-private OMP session in a dedicated
+terminal, without Herdr dependencies or setup hooks. Prepared reviews reuse that environment and
+fixed context. Do not checkout PR head, add terminals, or run head-side instructions before validation.
 Head-code execution, if authorized, belongs to a separate hidden Worktrunk checkout.
 
 ## Route B: hidden child write isolation
@@ -129,6 +131,9 @@ failed, pending, or parked work. Keep artifacts and ownership records after fail
 
 - **Herdr owner:** use `herdr worktree remove --workspace <id>` without `--force`, after verifying
   no active/unsaved work. Ending/posting a PR review never auto-removes its workspace.
+- **Orca review owner:** read `orca-cli` and the selected executable's current removal help.
+  After explicit cleanup approval, use the owning Orca worktree/terminal route without force,
+  after proving saved/inactive state. Keep review artifacts; posting never triggers removal.
 - **Worktrunk owner:** from outside the child checkout, use
   `wt -C <parent> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json`.
   Keep the branch unless separate deletion is authorized. A declined checkout retains its branch.
