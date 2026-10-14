@@ -150,9 +150,13 @@ For detached HEAD, use an explicitly chosen branch name:
 git push origin HEAD:refs/heads/<new-branch>
 ```
 
-Create the Pull Request only when the user selected this option and the forge CLI is available. Use
-the repository's PR template and base branch. Report the URL. Retain the worktree for follow-up
-feedback. Do not remove it after opening the PR.
+After the separately authorized push, use `create-pr` to inspect the branch, prepare a change-specific
+title/body, and save a reviewable Markdown revision. The integration-menu selection is not approval
+of unpublished text: obtain explicit creation approval after showing that exact revision and target,
+including for a draft PR. If `create-pr` is unavailable, save and preview the repository-template
+body and obtain the same post-preview approval; never create a PR directly from this menu choice.
+Recheck the approved body and base/head identity before publication. Report the verified URL only
+after creation. Retain the worktree and draft artifacts for feedback; do not remove them.
 
 ### Choice 3: retain
 
