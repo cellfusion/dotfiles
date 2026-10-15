@@ -539,6 +539,57 @@ TUI の準備と terminal/worktree の一致を確認してから要求を送る
 成果物とworkspaceは保持し、GitHubへの投稿は明示確認後に行う。
 起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
 
+開始時に、実際の branch・SHA・base checkout の場所と、レビュー対象の固定 base/head SHA を
+分けて表示する。cwd が base でも head のソースは固定 Git blob から読めるが、その cwd で
+head のテスト・ビルドは実行しない。実行できない項目や権限不足は、開始時から明示する。
+head へ checkout して解消しようとしない。
+
+私有 run の trusted `runtime.js` が `inspect-context`、`prepare-coverage`、
+`read-source`、`render-summary`、`validate-review` を提供する。`prepare-coverage` は固定 merge-base から
+head までの全 changed file を `coverage.json` に列挙する。`read-source` の `base` は
+比較元の merge-base、`head` は固定 head を指し、実行中の base checkout とは区別する。
+取得範囲は `context/source-reads.jsonl`、本文は `context/source-evidence/` に残る。
+全体の探索には、同じ処理が保存する `context/base-tree.json` と `context/head-tree.json`
+（固定 tree の全 path・mode・type・object ID）を使う。未変更ファイルや gitlink も一覧に残る。
+取得しただけでは精読の証明にならないため、出力が省略された範囲は分割して実際に読む。
+
+追加ファイルの base 側、削除ファイルの head 側は存在しないものとして扱う。同じ path が
+ディレクトリに変わっても、その tree を file blob として扱わない。rename は旧 path と新 path
+で比較し、純粋な移動や diff の context 行を inline finding の変更行として扱わない。
+旧 path がディレクトリになった場合も、配下の別ファイルの追加行を rename 先の根拠にしない。
+Git の引用付き path を復元し、対象 head path の diff section 内だけで追加行を検証する。
+
+各ファイルを精読・機械比較・理由付き除外・未確認に分類し、未変更の caller や依存先も
+必要に応じて追う。重要な挙動は before/after、到達経路、静的確認か実行確認かを記録する。
+メジャー依存更新や非同期 lifecycle の変更は高リスクとして扱う。finding では新規回帰と
+既存不具合・意図した変更を区別し、公式仕様、静的解析、既存 CI、ローカル再現の根拠と
+限界を混同しない。同一セッションで観点を切り替えた逐次確認を、独立レビューとは呼ばない。
+
+finding の CI／local 根拠と挙動の `executed` は、固定 head の `targetSha` を持つ
+同種 check の `pass` または `fail` を参照する。`executed` は実行済みの意味であり、
+成功の意味ではない。`not_run` は実行根拠にならず、PR script の実行を義務付けるものでもない。
+委譲は `none` または `omp-internal` とし、summary route は完了 lens の
+`independent` > `sequential` > `primary` の順で決める。完了 lens がなければ `primary` とする。
+
+JSON 成果物を構成した後、`render-summary <prepared-context.json>` の JSON 応答から
+`markdown` を取得し、`<!-- pr-review-summary:start -->` から
+`<!-- pr-review-summary:end -->` までの block 全体を `review.md` に一度だけ挿入する。
+分類件数・除外・未読、実際の checkout と対象 SHA、plan/profile、委譲・lens route、
+check 結果と制限は canonical 成果物から生成する。block を手書きで変更せず、元の成果物を
+変更したら再生成する。runtime の export は `renderSummary(file, cwd?, env?)`。
+
+render は承認や検証完了ではない。最終報告前と投稿前に `validate-review` で identity、
+証跡・範囲、coverage、finding、check、plan、metadata の pr/revision/review/workspace/delegation、
+report の整合を検査する。canonical block は唯一かつ生成結果と完全一致させ、
+`Verdict: ...`、`Coverage: complete|partial` の該当値と canonical finding heading も保持する。
+未確認が残る場合は partial とし、profile を full にせず、PASS も出さない。具体的な指摘が
+なければ BLOCKED、根拠のある指摘があれば制限付きの NEEDS_ATTENTION とする。complete でも
+除外や静的確認の限界は残り、整合検査の成功は全不具合の発見や実行時の正しさ、任意の文章の
+真偽を保証しない。投稿には検証済みの block を含む本文を使い、明示確認と stale 拒否を維持する。
+
+Claude command の管理元は `private_dot_config/claude/commands/pr-review.md.tmpl`。
+共通 skill を展開して配布するため、テンプレート式を含む通常の `.md` として保存しない。
+
 PR レビューの起動には現在の Orca CLI を使う。以前の Orca 設定・OMP 拡張は復活させない。
 Paseo、Pi、opencode の設定配布・起動連携は退役した。
 `.chezmoiremove` は以前配布した個別ファイルと旧 Orca OMP 拡張を回収する。
