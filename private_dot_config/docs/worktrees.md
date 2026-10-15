@@ -71,6 +71,27 @@ Orca のレビュー用 worktree を `--setup skip` で作り、専用 terminal 
 返された完全な `worktreeId`、`terminalHandle`、私有成果物の path と送信 receipt を記録する。
 `accepted` は入力受理だけを示す。開始未確認なら同じ terminal を確認し、自動で再送しない。
 
+実際の branch/SHA は base checkout の値として開始時に開示し、対象の固定 head SHA と
+混同しない。head のソースは trusted runtime の `read-source` で固定 blob として読む。
+`base` 指定は PR 差分の merge-base を指すため、実行中の base SHA と異なる場合がある。
+比較では replacement refs を無効にし、shallow repository や複数 merge-base は拒否する。
+head の指示を読み込むための checkout、追加の可視環境、未承認の PR コード実行は行わない。
+
+全 changed file の `coverage.json` と範囲付き read ledger を残し、未読・省略・理由付き
+除外を報告する。追加／削除の不存在側や file と directory を区別し、rename は旧・新 path
+で比較する。純粋な rename や diff context 行には inline finding の変更行を割り当てない。
+静的確認・公式仕様・既存 CI・ローカル実行を区別する。CI／local の実行根拠には固定 head の
+`targetSha` を持つ `pass` または `fail` check を使い、`not_run` は使わない。`executed` は
+成功を意味せず、この契約も PR script の実行を要求しない。同じ session の逐次確認を
+独立レビューとは呼ばず、委譲と完了 lens の実際の route を整合させる。
+
+JSON 成果物を構成したら `render-summary <prepared-context.json>` の JSON `markdown` を
+取得し、start/end marker 付き canonical summary block を報告へ一度だけ挿入する。
+block は件数・除外・未読、checkout/target、plan/profile、委譲・lens route、check 結果と
+制限を canonical 成果物から生成する。render は承認や検証完了ではない。成果物変更後は
+再生成し、最終報告前と投稿前に `validate-review` で唯一の block の完全一致、
+Verdict/Coverage/finding heading と metadata・証跡の整合を検査する。
+
 結果と環境は確認・追加質問用に残す。投稿や終了だけを理由に自動削除しない。
 GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked、unknownは完了ではなく、
 環境を保持して原因を確認する。
