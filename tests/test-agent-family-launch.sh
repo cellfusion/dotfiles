@@ -63,7 +63,7 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   for (const [config, args] of [
     [missing, ['--family=codex', '--environment=lab']],
     [malformed, ['--family=codex']],
-    [configPath, ['--family=omp', '--environment=lab']],
+    [configPath, ['--family=omp', '--environment=']],
     [configPath, ['--family=pi']], [configPath, ['--family=opencode']],
     [configPath, ['--provider=codex']], [configPath, ['--environment=lab']],
     [configPath, ['--family=codex', '--family=claude']], [configPath, ['--family=codex', '--environment=missing']],
@@ -84,6 +84,16 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
     }), 'agent OMP')
     if (result.binary !== 'omp' || result.profile !== null || result.storage !== null) {
       throw new Error('agent OMP did not use native default state')
+    }
+  }
+  for (const config of [missing, malformed, configPath]) {
+    for (const option of [['--environment=hoge'], ['--environment', 'hoge']]) {
+      const result = successful(run(config, mockBin, ['--family=omp', ...option], {
+        OMP_PROFILE: 'inherited', PI_CODING_AGENT_DIR: '/old/pi',
+      }), 'named OMP environment')
+      if (result.profile !== 'hoge' || result.storage !== null) {
+        throw new Error('explicit OMP environment did not select an isolated profile')
+      }
     }
   }
 

@@ -234,8 +234,9 @@ zsh 設定を読まない process は family wrapper を bypass する。
 `agent --family=omp -- [args...]` と bare `omp` は、この環境 resolver を通さずに起動する。
 `OMP_PROFILE` と `PI_CODING_AGENT_DIR` を解除し、`~/.omp/agent/config.yml` のデフォルト設定を使う。
 OMP の起動に `agent-config.json` は不要で、ファイルが不正でも参照しない。
-`--environment` は受け付けない。明示的なプロファイル指定が必要なら、`--` の後に
-OMP 自身の `--profile <name>` を渡す。
+`agent --family=omp --environment=hoge -- [args...]` は OMP の `hoge` プロファイルで起動する。
+`--environment hoge` 形式も使える。`agent-config.json` の環境定義は不要。
+未指定時は従来どおりデフォルト状態を使う。OMP 自身の `--profile <name>` も `--` の後に渡せる。
 
 
 ## core

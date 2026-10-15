@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch Claude/Codex in a selected environment, or OMP in its native default state.
+# Launch Claude/Codex in a selected environment, or OMP in a native profile.
 set -eu
 
 usage_error() {
@@ -36,8 +36,9 @@ while [ "$#" -gt 0 ]; do
 done
 case "$family" in
   omp)
-    [ "$environment_seen" -eq 0 ] || usage_error 'OMP uses default state; --environment is not supported'
+    [ "$environment_seen" -eq 0 ] || [ -n "$environment" ] || usage_error '--environment needs a value'
     unset OMP_PROFILE PI_CODING_AGENT_DIR
+    [ "$environment_seen" -eq 0 ] || export OMP_PROFILE="$environment"
     export PI_FORCE_IMAGE_PROTOCOL="${PI_FORCE_IMAGE_PROTOCOL:-kitty}"
     exec omp ${forward[@]+"${forward[@]}"} ;;
   claude|codex) ;;
