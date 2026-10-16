@@ -13,9 +13,9 @@ a skill.
 | Bug, failure, or unexpected behavior | `systematic-debugging` when root cause is unknown |
 | Existing implementation plan | `executing-plans` for a small sequential plan; `multi-agent-development` for parallel or independent review |
 | Ordinary bounded delegation | OMP internal child; no separate CLI or pane |
-| Independent CLI conversation or user intervention | `herdr`, existing cwd or one explicitly owned pane; agents do not steal focus |
-| Child write isolation only | `using-git-worktrees` hidden Worktrunk route; no Herdr workspace/tab/pane |
-| GitHub PR review | `pr-review` shell entry (agents use `--no-focus`); prepared context runs in the existing OMP/Orca terminal |
+| Independent CLI conversation or user intervention | `agent-communication` and the selected environment reference; agents do not steal focus |
+| Child write isolation only | `using-git-worktrees` recorded checkout-owner route; no interaction workspace/tab/pane |
+| GitHub PR review | `pr-review` selects/validates the host (agents use `--no-focus`); prepared context reuses its existing validated session |
 | Implementation complete or integration requested | `finishing-a-development-branch` |
 | About to claim completion or test passage | `verification-before-completion` |
 | Code-review feedback received | `receiving-code-review` |

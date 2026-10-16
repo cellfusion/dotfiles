@@ -1,9 +1,9 @@
-# worktree — Herdr・Orca・OMP・Worktrunkの分担
+# worktree — 実行環境とcheckout所有権
 
 | 用途 | 管理 | 表示 |
 |---|---|---|
 | メインエージェントの作業隔離 | defaultブランチからHerdrでworktreeを作成 | 専用workspace |
-| PRレビュー | PRのbaseコミットからOrcaでworktreeを作成 | Orca worktree、専用terminalでOMP |
+| PRレビュー | 選択環境のadapterで固定PR base SHAから隔離checkoutを作成 | HerdrまたはOrcaの専用OMP |
 | 子作業の書き込み分離 | Worktrunk (`wt`) | workspace・tab・paneを追加しない |
 
 通常の委譲はOMP内で済ませる。ユーザーが確認・介入したい作業、独立した対話、
@@ -54,22 +54,34 @@ MADで台帳を使う場合は`mad-worktree`がWorktrunkを呼び、path・branc
 
 ## PRレビュー
 
-Orca に登録済みのリポジトリから実行する。Orca 外の通常の端末でもよい。
+レビュー本体と環境操作は分ける。明示 `--environment` を優先し、未指定なら現在のhostを
+判定する。host不明・複数一致・必須能力不足では停止し、別環境へ自動fallbackしない。
 
 ```sh
-pr-review 123
-pr-review https://github.com/owner/repo/pull/123 --quick
+pr-review --environment herdr --no-focus 123
+pr-review --environment herdr --repo-path /path/to/repo --quick https://github.com/owner/repo/pull/123
+pr-review --environment orca --project my-project 123
 ```
 
-番号は現在のリポジトリに属するPRを指す。URLとローカルリポジトリが一致しなければ、
-環境作成前に停止する。PRのbase/headを固定し、base側でOMPを起動する。
-PR headの指示ファイルを起動時に読み込ませないためである。
+Herdrを選ぶ場合はHerdr管理下で実行する。番号はcwdまたは明示repo pathに属するPR。
+Orcaの `--project` は登録名または `id:<repoId>` で、URLによる登録repo検索もOrca側が担当する。
+Paseoは既知だが未対応の環境。現行CLIの能力を確認するまでは `unsupported-environment` として
+run directory・checkout・session作成前に停止する。旧transportは復活させない。
 
-Orca のレビュー用 worktree を `--setup skip` で作り、専用 terminal で OMP とスキルを開始する。
-私有 session ディレクトリと `autoResume: false` で履歴を分離し、Herdr 拡張は使わない。
-準備済み環境内では追加 worktree や OMP を作らない。OMP から呼ぶときは `--no-focus` を付ける。
-返された完全な `worktreeId`、`terminalHandle`、私有成果物の path と送信 receipt を記録する。
-`accepted` は入力受理だけを示す。開始未確認なら同じ terminal を確認し、自動で再送しない。
+URLとローカルrepositoryの一致、固定base/head、linked worktreeのGit common dir、
+clean base checkoutを検証する。PR headの指示ファイルを起動時に読み込ませない。
+私有sessionディレクトリと `autoResume: false` で履歴を分離する。hook/setupを勝手に実行しない。
+準備済み環境では追加worktreeやOMPを作らない。エージェントからの起動は `--no-focus` を付ける。
+
+Herdr経路はWorktrunkの `--no-hooks` でcheckoutを作り、Herdr workspaceをそのpathに開く。
+checkout ownerは `worktrunk`、実行環境は `herdr` と記録する。Herdrのworktree作成APIに
+setup抑止を仮定しない。Herdrのprompt応答は受理の証拠までとし、実行開始や完了とは扱わない。
+
+version 3 contextは実行環境、checkout owner、対話環境のIDを別に記録する。
+成果物にはrun内へ保存したruntime・adapter・参照文書を使い、再開時に配布元の別版へ切り替えない。
+旧version 2 runは保持するが、新runtimeでは受け付けない。必要な継続には旧runのsnapshotを使う。
+返されたowner・path・workspace/paneまたはterminalのIDと送信証拠を記録する。
+`accepted` は入力受理だけを示す。開始未確認なら同じ資源を確認し、自動で再送しない。
 
 実際の branch/SHA は base checkout の値として開始時に開示し、対象の固定 head SHA と
 混同しない。head のソースは trusted runtime の `read-source` で固定 blob として読む。
@@ -98,12 +110,13 @@ GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked
 
 ## 所有権と終了
 
-作成時に管理者（Herdr／Orca／Worktrunk／external）、絶対path、branch、base SHA、
-workspace/pane ID または Orca worktreeId/terminalHandle、統合状態を記録する。
+作成時にcheckout owner（Herdr／Orca／Worktrunk／external）、絶対path、branch、base SHAを記録し、
+実行環境のsession/workspace/pane/terminalとagent identityは別に記録する。
+Herdrで動いていることやWorktrunk一覧に載ることだけで、checkoutのownerを推定しない。
 
 - Herdrで作ったworktreeはHerdr経路で終了する。
-- Orca で作ったレビュー環境は、明示的な終了承認後に Orca 経路で終了する。成果物は残す。
-- Worktrunkで作った子worktreeはWorktrunk経路で終了する。
+- Orcaで作ったレビュー環境は、明示的な終了承認後にOrca経路で終了する。成果物は残す。
+- Worktrunkで作ったworktreeはWorktrunk経路で終了する。Herdr内で使っていてもownerは変わらない。
 - 既存・外部所有のworktreeは削除しない。
 - 実行中、未保存、未統合、保留、所有権不明の場合は保持する。
 - force／clobberを標準にしない。ブランチ削除は別判断にする。

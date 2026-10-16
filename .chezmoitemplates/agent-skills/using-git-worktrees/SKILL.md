@@ -1,18 +1,20 @@
 ---
 name: using-git-worktrees
 description: >-
-  Detect existing isolation and record ownership before implementation. Use Herdr for a visible main
-  workspace or PR entry and Worktrunk for hidden child write isolation, without automatic hooks or copying.
+  Detect existing isolation and record checkout ownership independently of the execution host.
+  Use the selected environment and owner references for safe creation, inspection and cleanup.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Choose Worktree Ownership Independently of Agent Execution
 
-Herdr owns visible workspaces and terminals. OMP owns ordinary internal delegation. Worktrunk owns
-hidden child write isolation. A pane and a worktree are independent decisions: a CLI conversation
-may use an existing cwd; a write-isolated child has no extra pane. Do not make a new environment
-merely to run an OMP child. Do not start a second orchestration runtime for ordinary delegation.
+Execution, interaction and checkout ownership are independent decisions. A CLI conversation may
+use an existing cwd; a write-isolated child needs no extra pane. Do not create a new environment
+merely to run an internal child or start a second orchestration runtime for ordinary delegation.
+Read the [environment contract](references/environments.md), then only the selected host/owner
+references: [Herdr](references/herdr.md), [Orca](references/orca.md),
+[Paseo](references/paseo.md), and [Worktrunk](references/worktrunk.md).
 
 ## Step 0: detect and record existing isolation
 
@@ -30,19 +32,18 @@ git worktree list --porcelain
 ```
 
 A submodule's separate Git directory does not imply a linked worktree. If already isolated for the
-current task, reuse it; do not create another or open a Herdr workspace automatically. A child with
-its own write ownership can still need a separate worktree from this parent checkout.
+current task, reuse it; do not create another checkout or interaction workspace automatically.
+A child with its own write ownership may still need isolation from this parent checkout.
 
-Record repository identity, caller root, branch/detached state, base SHA, owner (`herdr`, `orca`,
-`worktrunk`, or `external`), absolute path, workspace/pane IDs or Orca worktreeId/terminalHandle
-when they exist, creation/adoption status, integration state, and liveness. Determine owner from
-prior metadata and host inspection, not directory names. Unknown owner is external for cleanup.
+Record repository/common Git directory, caller root, branch/detached state, immutable base SHA,
+absolute checkout path, checkout owner and its owner-specific ID, creation/adoption status,
+integration and liveness. Record execution environment and interaction session/workspace/pane/
+terminal/agent identities separately. Determine owner from creation records and live inspection,
+not directory names, the active host, or visibility in another tool's list. Unknown owner is
+external for cleanup. A host may display a checkout created by a different owner.
 
-For Herdr inspection, read `herdr` and current CLI help, use explicit current workspace/pane IDs or
-`--current` where supported, and match the exact checkout path. Never delete/re-create a resource
-because inspection failed. Worktrunk visibility in a list does not establish Worktrunk ownership.
-For Orca review ownership, read `orca-cli` and its version-matched guide. Match the full returned
-worktreeId and absolute checkout path using the selected CLI; do not require Herdr metadata.
+Use the selected references to inspect the exact path and full identities. Never delete/re-create
+a resource because inspection failed, or require another host's metadata to validate its owner.
 
 ## Safety and base prerequisites
 
@@ -59,53 +60,25 @@ clobber, or silent fallback to the caller checkout when creation fails.
 
 ## Route A: visible main work
 
-Read `herdr` and live help. Resolve the repository's actual default branch and its committed SHA
-from repository metadata; do not guess `main`/`master`. New main work starts from that default
-base unless the user specifies another base. Reuse an existing task workspace rather than resetting
-it to default or nesting another worktree.
+Resolve the repository's actual default branch and its committed SHA from repository metadata;
+do not guess `main`/`master`. New main work starts from that default base unless the user specifies
+another base. Reuse an existing approved task workspace rather than resetting it or nesting another
+worktree. Select a supported host through the [environment contract](references/environments.md)
+and follow its reference for no-focus creation, safe hook policy and live identity inspection.
 
-From agent control, create without taking focus:
-
-```bash
-out=$(herdr worktree create \
-  --workspace "$HERDR_WORKSPACE_ID" --branch "$NEW_BRANCH" \
-  --base "$DEFAULT_BASE_SHA" --no-focus)
-WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.result.worktree.path')
-WORKSPACE_ID=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
-ROOT_PANE_ID=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
-```
-
-Use returned IDs/path and record owner `herdr`. Validate path, branch, and base before handing off.
-If creation returns incomplete information, retain known IDs/paths and report the failure stage and
-orphan risk. Do not retry creation, use another backend, or remove partially known resources.
-
-For PR review, use the dedicated shell entry `pr-review [--quick] <PR>`; agents add `--no-focus`.
-It creates the base-SHA Orca review worktree and starts a run-private OMP session in a dedicated
-terminal, without Herdr dependencies or setup hooks. Prepared reviews reuse that environment and
-fixed context. Do not checkout PR head, add terminals, or run head-side instructions before validation.
-Head-code execution, if authorized, belongs to a separate hidden Worktrunk checkout.
+For PR review, use `pr-review [--environment herdr|orca|paseo] [--quick] <PR>`; agents add
+`--no-focus`. See `pr-review` for repository selectors and prepared validation. The entry creates
+an isolated base-SHA checkout and run-private reviewer session using the selected adapter.
+Prepared reviews reuse that environment and fixed context; never relaunch, checkout PR head, add
+terminals or execute head-side instructions. Head-code execution, if separately authorized, belongs
+to an independently recorded hidden checkout, not the base runtime.
 
 ## Route B: hidden child write isolation
 
-Use Worktrunk only; this route does not create or open any Herdr workspace/tab/pane. Read live
-`wt switch --help` and `wt remove --help`. Resolve a unique safe branch and the committed parent
-base, check collision/ownership first, then:
-
-```bash
-out=$(wt -C "$CALLER_ROOT" switch --create "$CHILD_BRANCH" \
-  --base "$BASE_SHA" --no-cd --no-hooks --format json)
-WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.path')
-```
-
-`--format json` is the actual interface, not `--json`. Read the absolute path from JSON; do not
-predict it from the path template. Require `action=created`, `created_branch=true`, and the expected
-branch, then verify HEAD equals the recorded base. Record owner `worktrunk`, no workspace/pane ID,
-and integration `pending`. The retained `mad-worktree` helper provides this route with ownership
-records for bounded task branches.
-
-`--no-cd` leaves the parent cwd alone. `--no-hooks` suppresses user and project hooks, including
-terminal launch and arbitrary setup. Keep the configured worktree path template; do not override it
-with a second placement convention. Do not use `wt merge` to auto-integrate into default.
+Use the [Worktrunk owner reference](references/worktrunk.md) from the committed parent base.
+This creates no interaction workspace, tab or pane. Require hook suppression, returned absolute
+path, newly created branch and exact base identity. The retained `mad-worktree` helper provides
+ownership records for bounded task branches. Do not auto-integrate into the default branch.
 
 ## Setup and verification
 
@@ -129,15 +102,16 @@ Distinguish merged, explicitly declined, pending, and retained work. Remove only
 inactive resources after an explicit cleanup decision. Retain dirty, running, blocked, unknown,
 failed, pending, or parked work. Keep artifacts and ownership records after failed removal.
 
-- **Herdr owner:** use `herdr worktree remove --workspace <id>` without `--force`, after verifying
-  no active/unsaved work. Ending/posting a PR review never auto-removes its workspace.
-- **Orca review owner:** read `orca-cli` and the selected executable's current removal help.
-  After explicit cleanup approval, use the owning Orca worktree/terminal route without force,
-  after proving saved/inactive state. Keep review artifacts; posting never triggers removal.
-- **Worktrunk owner:** from outside the child checkout, use
-  `wt -C <parent> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json`.
-  Keep the branch unless separate deletion is authorized. A declined checkout retains its branch.
-- **External/unknown owner:** do not remove or prune it; report exact path and uncertainty.
+Follow the recorded owner's removal procedure, not the execution host:
+
+- [Herdr owner](references/herdr.md): verify recorded workspace and exact checkout path.
+- [Orca owner](references/orca.md): verify full owning worktree ID and dedicated terminal identity.
+- [Worktrunk owner](references/worktrunk.md): verify branch/path/base and remove without hooks,
+  from outside the checkout; branch deletion needs separate authorization.
+- External/unknown owner: do not remove or prune; report exact path and uncertainty.
+
+An interaction workspace attached to another owner's checkout is a separate resource. Ending or
+posting a PR review never removes either resource automatically. Keep all review artifacts.
 
 Never infer saved/inactive state from an idle CLI alone. Never use force/clobber or process reaping
 as routine cleanup. Branch deletion must independently prove integration into the parent and remain

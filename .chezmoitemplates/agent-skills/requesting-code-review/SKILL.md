@@ -28,11 +28,14 @@ Choose the lightest route that can answer the question:
 Do not dispatch a child merely because a review is required. Do not skip independent review for a
 major change merely because the diff looks familiar.
 
-Use OMP internal read-only delegation for ordinary independent review; it needs no pane or
-worktree. Use a Herdr CLI/pane only for an explicitly independent conversation. Write-isolated
-fixes use hidden Worktrunk separately, without creating a pane.
-Normal GitHub PR review uses `pr-review --no-focus [--quick] <PR>` from agents;
-prepared review context stays in its existing OMP/Orca terminal instead of creating another environment.
+Use the current runtime's read-only internal delegation for ordinary independent review; it needs
+no pane or worktree. Delegate explicitly independent conversations to `agent-communication` and
+the [environment contract](../using-git-worktrees/references/environments.md). Delegate write-isolated
+fixes separately to `using-git-worktrees`; an execution host does not determine checkout ownership.
+Normal GitHub PR review uses `pr-review --environment <herdr|orca|paseo> --no-focus [--quick] <PR>`
+from agents, with selection and environment-specific options defined by `pr-review`. Verified current
+host selection may omit `--environment`; unknown or ambiguous hosts stop before side effects.
+Prepared review context stays in its existing validated environment instead of creating another one.
 
 ## When review is required
 
@@ -116,10 +119,10 @@ Require the reviewer to:
 - state which lenses and checks were not run and why
 - avoid changing, committing, or pushing source files
 
-For a single reviewer, use OMP's available read-only reviewer role. For multiple independent lenses,
-use the MAD `review` recipe with fixed packages and a parent integration owner. Keep model and
-permission defaults; do not invent a provider/engine or use old transport schemas to force a backend.
-Verify the returned result independently; a child claim of success is not evidence.
+For a single reviewer, use the current runtime's available read-only reviewer role. For multiple
+independent lenses, use the MAD `review` recipe with fixed packages and a parent integration owner.
+Keep model and permission defaults; do not invent a provider/engine or use old transport schemas
+to force a backend. Verify the returned result independently; a child success claim is not evidence.
 
 ## 4. Adopt findings proportionally
 

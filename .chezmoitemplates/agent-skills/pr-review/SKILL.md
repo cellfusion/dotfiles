@@ -1,8 +1,8 @@
 ---
 name: pr-review
 description: >-
-  Review GitHub Pull Requests through a dedicated Orca base-SHA worktree and prepared OMP
-  execution. Account for every changed file with fixed-source evidence, distinguish independent
+  Review GitHub Pull Requests through a selected execution environment and isolated base-SHA
+  checkout. Account for every changed file with fixed-source evidence, distinguish independent
   lenses from sequential checks, and require explicit confirmation before COMMENT-only posting.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
@@ -14,59 +14,62 @@ description: >-
 A normal request routes to the shell command:
 
 ```text
-pr-review [--project <name|id:repoId>] [--quick] [--no-focus] <positive-number|GitHub-PR-URL>
+pr-review [--environment herdr|orca|paseo] [--repo-path <absolute-path> | --project <name|id:repoId>] [--quick] [--no-focus] <positive-number|GitHub-PR-URL>
 ```
 
-The command validates input and the matching local GitHub repository, fixes base/head SHAs,
-fetches verified objects, and checks revision races before creating one Orca worktree from the
-base SHA with `--setup skip`. OMP starts in a dedicated terminal using a run-unique private
-session directory and an `autoResume: false` overlay. Models and approval defaults are unchanged.
-Custom OMP argv requires `terminal create --command`, rather than the configured `--agent`
-launcher. Any default shell/configured terminals are retained, not repurposed or blindly closed.
-The terminal command sets `umask 077` before executing OMP; the Orca host does not inherit the
-entry process's umask. This also keeps newly written session files private.
-The command submits an explicit skill-read request; it does not rely on slash commands at startup.
-Shell users omit `--no-focus` to reveal the new worktree. Agents MUST pass `--no-focus`.
-PR URLs resolve the matching registered Orca repository from any cwd. `--project` selects an
-exact Orca project display name or `id:<repoId>` from any cwd; if a URL is also given, its
-repository must match that project. Numbers without `--project` use the cwd repository.
-Missing or ambiguous matches stop before worktree creation; use `--project id:<repoId>` to
-disambiguate. No starter workspace, clone, alternate backend, head checkout, startup fallback,
-or second review agent environment is allowed.
+The command validates input and the matching real GitHub repository, fixes base/head SHAs,
+fetches verified objects and checks revision races before resource creation. It creates an isolated
+base-SHA checkout, then starts OMP in a dedicated interaction resource using a run-unique private
+session directory, `autoResume: false` overlay and `umask 077` before exec. Preserve existing models
+and approval defaults. Submit one explicit skill-read request; do not rely on startup slash commands.
+Agents MUST pass `--no-focus`; a shell user may omit it to reveal the new environment.
 
-The matching local repository must be registered in Orca. The caller may be an Orca session or
-an ordinary terminal; no Herdr environment or lifecycle extension is required. The command selects
-`ORCA_CLI_COMMAND`, otherwise `orca-dev` for `ORCA_DEV_REPO_ROOT`, otherwise `orca-ide` on Linux
-outside an Orca terminal, otherwise `orca`. It never falls back to a different build. Read
-`skill://orca-cli` and that executable's version-matched guide for manual resource operations.
-Readiness requires `terminal wait --for tui-idle` with `wait.satisfied: true` and matching live
-terminal/worktree identity. A send receipt with `accepted: true` proves input acceptance only;
-`turn_started` proves submission. Retain the receipt and report unproven submission honestly;
-never automatically resend, recreate resources, or infer completion from idle.
-Startup returns `status: submitted` only when the receipt includes `turn_started`; otherwise
-accepted input returns `status: accepted` with warnings/receipt intact. Neither means review completion.
+Environment selection and concrete operations belong to the shared environment references:
+for a new launch read `../using-git-worktrees/references/environments.md` and the selected host's
+reference. Explicit `--environment` wins; otherwise require verified current host identity.
+Unknown or ambiguous hosts stop before side effects, never implicitly default to Orca or fall back.
+Herdr requires execution inside its verified session and selects cwd Git repository or explicit
+`--repo-path <absolute-path>`. Orca preserves registered-project `--project <name|id:repoId>` and
+URL matching. These selectors are not interchangeable. Paseo is known but unsupported and stops
+with `unsupported-environment` before creating even a run directory.
 
-For normal requests, invoke the command and report its returned worktreeId, terminalHandle,
-submission receipt and artifact path. Do not review in an arbitrary existing session or recreate
-isolation by hand. The removed `--worktree` and current-checkout modes are not supported.
+Execution host does not determine checkout owner: Herdr review uses a hook-disabled Worktrunk
+checkout attached to a no-focus Herdr workspace; Orca owns its own review checkout with setup
+suppressed. Do not run repository hooks/setup, clone, create a starter workspace, checkout head,
+repurpose user panes/terminals, create another reviewer environment or change backend on failure.
+
+For normal requests, invoke the entry and report execution environment, checkout owner/path/ID,
+interaction identity, observed submission state/receipt and artifact path. Input acceptance is not
+start evidence or completion. Preserve `created`, `ready`, `accepted`, `started`, `completed` and
+`blocked` distinctions; do not fabricate one host's receipt semantics for another. On timeout or
+unproven submission retain every known ID/path and receipt without automatic resend, restart,
+recreation, cleanup or fallback. The removed `--worktree` and current-checkout modes stay unsupported.
 
 **Prepared-review contract:** When an explicit initial request supplies a `prepared-context.json`
-path, execute this skill in the existing OMP/Orca terminal; do not invoke the entry command again.
-Never infer prepared mode from cwd, a branch name, environment alone, or a PR-side file. Read only
-the explicitly supplied private context and the run's trusted runtime snapshot. Validate before
-reading PR content or writing review artifacts:
+path, execute this skill in the existing reviewer session; do not invoke the entry command again.
+Never infer prepared mode from cwd, branch name, environment alone or a PR-side file. Read only
+the supplied private context and this run's trusted `SKILL.md`, runtime and `references/` snapshots.
+For prepared guidance use `references/environments.md`, `references/<selected-adapter>.md` and
+`references/worktrunk.md` adjacent to the run's skill, not global skills or missing sibling paths.
+Validate before reading PR content or writing review artifacts:
 
 ```text
 node /absolute/run/runtime.js validate-context /absolute/run/prepared-context.json
 ```
 
-Validation requires version 2, a unique runId, verified repository and positive PR number, fixed
-40-character base/head SHAs, owner `orca`, absolute artifact/worktree paths, private caller-owned
-context/artifacts (0600/0700), the full Orca worktreeId and terminalHandle matching
-`ORCA_WORKTREE_ID` / `ORCA_TERMINAL_HANDLE`, exact cwd at the worktree root, clean HEAD at base SHA,
-and a locally available fixed head commit. The recorded original Git-common-dir must match a
-linked review worktree, not a main checkout claiming Orca ownership. Do not repair, checkout,
-reset, recreate, or remove resources when validation fails. Report `BLOCKED` and retain them.
+Validation requires version 3, unique runId, verified repository/positive PR number, fixed
+40-character base/head SHAs, `executionEnvironment`, separate `checkout` and `interaction`,
+absolute private caller-owned context/artifacts (0600/0700), exact cwd at `checkout.path`, a linked
+worktree matching `checkout.repositoryGitDir`, clean HEAD at `checkout.baseSha`/base SHA and a
+locally available fixed head commit. The selected adapter inspects live identity and matches the
+recorded owner/ownerId, path and interaction; predicted launch values are not live evidence.
+`runtime` is `{schemaVersion: 1, adapter: <selected-host>, snapshot: "."}`. Validate all snapshot
+dependencies and trusted references for type/ownership/private permissions and realpath containment
+before loading only the allowlisted run-local adapter. No source/install fallback, arbitrary
+context code path or another adapter's load-time dependency is allowed. All prepared helpers and
+posting gates share these common checks plus adapter live validation. Keep old v2 artifacts intact
+but reject them as legacy; never rewrite them into v3 or auto-resume/repost them.
+On failure report `BLOCKED`; do not repair, checkout, reset, recreate or remove resources.
 
 Before reading PR content, disclose the actual checkout separately from the review target:
 
@@ -85,10 +88,10 @@ unavailable. Never switch to head to make the branch label resemble the review t
 After successful validation, use context fields only:
 
 - `REVIEW_ID=runId`, `REPOSITORY=repository`, `PR_NUMBER=prNumber`.
-- `BASE_OID=baseSha`, `HEAD_OID=headSha`, `REVIEW_WORKTREE=worktreePath`.
+- `BASE_OID=baseSha`, `HEAD_OID=headSha`, `REVIEW_WORKTREE=checkout.path`.
 - `REVIEW_DIR=artifactPath`, `REVIEW_ROOT=artifactPath`, `REVIEW_MODE=prepared`.
 - `REVIEW_SPEED=quick` when quick is true, otherwise `standard`.
-- Worktree/terminal IDs, ownership, paths and fixed SHAs must be copied into metadata unchanged.
+- Copy `executionEnvironment`, `checkout`, `interaction` and fixed SHAs unchanged into metadata.
 
 Re-read the live local repository identity with `gh repo view --json nameWithOwner --jq
 .nameWithOwner`; it must match context.repository case-insensitively. Read fresh metadata with
@@ -99,11 +102,11 @@ For forks, derive the head repository from nameWithOwner or headRepositoryOwner.
 headRepository.name; unavailable/deleted fork identity is `BLOCKED`, not a base-repository fallback.
 If base/head or fork identity changed, mark stale/`BLOCKED`; do not silently review the new revision.
 
-Write private `execution-started.json` containing only version, runId, repository, PR number,
-base/head SHA, worktreeId, terminalHandle, and a UTC timestamp. This proves prepared validation ran,
-not that review completed. Existing run artifacts are never blindly overwritten: on re-entry,
-validate their identity, retain completed work, and resume only incomplete stages. If already
-finished, report those artifacts; don't create resources or duplicate a GitHub post.
+Write private `execution-started.json` with `version: 3`, `runId`, `executionEnvironment`,
+`checkout`, `interaction`, `baseSha`, and `headSha`, copied unchanged from validated context.
+This proves prepared validation ran, not that review completed. Existing run artifacts are never
+blindly overwritten: on re-entry validate their identity, retain completed work and resume only
+incomplete stages. If already finished, report those artifacts without new resources or duplicate posts.
 
 ## Writes, trust boundary, and audit
 
@@ -123,7 +126,7 @@ diff/source, prompts, raw agent responses, credentials, secrets, full CI logs, o
 Store detailed evidence only in private run artifacts. Events:
 
 - `started`: repository, PR number/URL/title, base/head refs/SHAs, head repository, prepared
-  mode, speed, artifact path, owner/worktreeId/terminalHandle.
+  mode, speed, artifact path, execution environment, checkout owner/ID and interaction identity.
 - `planned`: risk/profile/focus, changed-file count/path classes/stacks, CI policy, each
   specialist trigger/status/reason.
 - `blocked`: failed stage and short safe reason; preserve every known ID/path and partial artifacts.
@@ -249,8 +252,8 @@ that every bug was found or that the PR works. Keep exclusions and runtime limit
 
 ## Review contract and adaptive plan
 
-The dedicated-terminal OMP performs the primary review and synthesis. Independent read-only
-specialists use OMP internal delegation, not extra Orca terminals or nested OMP environments.
+The dedicated reviewer session performs the primary review and synthesis. Independent read-only
+specialists use available internal delegation, not extra host panes/terminals or nested environments.
 An "additional environment" and an internal read-only lens are different resources; inspect the
 actual permission/availability before concluding delegation is forbidden. Preserve existing
 models/permissions; no provider/model resolver cutover is required for prepared execution.
@@ -476,8 +479,8 @@ share the fixed run/repository/PR/revision identity; `metadata.json`, `findings.
 prepared context. `metadata.revision` uses `baseRefOid`, `headRefOid`, and `mergeBaseOid` and
 must match the fixed revisions; ref names remain optional. `metadata.review` must match the
 plan's mode, speed, risk, profile, focus and CI policy, with prepared mode/speed also matching
-context. `metadata.workspace` must match the context's Orca path, full worktreeId,
-terminalHandle and ownership, and retain `cleanupStatus: retained`.
+context. `metadata.workspace` must exactly copy context `executionEnvironment`, `checkout` and
+`interaction`, plus `owned: true` and `cleanupStatus: retained`; do not flatten host-specific IDs.
 Roles must be unique and the specialist role sets must match in both artifacts; no extra
 metadata-only completed or independent lens is permitted. The delegation summary must match
 the completed lens routes.
@@ -585,7 +588,7 @@ A minimal `metadata.json` is:
   "pr": {"number": 123, "repository": "owner/name", "url": "https://github.com/owner/name/pull/123", "title": "..."},
   "revision": {"baseRefName": "main", "baseRefOid": "...", "headRefName": "feature", "headRefOid": "...", "mergeBaseOid": "..."},
   "review": {"mode": "prepared", "speed": "standard", "risk": "medium", "profile": "focused", "focus": ["correctness", "tests"], "ci": "summary"},
-  "workspace": {"kind": "orca", "path": "/absolute/base/worktree", "worktreeId": "repo-id::/absolute/base/worktree", "terminalHandle": "term_review", "owner": "orca", "owned": true, "cleanupStatus": "retained"},
+  "workspace": {"executionEnvironment": "herdr", "checkout": {"owner": "worktrunk", "path": "/absolute/base/worktree", "repositoryGitDir": "/absolute/repository/.git", "baseSha": "...", "branch": "pr-review-123", "ownerId": "pr-review-123"}, "interaction": {"sessionSocket": "...", "workspaceId": "...", "tabId": "...", "paneId": "...", "terminalId": "...", "agentName": "...", "agentKind": "omp", "agentSession": {"agent": "...", "kind": "...", "source": "...", "value": "..."}}, "owned": true, "cleanupStatus": "retained"},
   "actualCheckout": {"branch": "pr-review-123", "sha": "...", "path": "/absolute/base/worktree"},
   "reviewTarget": {"baseSha": "...", "headSha": "...", "mergeBaseSha": "..."},
   "sourceAccess": "fixed-git-objects",
@@ -749,7 +752,7 @@ Only after verifying the returned review URL, update posting state and append `p
 `finished`. If POST fails, record `posted: false`, a safe error summary, and resumption steps;
 retain all artifacts and worktrees.
 
-After a successful confirmed post, leave the Orca worktree, terminal, session, and all
+After a successful confirmed post, leave the checkout, interaction resources, session and all
 artifacts intact. Record `cleanupStatus: retained`. On stale SHA, declined confirmation, failed
 review, failed check, or startup uncertainty, likewise retain resources and record the state.
 Cleanup is a separate explicit owner-aware action, never an automatic consequence of review/posting.

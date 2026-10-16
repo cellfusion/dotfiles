@@ -1,76 +1,64 @@
-## Delegate through a worktree
+## Delegate through an owned environment
 
-Use this route only when the approval gate explicitly selects a visible independent Herdr handoff.
-Ordinary bounded delegation stays inside OMP; write isolation alone uses hidden Worktrunk without a
-pane. Keep the parent pane open. `HERDR_ENV=1` was verified by the approval gate.
+Use this route only when the approval gate explicitly authorizes an independent interaction and
+the required checkout ownership. Ordinary bounded delegation stays internal; write isolation alone
+needs no pane. This template does not choose a host or override `task-routing`. Keep the parent
+available, and preserve any already prepared environment rather than launching another.
 
 ### 1. Re-read and scope the artifact
 
-The on-disk artifact is canonical after any preview edits. Re-read its absolute path. Record goal,
-allowed files, acceptance, verification owner, and constraints. Do not turn approval of a plan into
-permission to commit, push, apply, install, or operate externally.
+The on-disk artifact is canonical after preview edits. Re-read its absolute path. Record goal,
+allowed files, acceptance, verification owner and constraints. Plan approval is not permission to
+commit, push, apply, install or operate externally.
 
-Read `using-git-worktrees` and `herdr`, then the current CLI help. Reuse an existing approved task
-workspace if one exists; do not create a duplicate. Record known ownership, cwd, branch, workspace,
-and pane. Unknown ownership or creation state requires inspection, not replacement.
+Read `using-git-worktrees` and its `references/environments.md`, then the explicitly selected host
+and checkout-owner references. Resolve actual supported capabilities and live identity before
+resource creation; host ambiguity, unknown ownership or unsupported capabilities stop the handoff.
+Reuse an existing approved task environment rather than creating a duplicate.
 
 ### 2. Choose the branch and base
 
-Use a unique safe branch such as `feat/<feature-name>`. Resolve the specified base to a commit SHA;
-new main work defaults to the actual repository default branch, not guessed `main` or `master`.
-A child continuing committed parent work uses its explicitly recorded parent base instead.
+Use a unique safe branch. Resolve the specified base to an immutable commit SHA; new main work
+defaults to the actual repository default branch, not guessed `main`/`master`. A child continuing
+committed parent work uses its recorded parent base instead.
 
-Check branch collision and prerequisites before creation. If required work is uncommitted, obtain a
-user-scoped commit/transfer decision; never auto-copy the dirty tree or secret local files. A branch
-collision stops creation and returns to the gate without modifying the existing branch.
+Check collision and prerequisites before creation. Required uncommitted work needs a user-scoped
+commit/transfer decision; never auto-copy dirty or secret files. Collision stops creation without
+modifying the existing branch.
 
-### 3. Create one Herdr workspace
+### 3. Create only the authorized resources
 
-```bash
-out=$(herdr worktree create \
-  --workspace "$HERDR_WORKSPACE_ID" --branch "$NEW_BRANCH" \
-  --base "$BASE_SHA" --label "$FEATURE_LABEL" --no-focus)
-ws=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id')
-pane=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id')
-path=$(printf '%s' "$out" | jq -er '.result.worktree.path')
-```
+Follow the selected reference's concrete commands and no-focus policy. Require proven hook/setup
+suppression, returned IDs and absolute path, exact common Git directory/branch/base validation.
+Record checkout owner/owner-specific ID separately from execution host and interaction identities:
+an attached workspace does not take ownership of another tool's checkout.
 
-Use returned values, never predicted paths/IDs. Validate the checkout and base. Record owner
-`herdr`, branch, base SHA, absolute path, workspace/root pane, integration `pending`, and liveness.
-Incomplete JSON or failure after creation preserves all known IDs/paths and artifacts. Do not retry
-creation, fallback to another owner/backend, or automatically remove a partially created workspace.
+Incomplete output or failure retains every known ID/path and private artifact. Do not retry
+creation, switch owner/backend or remove partially created resources automatically.
 
-### 4. Start OMP in the root pane
+### 4. Start the requested reviewer or worker
 
-The new root pane must be at its shell prompt. Use a unique name matching
-`[a-z][a-z0-9_-]{0,31}` and a fresh private run-specific OMP session directory outside the repo:
+Use the selected host's supported private launch and live identity contract in the approved cwd,
+without repurposing user terminals. Keep existing models/permissions, a run-specific private
+session directory and safe launch umask. Reuse a validated prepared reviewer session; never start
+a second orchestration runtime merely to perform internal delegation. Readiness is input readiness,
+not task success.
 
-```bash
-herdr agent start "$AGENT_NAME" --kind omp --pane "$pane" -- \
-  --cwd "$path" --session-dir "$SESSION_DIR"
-```
+### 5. Submit one bounded initial request
 
-Keep existing models and permissions. Do not create another agent pane or re-create the worktree.
-Read OMP's current help before passing arguments. Readiness means ready for input, not task success.
+Use `agent-communication` and the selected host's submission contract. Name only the absolute
+trusted plan/artifact path, scope, actual cwd/branch/base, verification owner and constraints.
+State that this environment already exists and must not be re-created. Select `executing-plans`
+for sequential work or `multi-agent-development` for independent slices, not an invented recipe.
+Do not rely on slash-command interpretation or paste history, credentials or raw review logs.
 
-### 5. Submit a bounded initial request
-
-```bash
-herdr agent prompt "$AGENT_NAME" "$BOUNDED_REQUEST" --wait --until working --timeout 120000
-```
-
-The request names only the absolute trusted plan/artifact path, task scope, actual cwd/branch/base,
-verification owner, and constraints. Explicitly state that this environment already exists and must
-not be re-created. Select `executing-plans` for a sequential plan or `multi-agent-development` for
-independent slices; do not invent an “implement” recipe or force a multi-agent run. Do not depend
-on slash-command interpretation. Never paste conversation history, credentials, or raw review logs.
-
-A timeout, blocked/unknown state, or unconfirmed receipt is unresolved. Inspect the same agent,
-pane, and artifact directory before any resume; never submit again or launch another CLI blindly.
+Record acceptance separately from proven start and completion. Timeout, unknown state or an
+unconfirmed receipt is unresolved: inspect the same agent, interaction resource and artifacts,
+without resend, replacement or fallback.
 
 ### 6. Handoff record
 
-Report exact workspace/root pane IDs, absolute checkout and artifact/session paths, branch, base,
-owner, agent name, and observed readiness/submission status. Keep the parent available. Independent
-work remains in the owned environment for inspection; ending a prompt is not permission to delete
-it. Cleanup follows the ownership skill only after explicit saved/inactive/integration decisions.
+Report execution environment, checkout owner/ID/path, branch/base, interaction identity, private
+artifact/session paths and observed readiness/submission state. The work remains available for
+inspection; ending a prompt never authorizes deletion. Cleanup follows the recorded owner only
+after explicit saved/inactive/integration and cleanup decisions.

@@ -2,8 +2,8 @@
 name: agent-communication
 description: >-
   Send bounded requests, questions, updates and results to other agents and correlate their replies.
-  Use OMP internal children for same-repository work; use the target repository's Herdr workspace
-  for cross-repository changes. Skip solo work and do not create agents merely to send a message.
+  Use internal children for same-repository work and the selected host's repository owner for
+  cross-repository changes. Skip solo work and do not create agents merely to send a message.
 ---
 
 # Communicate With Other Agents
@@ -15,12 +15,15 @@ This skill adds communication rules, not a new transport, permissions, model sel
 
 - Same repository: use the host's actual internal delegation/message tools when a justified child
   already exists or the task warrants one. In OMP, read [OMP communication](references/omp.md).
-- Another repository: use an agent in that repository's Herdr workspace. Read the `herdr` skill
-  and [repository workspace communication](references/herdr.md). Reuse an appropriate idle agent;
-  otherwise start OMP there without changing user focus. Do not spawn an internal child in the
-  parent's repository to edit the other repository.
-- An explicitly requested independent conversation also uses Herdr. Claude/Codex native internal
-  messaging must follow their actual tool inventory; never pretend they expose OMP APIs.
+- Another repository: use an agent in that repository's independently identified environment.
+  Select a supported host through `using-git-worktrees/references/environments.md`; for Herdr read
+  `herdr` and [repository workspace communication](references/herdr.md), for explicit Orca follow
+  the Orca reference and its version-matched CLI guide. Reuse an appropriate idle agent or start
+  the requested CLI there without changing user focus. Do not spawn an internal child in the
+  parent's repository to edit another repository.
+- An explicitly requested independent conversation uses the selected host's verified capabilities,
+  not an automatic host switch. Native internal messaging must follow the actual tool inventory;
+  never pretend another runtime exposes OMP APIs. Unsupported hosts stop before side effects.
 
 Use `multi-agent-development` for decomposition and `using-git-worktrees` for write ownership.
 A pane is not write isolation. Do not create worktrees, copy dirty files or change branches merely
@@ -28,8 +31,8 @@ for communication. Commit, push, apply, installation and permission prompts need
 
 ## Identify the recipient
 
-Use returned child IDs, or live Herdr agent names/pane IDs and session identity. Never infer IDs
-from examples, sidebar order or agent kind. Check the repository, cwd, existing assignment and
+Use returned child IDs or the selected host's live agent/pane/terminal and session identity.
+Never infer IDs from examples, sidebar order or agent kind. Check repository, cwd, assignment and
 readiness before dispatch. A matching workspace label alone is insufficient.
 
 Default to idle/done recipients. Do not interrupt an unrelated working agent. A deliberate update
@@ -76,7 +79,7 @@ return: Reply with api-contract-17, status, changed files, evidence and open que
 ## Observe, correlate, adopt
 
 Submission, receipt, lifecycle settlement, a task reply and adoption are separate facts. Consume
-OMP completion notifications; wait only when no useful work remains. Use finite Herdr timeouts.
+internal completion notifications; wait only when no useful work remains. Use finite host timeouts.
 Neither idle/done nor `completion_seq` proves that this request completed. Read the reply and match
 its ID, identity, scope and acceptance before adopting it. An old or mismatched reply is unresolved.
 

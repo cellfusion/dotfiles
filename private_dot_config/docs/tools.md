@@ -506,7 +506,7 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 |---|---|
 | `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
 | `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
-| `pr-review [--project <名前またはid:repoId>] [--quick] <番号またはURL>` | 登録済みプロジェクトを解決し、PR base SHA の Orca worktree と専用 OMP terminal を作成 |
+| `pr-review [--environment herdr\|orca\|paseo] [--quick] <番号またはURL>` | 実行環境を選び、固定PR base SHAの隔離checkoutと専用OMPを起動 |
 | `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
 
 汎用agent-launcherは廃止し、別エージェントは必要な場面でHerdrから直接起動する。
@@ -514,33 +514,44 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 
 ### PRレビュー
 
-PR URL を渡すと、現在のディレクトリに関係なく Orca の登録済みプロジェクトから対象を探す。
-`--project` はプロジェクトの表示名の完全一致、または `id:<repoId>` で対象を指定する。
-起動用の新規ワークスペースや、対象ディレクトリへの移動は不要。
+実行環境は `--environment` の明示指定を優先し、未指定なら現在のhostを判定する。
+host不明・複数一致・必須能力不足では環境作成前に停止する。Orcaへ暗黙にfallbackしない。
+Herdrを選ぶ場合はHerdr管理下から実行し、現在のリポジトリ、または
+`--repo-path <絶対path>` で指定したローカルリポジトリを使う。URLのrepositoryと照合する。
 
 ```bash
-pr-review https://github.com/owner/repository/pull/123
-pr-review --project my-project 123
-pr-review --project id:<repoId> 123
+pr-review --environment herdr --no-focus 123
+pr-review --environment herdr --repo-path /path/to/repo --quick https://github.com/owner/repo/pull/123
+pr-review --environment orca --project my-project 123
 ```
 
-`repoId` は `orca repo list --json` で確認する。未登録・複数一致は worktree 作成前に停止する。
-同名プロジェクトは ID で指定する。URL と `--project` を併用した場合はリポジトリの一致を確認する。
-番号だけの `pr-review 123` は従来どおり現在のリポジトリを使う。
-通常の端末からも起動でき、Herdr の環境変数や拡張は不要。
-OMP から呼ぶ場合は `--no-focus` を付ける。
+Orcaの `--project` は登録プロジェクトの表示名完全一致、または `id:<repoId>`。
+URLだけでもOrca登録済みプロジェクトを検索できる。未登録・複数一致は作成前に停止する。
+Orca登録IDをHerdrへ流用しない。Paseoは既知だが未対応の環境として、
+run directory・checkout・sessionを作る前に `unsupported-environment` で停止する。
+エージェントから呼ぶときは `--no-focus` を付ける。
 
-Orca CLI はセッションの `ORCA_CLI_COMMAND`、開発版では `orca-dev`、
-Linux の Orca 外では `orca-ide`、それ以外では `orca` を使う。別ビルドへ自動切替しない。
-`orca-cli` スキルと、その CLI が返すバージョン一致ガイドで操作契約を確認する。
-worktree の setup は `skip`。専用 terminal へ `--session-dir` と `autoResume: false` を渡し、
-TUI の準備と terminal/worktree の一致を確認してから要求を送る。
-送信 receipt の `accepted` は入力受理、`turn_started` は開始の証拠であり、レビュー完了ではない。
+レビュー手順は共通にし、環境操作は `pr-review/environments/` のadapterで切り替える。
+Orcaではバージョン一致ガイドに従い、worktreeのsetupを `skip` にする。
+環境ごとの起動でも `--session-dir` と `autoResume: false` で私有sessionを使い、
+実際のpane/terminal・agent・cwdを照合してから要求を送る。
+送信受理・実行開始・レビュー完了は別の証拠で確認する。
+Orcaの `turn_started` を他環境のreceiptに読み替えず、開始未確認なら `accepted` として報告する。
+Herdr経路はWorktrunkの `--no-hooks` でcheckoutを作り、そのpathをHerdr workspaceに開く。
+checkout ownerは `worktrunk`、実行環境は `herdr`。prompt応答は受理のみを証明する。
+ローカルmacOS/Linuxのbash/zshで、シェルの入力待ちを確認してから短い私有setup scriptを
+読み込ませる。setupのtoken ACKを確認するまではOMPを開始しない。
+OMPは最初の要求までsessionファイルを保存しないため、起動前は私有親directoryとlive identityを
+検証し、prepared実行では保存済みsessionファイルの所有者・0600権限も必須にする。
 
 レビュー用worktreeはPRのbase SHAから作る。head側の指示ファイルをOMP起動時に読み込ませない。
 準備済み情報と固定base/headを専用OMPへ渡し、同じ環境内でレビューを続ける。
 成果物とworkspaceは保持し、GitHubへの投稿は明示確認後に行う。
 起動失敗やtimeoutで、別環境を自動作成したり既存環境を削除したりしない。
+
+prepared contextはversion 3。実行環境、checkout owner、対話環境のIDを分けて記録する。
+runtime・adapter・参照文書はrun内へ保存し、再開時に配布元の別版へ切り替えない。
+旧version 2のrunは保持するが新runtimeでは受け付けない。継続にはそのrunの旧snapshotを使う。
 
 開始時に、実際の branch・SHA・base checkout の場所と、レビュー対象の固定 base/head SHA を
 分けて表示する。cwd が base でも head のソースは固定 Git blob から読めるが、その cwd で
@@ -593,10 +604,12 @@ report の整合を検査する。canonical block は唯一かつ生成結果と
 Claude command の管理元は `private_dot_config/claude/commands/pr-review.md.tmpl`。
 共通 skill を展開して配布するため、テンプレート式を含む通常の `.md` として保存しない。
 
-PR レビューの起動には現在の Orca CLI を使う。以前の Orca 設定・OMP 拡張は復活させない。
-Paseo、Pi、opencode の設定配布・起動連携は退役した。
-`.chezmoiremove` は以前配布した個別ファイルと旧 Orca OMP 拡張を回収する。
-Orca CLI とバージョン一致ガイドを読む `orca-cli` スキルは PR レビューに必要なので撤去しない。
+PRレビューはHerdrまたは明示選択したOrcaのadapterで起動する。
+以前のOrca設定・OMP拡張やPaseo transportは復活させない。
+Paseo、Pi、opencodeの旧設定配布・起動連携は退役した。
+`.chezmoiremove` は以前配布した個別ファイルと旧Orca OMP拡張を回収する。
+Orca専用の `orca-cli` と `computer-use` スキルは撤去する。Orca adapterの操作契約は
+選択したCLI自身のバージョン一致ガイドで確認し、撤去済みスキルに依存しない。
 旧アプリの撤去には明示承認が必要。chezmoi はアプリのアンインストールを行わない。
 認証・会話履歴・作業リポジトリは残し、保存データを一括削除しない。
 Paseo の履歴採取ジョブが稼働している場合は、削除対象を apply する前に

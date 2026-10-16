@@ -2,7 +2,7 @@
 name: multi-agent-development
 description: >-
   Coordinate multiple OMP internal children or independent reviews with bounded scopes and artifacts.
-  Use Herdr only for independent CLI interaction and Worktrunk only for hidden write isolation.
+  Choose independent interaction hosts separately from checkout write ownership and isolation.
   Skip a single local task or a small sequential plan.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
@@ -27,7 +27,7 @@ them; spec and plan are not mandatory child roles.
 ## Execution and placement
 
 Default to OMP internal delegation for same-repository work, using the current runtime's documented
-task/agent interface. For cross-repository changes, use each target repository's Herdr workspace
+task/agent interface. For cross-repository changes, resolve each target repository's environment
 and owner through `agent-communication`, not internal children editing foreign checkouts.
 Preserve existing model and permission defaults. Do not use provider snapshots or
 transport-specific request schemas to authorize an OMP child.
@@ -35,10 +35,10 @@ transport-specific request schemas to authorize an OMP child.
 Choose write placement independently:
 
 - shared existing cwd: disjoint write scopes, one integration owner, and no mid-flight checks;
-- separate writes: a hidden Worktrunk child worktree from the committed parent base, with no Herdr
-  workspace/tab/pane;
-- separate CLI/user conversation: Herdr pane in the appropriate existing cwd; add a worktree only
-  when write isolation is also needed.
+- separate writes: an owner-recorded hidden child worktree from the committed parent base, with
+  no interaction workspace/tab/pane;
+- separate CLI/user conversation: the selected host in the appropriate existing cwd; add a
+  worktree only when write isolation is also needed.
 
 Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace
 or start a second orchestration runtime for ordinary delegation.

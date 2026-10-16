@@ -10,19 +10,17 @@ If the artifact needs an issue, run `gh repo view` before showing issue choices.
 unavailable or the repository has no GitHub remote, omit issue choices and show only proceed/approve.
 {{ end }}
 {{- if $worktree }}
-Before showing the gate, verify the worktree route is available. If either check fails, omit the
-worktree option and show only proceed/approve:
-
-```bash
-test "${HERDR_ENV:-}" = 1
-git rev-parse --git-dir
-```
+Before showing the gate, read `using-git-worktrees` and its environment/owner references.
+Verify that the selected route supports the required checkout isolation and independent
+interaction, with an identified owner and safe creation procedure. Verify Git repository
+identity as well. If required capabilities are unavailable or ambiguous, omit the worktree
+option and show only proceed/approve. Do not select a host merely to make the option available.
 {{ end }}
 
 - Question: "`{{ .artifact }}` is at `<path>`. May I {{ .nextLabel }} with this content?"
 - Options:
 {{- if $worktree }}
-  - **Approve and delegate via worktree** — create a visible Herdr workspace and hand off to OMP there (independent interaction only; hidden write isolation uses Worktrunk)
+  - **Approve and delegate via worktree** — create the approved isolated checkout and independent conversation through the selected environment/owner route; write isolation alone does not create a visible conversation
 {{- end }}
   - **Approve and continue** — proceed to {{ .nextLabel }}
   - **Approve only** — retain the {{ .artifact }} and stop

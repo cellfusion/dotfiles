@@ -31,8 +31,8 @@ a shell command. Do not execute `agent://` or `task` as binaries.
 ## Boundaries
 
 `agent://` addresses runtime-owned children, not every OMP conversation on the machine. Another
-Herdr pane is not necessarily a child. Use the Herdr route for another repository's independent
-owner. `local://` is host-local; for a separate session share a permitted real filesystem path.
+host pane is not necessarily a child. Use `agent-communication` and the selected environment route
+for another repository's independent owner. `local://` is host-local; share a permitted real path.
 
 Do not assume Claude's `SendMessage`, Codex's child tools, or an OMP resume API exist merely from
 a generic runtime table. Read the actual tool contracts. If no internal messaging surface exists,

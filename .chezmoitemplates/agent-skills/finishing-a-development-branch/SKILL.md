@@ -62,9 +62,9 @@ WORKTREE_PATH=$(git rev-parse --show-toplevel)
 BRANCH=$(git branch --show-current)
 ```
 
-Use recorded owner (`herdr`, `worktrunk`, or `external`), absolute path, branch, base SHA,
-workspace/pane IDs when present, integration, and liveness from `using-git-worktrees` or MAD.
-Do not infer ownership from directory names or Worktrunk listing visibility.
+Use recorded checkout owner (`herdr`, `orca`, `worktrunk`, or `external`), absolute path, branch,
+base SHA, owner-specific ID, separate execution/interaction identity, integration and liveness
+from `using-git-worktrees` or MAD. Do not infer owner from the active host, names or list visibility.
 
 Classify the environment:
 
@@ -187,8 +187,12 @@ Cleanup is allowed only after successful local merge plus post-merge verificatio
 
 Use recorded ownership and confirm saved/inactive state before removal:
 
-- Herdr: `herdr worktree remove --workspace <workspace-id>` without force; retain active or unknown panes.
-- Worktrunk: from the parent, `wt -C <parent-path> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json`.
+- Herdr-owned checkout: follow `using-git-worktrees/references/herdr.md`, matching saved/inactive
+  workspace and exact path; never use its worktree-removal route on a different owner's checkout.
+- Orca-owned checkout: follow `using-git-worktrees/references/orca.md` and the owning CLI's
+  version-matched guide, matching full worktree ID/path and terminal identity without force.
+- Worktrunk-owned checkout: follow `using-git-worktrees/references/worktrunk.md` from outside it,
+  preserving its branch and suppressing hooks. An attached host workspace is a separate resource.
 - External, unknown, or caller-owned worktree: leave it untouched; never infer ownership from a prefix.
 
 Keep declined branches and all review artifacts. Branch deletion is separately authorized and

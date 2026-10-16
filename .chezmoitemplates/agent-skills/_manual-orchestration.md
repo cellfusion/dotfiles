@@ -12,12 +12,16 @@ requirements, results, review packages, and decision requests in external artifa
 records contain only sanitized identity, route, status, counts, verification summaries, and absolute
 artifact references, never prompts, raw transport responses, secrets, or source/diff contents.
 
-Record the repository, parent path/branch, resolved commit base, task/dependency identity, execution
-route (`omp-internal` or `herdr-cli`), actual child ID, allowed files, attempt/round budget, timestamps,
-verification owner, status, and parent adoption decision. Use actual runtime IDs, not predicted IDs.
-A worktree record includes owner (`herdr`, `worktrunk`, or `external`), absolute path, branch, base
-SHA, workspace/pane IDs only when they exist, integration state, liveness, and cleanup state.
-Backend/provider helpers retained for other consumers do not gate this workflow.
+Record repository, parent path/branch, resolved commit base, task/dependency identity, execution
+route (internal delegation or independent CLI), actual child ID, allowed files, attempt/round
+budget, timestamps, verification owner, status and parent adoption decision. Record the selected
+execution environment and live interaction identity separately from checkout ownership. Use actual
+runtime IDs, not predicted IDs. A worktree record includes its proven owner, absolute path, branch,
+base SHA, owner-specific IDs, integration state, liveness and cleanup state. Add workspace/pane or
+terminal IDs only when they exist. An Orca-owned checkout remains Orca-owned; a Worktrunk checkout
+shown in Herdr remains Worktrunk-owned. Follow `using-git-worktrees` and its environment/owner
+references. Retained helper schemas for unrelated legacy consumers do not gate this contract;
+never mislabel a host or owner to fit them.
 
 ## Dependency and scope gate
 
@@ -69,10 +73,11 @@ At the limit, preserve artifacts and report the precise required decision.
 
 ## Lifecycle and failure preservation
 
-Create a child/resource once and record acceptance. For OMP, use actual completion notifications
-and its documented wait mechanism. For a Herdr CLI, readiness and prompt submission are separate
-from task completion: inspect the same agent/pane and result artifacts. Do not infer success from
-idle alone. Track running, completed, blocked, failed, or unknown and independently adopt results.
+Create a child/resource once and record acceptance. For internal delegation, use the runtime's
+actual completion notifications and documented wait mechanism. For an independent CLI, readiness,
+prompt acceptance, execution start and task completion require their own supported evidence.
+Inspect the same agent/interaction resource and matching result artifacts; idle alone is not
+success. Track running, completed, blocked, failed or unknown and independently adopt results.
 
 Timeout/transport error/unknown state never means successful completion or proof the child stopped.
 Do not retry create, launch a replacement, switch backend, or remove a worktree while liveness is

@@ -12,7 +12,7 @@ const SHA = /^[0-9a-f]{40}$/;
 const URL = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*)\/pull\/([1-9][0-9]*)\/?$/;
 
 function parseArgs(args) {
-  const result = { number: null, repository: null, quick: false, noFocus: false, skillFile: null, project: null };
+  const result = { number: null, repository: null, quick: false, noFocus: false, skillFile: null, project: null, environment: null, repoPath: null };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--quick' || arg === '--no-focus') {
@@ -22,6 +22,12 @@ function parseArgs(args) {
     } else if (arg === '--skill-file') {
       if (result.skillFile || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('invalid skill-file option');
       result.skillFile = path.resolve(args[++i]);
+    } else if (arg === '--environment' || arg === '--repo-path') {
+      const key = arg === '--environment' ? 'environment' : 'repoPath';
+      if (result[key] || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`invalid ${key} option`);
+      result[key] = args[++i];
+      if (key === 'environment' && !['herdr', 'orca', 'paseo'].includes(result[key])) throw new Error('invalid environment');
+      if (key === 'repoPath' && !path.isAbsolute(result[key])) throw new Error('repo-path must be absolute');
     } else if (arg === '--project') {
       if (result.project || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error('invalid project option');
       result.project = args[++i];
@@ -38,8 +44,8 @@ function parseArgs(args) {
   return result;
 }
 
-function command(binary, args, cwd) {
-  const result = spawnSync(binary, args, { cwd, encoding: 'utf8', timeout: 300000, maxBuffer: 16 * 1024 * 1024, env: binary === 'git' ? gitEnvironment() : process.env });
+function command(binary, args, cwd, env = process.env, timeout = 300000) {
+  const result = spawnSync(binary, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 16 * 1024 * 1024, env: binary === 'git' ? gitEnvironment() : { ...process.env, ...env } });
   if (result.error || result.status !== 0) throw new Error(`${binary} command failed`);
   return result.stdout.trim();
 }
@@ -53,20 +59,13 @@ function mergeBase(cwd, base, head) {
   if (bases.length !== 1 || !SHA.test(bases[0])) throw new Error('one unambiguous merge-base required');
   return bases[0];
 }
-function jsonCommand(binary, args, cwd) { return JSON.parse(command(binary, args, cwd)); }
+function jsonCommand(binary, args, cwd, env, timeout) { return JSON.parse(command(binary, args, cwd, env, timeout)); }
 function privateWrite(file, value) {
   fs.writeFileSync(file, typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
 }
 function sameRepository(a, b) { return a.toLowerCase() === b.toLowerCase(); }
-function orcaCommand(env = process.env, platform = process.platform) {
-  return env.ORCA_CLI_COMMAND || (env.ORCA_DEV_REPO_ROOT ? 'orca-dev' : platform === 'linux' && !env.ORCA_TERMINAL_HANDLE ? 'orca-ide' : 'orca');
-}
 function shellQuote(value) { return "'" + value.replace(/'/g, "'\\''") + "'"; }
-function orcaResult(binary, args, cwd) {
-  const response = jsonCommand(binary, [...args, '--json'], cwd);
-  if (response.ok !== true || !response.result) throw new Error('Orca request failed');
-  return response.result;
-}
+function adapterApi() { return { command, jsonCommand, git, sameRepository, shellQuote, privateWrite, checkPrivate }; }
 
 function validateMetadata(data, repository, number) {
   if (!data || !REPOSITORY.test(repository) || data.number !== number || !SHA.test(data.baseRefOid) || !SHA.test(data.headRefOid) || typeof data.isCrossRepository !== 'boolean') throw new Error('invalid PR metadata');
@@ -83,36 +82,62 @@ function assertSameRevision(fixed, latest) {
   if (latest.baseSha !== fixed.baseSha || latest.headSha !== fixed.headSha || !sameRepository(latest.headRepository, fixed.headRepository)) throw new Error('PR revision changed during preparation');
 }
 
-function checkPrivate(file, directory) {
+function checkPrivate(file, directory, executable = false) {
   const stat = fs.lstatSync(file);
-  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o777) !== (directory ? 0o700 : 0o600) || (process.getuid && stat.uid !== process.getuid())) throw new Error('context and artifacts must be private and caller-owned');
+  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile()) || (stat.mode & 0o777) !== (directory || executable ? 0o700 : 0o600) || (process.getuid && stat.uid !== process.getuid())) throw new Error('context and artifacts must be private and caller-owned');
 }
-function validateContext(file, cwd = process.cwd(), env = process.env) {
-  if (!path.isAbsolute(file)) throw new Error('context path must be absolute');
-  checkPrivate(file, false);
-  const context = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (context.version !== 2 || context.owner !== 'orca') throw new Error('invalid context version or owner');
+function validateContextCommon(context, file, cwd) {
+  if (context.version !== 3) throw new Error('invalid context version; legacy runs are retained, not migrated');
   if (!/^[a-zA-Z0-9_-]+$/.test(context.runId) || !REPOSITORY.test(context.repository) || !REPOSITORY.test(context.headRepository) || !Number.isSafeInteger(context.prNumber) || context.prNumber < 1 || !SHA.test(context.baseSha) || !SHA.test(context.headSha) || typeof context.quick !== 'boolean') throw new Error('invalid context identity');
-  if (!path.isAbsolute(context.worktreePath) || !path.isAbsolute(context.artifactPath) || path.dirname(fs.realpathSync(file)) !== fs.realpathSync(context.artifactPath)) throw new Error('invalid context artifact paths');
+  const checkout = context.checkout;
+  if (!checkout || !path.isAbsolute(checkout.path || '') || !path.isAbsolute(context.artifactPath || '') || path.dirname(fs.realpathSync(file)) !== fs.realpathSync(context.artifactPath)) throw new Error('invalid context artifact paths');
   checkPrivate(context.artifactPath, true);
-  if (typeof context.worktreeId !== 'string' || !context.worktreeId.endsWith(`::${context.worktreePath}`) || context.worktreeId.indexOf('::') < 1) throw new Error('invalid prepared worktree identity');
-  if (!context.terminalHandle || env.ORCA_WORKTREE_ID !== context.worktreeId || env.ORCA_TERMINAL_HANDLE !== context.terminalHandle) throw new Error('prepared worktree/terminal mismatch');
-  if (fs.realpathSync(cwd) !== fs.realpathSync(context.worktreePath)) throw new Error('prepared cwd mismatch');
+  if (checkout.baseSha !== context.baseSha) throw new Error('prepared checkout base mismatch');
+  if (fs.realpathSync(cwd) !== fs.realpathSync(checkout.path)) throw new Error('prepared cwd mismatch');
   const root = fs.realpathSync(git(cwd, 'rev-parse', '--show-toplevel'));
-  if (root !== fs.realpathSync(context.worktreePath)) throw new Error('prepared cwd mismatch');
+  if (root !== fs.realpathSync(checkout.path)) throw new Error('prepared cwd mismatch');
+  if ((git(root, 'branch', '--show-current') || null) !== checkout.branch) throw new Error('prepared checkout branch identity mismatch');
   if (git(root, 'rev-parse', 'HEAD') !== context.baseSha || git(root, 'status', '--porcelain')) throw new Error('prepared base checkout is changed');
   if (git(root, 'rev-parse', `${context.headSha}^{commit}`) !== context.headSha) throw new Error('prepared head object mismatch');
-  if (!context.repositoryGitDir || !path.isAbsolute(context.repositoryGitDir) || fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')) !== fs.realpathSync(context.repositoryGitDir)) throw new Error('prepared repository mismatch');
-  if (fs.realpathSync(git(root, 'rev-parse', '--absolute-git-dir')) === fs.realpathSync(context.repositoryGitDir)) throw new Error('prepared owner requires a linked worktree');
+  if (!checkout.repositoryGitDir || !path.isAbsolute(checkout.repositoryGitDir) || fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')) !== fs.realpathSync(checkout.repositoryGitDir)) throw new Error('prepared repository mismatch');
+  if (fs.realpathSync(git(root, 'rev-parse', '--absolute-git-dir')) === fs.realpathSync(checkout.repositoryGitDir)) throw new Error('prepared owner requires a linked worktree');
   const ancestor = mergeBase(root, context.baseSha, context.headSha);
   if (context.mergeBaseSha !== undefined && context.mergeBaseSha !== ancestor) throw new Error('prepared merge-base mismatch');
   return context;
+}
+function snapshotAdapter(context) {
+  const name = context.executionEnvironment;
+  if (!['herdr', 'orca'].includes(name) || context.runtime?.schemaVersion !== 1 || context.runtime.adapter !== name || context.runtime.snapshot !== '.') throw new Error('invalid runtime snapshot identity');
+  const root = fs.realpathSync(context.artifactPath);
+  for (const relative of ['environments', 'references', 'sessions', ...(name === 'herdr' ? ['bin'] : [])]) {
+    const dir = path.join(root, relative); checkPrivate(dir, true);
+    if (path.dirname(fs.realpathSync(dir)) !== root) throw new Error('snapshot directory escapes run');
+  }
+  const dependencies = ['runtime.js', 'omp-config.yml', 'environments/index.js', `environments/${name}.js`, 'SKILL.md', 'references/environments.md', `references/${name}.md`, 'references/worktrunk.md'];
+  if (name === 'herdr') dependencies.push('shell-setup.sh', 'shell-setup-ready');
+  for (const relative of dependencies) {
+    const file = path.join(root, relative); checkPrivate(file, false);
+    if (!fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('snapshot dependency escapes run');
+  }
+  if (name === 'herdr') checkPrivate(path.join(root, 'bin/omp'), false, true);
+  // The context cannot supply an executable path. Only the run's fixed registry
+  // and selected adapter are loaded, after every dependency has been checked.
+  return require(path.join(root, 'environments/index.js')).load(name);
+}
+function validateContext(file, cwd = process.cwd(), env = process.env, requireCaller = true) {
+  if (!path.isAbsolute(file)) throw new Error('context path must be absolute');
+  checkPrivate(file, false);
+  const c = validateContextCommon(JSON.parse(fs.readFileSync(file, 'utf8')), file, cwd);
+  const adapter = snapshotAdapter(c);
+  const live = adapter.inspectIdentity(adapterApi(), c, cwd, env);
+  adapter.validatePreparedIdentity(adapterApi(), c, live, env, requireCaller);
+  return c;
 }
 
 function inspectContext(file, cwd = process.cwd(), env = process.env) {
   const c = validateContext(file, cwd, env);
   return {
-    actualCheckout: { branch: git(cwd, 'branch', '--show-current') || null, sha: c.baseSha, path: c.worktreePath },
+    actualCheckout: { branch: git(cwd, 'branch', '--show-current') || null, sha: c.baseSha, path: c.checkout.path },
     reviewTarget: { baseSha: c.baseSha, headSha: c.headSha, mergeBaseSha: mergeBase(cwd, c.baseSha, c.headSha) },
     sourceAccess: 'fixed-git-objects',
     executionPolicy: 'not-run; PR-side execution requires explicit permission and isolated sandbox',
@@ -328,8 +353,8 @@ function validateReview(file, cwd = process.cwd(), env = process.env) {
   if (plan.mode !== 'prepared' || plan.speed !== (c.quick ? 'quick' : 'standard') || !Array.isArray(plan.focus) || !plan.focus.length || !plan.focus.every(nonempty) || !['none', 'summary', 'full'].includes(plan.ci)) throw new Error('plan prepared mode, speed or policy mismatch');
   for (const key of ['mode', 'speed', 'risk', 'profile', 'focus', 'ci']) if (!equal(metadata.review?.[key], plan[key])) throw new Error(`metadata review policy mismatch: ${key}`);
   for (const key of ['baseRefOid', 'headRefOid', 'mergeBaseOid']) if (metadata.revision?.[key] !== fixed[key]) throw new Error(`metadata revision mismatch: ${key}`);
-  const workspace = { kind: 'orca', path: c.worktreePath, worktreeId: c.worktreeId, terminalHandle: c.terminalHandle, owner: c.owner, owned: true, cleanupStatus: 'retained' };
-  for (const [key, value] of Object.entries(workspace)) if (metadata.workspace?.[key] !== value) throw new Error(`metadata workspace mismatch: ${key}`);
+  const workspace = { executionEnvironment: c.executionEnvironment, checkout: c.checkout, interaction: c.interaction, owned: true, cleanupStatus: 'retained' };
+  if (!equal(metadata.workspace, workspace)) throw new Error('metadata workspace mismatch');
   const prUrl = typeof metadata.pr?.url === 'string' && metadata.pr.url.match(URL);
   if (metadata.pr?.number !== c.prNumber || metadata.pr?.repository !== c.repository || !prUrl || !sameRepository(prUrl[1], c.repository) || Number(prUrl[2]) !== c.prNumber) throw new Error('metadata PR identity mismatch');
   if (!['PASS', 'NEEDS_ATTENTION', 'BLOCKED'].includes(findings.verdict) || !Array.isArray(findings.findings)) throw new Error('invalid findings verdict');
@@ -450,11 +475,11 @@ function recordFailure(run, stage, error, resources) {
     ambiguous: 'Multiple registered Orca projects match. Use --project id:<repoId>; no review worktree was created.',
     mismatch: 'The selected project does not match the PR URL; no review worktree was created.',
   };
-  const reason = projectReasons[resources.projectResolutionError] || (stage === 'agent-readiness'
+  const reason = resources.environmentError || projectReasons[resources.projectResolutionError] || (stage === 'agent-readiness'
     ? 'OMP terminal readiness was not proven; resources retained before prompt submission.'
     : stage === 'agent-prompt'
       ? 'Prompt submission was not proven; inspect the recorded terminal and receipt before resuming. Do not resend automatically.'
-      : 'Stage failed; resources retained. Inspect the existing Orca worktree before resuming.');
+      : 'Stage failed; resources retained. Inspect the recorded checkout and interaction before resuming.');
   const result = { version: 1, status: 'blocked', stage, at: new Date().toISOString(), ...resources, artifactPath: run, reason };
   // Never copy external command output, environment, or exception text into metadata.
   if (run) fs.writeFileSync(path.join(run, 'startup.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
@@ -463,55 +488,36 @@ function recordFailure(run, stage, error, resources) {
 
 async function launch(args) {
   const options = parseArgs(args);
-  const orca = orcaCommand();
-  let stage = 'dependencies'; let run = null; const resources = { owner: 'orca', worktreeId: null, terminalHandle: null, worktreePath: null, orcaCommand: orca };
+  let stage = 'environment'; let run = null;
+  const resources = { executionEnvironment: null, checkout: {}, interaction: {} };
   try {
-    for (const binary of ['git', 'gh', orca, 'omp']) command('/usr/bin/env', ['which', binary]);
+    const registry = require('./environments/index.js');
+    const environment = registry.select(options);
+    resources.executionEnvironment = environment;
+    const adapter = registry.load(environment), api = adapterApi();
+    stage = 'dependencies';
+    for (const binary of ['git', 'gh', 'omp']) command('/usr/bin/env', ['which', binary]);
+    adapter.preflight(api);
     stage = 'skill-source';
     const skill = options.skillFile || path.join(os.homedir(), '.agents/skills/pr-review/SKILL.md');
     const skillText = fs.readFileSync(skill, 'utf8');
     if (!fs.statSync(skill).isFile() || !/^name: pr-review$/m.test(skillText) || !skillText.includes('**Prepared-review contract:**') || /\{\{/.test(skillText)) throw new Error('rendered prepared pr-review skill required');
-    stage = 'orca-repository';
-    const repos = orcaResult(orca, ['repo', 'list'], process.cwd()).repos;
-    const registrations = repos.filter(repo => repo.kind === 'git' && typeof repo.path === 'string' && path.isAbsolute(repo.path));
-    let matches;
-    if (options.project) {
-      matches = registrations.filter(repo => options.project.startsWith('id:')
-        ? repo.id === options.project.slice(3)
-        : repo.displayName === options.project);
-    } else if (options.repository) {
-      matches = registrations.filter(repo => {
-        try {
-          const identity = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], repo.path);
-          return sameRepository(identity, options.repository);
-        } catch { return false; } // Unavailable unrelated registrations cannot select a project.
-      });
-    } else {
-      const root = fs.realpathSync(git(process.cwd(), 'rev-parse', '--show-toplevel'));
-      const commonDir = fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
-      matches = registrations.filter(repo => {
-        try {
-          return fs.realpathSync(git(repo.path, 'rev-parse', '--path-format=absolute', '--git-common-dir')) === commonDir;
-        } catch { return false; }
-      });
-    }
-    if (matches.length === 0) {
-      resources.projectResolutionError = 'missing';
-      throw new Error('matching registered Orca project required');
-    }
-    if (matches.length !== 1) {
-      resources.projectResolutionError = 'ambiguous';
-      throw new Error('multiple Orca projects match');
-    }
-    const selected = matches[0];
-    const callerRoot = fs.realpathSync(git(selected.path, 'rev-parse', '--show-toplevel'));
+    const referenceNames = ['environments', environment, 'worktrunk'];
+    const referenceRoots = [path.join(path.dirname(skill), 'references'), path.join(path.dirname(skill), '../using-git-worktrees/references')];
+    const referenceRoot = referenceRoots.find(root => referenceNames.every(name => fs.existsSync(path.join(root, `${name}.md`))));
+    if (!referenceRoot) throw new Error('trusted rendered environment references required beside skill or sibling using-git-worktrees');
+    const references = referenceNames.map(name => {
+      const file = path.join(referenceRoot, `${name}.md`), text = fs.readFileSync(file, 'utf8');
+      if (!fs.statSync(file).isFile() || /\{\{/.test(text)) throw new Error('rendered trusted reference required');
+      return [name, text];
+    });
+    stage = 'environment-repository';
+    const callerRoot = adapter.resolveRepository(api, options, resources);
     resources.callerRoot = callerRoot;
-    resources.repoId = selected.id;
     stage = 'repository';
     const repository = command('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], callerRoot);
     if (!REPOSITORY.test(repository) || (options.repository && !sameRepository(options.repository, repository))) {
-      resources.projectResolutionError = 'mismatch';
-      throw new Error('selected project and PR URL mismatch');
+      resources.projectResolutionError = 'mismatch'; throw new Error('selected repository and PR URL mismatch');
     }
     const repositoryGitDir = fs.realpathSync(git(callerRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
     const fields = 'number,url,baseRefOid,headRefOid,headRepository,headRepositoryOwner,isCrossRepository';
@@ -525,71 +531,51 @@ async function launch(args) {
       if (git(callerRoot, 'rev-parse', `${sha}^{commit}`) !== sha) throw new Error('fetched SHA mismatch');
     }
     const mergeBaseSha = mergeBase(callerRoot, fixed.baseSha, fixed.headSha);
-    stage = 'revision-race';
-    const latest = validateMetadata(metadata(), repository, options.number);
-    assertSameRevision(fixed, latest);
-    stage = 'artifacts';
-    process.umask(0o077);
+    stage = 'revision-race'; assertSameRevision(fixed, validateMetadata(metadata(), repository, options.number));
+    stage = 'artifacts'; process.umask(0o077);
     const runId = `pr-${options.number}-${crypto.randomUUID()}`;
     const parent = path.join(os.homedir(), '.local/state/pr-review', repository.replace('/', '-'), `pr-${options.number}`, fixed.headSha);
     fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
-    const runPath = path.join(parent, runId); fs.mkdirSync(runPath, { mode: 0o700 }); run = runPath;
+    run = path.join(parent, runId); fs.mkdirSync(run, { mode: 0o700 });
     fs.mkdirSync(path.join(run, 'sessions'), { mode: 0o700 });
     privateWrite(path.join(run, 'omp-config.yml'), 'autoResume: false\n');
+    for (const dir of ['environments', 'references']) fs.mkdirSync(path.join(run, dir), { mode: 0o700 });
+    privateWrite(path.join(run, 'runtime.js'), fs.readFileSync(__filename));
+    for (const name of ['index', environment]) privateWrite(path.join(run, 'environments', `${name}.js`), fs.readFileSync(path.join(__dirname, 'environments', `${name}.js`)));
+    privateWrite(path.join(run, 'SKILL.md'), skillText);
+    for (const [name, text] of references) privateWrite(path.join(run, 'references', `${name}.md`), text);
     stage = 'worktree-create';
-    resources.name = `pr-review-${options.number}-${runId.slice(-12)}`;
+    resources.name = `pr-review-${runId.slice(-20)}`;
+    resources.checkout = { owner: environment === 'herdr' ? 'worktrunk' : 'orca', path: null, repositoryGitDir, baseSha: fixed.baseSha, branch: null, ownerId: null };
+    const persist = () => fs.writeFileSync(path.join(run, 'resources.json'), JSON.stringify(resources, null, 2) + '\n', { mode: 0o600 });
     privateWrite(path.join(run, 'attempt.json'), { runId, repository, prNumber: options.number, ...fixed, ...resources });
-    const creationCommand = spawnSync(orca, ['worktree', 'create', '--repo', `id:${resources.repoId}`, '--name', resources.name, '--base-branch', fixed.baseSha, '--no-parent', '--setup', 'skip', '--pr', String(options.number), ...(options.noFocus ? [] : ['--activate']), '--json'], { cwd: callerRoot, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
-    let creation;
-    try { creation = JSON.parse(creationCommand.stdout); } catch { creation = null; }
-    resources.worktreeId = creation?.result?.worktree?.id || null;
-    resources.worktreePath = creation?.result?.worktree?.path || null;
-    resources.branch = creation?.result?.worktree?.branch || null;
-    privateWrite(path.join(run, 'resources.json'), resources);
-    if (creationCommand.error || creationCommand.status !== 0 || creation?.ok !== true) throw new Error('Orca worktree creation failed; inspect recorded resources before resuming');
-    if (!resources.worktreeId || !resources.worktreePath || !path.isAbsolute(resources.worktreePath) || resources.worktreeId !== `${resources.repoId}::${resources.worktreePath}`) throw new Error('incomplete Orca creation response');
+    adapter.createCheckout(api, options, resources, fixed, callerRoot, persist);
     stage = 'checkout-verify';
-    const root = resources.worktreePath;
-    if (git(root, 'rev-parse', 'HEAD') !== fixed.baseSha || git(root, 'status', '--porcelain') || fs.realpathSync(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')) !== repositoryGitDir || fs.realpathSync(git(root, 'rev-parse', '--absolute-git-dir')) === repositoryGitDir) throw new Error('Orca base checkout mismatch');
-    stage = 'agent-start';
-    // Custom argv is required for a fresh, run-private OMP session; --agent cannot forward it.
-    const argv = ['env', '-u', 'OMP_PROFILE', '-u', 'PI_CODING_AGENT_DIR', 'omp', '--cwd', root, '--session-dir', path.join(run, 'sessions'), '--config', path.join(run, 'omp-config.yml')];
-    const terminalCommand = spawnSync(orca, ['terminal', 'create', '--worktree', `id:${resources.worktreeId}`, '--title', resources.name, '--command', `umask 077; exec ${argv.map(shellQuote).join(' ')}`, '--json'], { cwd: callerRoot, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
-    let terminalResponse;
-    try { terminalResponse = JSON.parse(terminalCommand.stdout); } catch { terminalResponse = null; }
-    resources.terminalHandle = terminalResponse?.result?.terminal?.handle || null;
-    fs.writeFileSync(path.join(run, 'resources.json'), JSON.stringify(resources, null, 2) + '\n', { mode: 0o600 });
-    if (terminalCommand.error || terminalCommand.status !== 0 || terminalResponse?.ok !== true || !resources.terminalHandle) throw new Error('Orca terminal creation failed; inspect retained resources');
-    const context = { version: 2, runId, repository, prNumber: options.number, ...fixed, mergeBaseSha, ...resources, artifactPath: run, quick: options.quick, callerRoot, repositoryGitDir };
-    const contextFile = path.join(run, 'prepared-context.json'); privateWrite(contextFile, context);
-    privateWrite(path.join(run, 'runtime.js'), fs.readFileSync(__filename, 'utf8'));
-    // Copy the selected trusted skill so a source-render smoke never needs chezmoi apply.
-    const skillFile = path.join(run, 'SKILL.md'); privateWrite(skillFile, skillText);
-    stage = 'agent-readiness';
-    let ready = orcaResult(orca, ['terminal', 'wait', '--terminal', resources.terminalHandle, '--for', 'tui-idle', '--timeout-ms', '60000'], callerRoot);
-    if (ready.wait?.satisfied !== true) ready = orcaResult(orca, ['terminal', 'wait', '--terminal', resources.terminalHandle, '--for', 'tui-idle', '--timeout-ms', '120000'], callerRoot);
-    if (ready.wait?.satisfied !== true) throw new Error('OMP terminal not ready');
-    const state = orcaResult(orca, ['terminal', 'show', '--terminal', resources.terminalHandle], callerRoot).terminal;
-    if (state?.handle !== resources.terminalHandle || state.worktreeId !== resources.worktreeId || !state.connected || !state.writable || fs.realpathSync(state.worktreePath) !== fs.realpathSync(root)) throw new Error('OMP terminal identity mismatch');
+    const root = resources.checkout.path;
+    const context = { version: 3, runId, repository, prNumber: options.number, ...fixed, mergeBaseSha, executionEnvironment: environment, checkout: resources.checkout, interaction: resources.interaction, artifactPath: run, quick: options.quick, callerRoot, runtime: { schemaVersion: 1, adapter: environment, snapshot: '.' } };
+    const contextFile = path.join(run, 'prepared-context.json');
+    // Common Git/private invariants are checked before any agent is started.
+    privateWrite(contextFile, context); validateContextCommon(context, contextFile, root);
+    stage = 'agent-start'; await adapter.startReviewer(api, resources, run, callerRoot, persist, options);
+    fs.writeFileSync(contextFile, JSON.stringify(context, null, 2) + '\n', { mode: 0o600 });
+    stage = 'agent-readiness'; if (adapter.ready) adapter.ready(api, context, callerRoot);
+    validateContext(contextFile, root, process.env, false);
     assertSameRevision(fixed, validateMetadata(metadata(), repository, options.number));
-    if (git(root, 'rev-parse', 'HEAD') !== fixed.baseSha || git(root, 'status', '--porcelain')) throw new Error('prepared base checkout is changed');
+    validateContextCommon(context, contextFile, root);
     stage = 'agent-prompt';
-    const prompt = `Read the trusted pr-review skill at ${JSON.stringify(skillFile)} and execute its prepared-review contract now, using context ${JSON.stringify(contextFile)}. Validate with node ${JSON.stringify(path.join(run, 'runtime.js'))} validate-context ${JSON.stringify(contextFile)} first. Review only fixed PR ${repository}#${options.number}. Remain in this Orca terminal/base checkout; do not create another visible workspace, worktree, terminal, or agent environment. Preserve substantive review and security checks. Never post without explicit user confirmation.`;
-    const receipt = orcaResult(orca, ['terminal', 'send', '--terminal', resources.terminalHandle, '--text', prompt, '--enter', '--wait-submit', '15'], callerRoot);
-    privateWrite(path.join(run, 'submission.json'), receipt);
-    if (receipt.send?.handle !== resources.terminalHandle || receipt.send.accepted !== true) throw new Error('OMP prompt not accepted');
-    const status = receipt.send.prompt?.stages?.includes('turn_started') ? 'submitted' : 'accepted';
-    const result = { status, stage: 'agent-prompt', runId, repository, prNumber: options.number, ...resources, artifactPath: run, contextFile, ...inspectContext(contextFile, root, { ORCA_WORKTREE_ID: resources.worktreeId, ORCA_TERMINAL_HANDLE: resources.terminalHandle }), submission: receipt };
+    const prompt = `Read the trusted pr-review skill at ${JSON.stringify(path.join(run, 'SKILL.md'))} and execute its prepared-review contract now, using context ${JSON.stringify(contextFile)}. Environment guidance is run-local at ${JSON.stringify(path.join(run, 'references/environments.md'))} and ${JSON.stringify(path.join(run, 'references', environment + '.md'))}. Validate with node ${JSON.stringify(path.join(run, 'runtime.js'))} validate-context ${JSON.stringify(contextFile)} first. Review only fixed PR ${repository}#${options.number}. Remain in this existing reviewer/base checkout; do not create another workspace, worktree, terminal, pane, or agent environment. Preserve substantive review and security checks. Never post without explicit user confirmation.`;
+    const { receipt, status } = adapter.submit(api, context, prompt, callerRoot, receipt => privateWrite(path.join(run, 'submission.json'), receipt));
+    const result = { status, stage, runId, repository, prNumber: options.number, ...resources, artifactPath: run, contextFile, actualCheckout: { branch: git(root, 'branch', '--show-current') || null, sha: fixed.baseSha, path: root }, reviewTarget: { baseSha: fixed.baseSha, headSha: fixed.headSha, mergeBaseSha }, sourceAccess: 'fixed-git-objects', submission: receipt };
     privateWrite(path.join(run, 'startup.json'), result);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } catch (error) {
+    if (stage === 'environment') resources.environmentError = error.message;
     const failure = recordFailure(run, stage, error, resources);
-    process.stderr.write(JSON.stringify(failure, null, 2) + '\n');
-    process.exitCode = 1;
+    process.stderr.write(JSON.stringify(failure, null, 2) + '\n'); process.exitCode = 1;
   }
 }
 
-module.exports = { parseArgs, validateMetadata, assertSameRevision, validateContext, recordFailure, orcaCommand, inspectContext, prepareCoverage, readSource, validateReview, renderSummary };
+module.exports = { parseArgs, validateMetadata, assertSameRevision, validateContext, validateContextCommon, recordFailure, inspectContext, prepareCoverage, readSource, validateReview, renderSummary };
 if (require.main === module) {
   const operations = { 'validate-context': validateContext, 'inspect-context': inspectContext, 'prepare-coverage': prepareCoverage, 'validate-review': validateReview, 'render-summary': renderSummary };
   if (Object.hasOwn(operations, process.argv[2]) || process.argv[2] === 'read-source') {
@@ -600,7 +586,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nPR URLs resolve a registered Orca project from any directory. --project selects an exact project name or id; numbers without --project use the cwd repository. Requires Orca CLI/runtime, gh and OMP. No clone or Herdr integration. Failures retain all created resources.\n');
+    process.stdout.write('Usage: pr-review [--environment herdr|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr uses cwd/--repo-path and a no-hook Worktrunk checkout plus a dedicated Herdr workspace (local zsh/bash input readiness required). --no-focus preserves focus; otherwise the new workspace is focused. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is known unsupported and stops before resources. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

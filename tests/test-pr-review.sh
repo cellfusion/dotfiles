@@ -15,6 +15,8 @@ for (const input of [[], ['0'], ['01'], ['-1'], ['1', '2'], ['--worktree', '1'],
 }
 assert.equal(runtime.parseArgs(['--no-focus', '--quick', 'https://github.com/a/b/pull/12']).repository, 'a/b');
 assert.equal(runtime.parseArgs(['123']).number, 123);
+assert.equal(runtime.parseArgs(['--environment','herdr','--repo-path','/tmp/repo','123']).environment,'herdr');
+assert.throws(()=>runtime.parseArgs(['--environment','unknown','1']),/environment/);
 assert.throws(() => runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:null}, 'a/b', 1), /fork/);
 assert.equal(runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:{name:'fork'}, headRepositoryOwner:{login:'other'}}, 'a/b', 1).headRepository, 'other/fork');
 const fixed={baseSha:'a'.repeat(40),headSha:'b'.repeat(40),headRepository:'other/fork'};
@@ -22,11 +24,13 @@ for (const changed of [{...fixed,baseSha:'c'.repeat(40)},{...fixed,headSha:'d'.r
   assert.throws(()=>runtime.assertSameRevision(fixed,changed),/revision changed/);
 }
 assert.throws(()=>runtime.validateMetadata({number:1,baseRefOid:fixed.baseSha,headRefOid:fixed.headSha,url:'https://github.com/wrong/repo/pull/1',isCrossRepository:false},'a/b',1),/repository mismatch/);
-assert.equal(runtime.orcaCommand({}, 'linux'), 'orca-ide');
-assert.equal(runtime.orcaCommand({ORCA_TERMINAL_HANDLE:'term'}, 'linux'), 'orca');
-assert.equal(runtime.orcaCommand({ORCA_DEV_REPO_ROOT:'/dev'}, 'darwin'), 'orca-dev');
-assert.equal(runtime.orcaCommand({ORCA_CLI_COMMAND:'/custom/orca',ORCA_DEV_REPO_ROOT:'/dev'}, 'darwin'), '/custom/orca');
+const orcaAdapter=require(path.join(process.argv[2],'private_dot_local/private_share/pr-review/environments/orca.js'));
+assert.equal(orcaAdapter.binary({}, 'linux'), 'orca-ide');
+assert.equal(orcaAdapter.binary({ORCA_TERMINAL_HANDLE:'term'}, 'linux'), 'orca');
+assert.equal(orcaAdapter.binary({ORCA_DEV_REPO_ROOT:'/dev'}, 'darwin'), 'orca-dev');
+assert.equal(orcaAdapter.binary({ORCA_CLI_COMMAND:'/custom/orca',ORCA_DEV_REPO_ROOT:'/dev'}, 'darwin'), '/custom/orca');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-review-boundary-'));
+const fixtureSockets=[];
 try {
   const callerRepo = path.join(root, 'repo'); fs.mkdirSync(callerRepo); let repo = callerRepo;
   function git(...args) { const r=spawnSync('git', ['-C', repo, ...args], {encoding:'utf8'}); assert.equal(r.status,0,r.stderr); return r.stdout.trim(); }
@@ -38,29 +42,60 @@ try {
   const linked=path.join(root,'review'); git('worktree','add','--detach',linked,base); repo=linked;
   const run = path.join(root,'run'); fs.mkdirSync(run,{mode:0o700});
   const contextFile=path.join(run,'prepared-context.json');
-  const context={version:2,runId:'test-run',repository:'a/b',headRepository:'a/b',repositoryGitDir,prNumber:1,baseSha:base,headSha:head,owner:'orca',worktreePath:repo,artifactPath:run,worktreeId:`r42::${repo}`,terminalHandle:'term_review',quick:false};
+  function snapshot(dir,adapter='orca') {
+    const source=path.join(process.argv[2],'private_dot_local/private_share/pr-review');
+    fs.copyFileSync(path.join(source,'runtime.js'),path.join(dir,'runtime.js')); fs.chmodSync(path.join(dir,'runtime.js'),0o600);
+    fs.mkdirSync(path.join(dir,'environments'),{mode:0o700});
+    for(const name of ['index',adapter]) { fs.copyFileSync(path.join(source,'environments',name+'.js'),path.join(dir,'environments',name+'.js')); fs.chmodSync(path.join(dir,'environments',name+'.js'),0o600); }
+    fs.mkdirSync(path.join(dir,'references'),{mode:0o700});
+    for(const name of ['environments',adapter,'worktrunk']) fs.writeFileSync(path.join(dir,'references',name+'.md'),'trusted guidance',{mode:0o600});
+    fs.writeFileSync(path.join(dir,'SKILL.md'),'trusted skill',{mode:0o600});
+    fs.writeFileSync(path.join(dir,'omp-config.yml'),'autoResume: false\n',{mode:0o600});
+    fs.mkdirSync(path.join(dir,'sessions'),{mode:0o700});
+  }
+  snapshot(run);
+  const live=path.join(root,'live-orca');
+  fs.writeFileSync(live,`#!${process.execPath}\nconsole.log(JSON.stringify({ok:true,result:{terminal:{handle:'term_review',worktreeId:'r42::'+process.env.LIVE_CHECKOUT,worktreePath:process.env.LIVE_CHECKOUT,connected:true,writable:true}}}));\n`,{mode:0o700});
+  process.env.ORCA_CLI_COMMAND=live; process.env.LIVE_CHECKOUT=repo;
+  const context={version:3,runId:'test-run',repository:'a/b',headRepository:'a/b',prNumber:1,baseSha:base,headSha:head,executionEnvironment:'orca',checkout:{owner:'orca',path:repo,repositoryGitDir,baseSha:base,branch:null,ownerId:`r42::${repo}`},interaction:{terminalHandle:'term_review'},runtime:{schemaVersion:1,adapter:'orca',snapshot:'.'},artifactPath:run,quick:false};
   function save(value=context) { fs.writeFileSync(contextFile,JSON.stringify(value),{mode:0o600}); }
   save();
-  const env={ORCA_WORKTREE_ID:`r42::${repo}`,ORCA_TERMINAL_HANDLE:'term_review'};
+  const env={ORCA_CLI_COMMAND:live,ORCA_WORKTREE_ID:`r42::${repo}`,ORCA_TERMINAL_HANDLE:'term_review'};
   assert.equal(runtime.validateContext(contextFile, repo, env).baseSha,base);
   assert.equal(runtime.validateContext(contextFile,repo,env).runId, 'test-run');
   fs.writeFileSync(path.join(repo,'untracked'),'dirty');
   assert.throws(()=>runtime.validateContext(contextFile,repo,env),/base checkout is changed/); fs.unlinkSync(path.join(repo,'untracked'));
-  save({...context,version:1}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/version/); save();
+  save({...context,version:2}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/version/); save();
   const checkoutMain=spawnSync('git',['-C',callerRepo,'checkout','--detach',base],{encoding:'utf8'}); assert.equal(checkoutMain.status,0,checkoutMain.stderr);
-  save({...context,worktreePath:callerRepo,worktreeId:`r42::${callerRepo}`}); assert.throws(()=>runtime.validateContext(contextFile,callerRepo,{...env,ORCA_WORKTREE_ID:`r42::${callerRepo}`}),/linked worktree/); save();
+  save({...context,checkout:{...context.checkout,path:callerRepo,ownerId:`r42::${callerRepo}`}}); assert.throws(()=>runtime.validateContext(contextFile,callerRepo,{...env,ORCA_WORKTREE_ID:`r42::${callerRepo}`}),/linked worktree/); save();
   save({...context,headSha:'c'.repeat(40)}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/git command failed|head/); save();
-  save({...context,repositoryGitDir:root}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/repository/); save();
+  save({...context,checkout:{...context.checkout,repositoryGitDir:root}}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/repository/); save();
   assert.throws(()=>runtime.validateContext(contextFile,root,env),/cwd/);
   assert.throws(()=>runtime.validateContext(contextFile,repo,{...env,ORCA_TERMINAL_HANDLE:'term_other'}),/terminal/);
-  assert.throws(()=>runtime.validateContext(contextFile,repo,{}),/terminal/);
-  save({...context,worktreeId:'r42'}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/worktree/); save();
-  save({...context,owner:'external'}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/owner/);
+  assert.throws(()=>runtime.validateContext(contextFile,repo,{ORCA_CLI_COMMAND:live}),/terminal/);
+  save({...context,checkout:{...context.checkout,ownerId:'r42'}}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/worktree/); save();
+  save({...context,checkout:{...context.checkout,owner:'external'}}); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/owner/);
   save(); git('checkout','--detach',head); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/base/);
   git('checkout','--detach',base); fs.chmodSync(contextFile,0o644); assert.throws(()=>runtime.validateContext(contextFile,repo,env),/private/);
-  const resources={worktreePath:repo,worktreeId:`r42::${repo}`,terminalHandle:'term_review'};
+  fs.chmodSync(contextFile,0o600); save();
+  for(const relative of ['runtime.js','omp-config.yml','environments/index.js','environments/orca.js','SKILL.md','references/environments.md','references/orca.md','references/worktrunk.md']) {
+    const dependency=path.join(run,relative), saved=fs.readFileSync(dependency);
+    fs.unlinkSync(dependency);
+    assert.throws(()=>runtime.validateContext(contextFile,repo,env),/ENOENT|snapshot/,'missing snapshots never fall back to source');
+    fs.writeFileSync(dependency,saved,{mode:0o600});
+    fs.chmodSync(dependency,0o644);
+    assert.throws(()=>runtime.validateContext(contextFile,repo,env),/private/);
+    fs.chmodSync(dependency,0o600);
+  }
+  const adapterFile=path.join(run,'environments/orca.js'), adapterBytes=fs.readFileSync(adapterFile);
+  fs.unlinkSync(adapterFile); fs.symlinkSync(live,adapterFile);
+  assert.throws(()=>runtime.validateContext(contextFile,repo,env),/private|snapshot/,'symlinked code is never loaded');
+  fs.unlinkSync(adapterFile); fs.writeFileSync(adapterFile,adapterBytes,{mode:0o600});
+  save({...context,runtime:{...context.runtime,adapter:'../../escape'}});
+  assert.throws(()=>runtime.validateContext(contextFile,repo,env),/snapshot/); save();
+  const resources={executionEnvironment:'orca',checkout:context.checkout,interaction:context.interaction};
   const failure=runtime.recordFailure(run,'agent-start',new Error('sensitive output'),resources);
-  assert.equal(failure.stage,'agent-start'); assert.equal(failure.status,'blocked'); assert.equal(failure.terminalHandle,'term_review');
+  assert.equal(failure.stage,'agent-start'); assert.equal(failure.status,'blocked'); assert.equal(failure.interaction.terminalHandle,'term_review');
   assert.ok(fs.existsSync(repo)); assert.ok(fs.existsSync(contextFile));
   assert.ok(!fs.readFileSync(path.join(run,'startup.json'),'utf8').includes('sensitive output'));
   const bin=path.join(root,'bin'); fs.mkdirSync(bin);
@@ -71,6 +106,67 @@ const c=JSON.parse(fs.readFileSync(process.env.FIXTURE,'utf8')),a=process.argv.s
 const flag=k=>a[a.indexOf(k)+1], emit=result=>console.log(JSON.stringify({ok:true,result}));
 const name=path.basename(process.argv[1]);
 fs.appendFileSync(c.log,JSON.stringify({name,args:a})+'\\n');
+if(name==='ps'){console.log('ttys123');process.exit(0);}
+if(name==='stty'){
+  const file=c.log+'.tty', count=fs.existsSync(file)?Number(fs.readFileSync(file)):0;
+  fs.writeFileSync(file,String(count+1));console.log(count===0?'icanon echo':'-icanon -echo');process.exit(0);
+}
+if(name==='wt') {
+  if(a.includes('--help')) { console.log(c.mode==='herdr-no-hooks'?'--no-cd --format --base':'--no-hooks --no-cd --format --base'); process.exit(0); }
+  if(!a.includes('--no-hooks')||process.env.GIT_CONFIG_KEY_0!=='core.hooksPath'||process.env.GIT_CONFIG_VALUE_0!=='/dev/null') process.exit(8);
+  const branch=flag('--create');
+  const made=spawnSync('git',['-C',c.repo,'worktree','add','-b',branch,c.checkout,c.mode==='herdr-wrong-base'?c.head:flag('--base')],{encoding:'utf8',env:process.env});
+  if(made.status!==0)process.exit(2);
+  console.log(JSON.stringify({action:'created',created_branch:true,branch,path:c.checkout}));
+  if(c.mode==='herdr-partial-checkout')process.exit(1);
+  process.exit(0);
+}
+if(name==='herdr') {
+  if(a.includes('--help')) {console.log('--no-focus omp');process.exit(0);}
+  if(a[0]==='status') {console.log('socket: '+process.env.HERDR_SOCKET_PATH);process.exit(0);}
+  if(a[0]==='integration') {console.log('omp: current (v10)');process.exit(0);}
+  const stateFile=c.log+'.agent', setupFile=c.log+'.shell';
+  const agent=()=> {
+    const state=JSON.parse(fs.readFileSync(stateFile));
+    return {agent:'omp',name:state.name,agent_status:'idle',interactive_ready:true,workspace_id:'w-review',tab_id:'t-review',
+      pane_id:'p-review',terminal_id:'term-review',foreground_cwd:c.checkout,
+      agent_session:{agent:'omp',kind:'path',source:'herdr:omp',value:path.join(state.session,'session.jsonl')}};
+  };
+  if(a[0]==='workspace'&&a[1]==='create') {
+    emit({type:'workspace_created',workspace:{workspace_id:'w-review'},tab:{tab_id:'t-review'},root_pane:{pane_id:'p-review',terminal_id:'term-review'}});
+    if(c.mode==='herdr-partial-workspace')process.exit(1);
+  } else if(a[0]==='pane'&&a[1]==='run') {
+    if(a[3].length>1024||!a[3].startsWith('. '))process.exit(9);
+    if(Number(fs.readFileSync(c.log+'.tty'))<2)process.exit(10);
+    if(c.mode==='herdr-setup-failure'){console.log(JSON.stringify({error:{code:'setup_rejected'}}));process.exit(1);}
+    const configured=spawnSync('/bin/sh',['-c',a[3]+'; printf "%s" "$PATH"'],{env:process.env,encoding:'utf8'});
+    if(configured.status!==0)process.exit(2);
+    fs.writeFileSync(setupFile,configured.stdout);
+    if(c.mode==='herdr-setup-bad-ack')fs.writeFileSync(path.join(path.dirname(a[3].slice(3,-1)),'shell-setup-ready'),'wrong-token',{mode:0o600});
+  } else if(a[0]==='agent'&&a[1]==='start') {
+    if(!fs.existsSync(setupFile))process.exit(11);
+    const native=a.slice(a.indexOf('--')+1);
+    fs.writeFileSync(stateFile,JSON.stringify({name:a[2],session:flag('--session-dir'),argv:['omp',...native]}));
+    process.umask(0o022);
+    const r=spawnSync('/bin/sh',['-c','exec omp '+native.map(value=>JSON.stringify(value)).join(' ')],{env:{...process.env,PATH:fs.readFileSync(setupFile,'utf8')},encoding:'utf8'});
+    if(r.status!==0)process.exit(2);
+    const state=agent(); if(c.mode==='herdr-not-ready')state.interactive_ready=false;
+    emit({type:'agent_started',agent:state,argv:['omp',...native]});
+  } else if(a[0]==='agent'&&a[1]==='get') {
+    const state=agent();
+    if(c.mode==='herdr-wrong-agent')state.agent_session.value=path.join(c.repo,'wrong-session');
+    if(c.mode==='herdr-wrong-cwd')state.foreground_cwd=c.repo;
+    emit({type:'agent_info',agent:state});
+  } else if(a[0]==='pane'&&a[1]==='process-info') {
+    const state=fs.existsSync(stateFile)?JSON.parse(fs.readFileSync(stateFile)):null;
+    emit({type:'pane_process_info',process_info:state?{pane_id:'p-review',foreground_processes:[{argv:state.argv,cwd:c.checkout}]}:{pane_id:'p-review',shell_pid:123,foreground_process_group_id:123,foreground_processes:[{pid:123,name:'zsh',cwd:c.checkout}]}});
+  } else if(a[0]==='agent'&&a[1]==='prompt') {
+    if(c.mode==='herdr-lazy-session')fs.writeFileSync(agent().agent_session.value,'private session',{mode:0o600});
+    emit({type:c.mode==='herdr-unknown-receipt'?'ok':'agent_prompted',agent:agent()});
+    if(c.mode==='herdr-prompt-timeout')process.exit(1);
+  } else process.exit(2);
+  process.exit(0);
+}
 if(name==='gh'){
   if(a[0]==='repo') console.log('a/b');
   else {
@@ -100,20 +196,25 @@ else if(a[1]==='send') emit({send:{handle:'term_review',accepted:c.mode!=='rejec
 else process.exit(2);
 `,{mode:0o700});
   fs.symlinkSync(driver,path.join(bin,'gh')); fs.symlinkSync(driver,path.join(bin,'orca-fixture'));
-  fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2);fs.writeFileSync(path.join(a[a.indexOf('--session-dir')+1],'session.jsonl'),'private session');\n`,{mode:0o700});
+  fs.symlinkSync(driver,path.join(bin,'wt')); fs.symlinkSync(driver,path.join(bin,'herdr'));
+  fs.symlinkSync(driver,path.join(bin,'ps'));fs.symlinkSync(driver,path.join(bin,'stty'));
+  fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),c=JSON.parse(fs.readFileSync(process.env.FIXTURE));if(c.mode!=='herdr-lazy-session')fs.writeFileSync(path.join(a[a.indexOf('--session-dir')+1],'session.jsonl'),'private session');\n`,{mode:0o700});
   const skill=path.join(root,'SKILL.md');
   fs.writeFileSync(skill,'---\nname: pr-review\n---\n**Prepared-review contract:**\n');
+  fs.mkdirSync(path.join(root,'references'));
+  for(const name of ['environments','orca','herdr','worktrunk']) fs.writeFileSync(path.join(root,'references',name+'.md'),'trusted fixture guidance');
   git('remote','add','origin','git@github.com:a/b.git');
-  for(const mode of ['success','outside-url','outside-project','outside-id','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url','number-cwd','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
+  for(const mode of ['success','explicit-priority','outside-url','outside-project','outside-id','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url','number-cwd','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
     const dir=path.join(root,mode); fs.mkdirSync(dir);
     const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
     const config=path.join(dir,'fixture.json'); fs.writeFileSync(config,JSON.stringify(fixture));
     const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH,ORCA_CLI_COMMAND:path.join(bin,'orca-fixture'),FIXTURE:config};
     for(const key of ['HERDR_ENV','HERDR_WORKSPACE_ID','HERDR_PANE_ID','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT']) delete env[key];
+    if(mode==='explicit-priority')Object.assign(env,{HERDR_ENV:'1',ORCA_TERMINAL_HANDLE:'existing'});
     const projectArgs=mode==='outside-id'?['--project','id:r42']:['outside-project','project-url-mismatch','ambiguous-project'].includes(mode)?['--project','review-project']:mode==='missing-project'?['--project','unknown']:[];
     const input=['outside-project','outside-id','missing-project','ambiguous-project','number-cwd'].includes(mode)?'1':['url-mismatch','project-url-mismatch'].includes(mode)?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1';
-    const launched=spawnSync('bash',[path.join(process.argv[2],'private_dot_local/bin/executable_pr-review'),'--no-focus','--skill-file',skill,...projectArgs,input],{cwd:mode.startsWith('outside-')||mode==='ambiguous-url'?root:callerRepo,env,encoding:'utf8'});
-    const accepted=['success','outside-url','outside-project','outside-id','number-cwd','unproven'].includes(mode);
+    const launched=spawnSync('bash',[path.join(process.argv[2],'private_dot_local/bin/executable_pr-review'),'--environment','orca','--no-focus','--skill-file',skill,...projectArgs,input],{cwd:mode.startsWith('outside-')||mode==='ambiguous-url'?root:callerRepo,env,encoding:'utf8'});
+    const accepted=['success','explicit-priority','outside-url','outside-project','outside-id','number-cwd','unproven'].includes(mode);
     assert.equal(launched.status,accepted?0:1,mode+': '+launched.stderr);
     const output=JSON.parse(accepted?launched.stdout:launched.stderr);
     const calls=fs.existsSync(fixture.log)?fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse):[];
@@ -122,22 +223,106 @@ else process.exit(2);
     assert.equal(creates.length,['race','url-mismatch','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url'].includes(mode)?0:1,mode);
     assert.equal(sends.length,accepted||mode==='rejected'?1:0,mode);
     if(accepted){
-      assert.equal(output.status,mode==='unproven'?'accepted':'submitted'); assert.equal(output.worktreeId,'r42::'+fixture.checkout);
+      assert.equal(output.status,mode==='unproven'?'accepted':'started'); assert.equal(output.checkout.ownerId,'r42::'+fixture.checkout);
       assert.equal(git('rev-parse','HEAD'),base);
       assert.equal(spawnSync('git',['-C',fixture.checkout,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),base);
       assert.equal(fs.statSync(output.artifactPath).mode&0o777,0o700);
       assert.equal(fs.statSync(output.contextFile).mode&0o777,0o600);
       assert.equal(fs.statSync(path.join(output.artifactPath,'sessions','session.jsonl')).mode&0o777,0o600);
       const prepared=JSON.parse(fs.readFileSync(output.contextFile,'utf8'));
-      assert.equal(runtime.validateContext(output.contextFile,fixture.checkout,{ORCA_WORKTREE_ID:output.worktreeId,ORCA_TERMINAL_HANDLE:output.terminalHandle}).headSha,head);
-      assert.equal(prepared.owner,'orca');
+      assert.equal(runtime.validateContext(output.contextFile,fixture.checkout,{...env,ORCA_WORKTREE_ID:output.checkout.ownerId,ORCA_TERMINAL_HANDLE:output.interaction.terminalHandle}).headSha,head);
+      assert.equal(prepared.checkout.owner,'orca');
     } else {
       assert.equal(output.status,'blocked');
       if(creates.length){assert.ok(fs.existsSync(fixture.checkout));assert.ok(fs.existsSync(path.join(output.artifactPath,'startup.json')));}
-      if(mode==='partial') assert.equal(output.worktreePath,fixture.checkout);
-      if(mode==='partial-terminal') assert.equal(output.terminalHandle,'term_review');
+      if(mode==='partial') assert.equal(output.checkout.path,fixture.checkout);
+      if(mode==='partial-terminal') assert.equal(output.interaction.terminalHandle,'term_review');
       if(mode==='timeout') assert.equal(output.stage,'agent-readiness');
       if(mode==='rejected') assert.ok(fs.existsSync(path.join(output.artifactPath,'submission.json')));
+    }
+  }
+  const entry=path.join(process.argv[2],'private_dot_local/bin/executable_pr-review');
+  for(const [label,selection,host] of [
+    ['unsupported',['--environment','paseo'],{}],['unknown',[],{}],
+    ['ambiguous',[],{HERDR_ENV:'1',ORCA_TERMINAL_HANDLE:'other'}],
+    ['outside',['--environment','herdr'],{}],
+    ['project-herdr',['--environment','herdr','--project','id:r42'],{HERDR_ENV:'1'}],
+    ['repo-orca',['--environment','orca','--repo-path',callerRepo],{}],
+  ]) {
+    const dir=path.join(root,'gate-'+label);fs.mkdirSync(dir);
+    const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH};
+    for(const key of ['HERDR_ENV','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT'])delete env[key];
+    Object.assign(env,host);
+    const stopped=spawnSync('bash',[entry,...selection,'1'],{cwd:callerRepo,env,encoding:'utf8'});
+    assert.equal(stopped.status,1,stopped.stderr);
+    const output=JSON.parse(stopped.stderr);
+    assert.equal(output.stage,'environment');assert.equal(output.artifactPath,null);
+    assert.ok(!fs.existsSync(path.join(dir,'.local')),'selection gate has zero resource side effects');
+    if(label==='unsupported')assert.match(output.reason,/unsupported-environment.*Paseo/);
+  }
+  const hookDir=path.join(root,'native-hooks'), hookMarker=path.join(root,'native-hook-ran');fs.mkdirSync(hookDir);
+  fs.writeFileSync(path.join(hookDir,'post-checkout'),'#!/bin/sh\nprintf hook >> '+JSON.stringify(hookMarker)+'\n',{mode:0o700});
+  const configureHooks=spawnSync('git',['-C',callerRepo,'config','core.hooksPath',hookDir],{encoding:'utf8'});assert.equal(configureHooks.status,0,configureHooks.stderr);
+  for(const mode of ['herdr-success','herdr-auto','herdr-focus','herdr-lazy-session','herdr-setup-failure','herdr-setup-bad-ack','herdr-repo-mismatch','herdr-no-hooks','herdr-wrong-base','herdr-wrong-agent','herdr-wrong-cwd','herdr-not-ready','herdr-partial-checkout','herdr-partial-workspace','herdr-unknown-receipt','herdr-prompt-timeout']) {
+    const dir=path.join(root,mode);fs.mkdirSync(dir);
+    const socket=path.join(root,'s'+fixtureSockets.length), server=require('node:net').createServer();
+    server.listen(socket);fixtureSockets.push(server);
+    const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
+    const config=path.join(dir,'fixture.json');fs.writeFileSync(config,JSON.stringify(fixture));
+    const env={...process.env,HOME:dir,HERDR_ENV:'1',HERDR_SOCKET_PATH:socket,PATH:bin+path.delimiter+process.env.PATH+path.delimiter+('/long-path-entry'.repeat(1000)),FIXTURE:config};
+    delete env.ORCA_WORKTREE_ID;delete env.ORCA_TERMINAL_HANDLE;delete env.ORCA_DEV_REPO_ROOT;
+    if(mode==='herdr-success')env.ORCA_TERMINAL_HANDLE='other-host';
+    const selection=mode==='herdr-auto'?[]:['--environment','herdr'];
+    const input=mode==='herdr-repo-mismatch'?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1';
+    const focusArgs=mode==='herdr-focus'?[]:['--no-focus'];
+    const launched=spawnSync('bash',[entry,...selection,'--repo-path',callerRepo,...focusArgs,'--skill-file',skill,input],{cwd:root,env,encoding:'utf8'});
+    const success=['herdr-success','herdr-auto','herdr-focus','herdr-lazy-session'].includes(mode);
+    assert.equal(launched.status,success?0:1,mode+': '+launched.stderr);
+    assert.ok(!fs.existsSync(hookMarker),'native repository checkout hooks are suppressed');
+    const output=JSON.parse(success?launched.stdout:launched.stderr);
+    const calls=fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse);
+    assert.ok(!calls.some(c=>c.name==='orca-fixture'),'Herdr never calls Orca');
+    const early=['herdr-repo-mismatch','herdr-no-hooks'].includes(mode);
+    assert.equal(calls.filter(c=>c.name==='wt'&&c.args.includes('--create')).length,early?0:1,'no automatic checkout retry');
+    const prompts=calls.filter(c=>c.args[0]==='agent'&&c.args[1]==='prompt');
+    assert.equal(prompts.length,success||['herdr-unknown-receipt','herdr-prompt-timeout'].includes(mode)?1:0,'no automatic resend');
+    assert.equal(fs.existsSync(fixture.checkout),!early,'all created failed checkouts retained');
+    if(early)assert.equal(output.artifactPath,null,'repository and capability gates precede run creation');
+    const workspaceCalls=calls.filter(c=>c.args[0]==='workspace'&&c.args[1]==='create'&&!c.args.includes('--help'));
+    assert.ok(workspaceCalls.every(c=>c.args.includes(mode==='herdr-focus'?'--focus':'--no-focus')&&!c.args.includes(mode==='herdr-focus'?'--no-focus':'--focus')));
+    const setupCalls=calls.filter(c=>c.args[0]==='pane'&&c.args[1]==='run');
+    assert.ok(setupCalls.length<=1,'shell setup is never resent');
+    if(mode==='herdr-setup-failure'||mode==='herdr-setup-bad-ack'){
+      assert.equal(calls.filter(c=>c.args[0]==='agent'&&c.args[1]==='start'&&!c.args.includes('--help')).length,0,'no reviewer before acknowledged setup');
+      const diagnostic=JSON.parse(fs.readFileSync(path.join(output.artifactPath,'shell-setup-status.json'),'utf8'));
+      assert.equal(diagnostic.status,'blocked');
+      assert.ok(!JSON.stringify(diagnostic).includes('/long-path-entry'),'failure evidence excludes inherited PATH');
+    }
+    if(mode==='herdr-partial-workspace')assert.equal(output.interaction.paneId,'p-review');
+    if(success) {
+      assert.equal(output.status,'accepted');assert.equal(output.checkout.owner,'worktrunk');assert.equal(output.executionEnvironment,'herdr');
+      assert.equal(fs.statSync(path.join(output.artifactPath,'sessions/session.jsonl')).mode&0o777,0o600,'launcher defeats host umask 022');
+      const preparedEnv={...env,HERDR_WORKSPACE_ID:'w-review',HERDR_TAB_ID:'t-review',HERDR_PANE_ID:'p-review'};
+      const preparedRuntime=path.join(output.artifactPath,'runtime.js');
+      const prepared=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
+      assert.equal(prepared.status,0,prepared.stderr);
+      const identity=JSON.parse(prepared.stdout);assert.equal(identity.baseSha,base);assert.equal(identity.headSha,head);
+      const altered={...identity,checkout:{...identity.checkout,owner:'herdr'}};
+      fs.writeFileSync(output.contextFile,JSON.stringify(altered),{mode:0o600});
+      const rejected=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
+      assert.notEqual(rejected.status,0,'execution host does not establish checkout owner');
+      fs.writeFileSync(output.contextFile,JSON.stringify(identity),{mode:0o600});
+      const badCaller=spawnSync(process.execPath,[preparedRuntime,'inspect-context',output.contextFile],{cwd:fixture.checkout,env:{...preparedEnv,HERDR_PANE_ID:'other'},encoding:'utf8'});
+      assert.notEqual(badCaller.status,0,'prepared operations require exact caller pane');
+      const sessionFile=identity.interaction.agentSession.value;fs.chmodSync(sessionFile,0o644);
+      const publicSession=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
+      assert.notEqual(publicSession.status,0,'private session permissions remain mandatory');fs.chmodSync(sessionFile,0o600);
+      const sessionBytes=fs.readFileSync(sessionFile);fs.unlinkSync(sessionFile);
+      const missingSession=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
+      assert.notEqual(missingSession.status,0,'prepared execution requires its persisted private session');fs.writeFileSync(sessionFile,sessionBytes,{mode:0o600});
+      const branchCheck=spawnSync('git',['-c','core.hooksPath=/dev/null','-C',fixture.checkout,'checkout','-b','changed-'+mode],{encoding:'utf8'});assert.equal(branchCheck.status,0,branchCheck.stderr);
+      const changedBranch=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
+      assert.notEqual(changedBranch.status,0,'checkout ownership requires its recorded branch');
     }
   }
   // Exercise only public runtime boundaries against a divergent, local Git fixture.
@@ -185,9 +370,10 @@ else process.exit(2);
   git('worktree','add','--detach',coverageWorktree,advancedBase); repo=coverageWorktree;
   const coverageRun=path.join(root,'coverage-run'); fs.mkdirSync(coverageRun,{mode:0o700});
   const coverageContextFile=path.join(coverageRun,'prepared-context.json');
+  snapshot(coverageRun); process.env.LIVE_CHECKOUT=repo;
   const coverageContext={...context,runId:'coverage-run',baseSha:advancedBase,headSha:fixedHead,
-    repositoryGitDir:coverageGitDir,worktreePath:repo,worktreeId:`r42::${repo}`,artifactPath:coverageRun};
-  const coverageEnv={ORCA_WORKTREE_ID:coverageContext.worktreeId,ORCA_TERMINAL_HANDLE:coverageContext.terminalHandle};
+    checkout:{...context.checkout,repositoryGitDir:coverageGitDir,path:repo,baseSha:advancedBase,ownerId:`r42::${repo}`},artifactPath:coverageRun};
+  const coverageEnv={ORCA_CLI_COMMAND:live,ORCA_WORKTREE_ID:coverageContext.checkout.ownerId,ORCA_TERMINAL_HANDLE:coverageContext.interaction.terminalHandle};
   const writeArtifact=(name,value)=>fs.writeFileSync(path.join(coverageRun,name),
     typeof value==='string'?value:JSON.stringify(value),{mode:0o600});
   writeArtifact('prepared-context.json',coverageContext);
@@ -269,7 +455,7 @@ else process.exit(2);
   const firstMerge=git('commit-tree',tree,'-p',left,'-p',right,'-m','first merge');
   const secondMerge=git('commit-tree',tree,'-p',right,'-p',left,'-m','second merge');
   git('checkout','--detach',firstMerge);
-  writeArtifact('prepared-context.json',{...coverageContext,baseSha:firstMerge,headSha:secondMerge});
+  writeArtifact('prepared-context.json',{...coverageContext,baseSha:firstMerge,checkout:{...coverageContext.checkout,baseSha:firstMerge},headSha:secondMerge});
   assert.throws(()=>runtime.inspectContext(coverageContextFile,repo,coverageEnv),/merge.base|unambiguous/i);
   git('checkout','--detach',advancedBase); writeArtifact('prepared-context.json',coverageContext);
   for(const [revision,file,start,end] of [['worktree','a'],['head','../a'],['head','/a'],['head','missing'],['head','a',0,1],['head','a',2,1],['head','a',1,99]]){
@@ -289,8 +475,8 @@ else process.exit(2);
   const metadata={...identity,...inspection,verdict:'PASS',findingCount:0,findingIds:[],coverage:summary,
     pr:{number:1,repository:'a/b',url:'https://github.com/a/b/pull/1'},
     revision:{baseRefOid:advancedBase,headRefOid:fixedHead,mergeBaseOid:ancestor},
-    workspace:{kind:'orca',path:repo,worktreeId:coverageContext.worktreeId,terminalHandle:coverageContext.terminalHandle,
-      owner:'orca',owned:true,cleanupStatus:'retained'}};
+    workspace:{executionEnvironment:'orca',checkout:coverageContext.checkout,interaction:coverageContext.interaction,
+      owned:true,cleanupStatus:'retained'}};
   const findingArtifact={...identity,verdict:'PASS',findingCount:0,findingIds:[],findings:[]};
   const checks={...identity,verdict:'PASS',findingCount:0,findingIds:[],checks:[]};
   const plan={...identity,mode:'prepared',speed:'standard',risk:'medium',profile:'focused',
@@ -330,8 +516,8 @@ else process.exit(2);
     ['revision','baseRefOid',fixedHead],['revision','headRefOid',ancestor],['revision','mergeBaseOid',advancedBase],
     ['review','mode','ordinary'],['review','speed','quick'],['review','risk','high'],['review','profile','full'],
     ['review','focus',['security']],['review','ci','none'],
-    ['workspace','kind','external'],['workspace','path',root],['workspace','worktreeId','wrong'],
-    ['workspace','terminalHandle','wrong'],['workspace','owner','external'],['workspace','owned',false],
+    ['workspace','executionEnvironment','external'],['workspace','checkout',{}],['workspace','interaction',{}],
+    ['workspace','owned',false],
     ['workspace','cleanupStatus','deleted'],['delegation','agents','omp-internal'],
     ['delegation','route','independent'],['delegation','reason',''],
   ]){
@@ -567,7 +753,7 @@ else process.exit(2);
   fs.writeFileSync(headFirst.evidencePath,'tampered fixture evidence',{mode:0o600});
   assert.throws(validate,/evidence|digest|hash|read/i,'source evidence cannot be changed after recording');
   fs.writeFileSync(headFirst.evidencePath,originalBytes,{mode:0o600});
-  const runtimeFile=path.join(process.argv[2],'private_dot_local/private_share/pr-review/runtime.js');
+  const runtimeFile=path.join(coverageRun,'runtime.js');
   const cli=(command,...args)=>spawnSync(process.execPath,[runtimeFile,command,coverageContextFile,...args],
     {cwd:repo,env:{...process.env,...coverageEnv},encoding:'utf8'});
   const inspected=cli('inspect-context'); assert.equal(inspected.status,0,inspected.stderr);
@@ -587,7 +773,7 @@ else process.exit(2);
   assert.throws(validate,/finding|report|markdown/i,'report cannot omit a canonical finding');
   const rejectedCli=cli('validate-review'); assert.notEqual(rejectedCli.status,0);
   assert.equal(git('rev-parse','HEAD'),advancedBase); assert.equal(git('status','--porcelain'),checkoutBefore);
-} finally { fs.rmSync(root,{recursive:true,force:true}); }
+} finally { for(const socket of fixtureSockets)socket.close(); fs.rmSync(root,{recursive:true,force:true}); }
 NODE
 assert_eq "$result" 0 'PR preparation, fixed-object source ledger, coverage and review consistency boundaries'
 assert_summary
