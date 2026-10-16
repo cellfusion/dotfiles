@@ -10,6 +10,13 @@ export XDG_CACHE_HOME="$HOME/.cache"
 ### zsh ###
 export ZDOTDIR="$XDG_CONFIG_HOME/zsh" # .zshrc や .zprofile が ~/.config/zsh から読み込まれるようになる $ZDOTDIR を変更する例
 
+# SSH のコマンド実行は .zprofile / .zshrc を読まないため、Homebrew の
+# 実行パスは全シェルで設定する。brew shellenv 自体は .zprofile に残す。
+if [[ -d /opt/homebrew/bin ]]; then
+  path=(/opt/homebrew/bin /opt/homebrew/sbin "${(@)path:#/opt/homebrew/(bin|sbin)}")
+  export PATH
+fi
+
 # Android
 # AVD などのユーザーデータは XDG に寄せるが、SDK 本体は Android Studio が
 # 管理する既定の場所にある。ここを XDG にすると SDK を見失う。

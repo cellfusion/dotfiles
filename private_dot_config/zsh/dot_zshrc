@@ -20,9 +20,6 @@ if command -v tv >/dev/null 2>&1; then
   fzf_default_completion=tv-noop
 fi
 
-# ~/.local/bin (custom scripts)
-export PATH="$HOME/.local/bin:$PATH"
-
 # libpq
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 
@@ -83,12 +80,6 @@ fi
 
 # Shopify Hydrogen alias to local projects
 alias h2='$(npm prefix -s)/node_modules/.bin/shopify hydrogen'
-
-# bun
-# BUN_INSTALL はインストール先のルートを指す。bin を付けると $BUN_INSTALL/bin が
-# 二重になる。
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
 
 if [[ "$TERM_PROGRAM" == "kiro" ]] && command -v kiro >/dev/null 2>&1; then
   _kiro_integration="$(kiro --locate-shell-integration-path zsh)"
