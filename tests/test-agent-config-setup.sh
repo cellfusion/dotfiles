@@ -37,6 +37,7 @@ try {
   succeeds(['validate'])
   if (fs.existsSync(path.join(configHome, 'claude_lab'))) throw new Error('validate created directories')
   for (const [family, provider] of Object.entries(value.providers)) {
+    if (provider.setup === null) continue
     const root = path.join(configHome, family)
     fs.mkdirSync(root)
     for (const entry of provider.setup.symlinks) {
@@ -52,6 +53,7 @@ try {
   succeeds(['--input', input, 'setup'])
   succeeds(['setup'])
   for (const [family, provider] of Object.entries(value.providers)) {
+    if (provider.setup === null) continue
     for (const entry of provider.setup.symlinks) {
       const link = path.join(configHome, `${family}_lab`, entry)
       if (!fs.lstatSync(link).isSymbolicLink() || fs.readlinkSync(link) !== path.join('..', family, entry)) {
@@ -84,7 +86,7 @@ try {
   const legacy = structuredClone(value); legacy.version = 2; rejects(legacy, 'legacy schema')
   const selection = structuredClone(value); selection.selection = {}; rejects(selection, 'Paseo selection')
   const backend = structuredClone(value); backend.providers.codex.backends = ['paseo']; rejects(backend, 'Paseo backend')
-  const omp = structuredClone(value); omp.providers.omp = { displayName: 'OMP', setup: null }; rejects(omp, 'environment-scoped OMP')
+  const omp = structuredClone(value); omp.providers.omp.setup = value.providers.codex.setup; rejects(omp, 'OMP directory setup')
   const invalid = structuredClone(value); invalid.environments.lab.providers = ['pi']; rejects(invalid, 'retired family')
 } finally { fs.rmSync(temporary, { recursive: true, force: true }) }
 NODE

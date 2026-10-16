@@ -25,10 +25,10 @@ function readConfig() {
   return validateConfig(raw).config
 }
 function main(argv) {
-  if (argv.length !== 2 && argv.length !== 4) fail('expected --family claude|codex [--environment <name>]')
-  if (argv[0] !== '--family' || !['claude', 'codex'].includes(argv[1]) ||
+  if (argv.length !== 2 && argv.length !== 4) fail('expected --family claude|codex|omp [--environment <name>]')
+  if (argv[0] !== '--family' || !['claude', 'codex', 'omp'].includes(argv[1]) ||
       (argv.length === 4 && (argv[2] !== '--environment' || !argv[3]))) {
-    fail('expected --family claude|codex [--environment <name>]')
+    fail('expected --family claude|codex|omp [--environment <name>]')
   }
   const family = argv[1]
   const config = readConfig()
@@ -42,6 +42,17 @@ function main(argv) {
   for (const warning of selected.warnings) process.stderr.write(`agent: ${warning}\n`)
   if (!config.environments[selected.environment].providers.includes(family)) {
     fail(`CLI ${family}: not configured in environment ${selected.environment}`)
+  }
+  if (family === 'omp') {
+    const lines = [
+      'binary omp',
+      `env AGENT_ENV ${selected.environment}`,
+      'unset OMP_PROFILE',
+      'unset PI_CODING_AGENT_DIR',
+    ]
+    if (selected.environment !== config.defaults.environment) lines.push(`env OMP_PROFILE ${selected.environment}`)
+    process.stdout.write(`${lines.join('\n')}\n`)
+    return
   }
   const setup = config.providers[family].setup
   const pattern = selected.environment === config.defaults.environment

@@ -6,7 +6,7 @@
 # 元: private_dot_config/zsh/agent-environments.zsh.tmpl
 # 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
 #
-# Claude/Codex use the cwd-aware environment resolver; OMP uses its native default.
+# Claude/Codex/OMP use the cwd-aware environment resolver.
 
 _agent_env_apply() {
   case "$1" in
@@ -68,5 +68,5 @@ codex() {
 
 
 omp() {
-  (unset OMP_PROFILE PI_CODING_AGENT_DIR; PI_FORCE_IMAGE_PROTOCOL="${PI_FORCE_IMAGE_PROTOCOL:-kitty}" command omp "$@")
+  command agent --family=omp -- "$@"
 }

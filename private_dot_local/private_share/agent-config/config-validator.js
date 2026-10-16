@@ -248,6 +248,7 @@ function assertSemantics(config) {
 
   const physicalPaths = new Set()
   for (const [family, definition] of Object.entries(config.providers)) {
+    if (definition.setup === null) continue
     assertSetupPaths(family, definition.setup)
     for (const [environment, eligible] of Object.entries(config.environments)) {
       if (!eligible.providers.includes(family)) continue

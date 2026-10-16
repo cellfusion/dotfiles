@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify retained CLI isolation and native OMP launch behavior.
+# Verify environment routing and configless launch behavior for every family.
 set -u
 source "$(dirname "$0")/lib/assert.sh"
 
@@ -63,6 +63,9 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   for (const [config, args] of [
     [missing, ['--family=codex', '--environment=lab']],
     [malformed, ['--family=codex']],
+    [missing, ['--family=omp', '--environment=lab']],
+    [malformed, ['--family=omp']],
+    [configPath, ['--family=omp', '--environment=missing']],
     [configPath, ['--family=omp', '--environment=']],
     [configPath, ['--family=pi']], [configPath, ['--family=opencode']],
     [configPath, ['--provider=codex']], [configPath, ['--environment=lab']],
@@ -77,46 +80,51 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   fs.writeFileSync(ineligiblePath, JSON.stringify(ineligibleValue))
   if (run(ineligiblePath, mockBin, ['--family=codex']).status !== 2) throw new Error('ineligible CLI launched')
 
-  // OMP must ignore missing, malformed, and environment-specific agent configuration.
-  for (const config of [missing, malformed, configPath]) {
-    const result = successful(run(config, mockBin, ['--family=omp'], {
-      AGENT_ENV: 'lab', OMP_PROFILE: 'lab', PI_CODING_AGENT_DIR: '/old/pi',
-    }), 'agent OMP')
-    if (result.binary !== 'omp' || result.profile !== null || result.storage !== null) {
-      throw new Error('agent OMP did not use native default state')
+  const inherited = { OMP_PROFILE: 'old-profile', PI_CODING_AGENT_DIR: '/old/pi' }
+  const cwdOmp = successful(run(configPath, mockBin, ['--family=omp'], inherited), 'cwd OMP')
+  if (cwdOmp.environment !== 'lab' || cwdOmp.profile !== 'lab' || cwdOmp.storage !== null) {
+    throw new Error('OMP did not select cwd profile or retained old storage')
+  }
+  const parentOmp = successful(run(configPath, mockBin, ['--family=omp'], { ...inherited, AGENT_ENV: 'primary' }), 'parent OMP')
+  if (parentOmp.environment !== 'primary' || parentOmp.profile !== null || parentOmp.storage !== null) {
+    throw new Error('OMP parent did not override cwd with native default')
+  }
+  for (const option of [['--environment=lab'], ['--environment', 'lab']]) {
+    const explicitOmp = successful(run(configPath, mockBin, ['--family=omp', ...option], {
+      ...inherited, AGENT_ENV: 'primary',
+    }), 'explicit OMP')
+    if (explicitOmp.environment !== 'lab' || explicitOmp.profile !== 'lab' || explicitOmp.storage !== null) {
+      throw new Error('OMP explicit environment did not override parent')
     }
   }
-  for (const config of [missing, malformed, configPath]) {
-    for (const option of [['--environment=hoge'], ['--environment', 'hoge']]) {
-      const result = successful(run(config, mockBin, ['--family=omp', ...option], {
-        OMP_PROFILE: 'inherited', PI_CODING_AGENT_DIR: '/old/pi',
-      }), 'named OMP environment')
-      if (result.profile !== 'hoge' || result.storage !== null) {
-        throw new Error('explicit OMP environment did not select an isolated profile')
-      }
-    }
+  const defaultOmp = successful(run(fallbackPath, mockBin, ['--family=omp'], inherited), 'default OMP')
+  if (defaultOmp.environment !== 'primary' || defaultOmp.profile !== null || defaultOmp.storage !== null) {
+    throw new Error('OMP default retained an inherited profile or storage')
   }
-
-  // Exercise the rendered shell function, not a resolver-based OMP launch.
-  const rendered = spawnSync('chezmoi', ['execute-template', '--source', source], {
-    input: fs.readFileSync(path.join(source, 'private_dot_config/zsh/agent-environments.zsh.tmpl'), 'utf8'), encoding: 'utf8',
-  })
-  if (rendered.status !== 0) throw new Error(`shell template: ${rendered.stderr}`)
-  for (const args of [[], ['--profile', 'explicit', 'prompt with spaces']]) {
-    const result = spawnSync('zsh', ['-f', '-c', `${rendered.stdout}\nomp "$@"`, 'test', ...args], {
-      cwd: temporary, encoding: 'utf8', env: { ...process.env, PATH: `${mockBin}:${process.env.PATH}`,
-        AGENT_CONFIG: malformed, AGENT_ENV: 'lab', OMP_PROFILE: 'lab', PI_CODING_AGENT_DIR: '/old/pi' },
-    })
-    const omp = successful(result, 'native OMP')
-    if (omp.binary !== 'omp' || omp.profile !== null || omp.storage !== null || JSON.stringify(omp.args) !== JSON.stringify(args)) {
-      throw new Error(`OMP selected an environment/profile: ${JSON.stringify(omp)}`)
-    }
+  const configlessOmp = successful(run(missing, mockBin, ['--family=omp'], {
+    ...inherited, AGENT_ENV: 'unregistered-parent',
+  }), 'configless OMP')
+  if (configlessOmp.environment !== 'unregistered-parent' ||
+      configlessOmp.profile !== inherited.OMP_PROFILE || configlessOmp.storage !== inherited.PI_CODING_AGENT_DIR) {
+    throw new Error('configless OMP changed native environment')
+  }
+  if (run(ineligiblePath, mockBin, ['--family=omp']).status !== 2) throw new Error('ineligible OMP launched')
+  const unregistered = structuredClone(value)
+  delete unregistered.providers.omp
+  for (const environment of Object.values(unregistered.environments)) {
+    environment.providers = environment.providers.filter((family) => family !== 'omp')
+  }
+  const unregisteredPath = path.join(temporary, 'unregistered.json')
+  fs.writeFileSync(unregisteredPath, JSON.stringify(unregistered))
+  if (run(unregisteredPath, mockBin, ['--family=omp']).status !== 2) throw new Error('unregistered OMP launched')
+  if (run(configPath, mockBin, ['--family=omp'], { AGENT_ENV: 'missing' }).status !== 2) {
+    throw new Error('OMP accepted unknown parent environment')
   }
 } finally { fs.rmSync(temporary, { recursive: true, force: true }) }
 NODE
 then
-  pass 'Claude/Codex retain environment routing; OMP uses native defaults'
+  pass 'all families route configured environments and preserve configless native launch'
 else
-  fail_check 'Claude/Codex retain environment routing; OMP uses native defaults'
+  fail_check 'all families route configured environments and preserve configless native launch'
 fi
 assert_summary

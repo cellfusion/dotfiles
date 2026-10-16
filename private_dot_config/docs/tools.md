@@ -149,9 +149,9 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 全マシンでデフォルト環境の model、TUI、composer、編集・圧縮設定を共有する。
 `composer.shape: pi` は OMP の表示スタイル名であり、Pi CLI の導入は不要である。
 
-通常の `omp` 起動は `OMP_PROFILE` と `PI_CODING_AGENT_DIR` を外して native CLI を実行する。
-Claude／Codex の環境や cwd routing から OMP profile を選ばない。
-`command omp` や絶対パスから起動する場合は wrapper を通らないため、これらの変数を設定しない。
+通常の `omp` 起動は `agent --family=omp` に委譲し、Claude／Codex と同じ環境選択を使う。
+設定がある場合、デフォルト環境は native default、それ以外は環境名の OMP profile へ切り替える。
+`command omp` や絶対パスからの起動は wrapper を通らず、環境変数も変更しない。
 明示的な `--profile` は OMP 本体の機能として使えるが、profile の設定は配布しない。
 通常の `omp` と `agent --family=omp` は `PI_FORCE_IMAGE_PROTOCOL=kitty` を既定値にし、
 Herdr 内でも画像表示を有効にする。接続先の端末と Herdr の Kitty graphics 対応が必要になる。
@@ -199,25 +199,25 @@ Claude／Codex の環境ディレクトリを準備する。`setup` は共有設
 
 ## agent で AI 環境を指定して起動する
 
-`~/.local/bin/agent` は Claude／Codex の環境選択と、OMP のデフォルト設定での起動に対応する。
-Claude／Codex は `~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して CLI を `exec` する。
+`~/.local/bin/agent` は Claude／Codex／OMP の環境選択に対応する。
+`~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して CLI を `exec` する。
 
 ```text
 agent --family=claude|codex|omp [--environment=<environment>] [--] [args...]
 ```
 
 設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` の
-Claude／Codex CLI をそのまま起動する。引数と既存の環境変数は引き継ぎ、
+Claude／Codex／OMP CLI をそのまま起動する。引数と既存の環境変数は引き継ぎ、
 `AGENT_ENV` や隔離用の変数は追加・変更しない。この場合、`--environment` は解決できないため
 終了コード 2 で失敗する。設定ファイルが不正、または未存在以外の理由で読めない場合も停止する。
 
 `--provider` による旧 Paseo provider ID の起動は廃止した。
 
-Claude／Codex は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
+全 family は cwd-aware 起動で、環境を explicit `--environment`、親 `AGENT_ENV`、最初に一致した
 `projectRouting.rules` rule、`defaults.environment` の順に選ぶ。たとえば
 `agent --family=codex --environment=pxgrid` は親や cwd rule と異なる `pxgrid` への明示切替を許す。
-ただし、その environment の `providers` に `codex` が無ければ起動しない。
-`--environment` は `--family=claude` または `--family=codex` とだけ併用できる。
+ただし、トップレベルの `providers` と選択した environment の `providers` の両方に
+対象 family が登録されていなければ起動しない。`--environment` は全 family で使える。
 
 `match.gitRepository` は Git common directory を比較するため、登録した checkout の linked worktree と
 その subdirectory でも同じ environment を選ぶ。`match.remoteNamespace` は
@@ -226,17 +226,19 @@ Git 外 cwd、無関係 repository、どの rule にも一致しない cwd は d
 Unknown environment、invalid config、ineligible family では default へ落とさず終了コード 2 で失敗する。
 
 正常時は `AGENT_ENV` と family の隔離変数を設定する。Claude は `CLAUDE_CONFIG_DIR`、
-Codex は `CODEX_HOME` を使う。
+Codex は `CODEX_HOME` を使う。OMP はデフォルト環境なら `OMP_PROFILE` を解除し、
+それ以外なら選択した環境名を設定する。設定がある場合、継承した `PI_CODING_AGENT_DIR` も解除する。
 
-zsh の bare `claude`、`codex` は `agent --family=<family>` へ送る。
+zsh の bare `claude`、`codex`、`omp` は `agent --family=<family>` へ送る。
 `codex update` は native CLI へ送る。`command claude`、absolute executable path、
 zsh 設定を読まない process は family wrapper を bypass する。
-`agent --family=omp -- [args...]` と bare `omp` は、この環境 resolver を通さずに起動する。
-`OMP_PROFILE` と `PI_CODING_AGENT_DIR` を解除し、`~/.omp/agent/config.yml` のデフォルト設定を使う。
-OMP の起動に `agent-config.json` は不要で、ファイルが不正でも参照しない。
-`agent --family=omp --environment=hoge -- [args...]` は OMP の `hoge` プロファイルで起動する。
-`--environment hoge` 形式も使える。`agent-config.json` の環境定義は不要。
-未指定時は従来どおりデフォルト状態を使う。OMP 自身の `--profile <name>` も `--` の後に渡せる。
+OMP を有効にするには、`agent-config.json` の `providers` に
+`"omp": { "displayName": "OMP", "setup": null }` を追加し、利用する各 environment の
+`providers` に `"omp"` を追加する。サンプル設定にもこの登録を含めている。
+OMP の profile はネイティブの保存先を使い、`agent-config setup` によるディレクトリ共有は行わない。
+`agent --family=omp --environment=lab -- [args...]` は、`lab` が非デフォルト環境なら
+OMP の `lab` プロファイルで起動する。`--environment lab` 形式も使える。
+設定なしでの明示的なプロファイル指定は `agent --family=omp -- --profile lab` で OMP 本体に渡せる。
 
 
 ## core
