@@ -59,6 +59,13 @@ Build fixed packages with:
   --out "$ATTEMPT_DIR/review-package.diff"
 ```
 
+For relevant ADRs, use [architecture-decision-records](../architecture-decision-records/SKILL.md)
+to add immutable contents and an origin/status manifest beside each task or final package. Explicitly
+include these paths in the reviewer's read contract, including unchanged accepted constraints and
+any proposed replacement. Distinguish exact commit inputs from uncommitted drafts. If a restricted
+cwd requires staging, copy the ADR snapshots and manifest too, then align the permitted paths with
+that stage without losing revision identity or supersession context.
+
 Use recorded immutable range endpoints, not guessed `HEAD~1`. A new fix revision requires a fresh
 package. Validate finding IDs, verdict, package identity, and `cannotVerify` items before adoption.
 Preserve an explicit open-findings list rather than carrying findings only in parent prose.

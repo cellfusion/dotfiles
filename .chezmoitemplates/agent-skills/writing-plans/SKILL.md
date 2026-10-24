@@ -30,6 +30,13 @@ PLANS="$(~/.agents/skills/_shared/scripts/agent-docs-dir plans)"
 Create `YYYY-MM-DD-<feature-name>.md` there unless project instructions specify another destination.
 The plan directory is outside the repository. Pass its absolute path to later skills.
 
+Consult [architecture-decision-records](../architecture-decision-records/SKILL.md) for relevant
+project decisions. Include their project-relative paths, status, and applicable scope in the plan
+and handoff. Do not treat Proposed records as approved constraints. If planning exposes a new
+significant unresolved choice, return it to design rather than inventing approval. ADRs preserve
+lasting rationale inside the project; this does not change the external plan destination or turn
+a planning-only request into permission to create project files.
+
 ## Plan contents
 
 Include only what the implementation needs:

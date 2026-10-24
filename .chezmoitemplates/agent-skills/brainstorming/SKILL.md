@@ -14,6 +14,13 @@ the purpose, scope, constraints, and success criteria, do not ask them to repeat
 
 Do not recursively invoke brainstorming while changing this skill.
 
+Before choosing a design, consult relevant project ADRs using
+[architecture-decision-records](../architecture-decision-records/SKILL.md). Reuse accepted decisions
+within their scope. When a significant lasting choice emerges, use that skill to record its context,
+real alternatives, rationale and consequences, reflecting the existing design approval rather than
+adding a duplicate gate. Routine local changes need no ADR. Research/planning-only requests do not
+authorize project-local writes; keep decision candidates in the requested artifact until authorized.
+
 ## Choose a route
 
 ### Direct

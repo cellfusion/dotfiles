@@ -69,6 +69,11 @@ Dispatch genuine independent slices in one batch. Sequence only real dependencie
 receives only its goal, trusted requirement paths, interfaces, scope, cwd, result expectations, and
 stop conditions. Children do not inherit authorization to commit, push, apply, install, or spawn.
 
+Use [architecture-decision-records](../architecture-decision-records/SKILL.md) for relevant lasting
+decisions. Pass each child the applicable ADR paths, status, scope, and fixed revisions as needed.
+Children return decision candidates and changed assumptions; the parent owns numbering, approval
+reflection, and supersession. Resolve number collisions and update references before integration.
+
 ## During execution
 
 Consume actual runtime completion notifications; do not poll while useful work remains. Wait only
@@ -88,6 +93,12 @@ backend, or delete resources to conceal uncertainty.
 Build fixed review packages using the retained `review-bundle` helper and immutable recorded
 base/head identity. Validate finding IDs, evidence, changed files, and scope before authorizing fixes.
 A fix child receives only approved files and findings. New revisions require fresh review packages.
+
+Include relevant ADR snapshots and their origin/status manifest in both task and final review
+packets, explicitly within the reviewer's allowed read set. Follow the shared ADR skill's fixed-input
+and restricted-cwd staging rules; unchanged accepted decisions must not disappear from review just
+because they are absent from the diff. Before completion, check adopted decisions for record gaps
+without treating documentation consistency as runtime verification.
 
 Only the parent adopts results and integrates into the parent work branch, never automatically into
 the default branch. Do not commit/merge/push/apply without authorization. Conflicts preserve child

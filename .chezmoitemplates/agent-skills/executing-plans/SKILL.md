@@ -38,6 +38,13 @@ The worktree skill owns base prerequisites, setup, ownership, and cleanup.
 5. Ask the user about a consequential blocker before modifying code.
 6. If sound, create a finite task list with one entry per plan task.
 
+Consult the plan's relevant ADRs with
+[architecture-decision-records](../architecture-decision-records/SKILL.md); verify status and scope,
+not just filenames. Escalate significant new decisions or changed assumptions to the parent design
+owner instead of treating implementation progress as approval. Before completion, check that
+adopted significant decisions are recorded and unresolved proposals reported. Preserve external
+plans and evidence as working artifacts rather than copying them into ADRs.
+
 Do not silently repair a plan's intent. Record rejected concerns and their reasons. If the plan is
 larger or more parallel than expected, stop and ask whether to switch to MAD.
 
