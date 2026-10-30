@@ -13,8 +13,8 @@ Execution, interaction and checkout ownership are independent decisions. A CLI c
 use an existing cwd; a write-isolated child needs no extra pane. Do not create a new environment
 merely to run an internal child or start a second orchestration runtime for ordinary delegation.
 Read the [environment contract](references/environments.md), then only the selected host/owner
-references: [Herdr](references/herdr.md), [Orca](references/orca.md),
-[Paseo](references/paseo.md), and [Worktrunk](references/worktrunk.md).
+references: [Herdr (legacy)](references/herdr.md), [herdr-core](references/herdr-core.md),
+[Orca](references/orca.md), [Paseo](references/paseo.md), and [Worktrunk](references/worktrunk.md).
 
 ## Step 0: detect and record existing isolation
 
@@ -73,12 +73,19 @@ Prepared reviews reuse that environment and fixed context; never relaunch, check
 terminals or execute head-side instructions. Head-code execution, if separately authorized, belongs
 to an independently recorded hidden checkout, not the base runtime.
 
+The executable has no `herdr-core` adapter or `--environment herdr-core` option. A core terminal
+does not satisfy legacy Herdr session identity; do not select `herdr` merely because it is installed.
+Manual core interaction follows its reference, separately from this automated review entry.
+
 ## Route B: hidden child write isolation
 
 Use the [Worktrunk owner reference](references/worktrunk.md) from the committed parent base.
 This creates no interaction workspace, tab or pane. Require hook suppression, returned absolute
 path, newly created branch and exact base identity. The retained `mad-worktree` helper provides
 ownership records for bounded task branches. Do not auto-integrate into the default branch.
+Core interaction, if separately needed, attaches a terminal to that Worktrunk-owned path; it creates
+no core workspace or pane and does not transfer checkout ownership. Keep orchestration hidden by
+default; visible app changes require a user request.
 
 ## Setup and verification
 
@@ -112,6 +119,10 @@ Follow the recorded owner's removal procedure, not the execution host:
 
 An interaction workspace attached to another owner's checkout is a separate resource. Ending or
 posting a PR review never removes either resource automatically. Keep all review artifacts.
+
+For core terminals, follow [herdr-core](references/herdr-core.md): only clean up terminals this run
+started, after live identity and saved/inactive state are proven. Terminal removal never removes
+the Worktrunk checkout; use its recorded owner separately.
 
 Never infer saved/inactive state from an idle CLI alone. Never use force/clobber or process reaping
 as routine cleanup. Branch deletion must independently prove integration into the parent and remain

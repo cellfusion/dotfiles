@@ -36,6 +36,9 @@ Normal GitHub PR review uses `pr-review --environment <herdr|orca|paseo> --no-fo
 from agents, with selection and environment-specific options defined by `pr-review`. Verified current
 host selection may omit `--environment`; unknown or ambiguous hosts stop before side effects.
 Prepared review context stays in its existing validated environment instead of creating another one.
+herdr-core manual interaction is separate: the executable has no `--environment herdr-core`
+adapter. Do not select legacy `herdr` merely because it is installed or reinterpret
+`HC_TERMINAL_ID` as its session. Prepared context retains its recorded host/adapter.
 
 ## When review is required
 

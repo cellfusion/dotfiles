@@ -7,8 +7,18 @@ Choose the first matching route:
 
 | Condition | Route |
 |---|---|
-| `$HERDR_ENV` is `1` | Open the file in a separate Herdr tab |
-| Neither | Skip preview and continue to the approval gate |
+| `$HC_TERMINAL_ID` is set or herdr-core is the selected host | Provide the artifact's absolute path; show UI only if the user requested it |
+| `$HERDR_ENV` is `1` (legacy Herdr) | Open the file in a separate Herdr tab |
+| Neither | Provide the artifact's absolute path and continue to the approval gate |
+
+### herdr-core / herdr-app
+
+Do not create a space, tab, pane or labeled worker automatically for a preview. Read `herdr-core`
+and the live `hc --skill`; use `herdr-app` and its live `herdr-app --skill` only when the user
+requested visible UI. Inspect current IDs and supported commands before targeting a named preview
+tab. Never launch bare `herdr-app`, steal focus, or infer a pane ID from `$HC_TERMINAL_ID`.
+On a remote host, identify the machine with the artifact's absolute path; local file tools cannot
+open remote files. A returned path makes the artifact available without changing the user's display.
 
 ### Herdr
 

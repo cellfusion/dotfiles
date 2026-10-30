@@ -470,6 +470,56 @@ AquaSKK。2026-08-27 に Brewfile から外した。辞書は `~/.config/skk` �
 
 ## Herdr・OMPの開発ワークフロー
 
+### herdr-core / herdr-app と旧Herdrの区別
+
+herdr-core（`hc`）は永続terminalの起動・通信・待機を担当し、herdr-appは表示する
+space・tab・paneを担当する。旧 `herdr` のworkspace／agent CLIとは別APIであり、
+コマンドやIDを置き換えるだけでは移行できない。
+
+| 項目 | 旧Herdr | herdr-core / herdr-app |
+|---|---|---|
+| 呼び出し元 | `HERDR_ENV=1`、`HERDR_PANE_ID` | `HC_TERMINAL_ID`。pane IDではない |
+| エージェント起動 | paneを用意して `herdr agent start` | `hc run --bg`。通常は画面に表示しない |
+| 通信・待機 | `herdr agent prompt/read/wait` | `hc send/read/wait`。timeoutは秒 |
+| レイアウト | `herdr workspace/tab/pane` | `herdr-app`。表示変更は依頼された場合だけ |
+| worktree | 作成経路に応じて所有者を記録 | Worktrunkの所有権とterminalを別々に記録 |
+
+`herdr-core` と `herdr-app` スキルを `~/.agents/skills/` と
+`~/.config/claude/skills/` へ共通テンプレートから配布する。外部のスキルパッケージは追加せず、
+操作前に `hc --skill`／`herdr-app --skill` で導入済みバージョンの公式マニュアルを読む。
+`hc` がなく `herdr-core` だけがある場合は後者を使う。`herdr` へフォールバックしない。
+
+同一repositoryの通常の委譲は引き続きOMP内部で行う。独立した担当への通信は
+`agent-communication/references/herdr-core.md`、checkout分離は
+`using-git-worktrees/references/herdr-core.md` に従う。
+子への返答先には親の実際のterminal addressを渡し、初回タスクは `first_message.sent` を確認する。
+`blocked` を強制入力で回避せず、timeoutだけで再起動・再送・完了判定をしない。
+
+既存の `pr-review` コマンドは旧Herdr用アダプターであり、herdr-coreには未対応。
+`--environment herdr-core` は使えず、core上で旧 `herdr` を選んで代用もしない。
+以下のworkspace／paneを使う手順は旧Herdr向けである。
+
+### herdr-app の個人用レイアウト
+
+`space-agents` は標準 `main` を複製したレイアウト。
+`~/.config/herdr-app/layouts/space-agents.json` と
+`~/.config/herdr-app/mods/space-agents/` をchezmoiで管理する。
+標準レイアウト・標準mod、アプリが生成する型定義や状態ファイルは管理しない。
+
+Spacesのmachine／worktreeツリーを維持し、各Spaceの下にAgentと子Agentを表示する。
+Space行の `!` は入力待ち、`●` は未確認完了、`›` は稼働中の件数。
+右端の矢印でAgent一覧を折りたたみ、Agent行をクリックして対象へ移動する。
+タブ、端末、Files／Changesは標準のまま。キーバインドは変更しない。
+
+適用は対象ファイルを限定した `chezmoi apply` の明示承認後に行う。
+適用後は `herdr-app do layout.switch --name space-agents` で選択し、
+`herdr-app do layout.switch --name main` で標準へ戻せる。
+標準の更新はこのコピーへ自動反映されないため、API変更時は導入済みのガイドと型定義で確認する。
+
+
+
+### 旧Herdrの既存ワークフロー
+
 メインの実行環境はmainMBP。GhosttyでHerdrを開き、OMP、Neovim、LazyGit、Tuicrを使う。
 subMBPはGhostty／Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ接続する。
 Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。

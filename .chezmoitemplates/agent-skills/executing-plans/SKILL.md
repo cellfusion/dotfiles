@@ -24,14 +24,16 @@ Use `executing-plans` only when all of these are true:
 
 Otherwise stop and select MAD or ask the user.
 
-Reuse the existing approved task workspace; do not create nested isolation. If a visible main
-workspace is missing, `using-git-worktrees` selects Herdr from the actual default branch. Hidden
-Worktrunk isolation is only for a distinct writer ownership boundary and creates no extra pane.
-The worktree skill owns base prerequisites, setup, ownership, and cleanup.
+Reuse the existing approved checkout and execution environment; do not create nested isolation.
+`using-git-worktrees` selects the host and write placement independently. herdr-core needs no legacy
+workspace or visible app space/tab; use background terminals when that host is selected. A legacy
+Herdr workspace remains a supported route, not a prerequisite for HC. Hidden Worktrunk isolation
+is only for a distinct writer ownership boundary and creates no extra pane. The worktree skill
+owns base prerequisites, setup, ownership, and cleanup.
 
 ## Step 1: read and critique the plan
 
-1. Establish the selected workspace and record its ownership.
+1. Establish the selected checkout/execution environment and record its ownership.
 2. Read the complete plan.
 3. Check task dependencies, files, scope, acceptance criteria, and verification commands.
 4. Check for missing decisions, unsafe commands, conflicting files, and impossible assumptions.

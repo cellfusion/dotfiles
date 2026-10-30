@@ -65,6 +65,9 @@ BRANCH=$(git branch --show-current)
 Use recorded checkout owner (`herdr`, `orca`, `worktrunk`, or `external`), absolute path, branch,
 base SHA, owner-specific ID, separate execution/interaction identity, integration and liveness
 from `using-git-worktrees` or MAD. Do not infer owner from the active host, names or list visibility.
+For herdr-core, record the core terminal identity separately from the Worktrunk checkout owner.
+`HC_TERMINAL_ID` must match live `hc get` identity under the current `hc --skill` contract; a
+terminal name, installed binary, legacy `HERDR_ENV`, or app visibility is not ownership evidence.
 
 Classify the environment:
 
@@ -192,8 +195,14 @@ Use recorded ownership and confirm saved/inactive state before removal:
 - Orca-owned checkout: follow `using-git-worktrees/references/orca.md` and the owning CLI's
   version-matched guide, matching full worktree ID/path and terminal identity without force.
 - Worktrunk-owned checkout: follow `using-git-worktrees/references/worktrunk.md` from outside it,
-  preserving its branch and suppressing hooks. An attached host workspace is a separate resource.
+  preserving its branch and suppressing hooks. An attached host workspace or core terminal is a
+  separate resource; core has no workspaces/panes and does not own the checkout.
 - External, unknown, or caller-owned worktree: leave it untouched; never infer ownership from a prefix.
+- herdr-core terminal: follow `using-git-worktrees/references/herdr-core.md` and live `hc --skill`.
+  Only an explicitly approved, saved/inactive terminal proven started by this run may be killed
+  and removed using its recorded full identity. Retain adopted/user/unknown terminals; never stop
+  the shared core or remove the checkout through terminal cleanup. Do not change visible app UI
+  without a user request.
 
 Keep declined branches and all review artifacts. Branch deletion is separately authorized and
 non-forcing by default, after proving integration into the parent branch. Retained, pending, dirty,

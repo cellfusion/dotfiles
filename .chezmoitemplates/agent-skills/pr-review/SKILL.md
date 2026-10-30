@@ -32,6 +32,10 @@ Herdr requires execution inside its verified session and selects cwd Git reposit
 `--repo-path <absolute-path>`. Orca preserves registered-project `--project <name|id:repoId>` and
 URL matching. These selectors are not interchangeable. Paseo is known but unsupported and stops
 with `unsupported-environment` before creating even a run directory.
+herdr-core is a distinct manual terminal host with no adapter in this executable: there is no
+`--environment herdr-core`. `HC_TERMINAL_ID` is not legacy Herdr session identity; do not fall back
+to `herdr` because it is installed. Prepared context retains its recorded host/adapter and must
+validate there, not be migrated or impersonated from core.
 
 Execution host does not determine checkout owner: Herdr review uses a hook-disabled Worktrunk
 checkout attached to a no-focus Herdr workspace; Orca owns its own review checkout with setup
@@ -507,6 +511,35 @@ Bind each added line to the exact head path of its patch section, decoding Git-q
 An old rename path may become a directory: additions beneath it cannot supply the rename
 target's inline line evidence.
 
+### Finding severity, urgency, and merge disposition
+
+Priority alone is not an impact assessment. For every actionable finding, record and show:
+
+- `severity`: `critical`, `high`, `medium`, or `low`, with concrete user/operational impact in `impact`.
+- `urgency`: `immediate`, `before_merge`, or `normal`; state the evidence for time sensitivity.
+- `occurrence`: concrete triggering conditions and observed frequency, or explicitly `not measured`.
+- `recommendedTiming`: when to address it; distinguish emergency response from normal correction.
+- `mergeDisposition`: `blocking` or `non_blocking`, and `mergeRationale` explaining why.
+- Validation kind, confidence, and execution limits; static evidence is not a runtime reproduction.
+
+Keep severity, urgency, likelihood, and confidence separate. Do not describe every P2 as a merge
+blocker or every unexecuted path as speculative. Do not invent incidence rates or imply that no
+other impact exists merely because none was established. Review-plan `risk` selects review depth;
+it is not a finding's severity or urgency.
+
+P0 requires immediate action; P1 requires correction before merge. P2/P3 are not automatically
+blocking: explicitly justify a blocking recommendation. For a substantiated non-blocking concern,
+say that this finding alone does not prevent merge, state the residual risk, and leave the
+fix-before-merge versus accept-risk decision to the author/maintainer. Do not imply GitHub
+approval, overall mergeability, or permission to ignore other blockers.
+
+`NEEDS_ATTENTION` means a finding needs correction or an explicit risk decision, not necessarily
+that merging is prohibited. Preserve supported findings and their priorities when a user accepts
+the risk; record the disposition instead of silently changing the verdict to PASS.
+
+Include this assessment in both the report and each inline comment, not only in a later chat.
+
+
 The following examples illustrate field shapes, not ready-to-submit artifacts. Replace every
 revision, read ID, count, path and scenario with this run's actual evidence; retain the same
 identity and canonical verdict/finding list across artifacts.
@@ -635,6 +668,12 @@ A minimal `findings.json` is:
     "regressionBasis": "The new early return removes the old persistence path; no documented contract intentionally drops the request",
     "validation": {"kind": "static", "evidence": "R-before, R-after, R-caller and versioned official lifecycle specification", "limitations": "Not reproduced; base success and timing were not observed"},
     "impact": "User or operational impact",
+    "severity": "high",
+    "urgency": "before_merge",
+    "occurrence": "Expired-session refresh path; production frequency not measured",
+    "recommendedTiming": "Correct before merge",
+    "mergeDisposition": "blocking",
+    "mergeRationale": "The changed path loses the required persistence operation",
     "recommendation": "Smallest safe correction",
     "inline": true,
     "source": "primary"
@@ -680,6 +719,8 @@ Before asking for confirmation, show:
 - Repository, PR number, title, URL, and initial base/head SHAs.
 - `prepared` mode, `standard` or `quick`, selected risk/profile, and review focus.
 - `PASS`, `NEEDS_ATTENTION`, or `BLOCKED` and P0-P3 counts.
+- Each finding's severity, urgency, triggering conditions/frequency, validation limits,
+  recommended timing, and explicit blocking/non-blocking merge disposition with rationale.
 - Actual checkout branch/SHA/path separately from target SHAs and fixed-object source access;
   head tests/builds not run here, and any authorized execution's actual scenario and limits.
 - `Coverage: complete` or `Coverage: partial`, method counts, explicit exclusions/unread paths,
@@ -729,6 +770,11 @@ INLINE_COMMENTS_JSON=$(
             "[" + .priority + "] " + .title
             + "\n\nEvidence: " + .evidence
             + "\n\nImpact: " + .impact
+            + "\n\nSeverity: " + .severity + "; Urgency: " + .urgency
+            + "\n\nOccurrence: " + .occurrence
+            + "\n\nValidation: " + .validation.kind + "; " + .validation.limitations
+            + "\n\nRecommended timing: " + .recommendedTiming
+            + "\n\nMerge disposition: " + .mergeDisposition + "; " + .mergeRationale
             + "\n\nRecommendation: " + .recommendation
           )
         }

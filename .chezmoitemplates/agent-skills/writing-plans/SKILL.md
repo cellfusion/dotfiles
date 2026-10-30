@@ -102,12 +102,14 @@ Choose execution based on plan structure:
 
 Re-read the approved plan immediately before handoff. Pass its absolute path, not copied prose.
 
-Ordinary delegation stays inside OMP. State execution and write placement independently in the
-handoff: reuse the existing approved workspace; use hidden Worktrunk only for separate writer
-ownership, with no extra pane. A visible independent CLI/user conversation uses Herdr and OMP in
-its existing or newly approved root pane. Record the committed
-base and any prerequisite decisions; do not automatically copy uncommitted parent changes or grant
-commit/push/apply permissions. Name the integration/verification owner for shared writes.
+Ordinary delegation stays inside the current host's internal tools (OMP when running in OMP).
+State execution and write placement independently in the handoff: reuse the approved checkout;
+use hidden Worktrunk only for separate writer ownership, with no extra pane. An independent CLI
+conversation uses the selected supported host: herdr-core can run a hidden terminal without a
+legacy workspace; legacy Herdr remains supported. Only use herdr-app for visible UI the user
+requested. Record the committed base and prerequisite decisions; do not automatically copy
+uncommitted parent changes or grant commit/push/apply permissions. Name the integration/verification
+owner for shared writes.
 
 ## Completion
 
