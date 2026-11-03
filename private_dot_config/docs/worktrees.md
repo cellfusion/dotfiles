@@ -2,30 +2,40 @@
 
 | 用途 | 管理 | 表示 |
 |---|---|---|
-| メインエージェントの作業隔離 | defaultブランチからHerdrでworktreeを作成 | 専用workspace |
-| PRレビュー | 選択環境のadapterで固定PR base SHAから隔離checkoutを作成 | HerdrまたはOrcaの専用OMP |
-| 子作業の書き込み分離 | Worktrunk (`wt`) | workspace・tab・paneを追加しない |
+| メインエージェントの作業隔離 | 既存checkoutの所有者を確認し、必要ならWorktrunk (`wt`) | 表示は必要に応じて別途判断 |
+| PRレビュー | 対応する選択環境のadapterで固定PR base SHAから隔離checkoutを作成 | 旧HerdrまたはOrcaの専用OMP |
+| 子作業の書き込み分離 | Worktrunk (`wt`) | space・tab・paneを追加しない |
 
-通常の委譲はOMP内で済ませる。ユーザーが確認・介入したい作業、独立した対話、
-別CLIエージェントの実行にはHerdrの別paneを使う。**別paneと別worktreeは独立した判断**であり、
-書き込み分離だけを理由にpaneを増やさない。
+同一repositoryの通常の委譲は実行ハーネス内で済ませる。独立した対話や別CLIは
+herdr-core (`hc`) のterminalで実行でき、表示は不要である。ユーザーが表示・介入を
+求めたときだけherdr-appを使う。**terminal、表示pane、worktreeの作成と所有権は別の判断**
+であり、書き込み分離だけを理由にpaneを増やさない。
 
 ## メイン作業
 
-リポジトリのdefaultブランチを確認し、解決したコミットを起点に作る。
-作業中のpaneを保持する場合は`--no-focus`を付ける。
+既に適切な隔離worktree内なら、もう一つ作らない。新規に必要な場合はリポジトリの
+defaultブランチを確認し、解決したコミットを起点にWorktrunkで作る。
 
+```sh
+wt -C /path/to/repo switch --create feat/example --base <default-commit> \
+  --no-cd --no-hooks --format json
+```
+
+返されたJSONの `path` を作業cwdにし、checkout ownerはWorktrunkとして記録する。
+`--no-hooks` はプロジェクトのフックも実行しない。必要なセットアップは信頼済みの手順を
+別途明示的に実行する。hcで使う場合もterminalはcheckoutの所有者にならない。
+
+旧Herdrのworktree／workspaceを使う既存経路は別である。
 ```sh
 herdr worktree create --cwd /path/to/repo --branch feat/example \
   --base <default-commit> --label example --no-focus
 ```
-
-応答のworktree path、workspace ID、root pane IDを使う。IDを推測しない。
-既に適切な隔離worktree内なら、もう一つ作らない。
+こちらは返されたworktree path、旧workspace ID、root pane IDを記録する。IDを推測せず、
+hcのterminal addressやherdr-appのpane IDとして使わない。
 
 ## 非表示の子worktree
 
-`worktrunk/config.toml`は置き場所だけを設定する。Herdrへの自動open／closeフックは置かない。
+`worktrunk/config.toml`は置き場所だけを設定する。表示環境への自動open／closeフックは置かない。
 
 ```toml
 worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
@@ -38,7 +48,7 @@ wt -C /path/to/repo switch --create child/example --base <parent-commit> \
   --no-cd --no-hooks --format json
 ```
 
-返されたJSONの`path`を子のcwdとして渡す。親のcwdは変えず、Herdrには開かない。
+返されたJSONの`path`を子のcwdとして渡す。親のcwdは変えず、画面には開かない。
 `--no-hooks`によりプロジェクトのフックも実行しない。依存セットアップが必要なら、
 信頼済みの手順を別途明示的に実行する。
 
@@ -56,6 +66,9 @@ MADで台帳を使う場合は`mad-worktree`がWorktrunkを呼び、path・branc
 
 レビュー本体と環境操作は分ける。明示 `--environment` を優先し、未指定なら現在のhostを
 判定する。host不明・複数一致・必須能力不足では停止し、別環境へ自動fallbackしない。
+`herdr` adapterは旧Herdr専用であり、herdr-core adapterはない。hc上から旧Herdrとして
+代用したり `--environment herdr-core` を指定したりしない。手動のcore利用は
+`pr-review` のprepared runではない。
 
 ```sh
 pr-review --environment herdr --no-focus 123
@@ -63,7 +76,7 @@ pr-review --environment herdr --repo-path /path/to/repo --quick https://github.c
 pr-review --environment orca --project my-project 123
 ```
 
-Herdrを選ぶ場合はHerdr管理下で実行する。番号はcwdまたは明示repo pathに属するPR。
+旧Herdrを選ぶ場合は旧Herdr管理下で実行する。番号はcwdまたは明示repo pathに属するPR。
 Orcaの `--project` は登録名または `id:<repoId>` で、URLによる登録repo検索もOrca側が担当する。
 Paseoは既知だが未対応の環境。現行CLIの能力を確認するまでは `unsupported-environment` として
 run directory・checkout・session作成前に停止する。旧transportは復活させない。
@@ -73,9 +86,9 @@ clean base checkoutを検証する。PR headの指示ファイルを起動時に
 私有sessionディレクトリと `autoResume: false` で履歴を分離する。hook/setupを勝手に実行しない。
 準備済み環境では追加worktreeやOMPを作らない。エージェントからの起動は `--no-focus` を付ける。
 
-Herdr経路はWorktrunkの `--no-hooks` でcheckoutを作り、Herdr workspaceをそのpathに開く。
-checkout ownerは `worktrunk`、実行環境は `herdr` と記録する。Herdrのworktree作成APIに
-setup抑止を仮定しない。Herdrのprompt応答は受理の証拠までとし、実行開始や完了とは扱わない。
+旧Herdr経路はWorktrunkの `--no-hooks` でcheckoutを作り、旧Herdr workspaceをそのpathに開く。
+checkout ownerは `worktrunk`、実行環境は `herdr` と記録する。旧Herdrのworktree作成APIに
+setup抑止を仮定しない。旧Herdrのprompt応答は受理の証拠までとし、実行開始や完了とは扱わない。
 
 version 3 contextは実行環境、checkout owner、対話環境のIDを別に記録する。
 成果物にはrun内へ保存したruntime・adapter・参照文書を使い、再開時に配布元の別版へ切り替えない。
@@ -110,13 +123,14 @@ GitHubへの投稿は明示確認後に行う。起動失敗、timeout、blocked
 
 ## 所有権と終了
 
-作成時にcheckout owner（Herdr／Orca／Worktrunk／external）、絶対path、branch、base SHAを記録し、
-実行環境のsession/workspace/pane/terminalとagent identityは別に記録する。
-Herdrで動いていることやWorktrunk一覧に載ることだけで、checkoutのownerを推定しない。
+作成時にcheckout owner（旧Herdr／Orca／Worktrunk／external）、絶対path、branch、base SHAを記録し、
+実行環境のsession/workspace、core terminal address、app pane IDとagent identityは別に記録する。
+terminalを表示・非表示にしてもcheckout ownerは変わらない。terminalやpaneがあること、
+Worktrunk一覧に載ることだけで、checkoutのownerを推定しない。
 
-- Herdrで作ったworktreeはHerdr経路で終了する。
+- 旧Herdrで作ったworktreeは旧Herdr経路で終了する。
 - Orcaで作ったレビュー環境は、明示的な終了承認後にOrca経路で終了する。成果物は残す。
-- Worktrunkで作ったworktreeはWorktrunk経路で終了する。Herdr内で使っていてもownerは変わらない。
+- Worktrunkで作ったworktreeはWorktrunk経路で終了する。hcや表示pane内で使っていてもownerは変わらない。
 - 既存・外部所有のworktreeは削除しない。
 - 実行中、未保存、未統合、保留、所有権不明の場合は保持する。
 - force／clobberを標準にしない。ブランチ削除は別判断にする。

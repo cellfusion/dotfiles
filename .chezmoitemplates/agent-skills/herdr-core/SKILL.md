@@ -36,11 +36,13 @@ No external skill package is required: this skill routes to the version-matched 
 
 Follow the live manual for exact syntax, status and response fields:
 
-1. Inspect templates and select an appropriate existing role; do not override models or permissions
-   incidentally. Agents stay interactive and use `run --bg`, an explicit cwd, unique name and bounded
-   task. Codex requires `--no-daemon`. Do not create helpers merely because core is available.
-2. Prefer a first task in `run`; inspect `first_message.sent`. A false value means unsent. A failed
-   send can still have arrived: read the same terminal before resending or launching anything else.
+1. Inspect templates and select a fitting role; if none fits, launch the requested CLI directly
+   in interactive mode. Do not change model or permission settings. Agents use `run --bg`, an
+   explicit cwd, unique name and bounded task; Codex requires `--no-daemon`. Do not create helpers
+   merely because core is available.
+2. Prefer a first task in `run`; inspect `first_message.sent`. A false value means unsent. For a
+   plain launch without a task, wait for readiness before sending. A failed send can still have
+   arrived: read the same terminal before resending or launching anything else.
 3. Resolve recipient address, repository/cwd, assignment and readiness before sending. Expand the
    sender's reply address before submission: a child's `$HC_TERMINAL_ID` identifies the child,
    not its parent. Include a request ID and explicit return destination.

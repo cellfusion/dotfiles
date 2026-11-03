@@ -24,12 +24,13 @@ when available; select HC deliberately for independently running terminal agents
 
 ## Start a bounded owner when needed
 
-Read `hc templates` and use a fitting template with the requested CLI/model/permission defaults.
-Run agents interactively with `--bg`, an explicit name and absolute `--cwd`; never one-shot print
-mode. Put the bounded request in `run` as its first task. Include request ID, verified sender and
-return address, exact repository/cwd, allowed files, non-goals, acceptance and verification owner.
-Do not permit recursive agents unless explicitly assigned. Codex requires `--no-daemon`, including
-when launched through a template. Use the installed manual/help for command ordering.
+Read `hc templates` and use a fitting template without changing model or permission defaults.
+If none fits, launch the requested CLI directly in interactive mode. Run agents with `--bg`, an
+explicit name and absolute `--cwd`; never one-shot print mode. Prefer the bounded request in `run`
+as its first task. Include request ID, verified sender and return address, exact repository/cwd,
+allowed files, non-goals, acceptance and verification owner. Do not permit recursive agents unless
+explicitly assigned. Codex requires `--no-daemon`, including when launched through a template.
+Use the installed manual/help for command ordering.
 
 For example, only after validating `TARGET_REPO`, `BOUNDED_REQUEST` and the template:
 
@@ -39,9 +40,10 @@ hc run --bg --name api-owner --cwd "$TARGET_REPO" reviewer "$BOUNDED_REQUEST"
 
 A reviewer template is read-only; select an appropriate writer template for authorized changes.
 Inspect the returned terminal address and `first_message.sent`. If false, the first task was NOT
-sent: read that same terminal, resolve readiness, then send once. A trust/permission dialog needs
-the user's decision; do not automate its approval. If a launch or send response is ambiguous,
-inspect the same terminal before any retry; never launch a replacement to hide uncertainty.
+sent: read that same terminal, resolve readiness, then send once. For a plain launch without a task,
+wait for readiness before sending. A trust/permission dialog needs the user's decision; do not
+automate its approval. If a launch or send response is ambiguous, inspect the same terminal before
+any retry; never launch a replacement to hide uncertainty.
 
 HC workers stay hidden by default. Do not add `herdr.space`/`herdr.tab` labels merely to communicate.
 No legacy workspace, app space, pane or tab is required. Use `herdr-app` only when the user requested

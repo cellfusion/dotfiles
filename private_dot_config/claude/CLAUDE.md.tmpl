@@ -16,24 +16,24 @@ Environment-specific prerequisites not covered in skills:
 
 ## Shell Execution
 
-Do not run long-running processes (development servers, watchers, etc.) directly in the Bash tool. Starting them in the Bash tool can leave orphan background processes invisible to the user. Running them in a dedicated terminal allows the user to inspect status and terminate cleanly.
-
-Destination is determined by environment in order of precedence:
+Run long-running processes (development servers, watchers, etc.) in an inspectable terminal when
+running under herdr-core or legacy Herdr. Run short commands directly in the Bash tool.
 
 | Condition | Route |
 |---|---|
-| `$HERDR_ENV` is `1` | Split adjacent pane via `herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus`, run with `herdr pane run <pane_id> '<command>'`. Do not use `--current` (avoids opening in user-focused workspace) |
-| Neither | Run via Bash tool's `run_in_background` |
+| `HC_TERMINAL_ID` is set | Read the `herdr-core` skill and `hc --skill`; verify that exact address with `hc get "$HC_TERMINAL_ID"` before using `hc run --bg` with an explicit name and cwd. If identity cannot be verified, stop rather than falling back to another host. |
+| Otherwise, `HERDR_ENV=1` | Use the legacy Herdr skill and a no-focus pane identified by `$HERDR_PANE_ID`; do not target the user's focused pane. |
+| Neither | Use the Bash tool's `run_in_background`. |
 
-- **Do not launch multiplexers on your own.** Never start herdr in environments where `$HERDR_ENV` is not `1`. Do not open terminals to start herdr and run panes inside.
-- Run ephemeral commands (`ls`, `git`, `grep`, one-off builds or tests) directly in the Bash tool. This routing rule strictly applies to persistent processes.
+- Core children normally end with their parent. Do not use `--outlive-parent` without an explicit
+  reason and do not stop or restart the user's core. Use `herdr-app` only for requested display changes.
+- Do not launch legacy Herdr outside `HERDR_ENV=1` or open a terminal merely to start it.
 
 ## Session Handoff
 
-Only perform under herdr management (`HERDR_ENV=1`). When context fills up, launch a clean successor session in a new herdr pane before degradation occurs, passing a handoff document. See the **`/handoff` skill** for procedures.
-
-- **Trigger**: When `HERDR_ENV=1` and context usage is judged to exceed ~60%. Definitely trigger if auto-compact / context limit warnings appear.
-- **Do not trigger**: When `HERDR_ENV=1` is unset (rely on standard auto-compact). In the middle of atomic steps. Immediately after a handoff (complete at least one concrete work step first).
+Prefer the normal context-compaction and continuation mechanisms. When a handoff record is needed,
+use the `/handoff` skill at a clean work boundary. Do not automatically launch a successor, close
+the current session, change permissions, or infer readiness from an idle terminal.
 
 ## Conventional Commits
 
