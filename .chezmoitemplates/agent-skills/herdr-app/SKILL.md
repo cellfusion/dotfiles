@@ -24,6 +24,13 @@ legacy `herdr workspace`, `tab` or `pane` commands mechanically.
 - `HC_TERMINAL_ID` is a core terminal address, not an app pane ID.
 - App operations change what the person sees. Only create spaces/tabs or change focus when asked;
   ordinary workers remain hidden. Do not add display labels just to run a background worker.
+- To show an existing core terminal when requested, use its verified terminal address with
+  `terminal.keep` or the manual's space/tab labels; these are distinct from pane IDs. Choose the
+  requested placement and inspect the result. Do not attach labels merely to communicate.
+- `terminal.park` removes the pane and disables core keep, but leaves the terminal running.
+  Closing a pane, tab or space ends its terminal(s); `terminal.kill` ends the terminal and its
+  sub-agents. These are not equivalent to closing the window; do not use them as display-only
+  cleanup without authorization.
 - Inspect `herdr-app ls` and `herdr-app status` before acting. Use returned IDs and explicit useful
   names. Read the creation response and inspect the resulting state; launch acceptance does not
   prove the program started successfully.

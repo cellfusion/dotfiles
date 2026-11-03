@@ -1,63 +1,43 @@
 ---
 name: handoff
 description: >-
-  Procedure for spawning a clean successor Claude session in a new herdr pane when context
-  pressure increases, passing a handoff document to continue work seamlessly.
-  Use when context consumption exceeds ~60%, or when auto-compact / context limit warnings appear.
-  Only valid when HERDR_ENV=1.
+  Prepare a self-contained handoff record when a session needs to be continued elsewhere.
+  Prefer normal context compaction; do not automatically launch or terminate sessions.
 ---
 
 # Session Handoff
 
-When context pressure mounts, hand over the baton before quality degrades by **launching a clean successor session in a new herdr pane, passing a handoff document**. The successor session continues subsequent tasks, and the current session terminates.
+Prefer the current session's normal context-compaction and continuation mechanisms. When a handoff
+record is needed, complete the current atomic step or record its incomplete state before writing.
+This procedure applies in herdr-core, legacy Herdr, and ordinary shells.
 
-## Prerequisites and Initiation Criteria
+## Prepare the record
 
-- **Prerequisite**: Only active under herdr management (`HERDR_ENV=1`). If unset, rely on standard auto-compact and do not run this procedure. Never start herdr in environments where `HERDR_ENV` is not `1`.
-- **Rule of thumb: when context usage is judged to exceed approximately 60%**. Since Claude cannot obtain exact token usage numbers, this is a heuristic self-assessment. **If auto-compact or context limit warnings appear, it is definitely the time to hand off immediately**.
-- Even under pressure, **never hand off in the middle of an atomic work step**. If editing, complete up to a clean boundary or document uncommitted modifications explicitly in the handoff document before proceeding.
+Write a self-contained document to `~/.config/claude/handoffs/`, named
+`handoff-<date-and-time>.md`. Include:
 
-## Procedure
+- Task objective, completed work, and ordered next steps.
+- Relevant paths and important functions; decisions, rejected alternatives, and unresolved questions.
+- Worktree path, branch, uncommitted changes and integration state, as actually observed.
+- Active or retained resources, their ownership and addresses when verified, and outstanding requests.
+- Checks run and their results; checks not run; actions requiring user approval.
 
-1. **Write the handoff document to disk** (do not pass it via argv). Save to `~/.config/claude/handoffs/` (run `mkdir -p` if not present), named `handoff-$(date +%Y%m%d-%H%M%S).md`. Pass the absolute path in step 3. It must be **self-contained** — the successor has no memory of this conversation and relies solely on CLAUDE.md, memory files, and this handoff document. Minimum contents:
-   - Task objective / goal
-   - Completed work
-   - Next steps (ordered)
-   - Relevant file paths and critical functions (`file_path:line`)
-   - Decisions and rationale / rejected alternatives
-   - Pitfalls / warnings
-   - Git state (branch, uncommitted changes / stash)
-   - Links to relevant memories (`[[name]]`)
-   - **Because execution continues unattended with skip-permissions, explicitly label destructive/irreversible actions as "Requires user confirmation"** to prevent unintended actions.
+Do not include credentials, authentication material, or unrelated conversation history. Give the
+user the absolute path. Writing a record does not authorize a successor to commit, push, apply,
+install, delete resources, or bypass a permission prompt.
 
-2. **Create a new pane next to your own pane** (based on `$HERDR_PANE_ID`, same cwd). Do not use `--current` (which targets the user's focused pane and opens in a different workspace):
+## Continuing elsewhere
 
-   ```bash
-   herdr pane split "$HERDR_PANE_ID" --direction down --cwd "$PWD" --no-focus
-   # Let the returned pane_id be <new_pane>
-   ```
+Do not automatically start a successor or terminate the current session. If the user requests a
+separate session, use the selected host's skill and version-matched manual; pass the record path and
+the explicitly authorized scope. Preserve the existing permission settings.
 
-3. **Launch the successor session** (`CLAUDE_CONFIG_DIR` is resolved from `HERDR_SESSION` via zshrc, preserving it in a new pane within the same session. Explicitly provide the skip flag for unattended continuation):
+For herdr-core, read `herdr-core` and `hc --skill`, verify terminal and checkout identity, and keep
+terminal addresses separate from app pane IDs. Children normally end when their parent ends;
+`--outlive-parent` changes that lifetime and needs an explicit reason. Launch acceptance, initial
+message delivery, readiness, and successful continuation are separate facts. Inspect the same
+terminal on failure or uncertain delivery; do not blindly retry or close the current session.
 
-   ```bash
-   herdr pane run <new_pane> "claude --dangerously-skip-permissions 'Read <absolute path to handoff document> first, take over the tasks documented there, and proceed'"
-   ```
-
-4. **Verify the successor has started** before closing the current pane (never close if launch failed, preventing data loss):
-
-   ```bash
-   herdr pane wait-output <new_pane> --match "<claude prompt marker>" --timeout 60000
-   # or herdr agent wait <new_pane> --until idle --timeout 60000
-   ```
-
-5. If verification succeeds, **terminate the current session** (close your own pane, exiting the current claude process):
-
-   ```bash
-   herdr pane close "$HERDR_PANE_ID"
-   ```
-
-## Guardrails
-
-- **Do not close current pane until successor launch is confirmed**. If unconfirmed, keep open and report to user.
-- **Avoid immediate re-handoff right after launch**. Successor must not immediately hand off again; complete at least one concrete work step before re-evaluating context pressure (chaining is intentional, but looping without progress must be prevented).
-- Successor inherits CLAUDE.md, so if context fills up again, it will hand off in the same manner (intentional chaining).
+For legacy Herdr, follow the legacy host skill rather than treating `HERDR_PANE_ID` as a core
+address. An ordinary shell must not start Herdr merely to create a handoff. Only change the visible
+app layout when the user requests it, and never stop or restart the user's core.

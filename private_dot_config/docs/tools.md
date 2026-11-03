@@ -22,7 +22,7 @@ yabai の上余白は `~/.config/yabai/display-padding` が画面ごとに設定
 |---|---|---|
 | Homebrew 本体 | なし | `run_onchange_after_00-homebrew.sh` |
 | Homebrew | `~/.config/install/Brewfile`、`~/.config/install/third-party.txt` | `run_onchange_after_10-brew.sh` |
-| native installer（chezmoi・ランタイム・Herdr） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
+| native installer（chezmoi・ランタイム・旧Herdr） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
@@ -229,6 +229,19 @@ Unknown environment、invalid config、ineligible family では default へ落�
 Codex は `CODEX_HOME` を使う。OMP はデフォルト環境なら `OMP_PROFILE` を解除し、
 それ以外なら選択した環境名を設定する。設定がある場合、継承した `PI_CODING_AGENT_DIR` も解除する。
 
+`HC_TERMINAL_ID` はcore terminalのaddressであり、環境名ではない。hcの子でも環境を
+推測せず、対象cwdと継承した `AGENT_ENV` を確認する。明示的に切り替える場合は
+`agent --family=claude --environment=<environment> -- ...` のように起動する。
+親の `AGENT_ENV` が設定に存在しない場合は、明示指定があってもエラーになる。
+hcが直接起動するコマンドはzsh関数を通るとは限らないため、環境選択が必要なら
+`agent` を明示的に使う。Codexをhcで起動するときはCodexの引数に `--no-daemon` を渡す。
+
+別途、zshの初期化は `AGENT_ENV`、なければ旧Herdrの `HERDR_SESSION` を使って
+`private-data.toml` 由来のshell環境を読み込む。どちらも未設定または未定義なら
+Claude／Codexなどの対象変数を解除し、先頭環境へは落とさない。これは上記の
+`agent` のcwd-aware resolverとは別の処理であり、`HERDR_SESSION` はresolverへの
+`AGENT_ENV` の代入ではない。設定ファイルが無い場合のCLI直接起動にも注意する。
+
 zsh の bare `claude`、`codex`、`omp` は `agent --family=<family>` へ送る。
 `codex update` は native CLI へ送る。`command claude`、absolute executable path、
 zsh 設定を読まない process は family wrapper を bypass する。
@@ -250,7 +263,7 @@ OMP の `lab` プロファイルで起動する。`--environment lab` 形式も�
 | ghq | リポジトリのローカル管理 |
 | git-lfs | Git Large File Storage |
 | lazygit | git の TUI クライアント |
-| worktrunk | git worktree マネージャ（`wt`）。herdr と併用する |
+| worktrunk | git worktree マネージャ（`wt`）。terminalとは別にcheckoutを管理する |
 | neovim | エディタ |
 | fzf | 曖昧検索 |
 | fd | 高速 find |
@@ -261,11 +274,11 @@ OMP の `lab` プロファイルで起動する。`--environment lab` 形式も�
 | jq | JSON 処理 |
 | television | ファジーファインダー |
 | zoxide | 賢い cd |
-| herdr | ターミナルマルチプレクサ |
+| herdr | 旧Herdrのターミナルマルチプレクサ |
 
 ## 開発ツール
 
-mise / bun / uv / rustup / chezmoi / herdr は native installer、go と下記 CLI は mise が管理する。
+mise / bun / uv / rustup / chezmoi / 旧herdr は native installer、go と下記 CLI は mise が管理する。
 それぞれの節を見る。
 
 | ツール | 用途 |
@@ -310,7 +323,7 @@ mise / bun / uv / rustup / chezmoi / herdr は native installer、go と下記 C
 ## native installer
 
 自己更新を持つツール、または Homebrew 版が別ビルドになるツールは brew に寄せない。
-未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup / herdr は
+未導入のときだけ入れて、更新は各ツールに任せる。chezmoi / mise / bun / uv / rustup / 旧herdr は
 `run_onchange_after_20-runtimes.sh` が、claude / codex は
 `run_onchange_after_40-ai-clis.sh` が入れる。
 
@@ -324,7 +337,7 @@ chezmoi の install script の既定の BINDIR は `./bin`（実行時のカレ�
 | bun | `curl -fsSL https://bun.sh/install \| bash` | `bun upgrade` で自己更新する |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh` | `uv self update` で自己更新する。installer に shell 設定を書き換えさせない |
 | rustup | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh -s -- -y --no-modify-path` | brew 版は keg-only で toolchain を持たない |
-| herdr | `curl -fsSL https://herdr.dev/install.sh \| sh` | 公式 checksum 検証付き installer。native 配布だけ `herdr update` で更新する |
+| herdr（旧版） | `curl -fsSL https://herdr.dev/install.sh \| sh` | 旧 `herdr` 向けのinstaller。native 配布だけ `herdr update` で更新する |
 | claude | `curl -fsSL https://claude.ai/install.sh \| bash` | 自己更新を持つ |
 | codex | `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | 自己更新を持つ |
 
@@ -339,6 +352,8 @@ rustup に `--no-modify-path` を渡すのは、PATH の管理を `~/.config/zsh
 導入済み判定は PATH 上の同名コマンドではなく、native installer の実際の保存先を確認する。
 `~/.local/bin` の chezmoi / mise / uv / herdr、`$BUN_INSTALL/bin/bun`、
 `$CARGO_HOME/bin/rustup` が正本である。更新も正本を使い、Brew 版を self-update しない。
+この旧 `herdr` の導入手順は `hc`／`herdr-app` の導入や更新を管理するものではない。
+core／appの配布・更新方式は別途確認が必要である。
 chezmoi は `chezmoi upgrade`、mise は `mise self-update`、rustup は `rustup self update` で更新する。
 
 ### zsh の初期化とシステム設定
@@ -492,8 +507,26 @@ space・tab・paneを担当する。旧 `herdr` のworkspace／agent CLIとは�
 同一repositoryの通常の委譲は引き続きOMP内部で行う。独立した担当への通信は
 `agent-communication/references/herdr-core.md`、checkout分離は
 `using-git-worktrees/references/herdr-core.md` に従う。
-子への返答先には親の実際のterminal addressを渡し、初回タスクは `first_message.sent` を確認する。
+適合するroleは `hc templates` で調べ、無ければ既存の対話CLIを直接起動できる。
+モデルや権限を変更するためだけのtemplateは作らない。起動時には `--bg`、名前、
+明示cwdと限定した初回タスクを指定し、返されたterminal addressと `first_message.sent` を確認する。
+返答先には親の実際のaddressを渡す。通常シェルからの起動では親terminalがあると仮定しない。
+送信失敗時は同じterminalを読み、到達が不明なまま再送しない。`hc wait` は秒単位で、
+待機の終了だけではタスク完了ではない。結果を読み、依頼と照合する。
 `blocked` を強制入力で回避せず、timeoutだけで再起動・再送・完了判定をしない。
+子は既定で親と共に終了する。`--outlive-parent` は明示的な寿命変更であり、
+自動handoffの代わりに使わない。成果受理後も自分が作成したterminalだけを片付ける。
+
+画面表示を依頼された場合だけ `herdr-app ls`／`status` と `commands` で対象を確認する。
+既存の非表示terminalは、例えば `herdr-app do terminal.keep --terminal <terminal-id> --place tab`
+でpaneに表示できる。表示先のIDと実行結果を確認し、pane IDとterminal addressを混同しない。
+core terminalの `herdr.space=<id>` labelはそのspaceへの表示を選び、
+任意の `herdr.tab=<id>` はtabを指定する。バックグラウンド実行のためだけにlabelを付けない。
+ウィンドウを閉じてもcore terminalは終了しないが、`pane.close`／`tab.close`／`space.close`
+はterminalを終了し得る。`terminal.park` はpaneを外し、core keepも無効にする。
+リモートのcwd・ファイルは選択したmachine上にある。`machine/terminal` addressを使い、
+リモートの操作は `hc run --on`、`hc exec --on`、`hc file ... --on` で行う。
+ユーザーのappやcoreを停止・再起動しない。
 
 既存の `pr-review` コマンドは旧Herdr用アダプターであり、herdr-coreには未対応。
 `--environment herdr-core` は使えず、core上で旧 `herdr` を選んで代用もしない。
@@ -501,27 +534,18 @@ space・tab・paneを担当する。旧 `herdr` のworkspace／agent CLIとは�
 
 ### herdr-app の個人用レイアウト
 
-`space-agents` は標準 `main` を複製したレイアウト。
-`~/.config/herdr-app/layouts/space-agents.json` と
-`~/.config/herdr-app/mods/space-agents/` をchezmoiで管理する。
-標準レイアウト・標準mod、アプリが生成する型定義や状態ファイルは管理しない。
-
-Spacesのmachine／worktreeツリーを維持し、各Spaceの下にAgentと子Agentを表示する。
-Space行の `!` は入力待ち、`●` は未確認完了、`›` は稼働中の件数。
-右端の矢印でAgent一覧を折りたたみ、Agent行をクリックして対象へ移動する。
-タブ、端末、Files／Changesは標準のまま。キーバインドは変更しない。
-
-適用は対象ファイルを限定した `chezmoi apply` の明示承認後に行う。
-適用後は `herdr-app do layout.switch --name space-agents` で選択し、
-`herdr-app do layout.switch --name main` で標準へ戻せる。
-標準の更新はこのコピーへ自動反映されないため、API変更時は導入済みのガイドと型定義で確認する。
+`space-agents` のlayout／modについて、このcheckoutのchezmoi管理対象には対応する
+ソースがない。ローカルに存在する場合も正本や管理元は未確認であり、このリポジトリから
+配布・復元できるとは限らない。既存のローカル設定を取り込む、変更する、適用する前に
+管理元と対象差分を確認する。標準layoutやmodをカスタマイズする場合は、導入済みの
+`herdr-app --skill` に従い、複製してから編集する。
 
 
 
 ### 旧Herdrの既存ワークフロー
 
-メインの実行環境はmainMBP。GhosttyでHerdrを開き、OMP、Neovim、LazyGit、Tuicrを使う。
-subMBPはGhostty／Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ接続する。
+旧環境ではmainMBPのGhosttyで旧Herdrを開き、OMP、Neovim、LazyGit、Tuicrを使う。
+subMBPはGhostty／旧Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ接続する。
 Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。
 
 - メイン作業はdefaultブランチからHerdrのworktree＋workspaceを作成する。
