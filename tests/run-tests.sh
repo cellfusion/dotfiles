@@ -29,6 +29,7 @@ tests=(
   test-tests-not-distributed.sh
   test-mad-worktree.sh
   test-pr-review.sh
+  test-github-worktree.sh
   test-agent-usage.sh
   test-run-tests.sh
 )

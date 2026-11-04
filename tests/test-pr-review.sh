@@ -112,8 +112,9 @@ if(name==='stty'){
   fs.writeFileSync(file,String(count+1));console.log(count===0?'icanon echo':'-icanon -echo');process.exit(0);
 }
 if(name==='wt') {
-  if(a.includes('--help')) { console.log(c.mode==='herdr-no-hooks'?'--no-cd --format --base':'--no-hooks --no-cd --format --base'); process.exit(0); }
-  if(!a.includes('--no-hooks')||process.env.GIT_CONFIG_KEY_0!=='core.hooksPath'||process.env.GIT_CONFIG_VALUE_0!=='/dev/null') process.exit(8);
+  if(a.includes('--help')) { console.log(c.mode==='herdr-no-hooks'?'--no-cd --format':'--no-cd --format --base'); process.exit(0); }
+  if(a.includes('approvals')) { console.log(JSON.stringify({state:c.mode==='herdr-unapproved'||(c.mode==='herdr-late-unapproved'&&a[1]===c.checkout)?'approval_required':'no_commands',commands:[],stale:[]}));process.exit(0); }
+  if(a.includes('--no-hooks')||a.includes('--yes')||process.env.GIT_CONFIG_KEY_0!=='core.hooksPath'||process.env.GIT_CONFIG_VALUE_0!=='/dev/null') process.exit(8);
   const branch=flag('--create');
   const made=spawnSync('git',['-C',c.repo,'worktree','add','-b',branch,c.checkout,c.mode==='herdr-wrong-base'?c.head:flag('--base')],{encoding:'utf8',env:process.env});
   if(made.status!==0)process.exit(2);
@@ -263,7 +264,7 @@ else process.exit(2);
   const hookDir=path.join(root,'native-hooks'), hookMarker=path.join(root,'native-hook-ran');fs.mkdirSync(hookDir);
   fs.writeFileSync(path.join(hookDir,'post-checkout'),'#!/bin/sh\nprintf hook >> '+JSON.stringify(hookMarker)+'\n',{mode:0o700});
   const configureHooks=spawnSync('git',['-C',callerRepo,'config','core.hooksPath',hookDir],{encoding:'utf8'});assert.equal(configureHooks.status,0,configureHooks.stderr);
-  for(const mode of ['herdr-success','herdr-auto','herdr-focus','herdr-lazy-session','herdr-setup-failure','herdr-setup-bad-ack','herdr-repo-mismatch','herdr-no-hooks','herdr-wrong-base','herdr-wrong-agent','herdr-wrong-cwd','herdr-not-ready','herdr-partial-checkout','herdr-partial-workspace','herdr-unknown-receipt','herdr-prompt-timeout']) {
+  for(const mode of ['herdr-success','herdr-auto','herdr-focus','herdr-lazy-session','herdr-setup-failure','herdr-setup-bad-ack','herdr-repo-mismatch','herdr-no-hooks','herdr-unapproved','herdr-late-unapproved','herdr-wrong-base','herdr-wrong-agent','herdr-wrong-cwd','herdr-not-ready','herdr-partial-checkout','herdr-partial-workspace','herdr-unknown-receipt','herdr-prompt-timeout']) {
     const dir=path.join(root,mode);fs.mkdirSync(dir);
     const socket=path.join(root,'s'+fixtureSockets.length), server=require('node:net').createServer();
     server.listen(socket);fixtureSockets.push(server);
@@ -283,11 +284,17 @@ else process.exit(2);
     const calls=fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse);
     assert.ok(!calls.some(c=>c.name==='orca-fixture'),'Herdr never calls Orca');
     const early=['herdr-repo-mismatch','herdr-no-hooks'].includes(mode);
-    assert.equal(calls.filter(c=>c.name==='wt'&&c.args.includes('--create')).length,early?0:1,'no automatic checkout retry');
+    const beforeCreate=early||mode==='herdr-unapproved';
+    assert.equal(calls.filter(c=>c.name==='wt'&&c.args.includes('--create')).length,beforeCreate?0:1,'no automatic checkout retry');
     const prompts=calls.filter(c=>c.args[0]==='agent'&&c.args[1]==='prompt');
     assert.equal(prompts.length,success||['herdr-unknown-receipt','herdr-prompt-timeout'].includes(mode)?1:0,'no automatic resend');
-    assert.equal(fs.existsSync(fixture.checkout),!early,'all created failed checkouts retained');
+    assert.equal(fs.existsSync(fixture.checkout),!beforeCreate,'all created failed checkouts retained');
     if(early)assert.equal(output.artifactPath,null,'repository and capability gates precede run creation');
+    if(mode==='herdr-unapproved')assert.equal(output.stage,'worktree-create','unapproved setup blocks review');
+    if(mode==='herdr-late-unapproved') {
+      assert.equal(output.stage,'worktree-create','checkout approval changes block reviewer');
+      assert.equal(output.checkout.path,fixture.checkout,'created checkout identity is retained');
+    }
     const workspaceCalls=calls.filter(c=>c.args[0]==='workspace'&&c.args[1]==='create'&&!c.args.includes('--help'));
     assert.ok(workspaceCalls.every(c=>c.args.includes(mode==='herdr-focus'?'--focus':'--no-focus')&&!c.args.includes(mode==='herdr-focus'?'--no-focus':'--focus')));
     const setupCalls=calls.filter(c=>c.args[0]==='pane'&&c.args[1]==='run');

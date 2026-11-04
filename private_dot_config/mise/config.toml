@@ -11,6 +11,7 @@ go = "1.26"
 "aqua:x-motemen/ghq" = "latest"
 "aqua:git-lfs/git-lfs" = "latest"
 "aqua:jesseduffield/lazygit" = "latest"
+"aqua:dlvhdr/gh-dash" = "latest"
 "github:max-sixty/worktrunk" = { version = "latest", bin = "wt" }
 "aqua:neovim/neovim" = "latest"
 "aqua:junegunn/fzf" = "latest"

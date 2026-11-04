@@ -3,6 +3,10 @@
 # home-level copy so unrelated repositories do not inherit dotfiles instructions.
 CLAUDE.md
 
+# 2026-10-27: PR/Issue の一覧は gh-dash に統合した。
+.local/bin/prw
+.local/bin/issuew
+
 #
 # ここのエントリは、配布済みの実体を回収するための一時的な指示である。全マシンに
 # apply が行き渡れば役目を終える。保持方針は「追加から 1 ヶ月」とし、それより古い

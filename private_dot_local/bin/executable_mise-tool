@@ -7,6 +7,7 @@ case "$name" in
   ghq) tool=aqua:x-motemen/ghq ;;
   git-lfs) tool=aqua:git-lfs/git-lfs ;;
   lazygit) tool=aqua:jesseduffield/lazygit ;;
+  gh-dash) tool=aqua:dlvhdr/gh-dash ;;
   wt) tool=github:max-sixty/worktrunk ;;
   nvim) tool=aqua:neovim/neovim ;;
   fzf) tool=aqua:junegunn/fzf ;;

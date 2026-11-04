@@ -12,7 +12,7 @@
 | 1. システム | skhd（yabai のホットキー） | `skhd/skhdrc` |
 | 2. 端末 | Ghostty | `ghostty/config` |
 | 3. 多重化 | Herdr | `herdr/config.toml` |
-| 4. pane 内 | Neovim / zsh / lazygit | 各ツールの設定 |
+| 4. pane 内 | Neovim / zsh / lazygit / gh-dash | 各ツールの設定 |
 
 たとえば `Alt-y` は skhd が取るので Herdr には届かない。`Ctrl-l` は Herdr が取るので
 pane 内の zsh には届かない。
@@ -121,7 +121,7 @@ workspace を、`h` / `j` / `k` / `l` が pane を選ぶ。modifier を使わな
 | television | `tv edit` でファイルをプレビュー・選択し `$EDITOR` で開く |
 | Workspace — list / switch | workspace 一覧から選択して切り替える |
 | Worktree — list / open / switch | 現在のリポジトリの checkout 一覧。開いているものは切替、未オープンなら workspace として開く |
-| Worktree — create | branch 名を入力して作成・切替。既存 branch は checkout、新規 branch は Herdr の既定 base から作成。空入力で戻る |
+| Worktree — create | branch名を入力しWorktrunkで作成・再利用。新規branchは現在のHEADが起点 |
 | Tab — create | 呼び出し元 workspace に新しいタブを作り切り替える |
 | Scratch terminal | 一時的なシェル。`exit` で popup を閉じる |
 
@@ -133,6 +133,7 @@ workspace / worktree / tab の閉鎖・削除は、モバイルでの誤操作�
 | Key | Action |
 |-----|--------|
 | `Alt-g` | lazygit（popup、全画面） |
+| `Alt-d` | gh-dash：PR / Issue一覧（popup、全画面） |
 | `Alt-e` | ファイル選択 → `$EDITOR`（`tv edit`） |
 | `Alt-c` | Claude Code を新しいタブで起動（claude を持たない環境では起動しない） |
 | `Alt-a` | Tuicr（`tuicr`、popup、全画面） |
@@ -152,7 +153,7 @@ workspace / worktree / tab の閉鎖・削除は、モバイルでの誤操作�
 | `z` | pane をズーム |
 | `r` | リサイズモード |
 | `[` | コピーモード |
-| `t` | git worktree を作る |
+| `t` | Worktrunkでworktreeを作りHerdrで開く（popup） |
 | `u` | アカウント使用枠（`agent-usage --wait`、popup） |
 | `1`..`9` | タブ 1-9 へ |
 | `Shift-T` | タブ名を変更 |
@@ -247,10 +248,34 @@ Config: `zsh/dot_zshrc`。**`bindkey` によるカスタマイズは無い。す
 
 ## lazygit
 
-Config: `lazygit/config.yml`。**キーバインドのカスタマイズは無い。すべて lazygit のデフォルト。**
+Config: `lazygit/config.yml`。ログの表示形式と、次のカスタム操作を設定している。
 
-`config.yml` で設定しているのはログの表示形式（`branchLogCmd` / `allBranchesLogCmds`）だけ。
-キー一覧は lazygit 内で `?` を押して見る。
+| Key | 場所 | 動作 |
+|-----|------|------|
+| `B` | ローカルブランチ一覧 | 選択ブランチのworktreeを作成・再利用し、Herdrで開く |
+| `B` | リモートブランチ一覧 | 選択remoteを追跡するローカルブランチとworktreeを作成・再利用し、Herdrで開く |
+| `w` | 共通（各パネルの既定キーが優先） | branch名を入力しWorktrunkで作成・再利用してHerdrで開く |
+| `n` | worktrees一覧 | branch名を入力しWorktrunkで作成・再利用してHerdrで開く |
+| `d` | worktrees一覧 | 確認後Worktrunkで削除。branchは保持、Herdrで開いているworktreeは拒否 |
+
+ブランチ作成はHerdr外でも使え、Worktrunkの結果を表示する。Herdr内ならworkspaceで開く。
+安全な削除はHerdr内のみ。現在のcheckoutのブランチや未コミット変更は移さない。
+リモート選択時は、同名のローカルブランチが選択remoteのブランチを追跡していなければ停止する。
+既定の `W`（diff）は上書きしない。その他のキーは lazygit 内で `?` を押して見る。
+
+## gh-dash
+
+Config: `gh-dash/config.yml`。`gh-dash` またはHerdrの `Alt-d`（全画面popup）で起動する。
+
+| Key | 場所 | 動作 |
+|-----|------|------|
+| `w` | PR / Issue一覧 | 選択項目のworktreeを作成・再利用し、Herdrで開く |
+| `r` | PR一覧 | 隔離checkoutと専用OMPでPRレビューを開始 |
+| `Ctrl-w` | PR一覧 | PRのchecksを監視（既定の `w` から移動） |
+| `Ctrl-r` | 共通 | 現在のセクションを更新（既定の `r` から移動） |
+
+worktree操作とレビュー起動はHerdr内で実行する。更新は `Ctrl-r`、全セクション更新は
+既定の `R` を使う。その他のキーは `?` で確認する。
 
 ---
 

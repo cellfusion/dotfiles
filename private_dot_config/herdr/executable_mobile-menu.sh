@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run inside a Herdr popup; keep tools in the focused pane's directory.
-set -euo pipefail
+set -Eeuo pipefail
 
 herdr_bin=${HERDR_BIN_PATH:-herdr}
 cd "${HERDR_ACTIVE_PANE_CWD:-$PWD}"
@@ -13,6 +13,18 @@ on_error() {
   exit "$status"
 }
 trap on_error ERR
+new_worktree() {
+  printf '\nBranch name (empty to cancel): '
+  read -r branch || return 0
+  [[ -n "$branch" ]] || return 0
+  github-worktree new "$branch"
+}
+
+if [[ "${1:-}" == new-worktree ]]; then
+  new_worktree
+  exit 0
+fi
+
 
 pick() {
   local status=0
@@ -62,10 +74,8 @@ while true; do
       exit 0
       ;;
     new-worktree)
-      printf '\nBranch name (empty to go back): '
-      read -r branch || exit 0
-      [[ -n "$branch" ]] || continue
-      "$herdr_bin" worktree create --cwd "$PWD" --branch "$branch" --focus
+      new_worktree
+      [[ -n "${branch:-}" ]] || continue
       exit 0
       ;;
   esac

@@ -475,7 +475,7 @@ function recordFailure(run, stage, error, resources) {
     ambiguous: 'Multiple registered Orca projects match. Use --project id:<repoId>; no review worktree was created.',
     mismatch: 'The selected project does not match the PR URL; no review worktree was created.',
   };
-  const reason = resources.environmentError || projectReasons[resources.projectResolutionError] || (stage === 'agent-readiness'
+  const reason = resources.lifecycleError || resources.environmentError || projectReasons[resources.projectResolutionError] || (stage === 'agent-readiness'
     ? 'OMP terminal readiness was not proven; resources retained before prompt submission.'
     : stage === 'agent-prompt'
       ? 'Prompt submission was not proven; inspect the recorded terminal and receipt before resuming. Do not resend automatically.'
@@ -586,7 +586,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--environment herdr|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr uses cwd/--repo-path and a no-hook Worktrunk checkout plus a dedicated Herdr workspace (local zsh/bash input readiness required). --no-focus preserves focus; otherwise the new workspace is focused. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is known unsupported and stops before resources. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
+    process.stdout.write('Usage: pr-review [--environment herdr|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr uses cwd/--repo-path and the configured Worktrunk lifecycle plus a dedicated Herdr workspace (local zsh/bash input readiness required). --no-focus preserves focus; otherwise the new workspace is focused. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is known unsupported and stops before resources. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

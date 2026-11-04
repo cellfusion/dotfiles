@@ -94,10 +94,10 @@ existing resource; answering a decision does not permit overwriting the previous
 
 ## Integration and cleanup
 
-Hidden write isolation uses Worktrunk's actual `--format json` and `--no-hooks` route. No Herdr
-workspace, tab, or pane is created for write isolation alone. The child base is the committed parent
-base; parent uncommitted changes are not automatically copied. A dedicated interactive Herdr
-worktree remains Herdr-owned even if Worktrunk can list it.
+Hidden write isolation uses Worktrunk's `--format json` and configured lifecycle. No Herdr workspace,
+tab or pane is created for write isolation alone. The child base is the committed parent base;
+ignored files named in the primary checkout's `.worktreeinclude` and approved hooks may add local
+state. Preserve explicit approval checks and recorded ownership; do not infer it from the display host.
 
 The parent checks result, scope, diff, commit identity when applicable, and verification before
 adoption. Integrate authorized child commits into the recorded parent branch in dependency order;

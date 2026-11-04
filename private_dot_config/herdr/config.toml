@@ -23,7 +23,7 @@ auto_switch = false
 # なるため、alt+w の picker から選ぶ。picker の中では上下矢印が workspace を、
 # h/j/k/l が pane を選ぶ。明示割り当てにより既定の prefix+w では開かなくなる。
 new_workspace = "ctrl+n"
-new_worktree = "prefix+t"
+new_worktree = ""
 workspace_picker = "alt+w"
 
 # agents
@@ -45,6 +45,15 @@ toggle_sidebar = "ctrl+i"
 # `herdr plugin install poweroutlet2/herdr-confirm-close-pane` で導入する
 # (plugins.json は chezmoi 管理外なので、新しいマシンでは手で打つ必要がある)。
 close_pane = ""
+
+# Replace the built-in creator with the configured Worktrunk lifecycle.
+[[keys.command]]
+key = "prefix+t"
+type = "popup"
+command = "$HOME/.config/herdr/mobile-menu.sh new-worktree"
+description = "create worktree"
+width = "80%"
+height = "80%"
 
 # Mobile: one Ctrl chord opens a searchable menu; existing launch keys stay.
 # Ctrl+g no longer reaches pane apps (shell abort / Neovim file information).
@@ -69,7 +78,7 @@ description = "Close pane (with confirmation)"
 # with `macos-option-as-alt = true`, so Option presses arrive as Alt and reach
 # Herdr. If a binding does NOT register, switch its `key` to "ctrl+alt+<key>"
 # or "prefix+<key>" (Herdr docs flag alt/punctuation chords as terminal-dependent).
-# These launch keys (g/e/c/a/z/t) avoid the alt chords skhd already owns
+# These launch keys (g/d/e/c/a/z/t) avoid the alt chords skhd already owns
 # (h/j/k/l/r/x/y/v/s/q/p/n/f/m, 1-9, comma, period). skhd takes alt keys at the
 # system level, so anything it claims never reaches Herdr.
 
@@ -80,6 +89,15 @@ key = "alt+g"
 type = "popup"
 command = "lazygit"
 description = "lazygit"
+width = "100%"
+height = "100%"
+
+# GitHub PR / Issue dashboard, alongside lazygit.
+[[keys.command]]
+key = "alt+d"
+type = "popup"
+command = "gh-dash"
+description = "gh-dash"
 width = "100%"
 height = "100%"
 
@@ -133,9 +151,17 @@ height = "80%"
 show_agent_labels_on_pane_borders = true
 agent_panel_sort = "priority"
 prompt_new_tab_name = false
+status_indicators = "symbols"
 
 [ui.toast]
 delivery = "herdr"
+
+[ui.sound]
+enabled = true
+
+[session]
+# Restore supported agent conversations after server restarts (requires official integrations).
+resume_agents_on_restore = true
 
 [experimental]
 kitty_graphics = true

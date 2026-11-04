@@ -2,3 +2,45 @@ git:
   branchLogCmd: "git log --graph --color=always --pretty='%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' {{branchName}} --"
   allBranchesLogCmds:
     - git log --graph --color=always --pretty='%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --all
+keybinding:
+  universal:
+    newWorktree: '<disabled>'
+customCommands:
+  - key: 'B'
+    context: 'localBranches'
+    command: 'github-worktree branch {{.SelectedLocalBranch.Name | quote}}'
+    description: 'Open branch worktree in Herdr'
+    output: terminal
+  - key: 'B'
+    context: 'remoteBranches'
+    command: 'github-worktree branch {{.SelectedRemoteBranch.Name | quote}} --remote {{.SelectedRemoteBranch.RemoteName | quote}}'
+    description: 'Open remote branch worktree in Herdr'
+    output: terminal
+  - key: 'w'
+    context: 'global'
+    description: 'Create or open worktree in Herdr'
+    prompts:
+      - type: 'input'
+        title: 'Branch name (new branches start from current HEAD)'
+        key: 'Branch'
+    command: 'github-worktree new {{.Form.Branch | quote}}'
+    output: terminal
+  - key: 'n'
+    context: 'worktrees'
+    description: 'Create or open worktree in Herdr'
+    prompts:
+      - type: 'input'
+        title: 'Branch name (new branches start from current HEAD)'
+        key: 'Branch'
+    command: 'github-worktree new {{.Form.Branch | quote}}'
+    output: terminal
+  - key: 'd'
+    context: 'worktrees'
+    description: 'Remove worktree with Worktrunk (keep branch)'
+    prompts:
+      - type: 'confirm'
+        title: 'Remove worktree?'
+        body: 'The branch will be retained; dirty or open worktrees cannot be removed.'
+        key: 'Confirm'
+    command: 'github-worktree remove {{.SelectedWorktree.Path | quote}}'
+    output: terminal

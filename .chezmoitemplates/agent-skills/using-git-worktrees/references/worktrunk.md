@@ -8,11 +8,12 @@ checkout and workspace identities independently.
 
 For new manual operations read live `wt switch --help` and `wt remove --help`. Check branch
 collision and existing ownership first. Use the actual parent root, a unique safe branch and fixed
-committed base; do not auto-copy dirty files or change the parent cwd:
+committed base; preserve the parent cwd. Check `wt config approvals list --format=json` first and
+stop if any project command is unapproved or the response is invalid.
 
 ```bash
 out=$(wt -C "$CALLER_ROOT" switch --create "$CHILD_BRANCH" \
-  --base "$BASE_SHA" --no-cd --no-hooks --format json)
+  --base "$BASE_SHA" --no-cd --format json)
 WORKTREE_PATH=$(printf '%s' "$out" | jq -er '.path')
 ```
 
@@ -23,12 +24,11 @@ linked-worktree/common Git directory identity and exact HEAD at base. Record own
 No pane IDs belong to this owner record; an attached host has its own interaction record.
 The retained `mad-worktree` helper provides bounded child ownership records.
 
-`--no-hooks` suppresses user and project hooks, including terminal launch and arbitrary setup;
-`--no-cd` leaves parent cwd alone. Preserve the configured placement template. Do not run setup,
-install, deploy or network commands merely because repository configuration exists, and never
-use `wt merge` for automatic integration into default. Required setup needs its own approved
-trusted-base procedure. Failed/incomplete creation retains known IDs/path and artifacts; do not
-retry creation, choose another owner or silently write in the caller checkout.
+`--no-cd` leaves the parent cwd alone. Configured creation hooks run, including explicit ignored-file
+copies selected by the primary checkout's `.worktreeinclude`. Project commands require explicit
+approval; do not use `--yes` to bypass it. Inspect confidential copy scope and user hooks before
+delegation. Never use `wt merge` for automatic integration into default. Failed/incomplete creation
+retains known IDs/path and artifacts; do not retry creation, change owner, or fall back silently.
 
 ## Inspect and remove
 
@@ -40,8 +40,11 @@ After explicit cleanup approval, successful integration or an explicit saved-wor
 proof that the checkout and attached processes are inactive, remove from outside the checkout:
 
 ```text
-wt -C <parent> remove <child-branch> --no-delete-branch --foreground --no-hooks --format json
+wt -C <parent> remove <child-branch> --no-delete-branch --foreground --format json
 ```
+
+Check project approval state in both the parent and the checkout before removal. Configured
+pre-remove and post-remove hooks run; never bypass approval.
 
 Retain the branch unless its deletion is separately authorized and proven non-forcing. Declined
 work retains its branch. Never remove dirty, running, failed, blocked, pending, parked or unknown

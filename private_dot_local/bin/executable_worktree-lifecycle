@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Fail closed on unapproved project hooks, then optionally copy included files."""
+import json
+import subprocess
+import sys
+
+
+def main():
+    if sys.argv[1:] not in (['start'], ['check']):
+        raise ValueError('expected start or check')
+    result = subprocess.run(['wt', 'config', 'approvals', 'list', '--format=json'],
+                            check=True, text=True, stdout=subprocess.PIPE)
+    state = json.loads(result.stdout)
+    if (not isinstance(state, dict) or state.get('state') not in ('approved', 'no_commands')
+            or not isinstance(state.get('commands'), list)
+            or any(not isinstance(item, dict) or item.get('approved') is not True
+                   for item in state['commands'])
+            or (state['state'] == 'no_commands' and state['commands'])):
+        raise ValueError('project commands need approval; inspect wt config approvals list '
+                         'and approve explicitly with wt config approvals add')
+    if sys.argv[1] == 'start':
+        subprocess.run(['wt', 'step', 'copy-ignored', '--require-include'], check=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        print(f'worktree-lifecycle: {error}', file=sys.stderr)
+        sys.exit(1)

@@ -263,6 +263,7 @@ OMP の `lab` プロファイルで起動する。`--environment lab` 形式も�
 | ghq | リポジトリのローカル管理 |
 | git-lfs | Git Large File Storage |
 | lazygit | git の TUI クライアント |
+| gh-dash | PR / Issue の TUI。選択項目からHerdrのworktree・PRレビューを起動 |
 | worktrunk | git worktree マネージャ（`wt`）。terminalとは別にcheckoutを管理する |
 | neovim | エディタ |
 | fzf | 曖昧検索 |
@@ -275,6 +276,55 @@ OMP の `lab` プロファイルで起動する。`--environment lab` 形式も�
 | television | ファジーファインダー |
 | zoxide | 賢い cd |
 | herdr | 旧Herdrのターミナルマルチプレクサ |
+
+`tv`（既定の `files`）、`tv files`、`tv git-files`、`tv edit` は、
+共通の `tv-file-preview` で拡張子に応じてプレビューする。
+`.md` / `.markdown`（大文字も含む）は `leaf --inline ansi`、
+それ以外は `bat` を使う。Leafは別途インストールが必要。
+選択・編集キーの動作は各チャンネルの従来どおり。
+
+`files.toml` と `git-files.toml` はchezmoiの管理対象。
+`tv update-channels` で上書きされた場合は、この2ファイルだけを
+`chezmoi apply` して戻す。ほかのcommunity channelのプレビューは変更しない。
+
+### PR・Issueから作業用workspaceを開く
+
+Herdr内で `gh-dash` を実行し、PR / Issueを選んで `w` を押す。
+PR一覧の `r` は隔離PRレビューを起動する。lazygitではローカル／リモートブランチ一覧の
+`B` で選択ブランチのworktreeを開ける。既定の `W`（diff）は維持する。
+`gh` の認証と `python3`、`wt`、`herdr` が必要。
+gh-dashはmiseのAqua backendで導入し、既存の一覧・表示設定をchezmoi管理へ取り込んでいる。
+
+CLIから直接指定する場合：
+
+```sh
+github-worktree pr 123 --repo owner/repo
+github-worktree issue 456 --repo owner/repo
+github-worktree branch feat/example
+github-worktree branch feat/example --remote origin
+```
+
+一覧の検索・本文や差分の確認はgh-dashに任せる。
+worktree作成処理は `github-worktree` が担当し、Televisionの旧一覧は使わない。
+
+- PR: PRのURLを `wt switch` に渡し、headブランチをチェックアウトする。
+  fork由来のPRの解決もWorktrunkに任せる。
+- Issue: 対象GitHubリポジトリのdefaultブランチをfetchし、
+  そのコミットから `issue/<番号>` ブランチを作る。ローカルに同名ブランチがあれば再利用する。
+- リポジトリはremote URLのhost・owner・repoで照合する。SSH/HTTPSの違いは吸収する。
+  Herdrのリポジトリ情報が未登録の場合はpaneのcwdから調べる。
+- 同じリポジトリを複数のcloneで開いている場合、現在のcheckoutとGit common dirが
+  一致するものを優先する。親には同じcloneのmain checkoutを優先し、
+  main checkoutが開いていなければ開いているlinked worktreeを使う。
+- 対象がHerdrで開かれていなければ、remoteが一致する現在のcheckoutを使う。
+  どちらにも見つからない場合はエラーとし、cloneや無関係なリポジトリへの作成は行わない。
+- 既存worktreeと対応するworkspaceは再利用する。既存ブランチを強制更新せず、
+  変更の破棄やworktreeの削除は行わない。作成途中で失敗した場合もworktreeは保持する。
+- Worktrunkの設定済みコピー・初期化と承認済みproject hookを使う。
+  checkoutの所有者はWorktrunkなので、削除には `wt remove` を使う。
+
+`w` は人がPR headを確認・修正するための経路。
+`r` / `--review` は固定base SHAから専用OMPを起動する `pr-review` へ渡す。
 
 ## 開発ツール
 
@@ -397,7 +447,7 @@ node / python / java / pnpm / deno / go と日常 CLI を mise で管理し、Br
 
 | backend | ツール |
 |---|---|
-| Aqua | gh、ghq、git-lfs、lazygit、Neovim、fzf、fd、ripgrep、bat、glow、jq、television、zoxide、sccache、AWS CLI、grpcurl |
+| Aqua | gh、ghq、git-lfs、lazygit、gh-dash、Neovim、fzf、fd、ripgrep、bat、glow、jq、television、zoxide、sccache、AWS CLI、grpcurl |
 | GitHub release | worktrunk（`wt`） |
 | Cargo | eza（macOS 向けの配布バイナリがないため rustup の toolchain でビルド） |
 | npm | wrangler、firebase-tools、mcp-hub |
@@ -534,11 +584,36 @@ core terminalの `herdr.space=<id>` labelはそのspaceへの表示を選び、
 
 ### herdr-app の個人用レイアウト
 
-`space-agents` のlayout／modについて、このcheckoutのchezmoi管理対象には対応する
-ソースがない。ローカルに存在する場合も正本や管理元は未確認であり、このリポジトリから
-配布・復元できるとは限らない。既存のローカル設定を取り込む、変更する、適用する前に
-管理元と対象差分を確認する。標準layoutやmodをカスタマイズする場合は、導入済みの
-`herdr-app --skill` に従い、複製してから編集する。
+`space-agents` は標準 `main` を複製したレイアウト。
+`~/.config/herdr-app/layouts/space-agents.json` と
+`~/.config/herdr-app/mods/space-agents/` をchezmoiで管理する。
+標準レイアウト・標準mod、アプリが生成する型定義や状態ファイルは管理しない。
+
+Spacesのmachine／worktreeツリーを維持し、各Spaceの下にAgentと子Agentを表示する。
+Space行の `!` は入力待ち、`●` は未確認完了、`›` は稼働中の件数。
+右端の矢印でAgent一覧と、親Spaceに所属するworktreeのSpaceを折りたたむ。
+再展開時は各worktreeの開閉状態を維持する。親が絞り込み対象外なら一致するworktreeを表示し、
+タグ／Agent状態別グループではSpaceをフラットに表示する。Agent行をクリックして対象へ移動する。
+展開表示のSpace行をドラッグすると、同じmachine内で並び替えられる。
+着地点は強調線で表示される。worktreeは所属するcheckoutの下に表示される。
+Spaces見出しの右端は、左から保存済みビュー、グルーピング、絞り込み、Space追加の順。
+絞り込みアイコンではSpace名・タグの検索とタグ／Agent状態の選択を行い、
+`Clear filters` はグルーピングを変えずに絞り込みだけを解除する。
+グルーピングアイコンではSpace／タグ／Agent状態を直接選ぶ。絞り込みとグルーピングは
+各アイコンの色と点で有効状態を示す。状態の絞り込みは一致するAgentが一人でもいるSpaceを表示し、
+状態別グルーピングは入力待ち＞完了＞作業中＞待機の最も緊急な状態にまとめる。
+タグ別では複数タグ付きのSpaceは各タグに表示される。並び替えはSpace表示で行う。
+
+Space行の `#` でタグをカンマ区切りで編集し、`Save tags` で保存する。消したいタグは
+入力欄から削除する。保存済みビューアイコン内の `Save view` は検索・絞り込み・グルーピングを名前付きで保存し、
+同名で保存すると上書きする。保存済みビューの名前で復元、`×` で削除できる。
+タグ・現在の表示条件・保存済みビューはmodのローカルストレージに保持され、別端末へは自動同期しない。
+タブ、端末、Files／Changesは標準のまま。キーバインドは変更しない。
+
+適用は対象ファイルを限定した `chezmoi apply` の明示承認後に行う。
+適用後は `herdr-app do layout.switch --name space-agents` で選択し、
+`herdr-app do layout.switch --name main` で標準へ戻せる。
+標準の更新はこのコピーへ自動反映されないため、API変更時は導入済みのガイドと型定義で確認する。
 
 
 
@@ -548,7 +623,7 @@ core terminalの `herdr.space=<id>` labelはそのspaceへの表示を選び、
 subMBPはGhostty／旧Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側へ接続する。
 Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。
 
-- メイン作業はdefaultブランチからHerdrのworktree＋workspaceを作成する。
+- メイン作業はdefaultブランチからWorktrunkでworktreeを作り、Herdr workspaceで開く。
 - 同一リポジトリの通常の委譲はOMP内で済ませる。
 - 別リポジトリの変更は、そのリポジトリのHerdr workspaceの担当へ依頼する。
   適合するidle担当を再利用し、いなければ対象workspaceでOMPをno-focus起動する。
@@ -579,6 +654,7 @@ MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規
 | 入口 | 動作 |
 |---|---|
 | `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
+| `gh-dash` / `Alt-d` | PR / Issue一覧。`w` でworktree、PRの `r` で隔離レビューを起動。ショートカットは全画面popup |
 | `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
 | `pr-review [--environment herdr\|orca\|paseo] [--quick] <番号またはURL>` | 実行環境を選び、固定PR base SHAの隔離checkoutと専用OMPを起動 |
 | `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
@@ -604,6 +680,8 @@ URLだけでもOrca登録済みプロジェクトを検索できる。未登録�
 Orca登録IDをHerdrへ流用しない。Paseoは既知だが未対応の環境として、
 run directory・checkout・sessionを作る前に `unsupported-environment` で停止する。
 エージェントから呼ぶときは `--no-focus` を付ける。
+Claude Code の `/pr-review` も同じスキルを使う。管理元の `commands/pr-review.md.tmpl` を
+chezmoi が展開し、未展開のテンプレートではなくスキル本文と `$ARGUMENTS` を配布する。
 
 レビュー手順は共通にし、環境操作は `pr-review/environments/` のadapterで切り替える。
 Orcaではバージョン一致ガイドに従い、worktreeのsetupを `skip` にする。
@@ -611,7 +689,7 @@ Orcaではバージョン一致ガイドに従い、worktreeのsetupを `skip` �
 実際のpane/terminal・agent・cwdを照合してから要求を送る。
 送信受理・実行開始・レビュー完了は別の証拠で確認する。
 Orcaの `turn_started` を他環境のreceiptに読み替えず、開始未確認なら `accepted` として報告する。
-Herdr経路はWorktrunkの `--no-hooks` でcheckoutを作り、そのpathをHerdr workspaceに開く。
+Herdr経路は承認済みのWorktrunk lifecycleでcheckoutを作り、そのpathをHerdr workspaceに開く。
 checkout ownerは `worktrunk`、実行環境は `herdr`。prompt応答は受理のみを証明する。
 ローカルmacOS/Linuxのbash/zshで、シェルの入力待ちを確認してから短い私有setup scriptを
 読み込ませる。setupのtoken ACKを確認するまではOMPを開始しない。

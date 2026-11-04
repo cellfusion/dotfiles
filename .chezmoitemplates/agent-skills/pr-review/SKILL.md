@@ -10,6 +10,19 @@ description: >-
 # Review a Pull Request
 
 ## Entry and prepared execution
+### Select the execution role before acting
+
+- **Launcher:** An initial request without an explicit private `prepared-context.json` path uses
+  the entry command once. The launcher owns reporting the launch receipt and returning the
+  resulting review or an explicit observation blocker to the requesting user.
+- **Prepared reviewer:** An initial request explicitly supplying that path continues in the
+  already-created reviewer session. It validates the supplied context, performs the review and
+  owns artifact validation and any confirmed posting. It MUST NOT invoke the entry again.
+
+Do not discover a prepared context from cwd, environment variables or repository files. The
+dedicated worktree is a trusted base-SHA runtime checkout, not a PR-head execution sandbox.
+Isolation protects the user's checkout; it does not authorize running untrusted PR scripts.
+
 
 A normal request routes to the shell command:
 
@@ -37,17 +50,36 @@ herdr-core is a distinct manual terminal host with no adapter in this executable
 to `herdr` because it is installed. Prepared context retains its recorded host/adapter and must
 validate there, not be migrated or impersonated from core.
 
-Execution host does not determine checkout owner: Herdr review uses a hook-disabled Worktrunk
-checkout attached to a no-focus Herdr workspace; Orca owns its own review checkout with setup
-suppressed. Do not run repository hooks/setup, clone, create a starter workspace, checkout head,
-repurpose user panes/terminals, create another reviewer environment or change backend on failure.
+Execution host does not determine checkout owner: Herdr review uses Worktrunk's configured
+lifecycle and attaches its checkout to a no-focus Herdr workspace; Orca owns its review checkout
+with setup suppressed. Herdr's configured lifecycle may copy ignored files selected by the primary
+checkout and run personal or explicitly approved project hooks. Do not bypass approval, clone,
+create a starter workspace, checkout head, repurpose user panes/terminals, create another reviewer
+environment or change backend on failure.
 
 For normal requests, invoke the entry and report execution environment, checkout owner/path/ID,
-interaction identity, observed submission state/receipt and artifact path. Input acceptance is not
-start evidence or completion. Preserve `created`, `ready`, `accepted`, `started`, `completed` and
-`blocked` distinctions; do not fabricate one host's receipt semantics for another. On timeout or
-unproven submission retain every known ID/path and receipt without automatic resend, restart,
-recreation, cleanup or fallback. The removed `--worktree` and current-checkout modes stay unsupported.
+interaction identity, observed reviewer-prompt acceptance receipt and artifact path. Input
+acceptance is not start evidence, review completion or GitHub posting. Preserve `created`, `ready`,
+`accepted`, `started`, `completed` and `blocked` distinctions; do not fabricate one host's receipt
+semantics for another.
+
+An acceptance-only report is an interim update, not the completed review deliverable. Use the
+selected host's supported, bounded observation of the same recorded reviewer to obtain its
+completion or blocker report. Match its run/repository/PR/fixed SHAs and read the resulting
+artifacts before relaying the verdict, coverage and limits to the requesting user. A file's
+existence, a declared PASS or agent idle state alone is not proof of validated completion.
+Prepared-context validation remains in the recorded reviewer session; the launcher MUST NOT
+impersonate its pane/session or run prepared helpers under fabricated identity.
+
+If observation times out or is unavailable, report review completion as unconfirmed, retain all
+known IDs/paths/receipts and identify the existing reviewer and artifact location for continuation.
+Do not automatically resend the reviewer prompt, restart, recreate, clean up or switch hosts.
+The removed `--worktree` and current-checkout modes stay unsupported.
+
+The prepared reviewer presents the exact proposed COMMENT body and obtains explicit posting
+confirmation in its existing interaction. The launcher may relay that proposal, but MUST NOT
+infer consent from launch acceptance, a verdict, or confirmation given for a different body.
+Do not start a second posting flow or post independently from the launcher.
 
 **Prepared-review contract:** When an explicit initial request supplies a `prepared-context.json`
 path, execute this skill in the existing reviewer session; do not invoke the entry command again.
@@ -376,11 +408,16 @@ Follow the plan's check policy. Never install dependencies, update lockfiles, au
 release, or write to external services. Do not run lint, typecheck, tests, or builds in the normal
 review worktree. If a known base-side command is safe to run in a disposable, network-disabled
 sandbox with no credentials, dependency installation, or writes outside the source snapshot, it may
-be selected explicitly. If a checkout is required, use a separate invisible Worktrunk child pinned to
-`HEAD_OID`, with hooks disabled, following `using-git-worktrees`. First obtain explicit permission
-to execute PR-side scripts. Never move this base checkout or start a visible child environment.
-Otherwise record the check as `not_run`. Never hide failures or fix the PR before
-re-running a check.
+be selected explicitly only when the run's execution policy also permits that isolation. User
+permission to execute PR-side scripts does not override a launch-time prohibition on creating
+additional worktrees or environments. If that prohibition applies, record the check as `not_run`
+with the policy reason; do not create a child or switch the reviewer checkout to head.
+
+When the run policy permits check isolation and a checkout is required, use a separate invisible
+Worktrunk child pinned to `HEAD_OID`, with hooks disabled, following `using-git-worktrees`.
+First obtain explicit permission to execute PR-side scripts. Never move this base checkout or
+start a visible child environment. Otherwise record the check as `not_run`. Never hide failures
+or fix the PR before re-running a check.
 
 `git diff --check` and fixed-revision verification remain allowed. In quick mode, make every other
 check `not_run` unless the security safety gate requires a targeted read-only check.

@@ -29,16 +29,23 @@ TOML
 repo="$work/demo"
 git -C "$repo" init -q -b main
 printf 'seed\n' > "$repo/data.txt"
-cat > "$repo/.config/wt.toml" <<TOML
-pre-start = "touch '$work/project-hook-ran'"
-pre-remove = "touch '$work/project-remove-hook-ran'"
-TOML
+printf '# no project commands\n' > "$repo/.config/wt.toml"
 git -C "$repo" add data.txt .config/wt.toml
 git -C "$repo" commit -q -m seed
 base="$(git -C "$repo" rev-parse HEAD)"
 printf 'uncommitted prerequisite\n' > "$repo/data.txt"
 printf 'private parent-only file\n' > "$repo/local.txt"
 parent_cwd="$PWD"
+cat > "$repo/.config/wt.toml" <<TOML
+pre-start = "touch '$work/project-hook-ran'"
+pre-remove = "touch '$work/project-remove-hook-ran'"
+TOML
+# Unapproved project hooks must block unattended creation without executing them.
+reject_unapproved=0
+node "$SCRIPT" create --repo "$repo" --run-id unapproved --node impl --base "$base" >/dev/null 2>&1 || reject_unapproved=$?
+[ "$reject_unapproved" -ne 0 ] && [ ! -e "$work/project-hook-ran" ] && pass 'unapproved project setup blocks creation' || fail_check 'unapproved project setup blocks creation'
+git -C "$repo" restore .config/wt.toml
+
 
 field() {
   node -e 'process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))' "$1" "$2"
@@ -68,7 +75,7 @@ assert_eq "$(cat "$checkout/data.txt")" seed 'does not copy tracked parent prere
 [ ! -e "$checkout/local.txt" ] && pass 'does not copy untracked parent files' || fail_check 'does not copy untracked parent files'
 assert_eq "$PWD" "$parent_cwd" 'leaves the parent cwd unchanged'
 assert_eq "$(cat "$repo/data.txt")" 'uncommitted prerequisite' 'preserves the parent dirty tree'
-[ ! -e "$work/user-hook-ran" ] && [ ! -e "$work/project-hook-ran" ] && pass 'suppresses user and project creation hooks' || fail_check 'suppresses user and project creation hooks'
+[ -e "$work/user-hook-ran" ] && [ ! -e "$work/project-hook-ran" ] && pass 'runs configured user creation hook' || fail_check 'runs configured user creation hook'
 node -e 'const fs=require("node:fs");if((fs.statSync(process.argv[1]).mode&511)!==384)process.exit(1)' "$record" && pass 'ownership record is private' || fail_check 'ownership record is private'
 reject create --repo "$repo" --run-id r1 --node impl-1 --base "$base"
 listed="$(node "$SCRIPT" list --repo "$repo")"
@@ -80,6 +87,10 @@ printf 'unsaved\n' > "$checkout/unsaved.txt"
 reject remove --repo "$repo" --branch "$branch" --integration declined --inactive
 [ -d "$checkout" ] && pass 'dirty removal retains checkout' || fail_check 'dirty removal retains checkout'
 rm "$checkout/unsaved.txt"
+printf 'pre-remove = "touch %s"\n' "'$work/unapproved-remove-ran'" > "$repo/.config/wt.toml"
+reject remove --repo "$repo" --branch "$branch" --integration declined --inactive
+[ -d "$checkout" ] && [ ! -e "$work/unapproved-remove-ran" ] && pass 'unapproved removal hook retains checkout' || fail_check 'unapproved removal hook retains checkout'
+git -C "$repo" restore .config/wt.toml
 printf 'feature\n' > "$checkout/feature.txt"
 git -C "$checkout" add feature.txt
 git -C "$checkout" commit -q -m feature
@@ -106,7 +117,7 @@ removed="$(node "$SCRIPT" remove --repo "$repo" --branch "$branch" --integration
 assert_eq "$(field "$removed" removed)" true 'removes explicitly declined saved inactive checkout'
 assert_eq "$(field "$removed" branch_deleted)" false 'retains declined branch'
 git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" && pass 'declined commits remain reachable' || fail_check 'declined commits remain reachable'
-[ ! -e "$work/user-remove-hook-ran" ] && [ ! -e "$work/project-remove-hook-ran" ] && pass 'suppresses removal hooks' || fail_check 'suppresses removal hooks'
+[ -e "$work/user-remove-hook-ran" ] && [ ! -e "$work/project-remove-hook-ran" ] && pass 'runs configured user removal hook' || fail_check 'runs configured user removal hook'
 [ -f "$record" ] && pass 'retains ownership evidence after removal' || fail_check 'retains ownership evidence after removal'
 
 create_status=0

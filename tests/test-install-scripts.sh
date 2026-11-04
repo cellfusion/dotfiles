@@ -223,4 +223,41 @@ nums="$(ls "$CHEZMOI_SOURCE/.chezmoiscripts/" | sed -n 's/^run_onchange_after_\(
 dupes="$(printf '%s\n' "$nums" | uniq -d | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "$dupes" "" "run_onchange スクリプトの番号が一意である"
 
+# Preserve personal project settings while upgrading the shared Worktrunk defaults.
+worktrunk_status=0
+python3 -B - "$CHEZMOI_SOURCE" <<'PY' || worktrunk_status=$?
+import subprocess, sys, tomllib
+from pathlib import Path
+
+script = Path(sys.argv[1]) / 'private_dot_config/worktrunk/modify_config.toml'
+original = '''worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
+
+[projects."github.com/example/private".pre-start]
+install = "printf private"
+'''
+def render(value):
+    result = subprocess.run([sys.executable, str(script)], input=value, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    return result.stdout
+first = render(original)
+config = tomllib.loads(first)
+assert config['projects']['github.com/example/private']['pre-start']['install'] == 'printf private'
+assert config['pre-switch'] == 'worktree-lifecycle check'
+assert config['pre-start'] == 'worktree-lifecycle start'
+assert config['pre-remove'] == 'worktree-lifecycle check'
+assert config['remove']['delete-branch'] is False
+assert config['worktree-path'] == '~/worktrees/{{ repo_path }}/{{ branch }}'
+assert render(first) == first
+custom = 'worktree-path = "/private/custom/{{ branch }}"\n[remove]\ndelete-branch = false\n'
+preserved = tomllib.loads(render(custom))
+assert preserved['worktree-path'] == '/private/custom/{{ branch }}'
+assert preserved['remove']['delete-branch'] is False
+for invalid in ('pre-start = "echo custom"\n', '[remove]\ndelete-branch = true\n',
+                '# chezmoi-worktrunk-managed-begin\n'):
+    result = subprocess.run([sys.executable, str(script)], input=invalid, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.returncode != 0 and not result.stdout
+PY
+assert_eq "$worktrunk_status" 0 'Worktrunk: preserve private project config and update defaults idempotently'
+
 printf 'SUMMARY %d %d\n' "$TESTS_RUN" "$TESTS_FAILED"

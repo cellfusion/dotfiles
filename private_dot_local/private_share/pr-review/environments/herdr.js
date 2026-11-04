@@ -29,7 +29,7 @@ function preflight(api) {
   if (!['darwin', 'linux'].includes(process.platform)) throw new Error('Herdr shell readiness inspection requires a local POSIX terminal');
   for (const binary of ['herdr', 'wt', 'ps', 'stty']) api.command('/usr/bin/env', ['which', binary]);
   const help = api.command('wt', ['switch', '--help']);
-  for (const flag of ['--no-hooks', '--no-cd', '--format', '--base']) if (!help.includes(flag)) throw new Error('Worktrunk hook suppression unavailable');
+  for (const flag of ['--no-cd', '--format', '--base']) if (!help.includes(flag)) throw new Error('required Worktrunk options unavailable');
   if (!api.command('herdr', ['workspace', 'create', '--help']).includes('--no-focus')) throw new Error('Herdr background workspace unavailable');
   if (!api.command('herdr', ['agent', 'start', '--help']).includes('omp')) throw new Error('Herdr OMP support unavailable');
   if (!/^omp: current\b/m.test(api.command('herdr', ['integration', 'status']))) throw new Error('current Herdr OMP identity integration required');
@@ -38,14 +38,24 @@ function preflight(api) {
 function resolveRepository(api, options) {
   return fs.realpathSync(api.git(options.repoPath || process.cwd(), 'rev-parse', '--show-toplevel'));
 }
+function requireApprovals(api, cwd, resources) {
+  let data;
+  try { data = api.jsonCommand('wt', ['-C', cwd, 'config', 'approvals', 'list', '--format', 'json'], cwd); } catch {}
+  if (!['approved', 'no_commands'].includes(data?.state) || !Array.isArray(data.commands) ||
+      data.commands.some(command => command.approved !== true) || (data.state === 'no_commands' && data.commands.length !== 0)) {
+    resources.lifecycleError = 'Worktrunk project approvals are unresolved. Inspect wt config approvals list and approve explicitly; retain any created resources.';
+    throw new Error('Worktrunk approvals unresolved');
+  }
+}
 function createCheckout(api, options, resources, fixed, cwd, persist) {
-  // Worktrunk's no-hooks suppresses its lifecycle hooks; suppress Git's native
-  // post-checkout hooks as well, without writing repository configuration.
+  requireApprovals(api, cwd, resources);
+  // Suppress Git's native post-checkout hooks without bypassing Worktrunk hooks.
   const env = { ...process.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null' };
-  const response = spawnSync('wt', ['-C', cwd, 'switch', '--create', resources.name, '--base', fixed.baseSha, '--no-cd', '--no-hooks', '--format', 'json'], { cwd, env, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
+  const response = spawnSync('wt', ['-C', cwd, 'switch', '--create', resources.name, '--base', fixed.baseSha, '--no-cd', '--format', 'json'], { cwd, env, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024 });
   let data; try { data = JSON.parse(response.stdout); } catch {}
   Object.assign(resources.checkout, { owner: 'worktrunk', path: data?.path || null, ownerId: data?.branch || null, branch: data?.branch || null }); persist();
   if (response.error || response.status !== 0 || data?.action !== 'created' || data.created_branch !== true || data.branch !== resources.name || !path.isAbsolute(data.path)) throw new Error('Worktrunk creation identity mismatch');
+  requireApprovals(api, data.path, resources);
 }
 async function waitForShellInput(api, paneId, cwd) {
   const deadline = Date.now() + 30000;

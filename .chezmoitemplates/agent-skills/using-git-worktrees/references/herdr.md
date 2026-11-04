@@ -9,11 +9,11 @@ Explicit `--environment herdr` does not authorize operation outside the host.
 
 Use `pr-review --environment herdr --no-focus [--repo-path /absolute/repository] [--quick] <PR>`.
 The default repository is cwd; a URL must match that repository. `--project` is Orca-only.
-The entry verifies capabilities before side effects, creates the base-SHA checkout with Worktrunk
-hook suppression, then attaches a no-focus Herdr workspace with its dedicated root pane. This is
-not a Herdr-owned worktree: record `checkout.owner=worktrunk` and the created branch as `ownerId`.
-Do not substitute `herdr worktree create` merely because it is available; its setup/hook suppression
-must be established before using that route. Do not reuse a user's existing pane for the reviewer.
+The entry verifies capabilities and explicit project command approval, creates the base-SHA checkout
+with the configured Worktrunk lifecycle, then attaches a no-focus Herdr workspace with its dedicated
+root pane. Copying locally selected files and configured hooks may affect review confidentiality.
+This is not a Herdr-owned worktree: record `checkout.owner=worktrunk` and the created branch as
+`ownerId`. Do not reuse a user's existing pane for the reviewer.
 
 The root pane launches OMP with a run-private session directory, `autoResume: false` overlay and
 `umask 077` before exec. Preserve existing models and permissions. Readiness requires actual live

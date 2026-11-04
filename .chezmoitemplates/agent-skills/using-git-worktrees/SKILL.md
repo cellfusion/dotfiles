@@ -47,16 +47,16 @@ a resource because inspection failed, or require another host's metadata to vali
 
 ## Safety and base prerequisites
 
-Never modify the caller's files or `.gitignore` to prepare isolation. Never auto-copy tracked,
-untracked, or ignored changes, `.env`, credentials, SSH/cloud config, or agent history. Child bases
-must be committed and resolved to immutable SHA. If required parent work is uncommitted, stop that
-dependent dispatch and let the user scope/authorize a commit or narrowly specified non-secret
-transfer; do not automatically commit or copy it. Independent work with no such prerequisite can
-continue. A dirty parent does not automatically block unrelated children.
+Never modify the caller's files or `.gitignore` to prepare isolation. The configured Worktrunk
+lifecycle may copy ignored files selected by the primary checkout's `.worktreeinclude`, including
+credentials if explicitly listed. Inspect the configured copy scope before delegation and disclose
+the risk; do not copy tracked or non-ignored untracked changes. Child bases must be committed and
+resolved to immutable SHA. Uncommitted prerequisites outside the configured copy scope require a
+separate user decision; do not automatically commit them.
 
-Do not run setup, lifecycle scripts, install commands, deploys, network operations, or arbitrary
-repository hooks merely because a manifest/config exists. Do not use permission bypasses, force,
-clobber, or silent fallback to the caller checkout when creation fails.
+Worktrunk user lifecycle hooks run as configured; project hooks require prior explicit approval.
+If approval state is unresolved or configured setup fails, stop and retain recorded resources.
+Do not use permission bypasses, force, clobber, or silent fallback when creation fails.
 
 ## Route A: visible main work
 
@@ -80,8 +80,8 @@ Manual core interaction follows its reference, separately from this automated re
 ## Route B: hidden child write isolation
 
 Use the [Worktrunk owner reference](references/worktrunk.md) from the committed parent base.
-This creates no interaction workspace, tab or pane. Require hook suppression, returned absolute
-path, newly created branch and exact base identity. The retained `mad-worktree` helper provides
+This creates no interaction workspace, tab or pane. Require a resolved project approval state,
+returned absolute path, newly created branch and exact base identity. The retained `mad-worktree` helper provides
 ownership records for bounded task branches. Do not auto-integrate into the default branch.
 Core interaction, if separately needed, attaches a terminal to that Worktrunk-owned path; it creates
 no core workspace or pane and does not transfer checkout ownership. Keep orchestration hidden by
@@ -89,9 +89,9 @@ default; visible app changes require a user request.
 
 ## Setup and verification
 
-If setup is required, inspect trusted base-side project instructions and explicitly run only the
-approved deterministic procedure in the selected cwd. Network/dependency operations need approval;
-do not re-enable hooks as a shortcut. Named non-secret local-file copying also needs scoped approval.
+Configured Worktrunk lifecycle runs for new worktrees, including the user's per-project hooks.
+Do not bypass project-hook approval or independently run unapproved setup. Inspect copied files
+and configured commands before delegating where confidentiality or execution scope is relevant.
 On setup failure retain the resource and evidence.
 
 The parent selects safe baseline/acceptance checks and names the verification owner. Shared writers
@@ -119,7 +119,6 @@ Follow the recorded owner's removal procedure, not the execution host:
 
 An interaction workspace attached to another owner's checkout is a separate resource. Ending or
 posting a PR review never removes either resource automatically. Keep all review artifacts.
-
 For core terminals, follow [herdr-core](references/herdr-core.md): only clean up terminals this run
 started, after live identity and saved/inactive state are proven. Terminal removal never removes
 the Worktrunk checkout; use its recorded owner separately.
