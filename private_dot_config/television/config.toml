@@ -1,6 +1,6 @@
 # Television configuration (managed by chezmoi)
-# Community channels are installed via `tv update-channels` and NOT managed by chezmoi.
-# Custom channels use `custom-` prefix in cable/ directory.
+# Community channels are installed via `tv update-channels`; files and git-files are managed overrides.
+# Other custom channels use the `custom-` prefix in cable/.
 
 # General settings
 # ----------------------------------------------------------------------------

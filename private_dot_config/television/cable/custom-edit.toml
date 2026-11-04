@@ -1,13 +1,14 @@
 [metadata]
 name = "edit"
 description = "Pick a file and open it in $EDITOR"
-requirements = ["fd", "bat"]
+requirements = ["fd", "bat", "leaf", "tv-file-preview"]
 
 [source]
 command = ["fd -t f", "fd -t f -H"]
 
 [preview]
-command = "bat -n --color=always '{}'"
+command = "tv-file-preview '{}'"
+shell = "bash"
 env = { BAT_THEME = "ansi" }
 
 [keybindings]

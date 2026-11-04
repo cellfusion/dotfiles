@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Shared by Television's file-selection channels. Render Markdown without a nested TUI.
+set -euo pipefail
+
+file="${1:?Usage: tv-file-preview FILE}"
+case "$file" in
+  *.[mM][dD]|*.[mM][aA][rR][kK][dD][oO][wW][nN])
+    exec leaf --inline ansi "$file"
+    ;;
+  *)
+    export BAT_THEME="${BAT_THEME:-ansi}"
+    exec bat -n --color=always "$file"
+    ;;
+esac
