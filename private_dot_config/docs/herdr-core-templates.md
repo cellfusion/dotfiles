@@ -2,10 +2,14 @@
 
 `hc` のテンプレートは、起動する対話型エージェントと初回の役割指示をまとめたものです。
 依頼文は `hc run` で別に渡します。固定の自動実行パイプラインではなく、作業ごとに役割を選びます。
-`command: omp` を使い、モデルや権限は実行環境の既定値に従います。
+`command: omp` を基本とし、モデルや権限は実行環境の既定値に従います。
+`assistant` は監視通知の受信対象を識別する環境変数を付け、開発担当には既定で `implement` を使います。
+`ASSISTANT_WORKER_TEMPLATE` を設定すると既定の担当テンプレートを変更できます。
 
 | 名前 | 用途 |
 |---|---|
+| `assistant` | 複数プロジェクトの作業依頼・状況確認・見守り |
+| `assistant-review` | 信頼済みディレクトリから PR worktree を読み取りレビュー |
 | `implement` | 指定範囲の実装と利用経路の確認 |
 | `debug` | 症状の切り分け。修正を依頼した場合は修正と再現確認まで |
 | `review` | 差分・PRの読み取り専用レビュー。投稿や承認はしない |
@@ -33,6 +37,15 @@ hc read --lines 100 fix-login
 ```
 
 `--cwd` は対象checkoutの絶対パスに、`--name` は他の稼働中terminalと重ならない名前に変えてください。
+
+`assistant` は `$(ghq root)/github.com/cellfusion/assistant` を作業場所として起動します。
+template は cwd を検査し、監視 DB の初期化に成功した場合だけ OMP を起動します。
+そのリポジトリの `AGENTS.md` とスキル・拡張が Assistant の役割と操作を定義します。
+`assistant-review` は Assistant の作業開始ツールが信頼済みの cwd と `ASSISTANT_REVIEW_HOME` を指定して使います。
+レビュー対象を cwd にして手動起動しないでください。
+```sh
+hc run --json --bg --no-parent --name assistant --cwd "$(ghq root)/github.com/cellfusion/assistant" assistant
+```
 `--json` の `first_message.sent` が `false` なら初回指示は送られていません。画面と準備状態を確認し、
 信頼確認などが必要なら解決してから送信してください。送信失敗時も二重送信の前に画面を確認します。
 `hc wait` の結果だけで依頼の完了を決めず、`hc read` で内容を確認します。
