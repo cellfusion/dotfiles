@@ -584,36 +584,20 @@ core terminalの `herdr.space=<id>` labelはそのspaceへの表示を選び、
 
 ### herdr-app の個人用レイアウト
 
-`space-agents` は標準 `main` を複製したレイアウト。
-`~/.config/herdr-app/layouts/space-agents.json` と
-`~/.config/herdr-app/mods/space-agents/` をchezmoiで管理する。
-標準レイアウト・標準mod、アプリが生成する型定義や状態ファイルは管理しない。
+#### Workbench
 
-Spacesのmachine／worktreeツリーを維持し、各Spaceの下にAgentと子Agentを表示する。
-Space行の `!` は入力待ち、`●` は未確認完了、`›` は稼働中の件数。
-右端の矢印でAgent一覧と、親Spaceに所属するworktreeのSpaceを折りたたむ。
-再展開時は各worktreeの開閉状態を維持する。親が絞り込み対象外なら一致するworktreeを表示し、
-タグ／Agent状態別グループではSpaceをフラットに表示する。Agent行をクリックして対象へ移動する。
-展開表示のSpace行をドラッグすると、同じmachine内で並び替えられる。
-着地点は強調線で表示される。worktreeは所属するcheckoutの下に表示される。
-Spaces見出しの右端は、左から保存済みビュー、グルーピング、絞り込み、Space追加の順。
-絞り込みアイコンではSpace名・タグの検索とタグ／Agent状態の選択を行い、
-`Clear filters` はグルーピングを変えずに絞り込みだけを解除する。
-グルーピングアイコンではSpace／タグ／Agent状態を直接選ぶ。絞り込みとグルーピングは
-各アイコンの色と点で有効状態を示す。状態の絞り込みは一致するAgentが一人でもいるSpaceを表示し、
-状態別グルーピングは入力待ち＞完了＞作業中＞待機の最も緊急な状態にまとめる。
-タグ別では複数タグ付きのSpaceは各タグに表示される。並び替えはSpace表示で行う。
+`workbench` のレイアウト・プレビュー、`workbench-tokyonight` テーマと、
+`workbench-chrome`、`workbench-navigator`、`workbench-usage`、`workbench-github` の
+実行用ファイルを `private_dot_config/herdr-app/` で管理する。`Cmd-p` はこのレイアウト内で
+workspace ピッカーを開く。既存の `over9k` 用キー設定は保持するが、そのレイアウトや mod は配布しない。
 
-Space行の `#` でタグをカンマ区切りで編集し、`Save tags` で保存する。消したいタグは
-入力欄から削除する。保存済みビューアイコン内の `Save view` は検索・絞り込み・グルーピングを名前付きで保存し、
-同名で保存すると上書きする。保存済みビューの名前で復元、`×` で削除できる。
-タグ・現在の表示条件・保存済みビューはmodのローカルストレージに保持され、別端末へは自動同期しない。
-タブ、端末、Files／Changesは標準のまま。キーバインドは変更しない。
+実行用 JavaScript は `$(ghq root)/github.com/cellfusion/herdr-layout` の開発版から取り込んだ
+スナップショットであり、自動同期されない。更新時は開発元の変更と生成済み JavaScript を確認し、
+chezmoi source の該当ファイルへ反映する。生成された型定義、`layouts/.state/`、`view.json` や
+mod の保存データは管理しない。GitHub の表示には `gh` の認証、使用率の表示には `omp` が必要。
 
-適用は対象ファイルを限定した `chezmoi apply` の明示承認後に行う。
-適用後は `herdr-app do layout.switch --name space-agents` で選択し、
-`herdr-app do layout.switch --name main` で標準へ戻せる。
-標準の更新はこのコピーへ自動反映されないため、API変更時は導入済みのガイドと型定義で確認する。
+反映前に対象を限定して `chezmoi diff` を確認し、明示承認後に対象だけを `chezmoi apply` する。
+各 mod は `herdr-app check <mod-directory>` で確認し、適用後は `herdr-app status` と実画面も確認する。
 
 
 

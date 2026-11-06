@@ -45,6 +45,9 @@ tests/**
 .config/herdr/session.json
 .config/herdr/*.log
 .config/herdr/*.sock
+# Herdr mod check generates editor files; distribute only runtime assets.
+.config/herdr-app/mods/workbench-*/gpui-kit.d.ts
+.config/herdr-app/mods/workbench-*/jsconfig.json
 # シェル履歴は機械ごとのものなので配らない
 .config/zsh/.zsh_history
 

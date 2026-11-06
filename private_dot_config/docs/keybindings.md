@@ -81,6 +81,50 @@ Config: `ghostty/config`。
 
 ---
 
+## Herdr App
+
+Config: `herdr-app/keys.json`。`Cmd` は macOS の Command、`Alt` は Option。
+`Alt-h/j/k/l` は引き続き skhd が受け取る。
+`Ctrl-h/j/k/l/n/p` は Herdr App が受け取るため、ペイン内には届かない。
+`Ctrl-h` / `Ctrl-j` は端末のキー識別方式によって Backspace / Enter に影響する場合がある。
+`Ctrl-n` / `Ctrl-p` はシェルの履歴移動や Neovim の補完などには使えない。
+
+| Key | Action |
+|-----|--------|
+| `Ctrl-h/j/k/l` | ペインのフォーカスを左 / 下 / 上 / 右へ |
+| `Ctrl-Shift-h/j/k/l` | ペインを左 / 下 / 上 / 右と入れ替え |
+| `Cmd-d` / `Cmd-Shift-d` | 右 / 下に分割 |
+| `Cmd-Shift-w` / `Cmd-Shift-Enter` | ペインを閉じる / ズーム切替 |
+| `Cmd-n` / `Shift-F2` | Space を作成 / 名前変更 |
+| `Ctrl-Shift-n` / `Ctrl-Shift-p` | 次 / 前の Space |
+| `Ctrl-1`..`Ctrl-9` | Space 1–9 を選択 |
+| `Cmd-t` / `Cmd-w` / `F2` | タブを作成 / 閉じる / 名前変更 |
+| `Ctrl-Tab` / `Ctrl-Shift-Tab` | 次 / 前のタブ |
+| `Cmd-Shift-]` / `Cmd-Shift-[` | 次 / 前のタブ |
+| `Cmd-1`..`Cmd-9` | タブ 1–9 を選択 |
+| `Ctrl-n` / `Ctrl-p` | 次 / 前のエージェント |
+| `Cmd-p` / `Cmd-Shift-p` | Picker / コマンドパレット |
+| `Cmd-Shift-l` / `Cmd-b` | レイアウト切替 / サイドバー表示切替 |
+| `Cmd-,` / `Cmd-/` / `Cmd-Shift-/` | 設定 / キー一覧 |
+| `Cmd-=` / `Cmd-+` / `Cmd--` / `Cmd-0` | 拡大 / 拡大 / 縮小 / 倍率リセット |
+| `Cmd-q` / `Cmd-h` | アプリを終了 / 隠す |
+
+次の割り当ては指定されたレイアウトまたは mod の中だけで、上のグローバル設定より優先される。
+`over9k` のキーは現在の設定を保持するもので、レイアウト本体の配布を意味しない。
+
+| 対象 | Key | Action |
+|------|-----|--------|
+| workbench | `Cmd-p` | Workbench の workspace ピッカーを開く |
+| over9k | `Ctrl-Tab` | over9k のスイッチャーを開く |
+| over9k | `Cmd-Shift-w` / `Cmd-Shift-x` | over9k のタブ / ペインを閉じる |
+| over9k-switcher | `Ctrl-Tab` / `Ctrl-Shift-Tab` | スイッチャーの次 / 前 |
+
+ターミナルにフォーカスがある場合、`Cmd-c` / `Cmd-v` はコピー / ペースト、
+`Ctrl-v` は画像ペースト。`Alt-左/右` は単語移動、`Alt-Backspace` は単語削除、
+`Cmd-左/右` は行頭 / 行末、`Cmd-Backspace` は行頭まで削除を送信する。
+
+---
+
 ## Herdr (Multiplexer)
 
 AI エージェント向けの多重化ツール。prefix は `Ctrl-b`。

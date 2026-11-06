@@ -5,3 +5,5 @@ private_dot_config/sketchybar/helpers/event_providers/spotify_events/bin/spotify
 .worktrees/
 .claude/worktrees/
 .DS_Store
+private_dot_config/herdr-app/mods/workbench-*/gpui-kit.d.ts
+private_dot_config/herdr-app/mods/workbench-*/jsconfig.json
