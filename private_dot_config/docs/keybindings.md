@@ -88,6 +88,9 @@ Config: `herdr-app/keys.json`。`Cmd` は macOS の Command、`Alt` は Option�
 `Ctrl-h/j/k/l/n/p` は Herdr App が受け取るため、ペイン内には届かない。
 `Ctrl-h` / `Ctrl-j` は端末のキー識別方式によって Backspace / Enter に影響する場合がある。
 `Ctrl-n` / `Ctrl-p` はシェルの履歴移動や Neovim の補完などには使えない。
+`Alt-g/a/d` は Herdr App が受け取るため、ペイン内での Option 文字入力には使えない。
+3 つとも現在のターミナルの作業ディレクトリを引き継ぐ新しいタブで起動し、ツール終了時にタブも閉じる。
+この起動方法は zsh / bash などの POSIX 系シェル向けで、fish や Windows のシェルには対応しない。
 
 | Key | Action |
 |-----|--------|
@@ -99,6 +102,7 @@ Config: `herdr-app/keys.json`。`Cmd` は macOS の Command、`Alt` は Option�
 | `Ctrl-Shift-n` / `Ctrl-Shift-p` | 次 / 前の Space |
 | `Ctrl-1`..`Ctrl-9` | Space 1–9 を選択 |
 | `Cmd-t` / `Cmd-w` / `F2` | タブを作成 / 閉じる / 名前変更 |
+| `Alt-g` / `Alt-a` / `Alt-d` | lazygit / tuicr / gh-dash を新しいタブで起動 |
 | `Ctrl-Tab` / `Ctrl-Shift-Tab` | 次 / 前のタブ |
 | `Cmd-Shift-]` / `Cmd-Shift-[` | 次 / 前のタブ |
 | `Cmd-1`..`Cmd-9` | タブ 1–9 を選択 |

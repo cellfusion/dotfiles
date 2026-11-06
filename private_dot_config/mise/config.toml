@@ -28,6 +28,7 @@ go = "1.26"
 # mise activate / exec でも AWS 同梱の Python を PATH に公開しない。
 "aqua:aws/aws-cli" = { version = "latest", symlink_bins = true }
 "aqua:fullstorydev/grpcurl" = "latest"
+pi = "latest"
 
 # npm グローバルではなく、mise がツールごとに管理する。
 "npm:wrangler" = "latest"

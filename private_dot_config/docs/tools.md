@@ -143,6 +143,13 @@ sketchybar のカレンダー表示を使う場合は、フルディスクアク
 `~/.config/sketchybar/helpers/event_providers/calendar_events/bin/calendar_events`
 を足す。makefile が ad-hoc 署名を打っているので、付与は再ビルドをまたいで保持される。
 
+## Pi
+
+Pi CLI は mise の `pi` で管理する。`latest` を指定し、更新は `mise upgrade pi` で行う。
+`pi` で起動し、必要に応じて `/login` で provider にログインする。
+認証情報やセッションは chezmoi で配布せず、OMP とは別に管理する。
+Pi は標準ではコマンド実行などの権限制御を持たないため、起動する環境の権限に注意する。
+
 ## OMP の共有設定
 
 `~/.omp/agent/config.yml` は `private_dot_omp/agent/private_config.yml` から mode 0600 で配布する。
