@@ -1,5 +1,5 @@
 modelRoles:
-  default: openai-codex/gpt-6.1-sol:low
+  default: openai-codex/gpt-6.1-terra:xhigh
   commit: openai-codex/gpt-6-luna:auto
   smol: openai-codex/gpt-6-luna:medium
 symbolPreset: nerd
@@ -8,17 +8,18 @@ steeringMode: one-at-a-time
 followUpMode: one-at-a-time
 interruptMode: immediate
 tui:
-  vimMode: true
+  vimMode: false
   vimModeDisplay: text
   resizeScrollback: rebuild
   reactions: true
   tight: false
+  textSizing: true
 loop:
   mode: prompt
 doubleEscapeAction: rewind
 composer:
   recallClearedDrafts: true
-  shape: pi
+  shape: band
   tokenRate: true
 treeFilterMode: default
 spelling:
@@ -42,6 +43,8 @@ statusLine:
   preset: default
   contextLine: embedded
   transparent: false
+  compactThinkingLevel: true
+  showHookStatus: true
 terminal:
   showProgress: false
 display:
@@ -52,3 +55,15 @@ hideThinkingBlock: false
 includeWorkspaceTree: false
 codexResets:
   autoRedeem: "yes"
+title:
+  icons: boring
+autolearn:
+  enabled: false
+readLineNumbers: true
+read:
+  renderMarkdown: true
+  toolResultPreview: true
+computer:
+  enabled: true
+github:
+  enabled: true
