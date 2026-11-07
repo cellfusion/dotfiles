@@ -72,6 +72,7 @@
     "cmd-backspace": "send:\u0015"
   },
   "layout:workbench": {
+    "cmd-n": { "command": "space.new", "args": { "machine": "" } },
     "cmd-p": "mod.open:workbench-navigator"
   },
   "layout:over9k": {

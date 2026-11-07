@@ -81,6 +81,35 @@ export function groupPriority(entries) {
   return priority;
 }
 
+// A tab change is reported by Herdr, but is not necessarily an agent finish time.
+export function workspaceActivity(spaces, agents) {
+  const activity = new Map();
+  for (const space of spaces) {
+    let changedAt = null;
+    for (const tab of space.tabs ?? []) {
+      const value = tab.changed_at;
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0 && (changedAt === null || value > changedAt)) changedAt = value;
+    }
+    activity.set(space.id, { changedAt, seq: null });
+  }
+  for (const agent of agents) {
+    const record = activity.get(agent.space), seq = agent.seq;
+    if (record && typeof seq === "number" && Number.isFinite(seq) && seq >= 0 && (record.seq === null || seq > record.seq)) record.seq = seq;
+  }
+  return activity;
+}
+
+export function compareOtherWorkspaces(left, right, activity) {
+  const a = activity.get(left.space.id), b = activity.get(right.space.id);
+  const descending = (x, y) => x === y ? 0 : x == null ? 1 : y == null ? -1 : y - x;
+  const byActivity = descending(a?.changedAt ?? null, b?.changedAt ?? null) || descending(a?.seq ?? null, b?.seq ?? null);
+  if (byActivity) return byActivity;
+  const leftName = (left.label || "").toLowerCase(), rightName = (right.label || "").toLowerCase();
+  if (leftName !== rightName) return leftName < rightName ? -1 : 1;
+  const leftSpace = (left.space.name || "").toLowerCase(), rightSpace = (right.space.name || "").toLowerCase();
+  return leftSpace === rightSpace ? left.order - right.order : leftSpace < rightSpace ? -1 : 1;
+}
+
 export function workspaceEntries(allSpaces, allPanes, allAgents, allTerminals) {
   const entries = collectEntries(allSpaces, allPanes, allAgents, allTerminals);
   const occupied = new Set(entries.map(entry => entry.space.id));

@@ -2,7 +2,7 @@
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { agents, closeOverlay, machines, panes, props, run, settings, spaces, terminals, theme } from "herdr";
-import { agentSummary, groupPriority, workspaceEntries, workspaceLocations } from "./model.js";
+import { agentSummary, compareOtherWorkspaces, groupPriority, workspaceActivity, workspaceEntries, workspaceLocations } from "./model.js";
 const isChoice = (row) => row.kind !== "heading";
 const key = (row) => {
     switch (row.kind) {
@@ -76,11 +76,21 @@ export class WorkbenchPicker {
         const locations = workspaceLocations(allSpaces, allPanes, allTerminals, allAgents);
         const groups = [[], [], [], []];
         const machineStates = new Map(machines().map(machine => [machine.name, machine.layout]));
-        // The sidebar preserves the first-seen workspace order within each priority.
-        const orderedSpaces = [...new Map(entries.map(entry => [entry.space.id, entry.space])).values()];
-        for (const space of orderedSpaces) {
-            const mine = entries.filter(entry => entry.space.id === space.id);
-            const priority = groupPriority(mine);
+        const bySpace = new Map();
+        for (const entry of entries) {
+            const id = entry.space.id;
+            if (!bySpace.has(id))
+                bySpace.set(id, []);
+            bySpace.get(id).push(entry);
+        }
+        const activity = workspaceActivity(allSpaces, allAgents);
+        const orderedSpaces = [...new Map(entries.map(entry => [entry.space.id, entry.space])).values()]
+            .map((space, order) => {
+            const mine = bySpace.get(space.id) ?? [];
+            return { space, order, label: space.name, mine, priority: groupPriority(mine) };
+        });
+        orderedSpaces.sort((a, b) => a.priority - b.priority || (a.priority === 3 ? compareOtherWorkspaces(a, b, activity) : a.order - b.order));
+        for (const { space, mine, priority } of orderedSpaces) {
             // A space's configured starting folder is not its current terminal directory.
             const hasTerminal = allAgents.some(agent => agent.space === space.id) || allPanes.some(pane => pane.terminal && space.tabs.some(tab => tab.id === pane.tab));
             const cwd = hasTerminal ? locations.get(space.id) : null;
@@ -184,8 +194,11 @@ export class WorkbenchPicker {
         const workspaceRows = rows.filter(row => row.kind !== "new-tab" && row.kind !== "new-space");
         const actionRows = rows.filter(row => row.kind === "new-tab" || row.kind === "new-space");
         const draw = (row) => {
-            const marks = ["!", "✓", "▶", "·"];
+            const marks = ["!", "✓", "", "·"];
             const tones = [t.blocked, t.done, t.working, t.dim];
+            const glyph = (priority, width) => div().w(width).flex_none().flex().items_center().justify_center()
+                .text_color(tones[priority]).accessibility_label(["Needs attention", "Done", "Working", "Other"][priority])
+                .child(priority === 2 ? svg("mods/workspace-chrome/spinner.svg").size(11).text_color(tones[priority]).spin(900) : marks[priority]);
             if (row.kind === "heading")
                 return div().id(`picker-status-${["attention", "done", "working", "other"][row.priority]}`)
                     .h(22).px(10).text_size(11).font_semibold().text_color(tones[row.priority]).child(row.label);
@@ -194,7 +207,7 @@ export class WorkbenchPicker {
                 return h_flex().id(`picker-space-${row.space.id}`).mx(4).px(10).h(heightOf(row)).items_center().rounded(7)
                     .cursor_pointer().tooltip([row.space.name, row.location, row.activity].filter(Boolean).join(" · "))
                     .when(on, el => el.bg(t.hover)).hover(el => el.bg(t.hover)).on_click((_event, cx) => this.go(row, cx))
-                    .child(div().w(16).flex_none().text_color(tones[row.priority]).child(marks[row.priority]))
+                    .child(glyph(row.priority, 16))
                     .child(v_flex().flex_1().min_w(0)
                     .child(h_flex().items_center().gap(6)
                     .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(row.space.name))
@@ -209,7 +222,7 @@ export class WorkbenchPicker {
                 return h_flex().id(`picker-tab-${row.tab.id}`).mx(4).pl(38).pr(10).h(26).gap(5).items_center().rounded(5)
                     .cursor_pointer().tooltip([row.tab.name, row.detail].filter(Boolean).join(" · "))
                     .when(on, el => el.bg(t.hover)).hover(el => el.bg(t.hover)).on_click((_event, cx) => this.go(row, cx))
-                    .child(div().w(12).flex_none().text_color(tones[row.priority]).child(marks[row.priority]))
+                    .child(glyph(row.priority, 12))
                     .child(div().max_w(130).flex_none().truncate().text_size(11).text_color(t.muted).child(row.tab.name))
                     .when(!!row.detail, el => el.child(div().text_size(11).text_color(t.dim).child("·"))
                     .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(row.detail)));

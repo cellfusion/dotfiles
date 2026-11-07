@@ -1,4 +1,4 @@
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Progress, ProgressTrack, ProgressIndicator } from "gpui-base";
 import { exec, theme, props, openOverlay, closeOverlay, shared, setShared, run, nextCommand, settings } from "herdr";
 import { parseUsage } from "./usage.js";
@@ -7,6 +7,12 @@ const REFRESH_MS = 300000;
 const STATE = "workbench.usage";
 // Provider labels can contain account identifiers. Persist only known quota labels.
 const LABELS = new Set(["5 hours", "7 days", "24 hours", "30 days", "session", "daily", "weekly", "monthly", "primary", "secondary", "spend cap"]);
+const PROVIDER_ICONS = new Map([
+  ["openai-codex", "icons/codex.svg"],
+  ["anthropic", "icons/claude.svg"],
+  ["google-gemini-cli", "icons/gemini.svg"],
+  ["github-copilot", "icons/copilot.svg"],
+]);
 function safeLabel(label, index) {
   const normalized = label.trim().toLowerCase().replace(/\s+/g, " ");
   return LABELS.has(normalized) ? normalized : `Limit ${index + 1}`;
@@ -85,6 +91,15 @@ const reportLabel = row => {
   return !row.label || NAMED_WINDOWS.has(row.label) ? row.window : `${row.window} · ${row.label}`;
 };
 const unavailable = row => row.label || row.window ? `${reportLabel(row)} · unavailable` : "Usage unavailable";
+function preferredLimit(rows) {
+  const usable = row => Number.isFinite(row.usedPercent);
+  return rows.find(row => row.window === "5h" && usable(row))
+    ?? rows.find(row => row.window === "7d" && usable(row))
+    ?? rows.find(usable)
+    ?? rows.find(row => row.window === "5h")
+    ?? rows.find(row => row.window === "7d")
+    ?? rows[0];
+}
 
 async function usageProfiles() {
   let scan;
@@ -105,11 +120,12 @@ async function usageProfiles() {
   return { sources, notices };
 }
 
-function progress(row, id, t) {
+function progress(row, id, t, compact = false) {
   const value = Math.max(0, Math.min(100, row.usedPercent));
   const color = row.status === "exhausted" ? t.blocked : row.status === "warning" ? t.working : t.accent;
-  return Progress.new(id).flex_1().min_w(24).value(value)
-    .child(ProgressTrack.new().w_full().h(4).rounded_full().bg(t.border)
+  const bar = Progress.new(id).min_w(24).value(value);
+  return (compact ? bar.w(48).flex_none() : bar.flex_1())
+    .child(ProgressTrack.new().w_full().h(compact ? 6 : 4).rounded_full().bg(t.border)
       .child(ProgressIndicator.new().h_full().w(`${value}%`).rounded_full().bg(color)));
 }
 
@@ -204,36 +220,37 @@ export default class WorkbenchUsage extends View {
       return v_flex().id("usage-open").size_full().min_w(0).min_h(0).px(8).py(5).gap(3).bg(t.chrome).border_t(1).border_color(t.border)
         .on_size_change((size, cx) => {
           const zoom = settings().zoom;
-          const narrow = size.width / (typeof zoom === "number" && zoom > 0 ? zoom : 1) < 160;
-          if (narrow !== this.narrow) { this.narrow = narrow; cx.notify(); }
+          const width = size.width / (typeof zoom === "number" && zoom > 0 ? zoom : 1);
+          const narrow = width < 160, compact = width < 220;
+          if (narrow !== this.narrow || compact !== this.compact) { this.narrow = narrow; this.compact = compact; cx.notify(); }
         })
         .tooltip(`OMP account usage: ${resetSummary}`).cursor_pointer().on_click(openDetails)
         .child(h_flex().flex_none().items_center().gap(6).text_size(11).text_color(t.muted)
           .child(svg("icons/agent.svg").size(13).flex_none())
           .when(!this.narrow, el => el.child(div().flex_1().min_w(0).truncate().child(loading ? "Usage · loading…" : "Usage")))
           .when(!this.narrow, el => el.child(button("usage-refresh", "↻", (_e, cx) => { cx.stop_propagation(); this.refresh(cx, true); }).tooltip("Refresh usage"))))
-        .when(!this.narrow, el => el.child(v_flex().id("usage-sidebar-list").flex_1().min_h(0).gap(7).overflow_y_scrollbar()
+        .when(!this.narrow, el => el.child(v_flex().id("usage-sidebar-list").flex_1().min_h(0).gap(4).overflow_y_scrollbar()
           .when(Boolean(error), list => list.child(div().text_size(10.5).text_color(t.blocked).child(error)))
           .when(!error && !loading && !rows.length && !notices.length, list => list.child(div().text_size(10.5).text_color(t.muted).child("Usage unavailable")))
           .children(notices.map(notice => div().text_size(10.5).text_color(notice.includes("error") ? t.blocked : t.dim).child(notice)))
-          .children(groups.map((group, groupIndex) => v_flex().gap(3)
-            .child(h_flex().items_center().gap(6).text_size(10.5)
-              .tooltip(group.accounts > 1 ? `Anonymous account #${group.account} in reported order` : `OMP · ${group.profile}`)
-              .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(title(group)))
-              .child(div().min_w(0).truncate().text_color(t.dim).child(`OMP · ${group.profile}`)))
-            .children(group.rows.map((row, rowIndex) => {
-              const reset = localResetTime(row.resetsAt);
-              const resetLine = () => div().text_size(10).text_color(t.muted).tooltip(`Reset time (local)${resetTime(row.resetsAt)}`).child(reset);
-              return Number.isFinite(row.usedPercent)
-                ? h_flex().items_center().gap(5).text_size(10).text_color(t.muted)
-                  .child(v_flex().w(70).flex_none().min_w(0)
-                    .child(div().truncate().child(reportLabel(row)))
-                    .when(Boolean(reset), el => el.child(resetLine())))
-                  .child(progress(row, `usage-sidebar-${groupIndex}-${rowIndex}`, t))
-                  .child(div().w(38).flex_none().child(percent(row.usedPercent)))
-                : v_flex().text_size(10).text_color(t.dim).child(unavailable(row))
-                  .when(Boolean(reset), el => el.child(resetLine()));
-            }))))));
+          .children(groups.map((group, groupIndex) => {
+            const row = preferredLimit(group.rows), reset = localResetTime(row.resetsAt), providerIcon = PROVIDER_ICONS.get(group.provider);
+            const description = group.rows.map(limit => `${reportLabel(limit) || "Usage"} · ${Number.isFinite(limit.usedPercent) ? percent(limit.usedPercent) : "unavailable"}${resetTime(limit.resetsAt)}`).join("\n");
+            const account = group.accounts > 1 ? ` · #${group.account}` : "";
+            return h_flex().items_center().gap(4).text_size(10).text_color(t.muted)
+              .tooltip(`${title(group)} · OMP ${group.profile}\n${description}`)
+              .when(Boolean(providerIcon), line => line.child(div().size(14).flex_none().tooltip(title(group))
+                .accessibility_label(`Provider: ${title(group)}`).child(image(providerIcon).size(14))))
+              .child(div().flex_1().min_w(0).truncate().text_color(t.foreground)
+                .child(providerIcon ? `${group.profile}${account}` : `${title(group)} · ${group.profile}`))
+              .child(div().max_w(36).truncate().flex_none().child(reportLabel(row) || "Usage"))
+              .when(Number.isFinite(row.usedPercent), line => line
+                .child(progress(row, `usage-sidebar-${groupIndex}`, t, true))
+                .child(div().flex_none().child(percent(row.usedPercent))))
+              .when(!Number.isFinite(row.usedPercent), line => line.child(div().flex_none().text_color(t.dim).child("unavailable")))
+              .when(Boolean(reset) && !this.compact, line => line.child(div().flex_none().text_color(t.dim)
+                .tooltip(`Reset time (local)${resetTime(row.resetsAt)}`).child(reset)));
+          }))));
     }
     if (mode === "compact") {
       return h_flex().size_full().min_w(0).items_center().text_size(11).text_color(t.muted)
@@ -265,6 +282,6 @@ export default class WorkbenchUsage extends View {
                 .child(progress(row, `usage-detail-${groupIndex}-${rowIndex}`, t))
                 .child(div().child(`${percent(row.usedPercent)} used`)))
               .child(div().text_color(t.dim).child(`${row.status && row.status !== "unknown" ? row.status : "Reported"}${resetTime(row.resetsAt)}`))
-            : div().text_color(t.dim).child(unavailable(row)))))));
+            : div().text_color(t.dim).child(`${unavailable(row)}${resetTime(row.resetsAt)}`))))));
   }
 }
