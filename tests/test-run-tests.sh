@@ -36,6 +36,7 @@ expected_names=(
   test-paseo-legacy-removal.sh
   test-tests-not-distributed.sh
   test-mad-worktree.sh
+  test-review-bundle.sh
   test-pr-review.sh
   test-github-worktree.sh
   test-agent-usage.sh

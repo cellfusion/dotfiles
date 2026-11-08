@@ -51,6 +51,14 @@ OMP のデフォルト設定は `private_dot_omp/agent/private_config.yml` か�
 `~/.omp/agent/config.yml` へ共有する。環境別 profile、認証、履歴、DB は共有しない。
 通常の `omp` 起動は Claude／Codex の環境切替から独立している。
 
+共有エージェントスキルは `.chezmoitemplates/agent-skills/` で管理し、Codex / OMP 用と
+Claude 用に展開する。明確な依頼は必要な調査の後に実装し、同じ対象・条件の検証結果は
+再利用する。ブランチの統合や削除は、依頼された場合だけ実施する。
+
+`review-bundle` はコミット間の差分に加え、指定したファイルの未コミット変更も固定して
+レビューできる。未コミットの対象はファイル単位で指定し、無関係な変更を含むファイルは
+分離できるまで選ばない。作業ツリーのレビューのためにコミットする必要はない。
+
 ## Documentation
 
 - [Keybindings Cheat Sheet](private_dot_config/docs/keybindings.md) —

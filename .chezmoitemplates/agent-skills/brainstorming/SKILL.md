@@ -45,19 +45,21 @@ implementation plan without asking for another approval.
 Ask one question only when the unresolved choice would change behavior, scope, data, permissions,
 or external side effects. After the answer, continue with the agreed design.
 
-If a bounded change has consequential risks (public behavior, migration, permissions, or hard-to-reverse
-side effects), run `design-checkpoint-review` on the draft before implementation.
+If a bounded change has a consequential unresolved design risk (for example, a migration,
+permission change, or hard-to-reverse side effect), run `design-checkpoint-review` on the draft
+before implementation. A public behavior change or multiple layers alone do not establish such a
+risk; identify the actual failure and impact.
 
 ### Architectural
 
-Use the architectural route for a new subsystem, multiple layers, public contracts, migrations,
-authentication, or several valid designs:
+Use the architectural route when a new subsystem, public contract, migration, authentication
+change, or multiple layers introduce consequential design choices that remain unresolved:
 
 1. state purpose, non-goals, constraints, and success criteria
 2. compare two or three viable approaches
 3. recommend one and describe data flow, error handling, and verification
 4. create a specification or plan only when it will be used
-5. obtain a decision before implementation
+5. obtain a decision only for an unresolved consequential choice; an existing user decision suffices
 
 Before presenting a consequential design for approval, use `design-checkpoint-review` to check the
 draft against the original request, available issue and repository rules, and likely side effects.

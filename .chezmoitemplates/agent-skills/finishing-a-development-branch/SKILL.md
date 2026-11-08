@@ -1,26 +1,29 @@
 ---
 name: finishing-a-development-branch
 description: >-
-  Finish a development branch by verifying the result, determining repository ownership, presenting
-  merge/push/retain choices, executing only the selected action, and cleaning up only owned resources.
+  Handle user-requested branch integration, merge, push, or cleanup using applicable verification,
+  established ownership, explicit approvals, and cleanup limited to owned resources.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Finish a Development Branch
 
-This is a parent-only finalizer. Use it after implementation and review artifacts are available. The
-parent chooses how to integrate the work; it does not invent missing implementation or verification
-results. Child handoff artifacts and fresh verification output are the sources of truth.
+This is a parent-only finalizer for user-requested integration, merge, push, or cleanup, not a
+mandatory step after every implementation. If none was requested, retain the work and report the
+result without presenting an integration menu. The parent does not invent implementation or
+verification results. Follow stricter higher-priority runtime instructions and approval requirements.
 
-**Core sequence:** verify, inspect ownership, present choices, execute the selected action, verify
-the result, then clean up only resources owned by this run.
+For a requested action, verify the relevant claims, inspect ownership, execute only authorized
+actions, and clean up only explicitly approved resources owned by this run.
 
-## Step 1: verify before offering integration choices
+## Step 1: verify for the requested action
 
-Run the project's known verification commands. Do not blindly invoke a command that is unavailable
-in the current runtime. Prefer the repository's documented test/build/lint commands and the
-`verification-before-completion` skill's evidence contract.
+Use the `verification-before-completion` skill's evidence contract for checks relevant to the
+requested action. Reuse this task's previous evidence only when it supports the exact claim and
+the actual checkout state, including relevant tracked and untracked inputs, dependencies, and
+environment, is unchanged. If relevant inputs changed or identity is uncertain, rerun affected
+checks when permitted; otherwise report them unverified. Never claim an unrun test passed.
 
 Typical checks, when applicable:
 
@@ -30,9 +33,9 @@ Typical checks, when applicable:
 - security or pre-commit review
 - regression checks for the changed behavior
 
-For every command, record the exact command, exit code, failure count, and the working tree it
-verified. Do not call a previous run evidence for the current tree. If a command is unavailable,
-record `not_run` with the reason instead of inventing a result.
+For every check, record the exact command, exit code, failure count, and applicable checkout and
+environment identity. If a command is unavailable or prohibited, record `not_run` with the reason
+instead of inventing a result.
 
 If any required check fails, stop and report the failure. Do not show the integration menu. If the
 repository has an explicit required review command, run it only when the current runtime supports
@@ -78,12 +81,13 @@ Classify the environment:
 | External linked worktree | push/PR, retain | never remove it |
 | Detached HEAD | push as a new branch, retain | never remove it unless ownership is proven |
 
-If ownership or base branch is unknown, stop and ask. Do not guess `main` or `master`.
+If ownership is needed for the requested action and unknown, stop and ask. Do not guess `main` or
+`master` as the base branch.
 
-## Step 3: establish the base branch
+## Step 3: establish the base branch when needed
 
-Determine the branch from the plan, task metadata, upstream configuration, or explicit user input.
-Verify that it is an ancestor or otherwise a valid integration target before presenting merge choices.
+For a merge or PR, determine the branch from the plan, task metadata, upstream configuration, or
+explicit user input. Verify that it is a valid integration target before presenting merge choices.
 If it cannot be established, ask:
 
 > Which branch should receive this work?
@@ -93,9 +97,14 @@ Do not merge into a guessed base.
 For a hidden child worktree, the target is the recorded parent working branch, not the repository
 default. Do not use `wt merge` to change this target. A retained or pending child is not integrated.
 
-## Step 4: present choices and wait
+## Step 4: resolve the requested action
 
-For a normal checkout or an owned branch worktree, present exactly these choices:
+If the user already specified an action and target, do not require a redundant menu selection.
+If integration was requested but the action remains unspecified, present applicable choices and
+wait. Never infer authorization for an additional action. For cleanup-only requests, skip integration
+choices and apply the cleanup safeguards below.
+
+For a normal checkout or an owned branch worktree, present:
 
 ```text
 Verification is complete. How should this work be integrated?
@@ -114,8 +123,9 @@ This workspace is detached or externally managed. How should this work be integr
 2. Leave it in place
 ```
 
-Do not include a discard option in the normal menu. Wait for an explicit selection. Do not commit,
-merge, push, delete a branch, archive a workspace, or remove a worktree before the selection.
+Do not include a discard option in the normal menu. Wait for an explicit selection when needed.
+Do not commit, merge, push, delete a branch, archive a workspace, or remove a worktree without
+the applicable explicit authorization.
 
 ## Step 5: execute the selected action
 
@@ -133,8 +143,10 @@ git merge <feature-branch>
 Do not run `git pull` automatically. If the base branch is behind its remote, report that fact and
 ask whether to fetch/update it. Do not force-push or force-merge.
 
-After a successful merge, run the required verification commands on the merged checkout. If they
-fail, stop and retain the branch and worktree. Do not delete anything after a failed merge check.
+After a successful merge, assess required verification against the merged checkout's actual state
+and environment. Reuse applicable evidence only under the identity rule above; rerun affected
+checks when permitted. If required checks fail or cannot be established, stop and retain the branch
+and worktree. Do not delete anything after a failed or unverified merge check.
 
 Only after successful verification may the user be asked whether to delete the merged branch and
 owned worktree. Branch deletion is destructive and must not be bundled silently into the merge.

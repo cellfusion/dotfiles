@@ -51,13 +51,31 @@ with re-review. Record a smaller limit where appropriate. Never create a fifth r
 finding. Fix scope names the task, repository-relative allowed files, initial finding IDs, and an
 absolute out-of-scope observations path. Changed files must be a subset of that scope.
 
-Build fixed packages with:
+Build fixed packages from committed ranges with:
 
 ```bash
 "$MAD_SCRIPTS/review-bundle" \
   --cwd "$WORKTREE_PATH" --base "$PACKAGE_BASE" --head "$PACKAGE_HEAD" \
   --out "$ATTEMPT_DIR/review-package.diff"
 ```
+
+For uncommitted work, do not force a commit: use `--worktree` instead of `--head`, and repeat
+`--path` for each exact repository-relative file in scope (include both paths for a rename):
+
+```bash
+"$MAD_SCRIPTS/review-bundle" \
+  --cwd "$WORKTREE_PATH" --base "$PACKAGE_BASE" --worktree \
+  --path "path/to/file" --out "$ATTEMPT_DIR/review-package.diff"
+```
+
+Each selected file is included as raw worktree bytes relative to base, including staged, unstaged,
+and explicitly selected untracked or ignored files. Git clean filters do not run, so a later
+normalized commit may differ. If unrelated changes in a file cannot be separated, stop instead of
+selecting it. A child path whose base ancestor is a file is rejected to avoid unselected deletions.
+Use a trusted, private output directory and keep writers quiescent; detected concurrent changes fail
+packaging, but transient or later changes cannot be ruled out. Record the snapshot tree and diff
+SHA-256 as worktree identity, not a commit SHA. Follow `requesting-code-review` for limitations,
+scope, and privacy requirements.
 
 For relevant ADRs, use [architecture-decision-records](../architecture-decision-records/SKILL.md)
 to add immutable contents and an origin/status manifest beside each task or final package. Explicitly
@@ -66,8 +84,9 @@ any proposed replacement. Distinguish exact commit inputs from uncommitted draft
 cwd requires staging, copy the ADR snapshots and manifest too, then align the permitted paths with
 that stage without losing revision identity or supersession context.
 
-Use recorded immutable range endpoints, not guessed `HEAD~1`. A new fix revision requires a fresh
-package. Validate finding IDs, verdict, package identity, and `cannotVerify` items before adoption.
+Use recorded immutable range endpoints or the explicit snapshot identity, not guessed `HEAD~1`. A new
+fix revision or worktree change requires a fresh package. Validate finding IDs, verdict, package
+identity, and `cannotVerify` items before adoption.
 Preserve an explicit open-findings list rather than carrying findings only in parent prose.
 Out-of-scope observations are read-only and do not authorize extra work; present them once at the
 final gate. Scope expansion requires a new approved task.

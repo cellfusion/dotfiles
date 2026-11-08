@@ -10,10 +10,11 @@ description: >-
 
 # Review a Consequential Design Before Commitment
 
-Use this checkpoint when a draft design changes multiple layers, public contracts, data or permissions,
-requires migration, or has hard-to-reverse side effects. Also use it when the user explicitly requests
-independent design review. Do not trigger it for every brainstorming session, a clear local change, or
-a design choice whose failure is cheap to undo. Never recursively use it to design this skill.
+Use this checkpoint when a draft has a consequential unresolved design risk, such as a migration,
+permission change, or hard-to-reverse side effect. Identify the concrete failure and impact; multiple
+layers or a public contract alone do not require a checkpoint. Also use it when the user explicitly
+requests independent design review. Do not trigger it for a clear local change or a design choice
+whose failure is cheap to undo. Never recursively use it to design this skill.
 
 The parent owns the design and final decision. This is a read-only design review, not implementation,
 code review, a full `multi-agent-development` delivery run, or permission to expand scope.

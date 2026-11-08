@@ -82,10 +82,10 @@ Do not repeat a checkpoint for an unchanged, already reviewed design.
 
 ## Approval and preview
 
-Show the plan at its external absolute path. Obtain user approval before implementation when the plan
-contains unresolved consequential choices, external operations, public contracts, destructive actions,
-or a worktree delegation choice. Do not add a formal approval gate merely to restate a clear user
-request.
+Show the plan at its external absolute path. Obtain user approval when consequential choices remain
+unresolved or an external or destructive action requires authorization. A public contract or worktree
+delegation does not by itself require approval again when the user already decided it. Do not add a
+formal approval gate merely to restate a clear user request.
 
 If a preview editor is used, re-read the plan after the user responds. The on-disk version is
 canonical. Incorporate manual edits before handing the plan to `executing-plans` or

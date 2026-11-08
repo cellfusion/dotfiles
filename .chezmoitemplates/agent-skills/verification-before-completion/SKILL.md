@@ -1,16 +1,17 @@
 ---
 name: verification-before-completion
 description: >-
-  Verify claims of completion, correctness, fixes, or passing tests with fresh evidence. Select
-  commands appropriate to the claim, record exit codes and failures, and report unverified items.
+  Verify claims of completion, correctness, fixes, or passing tests with applicable evidence. Select
+  checks appropriate to the claim, record exit codes and failures, and report unverified items.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Verify Before Claiming Completion
 
-Put evidence before assertion. Verification proves a specific claim about a specific tree; it does
-not prove more than the command covers.
+Put evidence before assertion. Verification proves a specific claim about a specific checkout state
+and environment; it does not prove more than the command covers. Follow stricter higher-priority
+runtime instructions, including restrictions on running checks.
 
 ## Verification gate
 
@@ -18,13 +19,19 @@ Before claiming a status:
 
 1. identify the claim
 2. choose the command or artifact that proves it
-3. run it freshly against the intended working tree/revision
-4. read the complete output and exit code
+3. reuse applicable evidence from this task or run the check against the intended state
+4. inspect the complete output and exit code
 5. count failures and warnings relevant to the claim
 6. compare evidence with the claim
 7. report success, failure, or uncertainty accurately
 
-A previous run, an agent's message, a plausible diff, or confidence is not fresh evidence.
+Prior check evidence from this task is reusable only if it supports the exact claim and the actual
+checkout state and relevant inputs are unchanged: tracked and untracked files, dependencies, and
+environment. A revision or clean status alone does not establish this identity. Record enough
+non-sensitive identity and check details to establish applicability. If any relevant input changed
+or identity is uncertain, rerun affected checks when permitted; otherwise report them unverified.
+An agent's assertion, a plausible diff, or confidence alone is not check evidence. Never claim an
+unrun test passed.
 
 ## Choose the smallest sufficient check
 
@@ -78,6 +85,7 @@ When verification is delegated or spans multiple commands, save an external reco
   "repository": "owner/name",
   "revision": "40-character-sha",
   "claim": "...",
+  "stateIdentity": "checkout and relevant tracked/untracked inputs, dependencies, and environment",
   "checks": [{
     "command": "...",
     "cwd": "...",
@@ -99,18 +107,18 @@ The parent must inspect the record; a child saying “verified” is not enough.
 
 The parent identifies the claim and acceptance criteria. A child may run long checks, but the parent
 must inspect its command list, exit codes, failure counts, and artifacts before asserting the result.
-Use one stable verification record per attempt and revision. Do not overwrite an older record.
+Use one stable verification record per attempt and state. Do not overwrite an older record.
 
 ## Red flags
 
 Stop and re-evaluate when:
 
 - the claim uses “should”, “probably”, or “looks right” without evidence
-- verification ran before the final change
+- verification predates a relevant change or the checked state cannot be identified
 - only a partial check supports a broad claim
 - a test passed for the wrong reason
 - an agent report is the only evidence
 - a failure was fixed or hidden before being recorded
-- the working tree or revision does not match the one being claimed
+- the checkout state or relevant dependencies/environment do not match the claim
 
 Report what is actually known and what remains unverified.

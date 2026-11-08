@@ -69,6 +69,12 @@ Dispatch genuine independent slices in one batch. Sequence only real dependencie
 receives only its goal, trusted requirement paths, interfaces, scope, cwd, result expectations, and
 stop conditions. Children do not inherit authorization to commit, push, apply, install, or spawn.
 
+Do not add an experiment, exhaustive proof, compatibility path, or disabled product route as a
+child's implementation prerequisite unless required by the accepted scope, an applicable rule, or
+a concrete safety risk. Name the possible failure and the smallest check needed to address it.
+Otherwise keep the investigation optional and have the child implement the requested product path.
+This does not waive required safety, approvals, or provider checks.
+
 Use [architecture-decision-records](../architecture-decision-records/SKILL.md) for relevant lasting
 decisions. Pass each child the applicable ADR paths, status, scope, and fixed revisions as needed.
 Children return decision candidates and changed assumptions; the parent owns numbering, approval

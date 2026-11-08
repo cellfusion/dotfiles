@@ -107,12 +107,18 @@ Keep unrelated cleanup out of the fix scope.
 
 For each accepted item:
 
-1. Create or identify the regression test before the fix when the behavior is testable.
-2. Implement only the allowed change.
-3. Run the focused test or static check and record the exit code.
-4. Re-run the relevant broader checks.
-5. Create a fresh diff/review package and verify that the finding is resolved.
+1. Create or identify the regression test before the fix when practical and the behavior is testable.
+2. Implement only the allowed change, preserving existing user work.
+3. Use applicable prior evidence or run the focused test or static check and record the exit code.
+4. Reuse applicable broader check evidence or rerun affected checks when permitted.
+5. Create a current diff/review package and verify that the finding is resolved.
 6. Mark the item `fixed` only after independent evidence exists.
+
+Prior check evidence from this task is applicable only to the exact claim and unchanged actual
+checkout state, including relevant tracked and untracked inputs, dependencies, and environment.
+If relevant inputs changed or identity is uncertain, rerun affected checks when permitted; otherwise
+report them unverified. Follow stricter higher-priority runtime instructions; never claim an unrun
+test passed.
 
 If the reviewer was wrong, respond with concise technical evidence. If the initial rejection was
 wrong, record the correction and proceed without a performative apology.
@@ -141,4 +147,4 @@ Stop and ask for a decision when:
 - the fix would require unrelated files or destructive operations
 
 Never claim that all feedback was addressed until every finding ID has a decision and, for `fixed`,
-fresh verification evidence.
+applicable verification evidence.

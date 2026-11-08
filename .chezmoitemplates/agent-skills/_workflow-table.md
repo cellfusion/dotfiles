@@ -16,9 +16,15 @@ a skill.
 | Independent CLI conversation or user intervention | `agent-communication` and the selected environment reference; agents do not steal focus |
 | Child write isolation only | `using-git-worktrees` recorded checkout-owner route; no interaction workspace/tab/pane |
 | GitHub PR review | `pr-review` selects/validates the host (agents use `--no-focus`); prepared context reuses its existing validated session |
-| Implementation complete or integration requested | `finishing-a-development-branch` |
+| Integration, merge, push, or owned-resource cleanup requested | `finishing-a-development-branch` |
 | About to claim completion or test passage | `verification-before-completion` |
 | Code-review feedback received | `receiving-code-review` |
 
 The parent chooses the route from clarity, risk, and workload. Do not chain skills automatically.
+When the requested outcome and implementation approach are settled, investigate only what is needed
+to implement safely, then connect the requested product path. Do not make an extra experiment,
+proof, compatibility requirement, or review an implementation gate without tying it to an
+acceptance criterion, an applicable rule, or a concrete safety risk. State the failure and the
+smallest necessary check; keep optional investigations separate from completion. Never bypass
+required safety, permissions, or provider checks.
 If invoked as a subagent, ignore this routing table and follow the parent's bounded contract.

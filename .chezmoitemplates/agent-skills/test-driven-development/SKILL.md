@@ -1,8 +1,8 @@
 ---
 name: test-driven-development
 description: >-
-  Use test-first development for behavior changes when a meaningful test boundary exists. Confirm a
-  failing regression, implement the smallest correction, and verify the complete relevant suite.
+  Use test-first development for behavior changes when a meaningful test boundary exists. Seek
+  failing regression evidence, implement the smallest correction, and verify relevant behavior.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
@@ -46,9 +46,17 @@ REFACTOR: improve structure without changing behavior
 VERIFY: keep the suite green
 ```
 
-Do not write production behavior first and retrofit a test that passes immediately. If that happens,
-remove the implementation or reset the attempt and restart from the test. Do not preserve speculative
-code as a reference implementation.
+Prefer writing and observing the failing test before production behavior. If implementation already
+exists, preserve it and all user work; never discard or reset it merely to perform TDD. Use applicable
+earlier red evidence or logs, or, if practical and permitted, test a safe isolated baseline without
+altering the user's checkout. If red evidence is unavailable, say so and verify the actual behavior;
+do not claim the test was observed failing.
+
+Follow stricter higher-priority runtime instructions, including any prohibition on running checks.
+Reuse this task's prior check evidence only for the exact claim and unchanged actual checkout state,
+including relevant tracked and untracked inputs, dependencies, and environment. If those change or
+identity is uncertain, rerun affected checks when permitted; otherwise report them unverified. Never
+claim an unrun test passed.
 
 ## RED: write the smallest useful test
 
@@ -81,8 +89,9 @@ Run the smallest repository-supported test command. Confirm:
 - the failure message matches the missing behavior
 - the test would have caught the original defect
 
-If it passes, it is testing existing behavior or the wrong path. If setup fails, fix the test setup
-or choose a valid boundary before continuing.
+If a test passes before implementation, check whether it exercises existing behavior or the wrong
+path. If implementation already exists, a pass alone is not red evidence. If setup fails, fix the
+test setup or choose a valid boundary before continuing.
 
 ## GREEN: smallest implementation
 
@@ -91,7 +100,7 @@ optimizations, or features. Keep one behavioral variable per attempt.
 
 ## VERIFY GREEN
 
-Run:
+Run or reuse applicable evidence for:
 
 1. the focused test
 2. the relevant package/module suite
@@ -109,7 +118,8 @@ Refactor only after green:
 - extract a helper
 - simplify setup
 
-Do not change behavior during refactor. Re-run the same checks after each meaningful refactor.
+Do not change behavior during refactor. After a meaningful refactor, rerun affected checks when
+permitted; unchanged checks may reuse evidence only under the identity rule above.
 
 ## Configuration and documentation path
 
@@ -141,13 +151,13 @@ Keep changes isolated so a failure has one clear cause.
 ## Completion checklist
 
 - [ ] change classified as behavior, configuration, documentation, generated, or metadata
-- [ ] appropriate test or substitute check written first
-- [ ] red evidence observed when TDD applied
+- [ ] appropriate test or substitute check written first when practical; otherwise reason recorded
+- [ ] red evidence observed when available, or its absence and reason recorded
 - [ ] smallest implementation made
-- [ ] focused and relevant broader checks passed
+- [ ] focused and relevant broader checks passed, or unverified checks reported
 - [ ] edge cases and error paths considered
 - [ ] commands and exit codes recorded
-- [ ] no unrelated changes remain
+- [ ] unrelated user changes preserved
 
 Do not bypass a required item silently. If the item is not applicable, record the reason and the
 alternative evidence.

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# レビュー役へ渡す review package を組み立てる。レビュー役は Bash を持たないので、
-# 自分で範囲を調べられない。header に 40 桁の sha を 2 つ書いて、親が渡した範囲と
-# レビュー役が報告した範囲を後から照合できるようにする。
+# 固定したコミット差分または対象ファイルの作業ツリースナップショットを作る。
+# 作業ツリーモードは一時 index と object directory を使い、利用者の index を変更しない。
 set -u
 
 fail() {
@@ -14,18 +13,25 @@ base=""
 head_revision=""
 out=""
 force=0
+worktree=0
+paths=()
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --cwd|--base|--head|--out)
+    --cwd|--base|--head|--out|--path)
       [ "$#" -ge 2 ] || fail "option value is required"
       case "$1" in
         --cwd) cwd="$2" ;;
         --base) base="$2" ;;
         --head) head_revision="$2" ;;
         --out) out="$2" ;;
+        --path) paths+=("$2") ;;
       esac
       shift 2
+      ;;
+    --worktree)
+      worktree=1
+      shift
       ;;
     --force)
       force=1
@@ -37,7 +43,13 @@ done
 
 [ -n "$cwd" ] || fail "--cwd is required"
 [ -n "$base" ] || fail "--base is required"
-[ -n "$head_revision" ] || fail "--head is required"
+if [ "$worktree" -eq 1 ]; then
+  [ -z "$head_revision" ] || fail "--head and --worktree are mutually exclusive"
+  [ "${#paths[@]}" -gt 0 ] || fail "--worktree requires at least one --path"
+else
+  [ -n "$head_revision" ] || fail "--head is required"
+  [ "${#paths[@]}" -eq 0 ] || fail "--path requires --worktree"
+fi
 [ -n "$out" ] || fail "--out is required"
 case "$cwd" in /*) ;; *) fail "--cwd must be an absolute path" ;; esac
 case "$out" in /*) ;; *) fail "--out must be an absolute path" ;; esac
@@ -46,6 +58,163 @@ git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1 || fail "--cwd is not a git re
 
 base_sha="$(git -C "$cwd" rev-parse --verify --quiet "${base}^{commit}")" ||
   fail "--base cannot be resolved to a commit"
+[ "${#base_sha}" -eq 40 ] || fail "--base did not resolve to a 40 character sha"
+if [ "$worktree" -eq 1 ]; then
+  exec python3 - "$cwd" "$base_sha" "$out" "$force" "${paths[@]}" <<'PY'
+import hashlib
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+
+cwd, base, out, force, *paths = sys.argv[1:]
+env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+env["GIT_CONFIG_NOSYSTEM"] = "1"
+env["GIT_TERMINAL_PROMPT"] = "0"
+
+def fail(message):
+    print("review-bundle: " + message, file=sys.stderr)
+    sys.exit(2)
+
+def git(*args, input=None):
+    result = subprocess.run(
+        ["git", "-C", cwd, "-c", "core.fsmonitor=false", "-c", "core.filemode=true",
+         "-c", "core.symlinks=true", *args],
+        env=env, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        fail("git operation failed while building snapshot")
+    return result.stdout
+
+root = os.path.realpath(os.fsdecode(git("rev-parse", "--show-toplevel")).rstrip("\n"))
+cwd = root
+objects = os.fsdecode(git("rev-parse", "--path-format=absolute", "--git-path", "objects")).rstrip("\n")
+out = os.path.abspath(out)
+if os.path.commonpath([root, os.path.realpath(out)]) == root:
+    fail("--out must be outside the repository for worktree snapshots")
+if os.path.lexists(out) and (not force == "1" or os.path.islink(out) or not os.path.isfile(out)):
+    fail("--out already exists or is not a regular file")
+
+selected = []
+for path in paths:
+    parts = path.split("/")
+    if (not path or os.path.isabs(path) or any(p in ("", ".", "..") or p.lower() == ".git" for p in parts)):
+        fail("--path must be an exact repository-relative file path")
+    if path in selected:
+        fail("duplicate --path")
+    selected.append(path)
+
+def inspect(path):
+    parts = path.split("/")
+    for n in range(1, len(parts)):
+        parent = os.path.join(root, *parts[:n])
+        try:
+            st = os.lstat(parent)
+        except FileNotFoundError:
+            return ("absent",)
+        if not stat.S_ISDIR(st.st_mode):
+            fail("--path has a non-directory or symlink ancestor")
+    full = os.path.join(root, path)
+    try:
+        st = os.lstat(full)
+    except FileNotFoundError:
+        return ("absent",)
+    if not (stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)):
+        fail("--path must name a regular file or symlink, not a directory or special file")
+    return (st.st_dev, st.st_ino, st.st_mode, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+env["GIT_LITERAL_PATHSPECS"] = "1"
+for path in selected:
+    state = inspect(path)
+    # A selected child cannot implicitly remove an unselected file from the base tree.
+    parts = path.split("/")
+    for n in range(1, len(parts)):
+        parent = "/".join(parts[:n])
+        ancestor = git("ls-tree", "-z", "--full-tree", base, "--", parent)
+        if ancestor:
+            metadata, _ = ancestor.rstrip(b"\0").split(b"\t", 1)
+            if not metadata.startswith(b"040000 "):
+                fail("--path would implicitly remove an unselected base file")
+    entry = git("ls-tree", "-z", "--full-tree", base, "--", path)
+    if entry:
+        metadata, name = entry.rstrip(b"\0").split(b"\t", 1)
+        if os.fsdecode(name) != path or metadata.startswith((b"040000 ", b"160000 ")):
+            fail("--path must not name a tree or submodule")
+    elif state == ("absent",):
+        fail("--path does not exist in the base or worktree")
+
+try:
+    with tempfile.TemporaryDirectory(prefix="review-bundle-") as temp:
+        object_dir = os.path.join(temp, "objects")
+        os.mkdir(object_dir)
+        env["GIT_OBJECT_DIRECTORY"] = object_dir
+        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = objects
+        def snapshot(number):
+            env["GIT_INDEX_FILE"] = os.path.join(temp, "index" + str(number))
+            before = [inspect(path) for path in selected]
+            git("read-tree", base)
+            for path in selected:
+                full = os.path.join(root, path)
+                state = inspect(path)
+                if state == ("absent",):
+                    git("update-index", "--force-remove", "--", path)
+                    continue
+                if stat.S_ISLNK(state[2]):
+                    content = os.readlink(os.fsencode(full))
+                    mode = "120000"
+                else:
+                    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                    fd = os.open(full, flags)
+                    with os.fdopen(fd, "rb") as stream:
+                        current = os.fstat(stream.fileno())
+                        if (current.st_dev, current.st_ino) != state[:2]:
+                            fail("selected path changed while reading snapshot")
+                        content = stream.read()
+                    mode = "100755" if state[2] & 0o111 else "100644"
+                # stdin has no path-associated clean filters; capture raw worktree bytes.
+                oid = git("hash-object", "-w", "--stdin", input=content).strip().decode("ascii")
+                git("update-index", "--add", "--cacheinfo", mode, oid, path)
+            tree = git("write-tree").strip()
+            after = [inspect(path) for path in selected]
+            if before != after:
+                fail("selected paths changed while capturing snapshot")
+            return tree, after
+
+        first, first_state = snapshot(1)
+        second, second_state = snapshot(2)
+        if first != second or first_state != second_state:
+            fail("selected paths changed while capturing snapshot")
+        env["GIT_INDEX_FILE"] = os.path.join(temp, "index2")
+        diff_args = ("--cached", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary", base, "--")
+        changes = git("diff", "--stat", *diff_args)
+        diff = git("diff", "-U10", *diff_args)
+        digest = hashlib.sha256(diff).hexdigest()
+        package = (b"# Worktree snapshot (not a commit)\n# Base: " + base.encode("ascii") +
+                   b"\n# Snapshot tree: " + second + b"\n# Diff SHA-256: " + digest.encode("ascii") +
+                   b"\n\n## Files changed\n" + changes + b"\n## Diff\n" + diff)
+        # Check once more after rendering; never publish a snapshot known to be stale.
+        if second_state != [inspect(path) for path in selected]:
+            fail("selected paths changed while rendering snapshot")
+        directory = os.path.dirname(out)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".review-bundle-", dir=directory)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(package)
+            if force == "1":
+                os.replace(temporary, out)
+            else:
+                os.link(temporary, out)
+                os.unlink(temporary)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+except (OSError, ValueError) as error:
+    fail("snapshot cannot be created safely: " + str(error))
+print(out)
+PY
+fi
 head_sha="$(git -C "$cwd" rev-parse --verify --quiet "${head_revision}^{commit}")" ||
   fail "--head cannot be resolved to a commit"
 [ "${#base_sha}" -eq 40 ] || fail "--base did not resolve to a 40 character sha"
@@ -66,8 +235,8 @@ if [ ! -d "$out_dir" ]; then
   chmod 700 "$out_dir" || fail "--out parent directory mode cannot be set"
 fi
 
-temporary="$out.tmp.$$"
-rm -f "$temporary"
+temporary="$(mktemp "$out.tmp.XXXXXXXX")" || fail "temporary package cannot be created"
+chmod 600 "$temporary" || { rm -f "$temporary"; fail "temporary package mode cannot be set"; }
 if ! (
   umask 077
   {

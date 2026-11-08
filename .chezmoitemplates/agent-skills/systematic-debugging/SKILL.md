@@ -1,18 +1,19 @@
 ---
 name: systematic-debugging
 description: >-
-  Identify root cause before proposing a fix for a bug, test failure, build failure, performance issue,
-  or unexpected behavior. Gather evidence, test one hypothesis at a time, and stop when the evidence
-  no longer supports the current approach.
+  Investigate a bug, test failure, build failure, performance issue, or unexpected behavior with
+  evidence proportionate to the uncertainty. Implement a supported safe correction without making
+  exhaustive reproduction or proof an unnecessary prerequisite.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
 
 # Systematic Debugging
 
-Do not start with a fix. Start by establishing what failed, how to reproduce it, and where the
-first incorrect state appears. A symptom-level patch without a causal explanation is not a valid
-completion.
+Establish what failed and use the available evidence to identify a supported correction. Investigate
+unknowns that affect the implementation or its safety; do not require an exhaustive proof when a
+safe, testable correction can proceed. A symptom-level patch that merely hides the failure is not a
+valid completion.
 
 ## When to use this skill
 
@@ -22,14 +23,19 @@ high-risk incidents; use the compact process below for a deterministic, low-risk
 
 ## Phase 1: establish evidence
 
-Before changing code:
+Before changing code, use the evidence already available:
 
-1. Read the complete error, warning, stack trace, path, line, and error code.
-2. Reproduce the failure with the smallest reliable command or scenario.
-3. Record frequency, inputs, environment, and the last known good revision.
-4. Inspect recent diff, dependency, configuration, and environment changes.
-5. For multi-layer systems, observe each boundary without logging secrets.
-6. Trace the invalid value backward to its first incorrect producer.
+1. Read the relevant error, warning, stack trace, path, or report. Treat the user's observation as
+   reported evidence; do not rerun a known failure merely to confirm it.
+2. If an unknown affects the fix or its safety, choose the smallest safe observation or reproduction
+   that can resolve it. Do not repeat destructive operations.
+3. Record frequency, inputs, environment, and last known good revision when available and relevant.
+4. Inspect only the relevant changes, dependencies, configuration, and boundaries.
+5. Trace the failure far enough to support a correction and its verification.
+
+When the approach is settled and remaining uncertainty does not prevent a safe implementation,
+proceed with the correction. Record assumptions and verify the changed path afterward; do not claim
+an unproven root cause. Required safety and approval boundaries still apply.
 
 Use redacted diagnostics. Never print tokens, passwords, private keys, full environment values,
 request bodies containing secrets, or unrestricted identity/keychain output. Record only presence,
@@ -42,14 +48,12 @@ boundary: input -> output -> relevant state
 boundary: next layer input -> output -> relevant state
 ```
 
-Stop when the evidence identifies the first layer that diverges from the expected contract.
+Stop investigating when the available evidence supports a safe, testable correction.
 
 ## Phase 2: compare a working pattern
 
-Find a working example in the same repository or supported version. Read the relevant reference
-implementation completely enough to understand its preconditions. List every difference between the
-working and failing paths; do not dismiss a difference without evidence. Include configuration,
-permissions, dependency versions, timing, and data shape.
+When useful, compare a working example in the repository or supported version. Inspect differences
+that could affect the failure or correction; do not turn an unrelated comparison into a gate.
 
 ## Phase 3: state one hypothesis
 
@@ -60,18 +64,18 @@ Because <evidence>, <component> is the first incorrect producer of <state>.
 The smallest observation that can disprove this is <test/command>.
 ```
 
-Test only that hypothesis with the smallest read-only observation or one controlled change. Do not
-apply several fixes at once. If it fails, preserve the evidence and return to Phase 1 with a new
-hypothesis. Do not accumulate speculative patches.
+When a hypothesis needs testing, choose the smallest safe observation or controlled change that can
+distinguish it. Preserve evidence from failed hypotheses. Do not accumulate speculative patches or
+repeat experiments that cannot change the implementation decision.
 
 ## Phase 4: implement and prove the fix
 
-After the root cause is supported:
+When the available evidence supports a safe correction:
 
 1. Create the smallest regression test or reproducible check before the fix when practical.
-2. Make one focused correction at the root cause.
-3. Run the regression check and relevant broader checks.
-4. Reproduce the original scenario and confirm the original symptom is gone.
+2. Make one focused correction; preserve existing user changes.
+3. Run the regression check and relevant broader checks, reusing applicable evidence from this task.
+4. Exercise the changed path and, when safe and practical, confirm the original symptom is gone.
 5. Check for collateral regressions and cleanup unrelated diagnostic changes.
 6. Record commands, exit codes, and evidence before claiming success.
 
@@ -82,13 +86,11 @@ applicable.
 
 ## Flaky or environment-dependent failures
 
-If the failure cannot be reproduced:
-
-- record exact attempts, environment, timing, and available logs
-- compare the failing and successful environments
-- add safe observability or a deterministic reproduction harness
-- do not claim the root cause is absent merely because one run passed
-- distinguish `confirmed_root_cause`, `likely_root_cause`, and `not_reproduced`
+If the failure cannot be reproduced, preserve the available report and relevant observations. Do
+not infer that the defect is absent from one successful attempt. Continue with a safe, testable
+correction when the remaining uncertainty permits it; otherwise identify the concrete missing
+evidence or safety decision. Distinguish `confirmed_root_cause`, `likely_root_cause`, and
+`not_reproduced`.
 
 When external services are involved, do not retry destructive operations. Use read-only inspection
 or a disposable fixture.
@@ -111,7 +113,7 @@ architecture issue; classify it and fix the deterministic cause first.
 
 For a deterministic syntax error or a failure whose message identifies the exact changed line:
 
-1. capture the fresh error
+1. use the reported error or capture it if a new observation is necessary
 2. verify the referenced line and relevant recent diff
 3. make one correction
 4. rerun the exact failing command and a focused regression check
@@ -130,7 +132,7 @@ environment summary without secrets
 reproduction command and exit code
 observations
 hypotheses and outcomes
-confirmed root cause
+confirmed or likely root cause, or unknown
 changed files
 verification commands and exit codes
 remaining uncertainty
@@ -140,13 +142,12 @@ Do not overwrite a previous investigation. Link follow-up attempts to the same i
 
 ## Stop conditions
 
-Stop and ask when:
+Stop and ask when a material decision cannot be resolved from available evidence, for example:
 
-- the reproduction or expected behavior is unclear
+- the expected behavior is unclear and a safe assumption would change the outcome
 - the proposed fix expands scope or permissions
 - diagnostics would expose secrets
-- verification cannot distinguish competing hypotheses
-- the current approach has no new evidence
+- unresolved uncertainty prevents a safe, testable correction
 - a redesign or destructive operation is required
 
 Never claim a bug is fixed from a code change alone.
