@@ -25,10 +25,10 @@ function readConfig() {
   return validateConfig(raw).config
 }
 function main(argv) {
-  if (argv.length !== 2 && argv.length !== 4) fail('expected --family claude|codex|omp [--environment <name>]')
-  if (argv[0] !== '--family' || !['claude', 'codex', 'omp'].includes(argv[1]) ||
+  if (argv.length !== 2 && argv.length !== 4) fail('expected --family claude|codex|omp|opencode [--environment <name>]')
+  if (argv[0] !== '--family' || !['claude', 'codex', 'omp', 'opencode'].includes(argv[1]) ||
       (argv.length === 4 && (argv[2] !== '--environment' || !argv[3]))) {
-    fail('expected --family claude|codex|omp [--environment <name>]')
+    fail('expected --family claude|codex|omp|opencode [--environment <name>]')
   }
   const family = argv[1]
   const config = readConfig()
@@ -42,6 +42,10 @@ function main(argv) {
   for (const warning of selected.warnings) process.stderr.write(`agent: ${warning}\n`)
   if (!config.environments[selected.environment].providers.includes(family)) {
     fail(`CLI ${family}: not configured in environment ${selected.environment}`)
+  }
+  if (family === 'opencode') {
+    process.stdout.write(`binary opencode\nenv AGENT_ENV ${selected.environment}\n`)
+    return
   }
   if (family === 'omp') {
     const lines = [

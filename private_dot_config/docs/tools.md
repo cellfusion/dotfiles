@@ -206,15 +206,15 @@ Claude／Codex の環境ディレクトリを準備する。`setup` は共有設
 
 ## agent で AI 環境を指定して起動する
 
-`~/.local/bin/agent` は Claude／Codex／OMP の環境選択に対応する。
+`~/.local/bin/agent` は Claude／Codex／OMP／OpenCode の環境選択に対応する。
 `~/.config/chezmoi/agent-config.json` を検査し、環境変数を設定して CLI を `exec` する。
 
 ```text
-agent --family=claude|codex|omp [--environment=<environment>] [--] [args...]
+agent --family=claude|codex|omp|opencode [--environment=<environment>] [--] [args...]
 ```
 
 設定ファイル（`AGENT_CONFIG` を指定した場合はその path）が無ければ、`--family` の
-Claude／Codex／OMP CLI をそのまま起動する。引数と既存の環境変数は引き継ぎ、
+Claude／Codex／OMP／OpenCode CLI をそのまま起動する。引数と既存の環境変数は引き継ぎ、
 `AGENT_ENV` や隔離用の変数は追加・変更しない。この場合、`--environment` は解決できないため
 終了コード 2 で失敗する。設定ファイルが不正、または未存在以外の理由で読めない場合も停止する。
 
@@ -249,7 +249,7 @@ Claude／Codexなどの対象変数を解除し、先頭環境へは落とさな
 `agent` のcwd-aware resolverとは別の処理であり、`HERDR_SESSION` はresolverへの
 `AGENT_ENV` の代入ではない。設定ファイルが無い場合のCLI直接起動にも注意する。
 
-zsh の bare `claude`、`codex`、`omp` は `agent --family=<family>` へ送る。
+zsh の bare `claude`、`codex`、`omp`、`opencode` は `agent --family=<family>` へ送る。
 `codex update` は native CLI へ送る。`command claude`、absolute executable path、
 zsh 設定を読まない process は family wrapper を bypass する。
 OMP を有効にするには、`agent-config.json` の `providers` に
@@ -259,6 +259,11 @@ OMP の profile はネイティブの保存先を使い、`agent-config setup` �
 `agent --family=omp --environment=lab -- [args...]` は、`lab` が非デフォルト環境なら
 OMP の `lab` プロファイルで起動する。`--environment lab` 形式も使える。
 設定なしでの明示的なプロファイル指定は `agent --family=omp -- --profile lab` で OMP 本体に渡せる。
+
+OpenCode を有効にするには、`agent-config.json` の `providers` に
+`"opencode": { "displayName": "OpenCode", "setup": null }` を追加し、利用する各
+environment の `providers` に `"opencode"` を追加する。環境は起動可否と `AGENT_ENV` の
+選択に使うだけで、OpenCode の設定・認証・履歴は環境間で分離せず既定の保存先を共有する。
 
 
 ## core

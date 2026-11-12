@@ -6,7 +6,7 @@
 # 元: private_dot_config/zsh/agent-environments.zsh.tmpl
 # 定義: ~/.config/chezmoi/private-data.toml の [[data.environments]]
 #
-# Claude/Codex/OMP use the cwd-aware environment resolver.
+# Claude/Codex/OMP/OpenCode use the cwd-aware environment resolver.
 
 _agent_env_apply() {
   case "$1" in
@@ -69,4 +69,8 @@ codex() {
 
 omp() {
   command agent --family=omp -- "$@"
+}
+
+opencode() {
+  command agent --family=opencode -- "$@"
 }

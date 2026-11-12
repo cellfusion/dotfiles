@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Launch Claude, Codex, or OMP in a selected environment.
+# Launch Claude, Codex, OMP, or OpenCode in a selected environment.
 set -eu
 
 usage_error() {
   printf 'agent: %s\n' "$1" >&2
-  printf 'usage: agent --family=claude|codex|omp [--environment=<name>] -- [arguments...]\n' >&2
+  printf 'usage: agent --family=claude|codex|omp|opencode [--environment=<name>] -- [arguments...]\n' >&2
   exit 2
 }
 family=""
@@ -36,8 +36,8 @@ while [ "$#" -gt 0 ]; do
 done
 case "$family" in
   omp) export PI_FORCE_IMAGE_PROTOCOL="${PI_FORCE_IMAGE_PROTOCOL:-kitty}" ;;
-  claude|codex) ;;
-  *) usage_error '--family must be claude, codex, or omp' ;;
+  claude|codex|opencode) ;;
+  *) usage_error '--family must be claude, codex, omp, or opencode' ;;
 esac
 [ "$environment_seen" -eq 0 ] || [ -n "$environment" ] || usage_error '--environment needs a value'
 self_dir="$(cd "$(dirname "$0")" && pwd)"
