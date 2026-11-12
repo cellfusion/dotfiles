@@ -227,8 +227,7 @@ if [ -e "$out" ] && [ "$force" -eq 0 ]; then
   fail "--out already exists; pass --force to overwrite"
 fi
 
-# 親ディレクトリは、無いときだけ作って mode を絞る。`agent-docs-dir reviews` が返す
-# ディレクトリは他の成果物とも共有しているので、呼び出しのたびに mode を書き換えない。
+# 既存の共有親ディレクトリの mode は変更せず、新規作成する親だけを private にする。
 out_dir="$(dirname "$out")"
 if [ ! -d "$out_dir" ]; then
   mkdir -p "$out_dir" || fail "--out parent directory cannot be created"

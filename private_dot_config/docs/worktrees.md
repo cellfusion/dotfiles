@@ -214,10 +214,11 @@ Gitがignoreするファイルは通常のdirty判定に含まれず、worktree�
 
 ## 成果物
 
-設計・実装計画・レビュー資料の保存先は
-`~/.agents/skills/_shared/scripts/agent-docs-dir`で解決する。
-`~/docs/<owner>/<repo>/`を同じリポジトリの全worktreeで共有する。
-認証情報や生の会話を台帳・監査ログへ保存しない。
+設計・実装計画の保存先は `~/.agents/skills/_shared/scripts/agent-docs-dir` で解決する。
+GitHub の origin と Vault `notes/70_projects/` の project note にある `repositories` を照合し、
+`70_projects/<note名>/<owner>/<repo>/` を同じリポジトリの全 worktree で共有する。
+未登録・重複・GitHub 以外は停止し、保存先を推測しない。レビュー用のソース差分は
+Vault に同期せずローカルの非公開領域に置く。認証情報や生の会話を台帳・監査ログへ保存しない。
 
 PRレビューの実行情報と成果物は`pr-review`が作る私有runディレクトリに保存する。
 worktreeやworkspaceを閉じても成果物は残す。

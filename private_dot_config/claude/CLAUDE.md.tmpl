@@ -11,7 +11,7 @@ Standard syntax, mathematics, and common knowledge do not require searches.
 Environment-specific prerequisites not covered in skills:
 
 - **Research & Reuse** — Before new implementations, search the codebase for existing assets and reuse what is already available.
-- **Specifications** — Keep formal documentation consistent when a change affects an existing specification. Settle consequential design or contract decisions before implementation when needed; do not require a new or updated specification before a clear local change. Place specifications in `~/docs/<owner>/<repo>/specs/` and implementation plans in `~/docs/<owner>/<repo>/plans/`; `~/.agents/skills/_shared/scripts/agent-docs-dir` returns those paths. Keep `docs/` reserved for repository-formal documentation.
+- **Specifications** — Keep formal documentation consistent when a change affects an existing specification. Settle consequential design or contract decisions before implementation when needed; do not require a new or updated specification before a clear local change. Resolve working specifications and plans in the `notes` vault using `~/.agents/skills/_shared/scripts/agent-docs-dir specs` and `agent-docs-dir plans`. If project mapping is missing or ambiguous, ask rather than guessing. Keep `docs/` reserved for repository-formal documentation.
 - **Verification Commands** — Use available project checks appropriate to the claim. `/verify` and `/pre-commit-review` are options when supported; do not assume they exist or rerun unchanged checks solely because another workflow refers to them.
 
 ## Shell Execution

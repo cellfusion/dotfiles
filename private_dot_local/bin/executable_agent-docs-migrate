@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 旧保存先 _cellfusion/ の中身を、agent-docs-dir が返す ~/docs/<owner>/<repo>/ へ移す。
+# 旧保存先 _cellfusion/ の中身を、agent-docs-dir が返す Vault 内の project 保存先へ移す。
 # 既定は dry-run で、--apply を付けたときだけファイルを動かす。
 #
 # 移行先に同じ名前のファイルがあるときは中身を比べる。一致すれば移行元を消し、

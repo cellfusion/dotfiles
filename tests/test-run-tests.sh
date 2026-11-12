@@ -22,6 +22,7 @@ expected_names=(
   test-agent-environment-routing.sh
   test-agent-family-launch.sh
   test-agent-config-setup.sh
+  test-agent-docs-dir.sh
   test-escalation-policy.sh
   test-escalation-controller.sh
   test-plan-dependency-validate.sh

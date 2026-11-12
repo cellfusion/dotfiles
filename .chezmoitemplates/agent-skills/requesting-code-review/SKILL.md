@@ -69,10 +69,13 @@ If a file also has unrelated changes that cannot be separated, stop rather than 
 
 ## 2. Build an external, immutable review package
 
-Resolve the review artifact directory outside the repository. For a committed range:
+Review packages contain sensitive source snapshots. Keep them outside the synced vault in a private
+local directory. For a committed range:
 
 ```bash
-REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
+umask 077
+REVIEWS="${XDG_STATE_HOME:-$HOME/.local/state}/agent-reviews"
+mkdir -p "$REVIEWS"
 REVIEW_ID="review-${BASE_SHA:0:12}..${HEAD_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 OUT="$REVIEWS/$REVIEW_ID/review-package.diff"
 mkdir -p "$(dirname "$OUT")"
@@ -88,7 +91,9 @@ For the current uncommitted worktree instead, use a unique output path and repea
 exact repository-relative file in scope, including both old and new paths of a rename:
 
 ```bash
-REVIEWS="$(~/.agents/skills/_shared/scripts/agent-docs-dir reviews)"
+umask 077
+REVIEWS="${XDG_STATE_HOME:-$HOME/.local/state}/agent-reviews"
+mkdir -p "$REVIEWS"
 OUT="$REVIEWS/review-worktree-$(date -u +%Y%m%dT%H%M%SZ)-$$/review-package.diff"
 ~/.agents/skills/multi-agent-development/scripts/review-bundle \
   --cwd "$REPO_ROOT" --base "$BASE_SHA" --worktree \
