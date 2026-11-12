@@ -87,7 +87,7 @@ try {
   const selection = structuredClone(value); selection.selection = {}; rejects(selection, 'Paseo selection')
   const backend = structuredClone(value); backend.providers.codex.backends = ['paseo']; rejects(backend, 'Paseo backend')
   const omp = structuredClone(value); omp.providers.omp.setup = value.providers.codex.setup; rejects(omp, 'OMP directory setup')
-  const invalid = structuredClone(value); invalid.environments.lab.providers = ['pi']; rejects(invalid, 'retired family')
+  const invalid = structuredClone(value); invalid.environments.lab.providers = ['unknown']; rejects(invalid, 'unknown family')
 } finally { fs.rmSync(temporary, { recursive: true, force: true }) }
 NODE
 then

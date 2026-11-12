@@ -37,10 +37,10 @@ args: process.argv.slice(2), environment: process.env.AGENT_ENV || null,
 claude: process.env.CLAUDE_CONFIG_DIR || null, codex: process.env.CODEX_HOME || null,
 profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_DIR || null}))
 `
-  for (const family of ['claude', 'codex', 'omp', 'opencode']) fs.writeFileSync(path.join(mockBin, family), mock, { mode: 0o755 })
+  for (const family of ['claude', 'codex', 'omp', 'opencode', 'pi']) fs.writeFileSync(path.join(mockBin, family), mock, { mode: 0o755 })
   const value = structuredClone(sample)
-  value.providers.opencode = { displayName: 'OpenCode', setup: null }
-  value.environments.lab.providers = [...new Set([...value.environments.lab.providers, 'opencode'])]
+  value.providers.pi = { displayName: 'Pi', setup: null }
+  value.environments.lab.providers = [...new Set([...value.environments.lab.providers, 'pi'])]
   value.projectRouting.rules = [{ name: 'cwd', environment: 'lab', match: { path: temporary } }]
   const configPath = path.join(temporary, 'agent-config.json')
   fs.writeFileSync(configPath, JSON.stringify(value))
@@ -50,6 +50,10 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   const openCode = successful(run(configPath, mockBin, ['--family=opencode', '--', 'prompt with spaces']), 'cwd OpenCode')
   if (openCode.binary !== 'opencode' || openCode.environment !== 'lab' ||
       JSON.stringify(openCode.args) !== JSON.stringify(['prompt with spaces'])) throw new Error('OpenCode routing failed')
+  const pi = successful(run(configPath, mockBin, ['--family=pi', '--', 'prompt with spaces'],
+    { PI_CODING_AGENT_DIR: '/custom/pi' }), 'cwd Pi')
+  if (pi.binary !== 'pi' || pi.environment !== 'lab' || pi.storage !== '/custom/pi' ||
+      JSON.stringify(pi.args) !== JSON.stringify(['prompt with spaces'])) throw new Error('Pi routing failed')
   const parent = successful(run(configPath, mockBin, ['--family', 'claude'], { AGENT_ENV: 'primary' }), 'parent Claude')
   if (parent.environment !== 'primary' || parent.claude !== path.join(home, '.config/claude')) throw new Error('parent did not override cwd')
   const explicit = successful(run(configPath, mockBin, ['--family=codex', '--environment=lab'], { AGENT_ENV: 'primary' }), 'explicit Codex')
@@ -72,7 +76,6 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
     [malformed, ['--family=omp']],
     [configPath, ['--family=omp', '--environment=missing']],
     [configPath, ['--family=omp', '--environment=']],
-    [configPath, ['--family=pi']],
     [configPath, ['--provider=codex']], [configPath, ['--environment=lab']],
     [configPath, ['--family=codex', '--family=claude']], [configPath, ['--family=codex', '--environment=missing']],
   ]) {
@@ -85,6 +88,7 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   fs.writeFileSync(ineligiblePath, JSON.stringify(ineligibleValue))
   if (run(ineligiblePath, mockBin, ['--family=codex']).status !== 2) throw new Error('ineligible CLI launched')
   if (run(ineligiblePath, mockBin, ['--family=opencode']).status !== 2) throw new Error('ineligible OpenCode launched')
+  if (run(ineligiblePath, mockBin, ['--family=pi']).status !== 2) throw new Error('ineligible Pi launched')
 
   const inherited = { OMP_PROFILE: 'old-profile', PI_CODING_AGENT_DIR: '/old/pi' }
   const cwdOmp = successful(run(configPath, mockBin, ['--family=omp'], inherited), 'cwd OMP')
