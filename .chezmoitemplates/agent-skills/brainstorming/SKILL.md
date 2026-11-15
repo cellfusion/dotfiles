@@ -32,15 +32,17 @@ Use direct execution when:
 - there is no important design choice or external operation
 - the scope and verification can be estimated
 
-Read the relevant files, implement, verify, and report. Do not create a specification or approval
-gate just for formality.
+Read the relevant files. If implementation was requested, implement, verify, and report; otherwise
+deliver the requested design, findings, or decisions without product edits. Do not create a
+specification or approval gate just for formality.
 
 ### Bounded
 
 Use bounded design when an existing flow is changing but one or more implementation choices remain.
 Write a short design containing purpose, files, chosen approach, rejected alternatives, risks,
-error handling, and verification. If no consequential choice remains, use that design as the
-implementation plan without asking for another approval.
+error handling, and verification. If implementation was requested and no consequential choice
+remains, use that design as the implementation plan without asking for another approval. Otherwise,
+deliver the requested design, findings, or decisions without product edits.
 
 Ask one question only when the unresolved choice would change behavior, scope, data, permissions,
 or external side effects. After the answer, continue with the agreed design.
@@ -69,8 +71,9 @@ Do not make child agents, preview tabs, or MAD mandatory when the scope does not
 
 ### Spike
 
-Use a spike to answer whether something is possible or which option is better. Define the question,
-small experiment, and success criteria. Keep disposable experiments separate from product changes.
+Use a spike or prototype when explicitly requested or needed to explore or validate a meaningful
+design or implementation decision, not as a default requirement. Define the question, small experiment, and success criteria.
+Keep disposable experiments separate from product changes.
 
 ## When to ask the user
 
@@ -92,7 +95,10 @@ when no decision is needed.
 3. Ask only for missing high-impact information.
 4. Present the smallest useful design when choices remain.
 5. Treat the user's answer as a new constraint.
-6. Implement and verify the selected design.
+6. For an implementation request, continue from the design or spike to implementation and
+   verification once it has served its purpose, without another approval if no consequential choice
+   or permission remains. Do not expand an explicitly design-only or research-only request into
+   implementation.
 
 Use explicit safe assumptions instead of an endless questionnaire when the assumption is reversible and
 does not change the user's outcome.
@@ -134,9 +140,13 @@ Do not create a specification, diagram, or review loop for a trivial change.
 
 ## Completion
 
-- Direct: report the change and fresh verification.
-- Bounded: implement the agreed design and report evidence.
-- Architectural: leave the approved specification/plan and hand off to the selected route.
-- Spike: report the experiment, evidence, limitations, and recommendation.
+- Direct: for implementation requests, report the change and fresh verification; otherwise deliver
+  the requested design, findings, or decisions without product edits.
+- Bounded: for implementation requests, implement the agreed design and report evidence; otherwise
+  deliver the requested design, findings, or decisions without product edits.
+- Architectural: for implementation requests, continue through the selected execution route;
+  otherwise deliver the requested specification or plan.
+- Spike: report evidence, limitations, and recommendation; for implementation requests, continue
+  to implementation and verification when no consequential choice or permission remains.
 
 Never claim success without fresh verification or clearly state what remains unverified.

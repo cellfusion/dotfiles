@@ -22,7 +22,8 @@ Use `executing-plans` only when all of these are true:
 - no task requires a separate ownership boundary
 - task-boundary review by the parent is sufficient
 
-Otherwise stop and select MAD or ask the user.
+Otherwise select an appropriate route within the granted scope and permissions; ask the user only
+when a consequential decision or permission remains unresolved.
 
 Reuse the existing approved checkout and execution environment; do not create nested isolation.
 `using-git-worktrees` selects the host and write placement independently. herdr-core needs no legacy
@@ -48,7 +49,8 @@ adopted significant decisions are recorded and unresolved proposals reported. Pr
 plans and evidence as working artifacts rather than copying them into ADRs.
 
 Do not silently repair a plan's intent. Record rejected concerns and their reasons. If the plan is
-larger or more parallel than expected, stop and ask whether to switch to MAD.
+larger or more parallel than expected, reassess the route; parallelizability alone does not require
+stopping or asking the user.
 
 ## Step 2: execute each task
 
@@ -62,9 +64,10 @@ For every task:
 6. compare the result with acceptance criteria
 7. mark it complete only with evidence
 
-Do not start the next task while the current task has an unexplained failure. Do not broaden scope,
-install dependencies, commit, push, or apply configuration unless the plan and user explicitly allow
-it.
+Do not start the next task while the current task has an unexplained failure. Diagnose and fix routine
+failures within the authorized scope, then reverify; escalate unresolved material decisions, safety
+issues, or permission blockers. Do not broaden scope, install dependencies, commit, push, or apply
+configuration unless the plan and user explicitly allow it.
 
 At each task boundary, perform a compact review:
 
@@ -79,20 +82,20 @@ command's success message without inspecting its exit code and output.
 
 ## Step 3: finish safely
 
-After all tasks and verification are complete, invoke `finishing-a-development-branch`. That skill
-must verify the final tree, ask how to integrate it, and wait before merge, push, commit, apply, or
-cleanup. It must not assume that “plan complete” authorizes any integration action.
+After all tasks and verification are complete, report the result and evidence. Invoke
+`finishing-a-development-branch` only when integration, merge, push, or cleanup is actually requested;
+plan completion does not authorize any integration action.
 
 ## Stop conditions
 
 Stop and ask when:
 
 - a dependency is missing and setup would install or execute external code
-- a test or verification fails
-- the plan omits a necessary decision or file
-- the meaning of an instruction is unclear
-- the current implementation requires a different architecture
-- the change is larger, more parallel, or riskier than the plan permits
+- a failure cannot be explained or resolved safely within the authorized scope
+- the plan omits a necessary consequential decision or requires work outside the authorized scope
+- an instruction's meaning remains materially unclear
+- the current implementation requires an unresolved architectural decision
+- increased risk, safety concerns, or permission limits prevent safe continuation
 
 Do not force through a blocker or repeatedly retry a deterministic failure.
 
