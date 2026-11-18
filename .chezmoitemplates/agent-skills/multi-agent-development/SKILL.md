@@ -1,7 +1,7 @@
 ---
 name: multi-agent-development
 description: >-
-  Coordinate multiple OMP internal children or independent reviews with bounded scopes and artifacts.
+  Coordinate multiple bounded children or independent reviews with scoped artifacts.
   Choose independent interaction hosts separately from checkout write ownership and isolation.
   Skip a single local task or a small sequential plan.
 ---
@@ -20,17 +20,17 @@ benefit, or when the user explicitly requests parallel work. Scope inline first.
 dependencies, shared interfaces, and the integration owner before dispatch. Do not create a child
 for a trivial edit, one direct question, or a slice already open in the parent.
 
-A small sequential plan belongs to `executing-plans`. One justified bounded child uses the ordinary
-OMP internal tool without delivery machinery. Start delivery phases only when the actual task needs
-them; spec and plan are not mandatory child roles.
+A small sequential plan belongs to `executing-plans`. One justified bounded child uses the
+runtime's authorized route without delivery machinery. Start delivery phases only when the actual
+task needs them; spec and plan are not mandatory child roles.
 
 ## Execution and placement
 
-Default to OMP internal delegation for same-repository work, using the current runtime's documented
-task/agent interface. For cross-repository changes, resolve each target repository's environment
-and owner through `agent-communication`, not internal children editing foreign checkouts.
-Preserve existing model and permission defaults. Do not use provider snapshots or
-transport-specific request schemas to authorize an OMP child.
+In OMP, use HC for justified same-repository delegation through `agent-communication`; follow its
+identity, handoff and wait contract. If HC is unavailable or higher-priority runtime policy conflicts,
+report the blocker; do not silently fall back to `task`. Other runtimes retain their native internal
+route. For cross-repository changes, resolve each target repository's environment and owner through
+`agent-communication`, not children editing foreign checkouts. Preserve models and permissions.
 
 Choose write placement independently:
 
@@ -40,8 +40,8 @@ Choose write placement independently:
 - separate CLI/user conversation: the selected host in the appropriate existing cwd; add a
   worktree only when write isolation is also needed.
 
-Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace
-or start a second orchestration runtime for ordinary delegation.
+Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace;
+an HC terminal does not by itself require another checkout or visible pane.
 
 Read `agent-communication` for recipient identity, bounded requests, reply correlation and uncertain
 delivery. Reuse appropriate idle repository owners; do not interrupt unrelated work. Repository
@@ -82,9 +82,10 @@ reflection, and supersession. Resolve number collisions and update references be
 
 ## During execution
 
-Consume actual runtime completion notifications; do not poll while useful work remains. Wait only
-when blocked. Record actual child/resource IDs and artifact paths. Read-only reviewers receive fixed
-packages and cannot edit, execute untrusted code, or start children. Writers cannot widen scope.
+Consume the selected route's completion notifications and correlated replies; do not poll while
+useful work remains. Wait only when blocked. Record actual child/resource IDs and artifact paths.
+Read-only reviewers receive fixed packages and cannot edit, execute untrusted code, or start children.
+Writers cannot widen scope.
 
 With shared writes, children skip builds, tests, linters, formatters, and smoke checks; the parent
 runs once after all slices land. For isolated children, name the approved checks and whether the

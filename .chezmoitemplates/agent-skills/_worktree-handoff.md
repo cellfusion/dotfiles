@@ -1,9 +1,10 @@
 ## Delegate through an owned environment
 
 Use this route only when the approval gate explicitly authorizes an independent interaction and
-the required checkout ownership. Ordinary bounded delegation stays internal; write isolation alone
-needs no pane. This template does not choose a host or override `task-routing`. Keep the parent
-available, and preserve any already prepared environment rather than launching another.
+the required checkout ownership. Ordinary bounded delegation follows `agent-communication`: OMP
+uses HC while other runtimes retain their native route. Write isolation alone needs no pane. This
+template does not choose a host or override `task-routing`. Keep the parent available, and preserve
+any already prepared environment rather than launching another.
 
 ### 1. Re-read and scope the artifact
 
@@ -40,9 +41,8 @@ creation, switch owner/backend or remove partially created resources automatical
 
 Use the selected host's supported private launch and live identity contract in the approved cwd,
 without repurposing user terminals. Keep existing models/permissions, a run-specific private
-session directory and safe launch umask. Reuse a validated prepared reviewer session; never start
-a second orchestration runtime merely to perform internal delegation. Readiness is input readiness,
-not task success.
+session directory and safe launch umask. Reuse a validated prepared reviewer session; an HC child
+terminal for OMP delegation is not a second checkout. Readiness is input readiness, not task success.
 
 ### 5. Submit one bounded initial request
 

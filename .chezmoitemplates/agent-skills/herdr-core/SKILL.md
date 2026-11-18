@@ -22,7 +22,9 @@ No external skill package is required: this skill routes to the version-matched 
 
 ## Choose the right surface
 
-- Same-repository tasks default to the harness's native tools and internal delegation.
+- In OMP, justified same-repository delegation uses `hc` via `agent-communication`. If HC is
+  unavailable or conflicts with higher-priority runtime policy, report the blocker; do not silently
+  fall back to OMP `task`. Other runtimes retain their native internal delegation route.
 - Explicit independent agents and persistent programs use `hc`; no visible tab/split is needed.
 - Visible spaces, tabs, panes and focus use `herdr-app` only when requested. Read that skill first.
 - Checkout isolation uses `using-git-worktrees`; a core terminal is not a checkout owner.
@@ -61,7 +63,6 @@ Follow the live manual for exact syntax, status and response fields:
 
 ## Existing PR review entry
 
-The repository's `pr-review` executable has a legacy Herdr adapter, not a herdr-core adapter.
-Do not pass `--environment herdr-core` or select `--environment herdr` to disguise core. See
-`pr-review` for supported/prepared environments. Manual core communication is a separate route,
-not evidence that the isolated PR review launcher supports core.
+Use `pr-review --environment herdr-core` for the core adapter. The checkout remains Worktrunk-owned
+and the reviewer runs in a dedicated core terminal. Do not select legacy `herdr` to disguise core;
+see `pr-review` for the prepared context, identity validation and retained artifacts.

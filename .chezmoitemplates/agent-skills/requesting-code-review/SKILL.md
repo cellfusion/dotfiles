@@ -28,17 +28,18 @@ Choose the lightest route that can answer the question:
 Do not dispatch a child merely because a review is required. Do not skip independent review for a
 major change merely because the diff looks familiar.
 
-Use the current runtime's read-only internal delegation for ordinary independent review; it needs
-no pane or worktree. Delegate explicitly independent conversations to `agent-communication` and
-the [environment contract](../using-git-worktrees/references/environments.md). Delegate write-isolated
+In OMP use HC for justified independent review via `agent-communication`; in other runtimes use
+their read-only internal delegation. HC requires a terminal but not a pane or worktree. If HC is
+unavailable or conflicts with higher-priority runtime policy, report that limitation without silent
+`task` fallback. Delegate explicitly independent conversations to `agent-communication` and the
+[environment contract](../using-git-worktrees/references/environments.md). Delegate write-isolated
 fixes separately to `using-git-worktrees`; an execution host does not determine checkout ownership.
-Normal GitHub PR review uses `pr-review --environment <herdr|orca|paseo> --no-focus [--quick] <PR>`
+Normal GitHub PR review uses `pr-review --environment <herdr|herdr-core|orca|paseo> --no-focus [--quick] <PR>`
 from agents, with selection and environment-specific options defined by `pr-review`. Verified current
 host selection may omit `--environment`; unknown or ambiguous hosts stop before side effects.
 Prepared review context stays in its existing validated environment instead of creating another one.
-herdr-core manual interaction is separate: the executable has no `--environment herdr-core`
-adapter. Do not select legacy `herdr` merely because it is installed or reinterpret
-`HC_TERMINAL_ID` as its session. Prepared context retains its recorded host/adapter.
+Core has its own adapter and terminal identity. Do not select legacy `herdr` merely because it is
+installed or reinterpret `HC_TERMINAL_ID` as its session. Prepared context retains its recorded host.
 
 ## When review is required
 

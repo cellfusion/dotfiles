@@ -12,7 +12,7 @@ a skill.
 | Multi-layer design change | `task-routing` if route/delegation is unclear; `brainstorming` for unsettled design, `writing-plans` for multi-stage planning when needed |
 | Bug, failure, or unexpected behavior | `systematic-debugging` when root cause is unknown |
 | Existing implementation plan | `executing-plans` for a small sequential plan; `multi-agent-development` for parallel or independent review |
-| Ordinary bounded delegation | OMP internal child; no separate CLI or pane |
+| Ordinary bounded delegation | In OMP, `agent-communication` via HC; otherwise the host's internal child route |
 | Independent CLI conversation or user intervention | `agent-communication` and the selected environment reference; agents do not steal focus |
 | Child write isolation only | `using-git-worktrees` recorded checkout-owner route; no interaction workspace/tab/pane |
 | GitHub PR review | `pr-review` selects/validates the host (agents use `--no-focus`); prepared context reuses its existing validated session |

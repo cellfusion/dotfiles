@@ -2,8 +2,8 @@
 
 Read `herdr-core` and the installed `hc --skill` first; use `hc <command> --help` for exact
 arguments. This route uses herdr-core's `hc`, not legacy `herdr`. `$HC_TERMINAL_ID` is a terminal
-address, not a pane or workspace ID. Use native internal messaging for justified same-host children
-when available; select HC deliberately for independently running terminal agents.
+address, not a pane or workspace ID. In OMP use HC for justified delegation; other runtimes retain
+their native same-host route unless an independently running terminal agent is selected.
 
 ## Resolve identity, checkout and return address
 
@@ -27,15 +27,16 @@ when available; select HC deliberately for independently running terminal agents
 Read `hc templates` and use a fitting template without changing model or permission defaults.
 If none fits, launch the requested CLI directly in interactive mode. Run agents with `--bg`, an
 explicit name and absolute `--cwd`; never one-shot print mode. Prefer the bounded request in `run`
-as its first task. Include request ID, verified sender and return address, exact repository/cwd,
-allowed files, non-goals, acceptance and verification owner. Do not permit recursive agents unless
+as its first task. Include request ID, verified sender, reachable return address or explicit
+`hc read` / shared result path, exact repository/cwd, allowed files, non-goals, acceptance and
+verification owner. Do not permit recursive agents unless
 explicitly assigned. Codex requires `--no-daemon`, including when launched through a template.
 Use the installed manual/help for command ordering.
 
 For example, only after validating `TARGET_REPO`, `BOUNDED_REQUEST` and the template:
 
 ```sh
-hc run --bg --name api-owner --cwd "$TARGET_REPO" reviewer "$BOUNDED_REQUEST"
+hc run --json --bg --name api-owner --cwd "$TARGET_REPO" review "$BOUNDED_REQUEST"
 ```
 
 A reviewer template is read-only; select an appropriate writer template for authorized changes.

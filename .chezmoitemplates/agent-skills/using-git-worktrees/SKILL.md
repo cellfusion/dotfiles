@@ -10,8 +10,9 @@ description: >-
 # Choose Worktree Ownership Independently of Agent Execution
 
 Execution, interaction and checkout ownership are independent decisions. A CLI conversation may
-use an existing cwd; a write-isolated child needs no extra pane. Do not create a new environment
-merely to run an internal child or start a second orchestration runtime for ordinary delegation.
+use an existing cwd; a write-isolated child needs no extra pane. In OMP justified delegation uses
+HC via `agent-communication`; a core terminal alone needs no new checkout or visible pane. Other
+runtimes retain their internal route. Do not create duplicate environments for existing sessions.
 Read the [environment contract](references/environments.md), then only the selected host/owner
 references: [Herdr (legacy)](references/herdr.md), [herdr-core](references/herdr-core.md),
 [Orca](references/orca.md), [Paseo](references/paseo.md), and [Worktrunk](references/worktrunk.md).
@@ -66,16 +67,30 @@ another base. Reuse an existing approved task workspace rather than resetting it
 worktree. Select a supported host through the [environment contract](references/environments.md)
 and follow its reference for no-focus creation, safe hook policy and live identity inspection.
 
-For PR review, use `pr-review [--environment herdr|orca|paseo] [--quick] <PR>`; agents add
+For PR review, use `pr-review [--environment herdr|herdr-core|orca|paseo] [--quick] <PR>`; agents add
 `--no-focus`. See `pr-review` for repository selectors and prepared validation. The entry creates
 an isolated base-SHA checkout and run-private reviewer session using the selected adapter.
-Prepared reviews reuse that environment and fixed context; never relaunch, checkout PR head, add
-terminals or execute head-side instructions. Head-code execution, if separately authorized, belongs
-to an independently recorded hidden checkout, not the base runtime.
+Prepared reviews reuse that environment and fixed context; never relaunch the primary reviewer or
+switch its checkout to PR head. The prepared `pr-review` contract permits bounded read-only HC lens
+terminals in that same verified checkout, without a new checkout or visible pane; do not execute
+head-side instructions. Separately authorized head-code execution needs its own recorded checkout.
 
-The executable has no `herdr-core` adapter or `--environment herdr-core` option. A core terminal
-does not satisfy legacy Herdr session identity; do not select `herdr` merely because it is installed.
-Manual core interaction follows its reference, separately from this automated review entry.
+If the user explicitly requests a PR-head worktree for their own inspection, that is a separate
+deliverable, not a switch of the review checkout or permission to run PR code. Resolve the actual
+repository, fork identity, branch and fixed head SHA from trusted PR metadata; check for existing
+branch/worktree conflicts and do not reset, force or reuse unrelated work. Inspect configured hooks,
+approval state and ignored-file copy scope first; disclose credential copies and obtain any required
+approval. An approved hook may still execute PR-controlled code (for example dependency install
+scripts); inspect its actual commands and inputs. Without explicit permission to execute that code,
+stop if the configured lifecycle could run it; never assume an approved hook grants that permission.
+Follow the owner-specific creation procedure, without bypassing hooks or approval. Verify
+the returned absolute path, linked common Git directory, requested branch, and HEAD against the fixed
+SHA; check that the PR head has not moved during setup. Record this checkout's owner and identity
+separately from the base review environment. If identity, approval or verification fails, retain
+the resource and report the exact blocker; do not present the base checkout as the requested branch.
+
+A core terminal does not satisfy legacy Herdr session identity; select `herdr-core` for core, not
+`herdr` merely because it is installed. Follow the core reference for its terminal identity.
 
 ## Route B: hidden child write isolation
 

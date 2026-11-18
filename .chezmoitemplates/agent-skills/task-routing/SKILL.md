@@ -1,7 +1,7 @@
 ---
 name: task-routing
 description: >-
-  Select direct work, internal delegation, or multi-agent delivery when the route is unclear.
+  Select direct work, bounded delegation, or multi-agent delivery when the route is unclear.
   Choose independent interaction and checkout write ownership separately; skip clear local changes.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
@@ -14,10 +14,10 @@ skill does not implement code or approve a design. A clear local change needs no
 
 ## Make three independent decisions
 
-1. **Execution:** direct parent work, one internal child, or multiple internal children.
-2. **Interaction:** remain internal for same-repository work by default. Delegate cross-repository
-   ownership and explicitly independent conversations to `agent-communication`; it resolves the
-   available host and live recipient identity.
+1. **Execution:** direct parent work, one child, or multiple children.
+2. **Interaction:** in OMP use HC for justified same-repository delegation; other runtimes retain
+   their native internal route. Delegate cross-repository ownership and explicitly independent
+   conversations to `agent-communication`; it resolves host and live recipient identity.
 3. **Writes:** use the existing checkout with disjoint scopes and one integration owner when safe.
    Delegate separate checkout ownership and isolation to `using-git-worktrees` when required.
 
@@ -40,9 +40,9 @@ Do not invent provider/model metadata or use a legacy transport admission wrappe
 model and permission defaults; the task contract does not choose a provider, model, or permission
 bypass. Do not pass conversation history, credentials, or unrelated plans.
 
-If scope or acceptance is unclear, inspect the repository first. Use an available read-only internal
-research role only for a genuinely unmapped slice. Resolve a consequential unknown before starting
-a writer; a router cannot approve architecture or expand scope.
+If scope or acceptance is unclear, inspect the repository first. Use a read-only research role via
+the authorized runtime route only for a genuinely unmapped slice. Resolve a consequential unknown
+before starting a writer; a router cannot approve architecture or expand scope.
 
 ## Choose the smallest useful route
 
@@ -53,15 +53,16 @@ Use `brainstorming` only for a real unresolved design choice, not to restate a c
 
 ### Single child
 
-Use one internal child only when a distinct ownership/context boundary justifies it, not for a small
-edit or a direct question already open in the parent. Do not add plan-auditor or multi-round delivery
+Use one child only when a distinct ownership/context boundary justifies it, not for a small edit
+or a direct question already open in the parent. Do not add plan-auditor or multi-round delivery
 machinery for one bounded task.
 
 1. Fix the child contract and artifact expectations.
 2. If write isolation is needed, delegate it to `using-git-worktrees` from the recorded committed
    parent base. Otherwise explicitly assign disjoint writes in the existing cwd.
-3. Dispatch through the runtime's actual internal tool, using its documented cwd and role interface.
-   Read live tool help if unclear; do not substitute a separate CLI or guess a cwd parameter.
+3. In OMP dispatch via HC per `agent-communication`; if unavailable or conflicting with
+   higher-priority runtime policy, report the blocker without silent `task` fallback. Elsewhere use
+   the runtime's actual internal tool and documented cwd and role interface.
 4. The child changes only its scope and returns changes, evidence, and unresolved conditions.
    Commit, push, apply, dependency setup, and external writes still require explicit authorization.
 5. The parent independently checks artifacts, changed files, scope, acceptance, and verification.
@@ -98,8 +99,9 @@ do not use a child in the parent's checkout to edit another repository. Send onl
 contract and scope. Each owner verifies locally; the parent verifies cross-repository integration.
 
 For GitHub PR review, delegate launch and environment selection to `pr-review`. A supplied prepared
-context stays in its existing validated environment: do not create another checkout, terminal,
-pane or session. Use `requesting-code-review` for fixed review packages and finding adoption.
+context keeps its existing validated primary reviewer and checkout; only bounded read-only HC lenses
+allowed by that prepared contract may use additional terminals in the same checkout. Do not create a
+replacement reviewer, checkout or visible pane. Use `requesting-code-review` for finding adoption.
 
 ## Bounded escalation
 

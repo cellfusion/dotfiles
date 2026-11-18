@@ -9,13 +9,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const runtime = require(path.join(process.argv[2], 'private_dot_local/private_share/pr-review/runtime.js'));
+const runtime = require(path.join(process.argv[2], 'private_dot_local/private_share/pr-review/private_runtime.js'));
 for (const input of [[], ['0'], ['01'], ['-1'], ['1', '2'], ['--worktree', '1'], ['--quick', '--quick', '1'], ['https://evil.test/a/b/pull/1'], ['https://github.com/a/b/pull/1?x=1']]) {
   assert.throws(() => runtime.parseArgs(input), /input|option|positive|URL/);
 }
 assert.equal(runtime.parseArgs(['--no-focus', '--quick', 'https://github.com/a/b/pull/12']).repository, 'a/b');
 assert.equal(runtime.parseArgs(['123']).number, 123);
 assert.equal(runtime.parseArgs(['--environment','herdr','--repo-path','/tmp/repo','123']).environment,'herdr');
+assert.equal(runtime.parseArgs(['--environment','herdr-core','--repo-path','/tmp/repo','123']).environment,'herdr-core');
 assert.throws(()=>runtime.parseArgs(['--environment','unknown','1']),/environment/);
 assert.throws(() => runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:null}, 'a/b', 1), /fork/);
 assert.equal(runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:{name:'fork'}, headRepositoryOwner:{login:'other'}}, 'a/b', 1).headRepository, 'other/fork');
@@ -44,7 +45,7 @@ try {
   const contextFile=path.join(run,'prepared-context.json');
   function snapshot(dir,adapter='orca') {
     const source=path.join(process.argv[2],'private_dot_local/private_share/pr-review');
-    fs.copyFileSync(path.join(source,'runtime.js'),path.join(dir,'runtime.js')); fs.chmodSync(path.join(dir,'runtime.js'),0o600);
+    fs.copyFileSync(path.join(source,'private_runtime.js'),path.join(dir,'runtime.js')); fs.chmodSync(path.join(dir,'runtime.js'),0o600);
     fs.mkdirSync(path.join(dir,'environments'),{mode:0o700});
     for(const name of ['index',adapter]) { fs.copyFileSync(path.join(source,'environments',name+'.js'),path.join(dir,'environments',name+'.js')); fs.chmodSync(path.join(dir,'environments',name+'.js'),0o600); }
     fs.mkdirSync(path.join(dir,'references'),{mode:0o700});
@@ -113,7 +114,7 @@ if(name==='stty'){
 }
 if(name==='wt') {
   if(a.includes('--help')) { console.log(c.mode==='herdr-no-hooks'?'--no-cd --format':'--no-cd --format --base'); process.exit(0); }
-  if(a.includes('approvals')) { console.log(JSON.stringify({state:c.mode==='herdr-unapproved'||(c.mode==='herdr-late-unapproved'&&a[1]===c.checkout)?'approval_required':'no_commands',commands:[],stale:[]}));process.exit(0); }
+  if(a.includes('approvals')) { console.log(JSON.stringify({state:['herdr-unapproved','core-unapproved'].includes(c.mode)||(['herdr-late-unapproved','core-late-unapproved'].includes(c.mode)&&a[1]===c.checkout)?'approval_required':'no_commands',commands:[],stale:[]}));process.exit(0); }
   if(a.includes('--no-hooks')||a.includes('--yes')||process.env.GIT_CONFIG_KEY_0!=='core.hooksPath'||process.env.GIT_CONFIG_VALUE_0!=='/dev/null') process.exit(8);
   const branch=flag('--create');
   const made=spawnSync('git',['-C',c.repo,'worktree','add','-b',branch,c.checkout,c.mode==='herdr-wrong-base'?c.head:flag('--base')],{encoding:'utf8',env:process.env});
@@ -168,6 +169,49 @@ if(name==='herdr') {
   } else process.exit(2);
   process.exit(0);
 }
+if(name==='hc') {
+  if(a.includes('--help')) { console.log('--json --bg --no-parent --name --cwd --timeout --if'); process.exit(0); }
+  const stateFile=c.log+'.core', state=()=>JSON.parse(fs.readFileSync(stateFile,'utf8'));
+  const terminal=(address,cwd,argv,pid,created_ms)=>({
+    address,argv,cwd,pid,created_ms,name:address==='t1'?'caller':state().name,
+    state:'live',reported:true,status:{app:'omp',state:'idle'},foreground:{name:'omp',pid,cwd,argv},
+    labels:{},screen:'exact',cols:200,rows:120,turn:0
+  });
+  if(a[0]==='get') {
+    const caller=a.includes('t1');
+    let t=caller?terminal('t1',c.repo,['omp'],101,1000):terminal('t2',c.checkout,state().argv,202,2000);
+    if(!caller&&c.mode==='core-wrong-id')t.address='t3';
+    if(!caller&&c.mode==='core-wrong-cwd')t.foreground.cwd=c.repo;
+    if(!caller&&c.mode==='core-wrong-process')t.foreground.argv=['omp','--cwd',c.checkout];
+    if(!caller&&c.mode==='core-changed-pid')t.foreground.pid=303;
+    if(!caller&&c.mode==='core-changed-created')t.created_ms=3000;
+    if(!caller&&c.mode==='core-early-wake') {
+      const counter=c.log+'.core-get', count=fs.existsSync(counter)?Number(fs.readFileSync(counter)):0;
+      fs.writeFileSync(counter,String(count+1));
+      if(count===1)t.status={app:'sh',state:'idle'};
+    }
+    console.log(JSON.stringify(t));
+  } else if(a[0]==='run') {
+    const shell=a.indexOf('/bin/sh'), cwd=flag('--cwd');
+    if(shell<0||!a.includes('--bg')||cwd!==c.checkout||a[shell+1]!=='-c'||
+      !a[shell+2].includes(path.join(path.dirname(process.argv[1]),'omp')))process.exit(2);
+    const started=spawnSync(a[shell],a.slice(shell+1),{env:{...process.env,PATH:'/usr/bin:/bin'},encoding:'utf8'});
+    if(started.status!==0)process.exit(2);
+    const argv=JSON.parse(fs.readFileSync(c.log+'.omp','utf8'));
+    fs.writeFileSync(stateFile,JSON.stringify({name:flag('--name'),argv}));
+    console.log(JSON.stringify({address:'t2',agent:'sh',cwd,name:flag('--name'),parent:null,state:'live',turn:0}));
+    if(c.mode==='core-partial-run')process.exit(1);
+  } else if(a[0]==='wait') {
+    console.log(JSON.stringify({terminal:'t2',ended:true,reason:'status',status:'idle',turn:0,children:[]}));
+  } else if(a[0]==='send') {
+    if(c.mode==='core-send-rejected') {
+      console.error(JSON.stringify({error:{kind:'blocked',message:'terminal is blocked',hint:null}}));process.exit(9);
+    }
+    console.log(JSON.stringify({started:c.mode!=='core-accepted',status:'idle',turn:0}));
+    if(c.mode==='core-send-partial')process.exit(1);
+  } else process.exit(2);
+  process.exit(0);
+}
 if(name==='gh'){
   if(a[0]==='repo') console.log('a/b');
   else {
@@ -197,20 +241,20 @@ else if(a[1]==='send') emit({send:{handle:'term_review',accepted:c.mode!=='rejec
 else process.exit(2);
 `,{mode:0o700});
   fs.symlinkSync(driver,path.join(bin,'gh')); fs.symlinkSync(driver,path.join(bin,'orca-fixture'));
-  fs.symlinkSync(driver,path.join(bin,'wt')); fs.symlinkSync(driver,path.join(bin,'herdr'));
+  fs.symlinkSync(driver,path.join(bin,'wt')); fs.symlinkSync(driver,path.join(bin,'herdr')); fs.symlinkSync(driver,path.join(bin,'hc'));
   fs.symlinkSync(driver,path.join(bin,'ps'));fs.symlinkSync(driver,path.join(bin,'stty'));
-  fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),c=JSON.parse(fs.readFileSync(process.env.FIXTURE));if(c.mode!=='herdr-lazy-session')fs.writeFileSync(path.join(a[a.indexOf('--session-dir')+1],'session.jsonl'),'private session');\n`,{mode:0o700});
+  fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),c=JSON.parse(fs.readFileSync(process.env.FIXTURE)),sessions=a[a.indexOf('--session-dir')+1];if(c.mode.startsWith('core-')){if(process.env.PATH!==c.expectedPath)process.exit(3);fs.writeFileSync(c.log+'.omp',JSON.stringify(['omp',...a]));fs.mkdirSync(path.join(sessions,'session'),{mode:0o700});fs.writeFileSync(path.join(sessions,'.session.jsonl.lock.os'),'',{mode:0o600});}if(c.mode!=='herdr-lazy-session')fs.writeFileSync(path.join(sessions,'session.jsonl'),'private session');\n`,{mode:0o700});
   const skill=path.join(root,'SKILL.md');
   fs.writeFileSync(skill,'---\nname: pr-review\n---\n**Prepared-review contract:**\n');
   fs.mkdirSync(path.join(root,'references'));
-  for(const name of ['environments','orca','herdr','worktrunk']) fs.writeFileSync(path.join(root,'references',name+'.md'),'trusted fixture guidance');
+  for(const name of ['environments','orca','herdr','herdr-core','worktrunk']) fs.writeFileSync(path.join(root,'references',name+'.md'),'trusted fixture guidance');
   git('remote','add','origin','git@github.com:a/b.git');
   for(const mode of ['success','explicit-priority','outside-url','outside-project','outside-id','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url','number-cwd','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
     const dir=path.join(root,mode); fs.mkdirSync(dir);
     const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
     const config=path.join(dir,'fixture.json'); fs.writeFileSync(config,JSON.stringify(fixture));
     const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH,ORCA_CLI_COMMAND:path.join(bin,'orca-fixture'),FIXTURE:config};
-    for(const key of ['HERDR_ENV','HERDR_WORKSPACE_ID','HERDR_PANE_ID','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT']) delete env[key];
+    for(const key of ['HERDR_ENV','HERDR_WORKSPACE_ID','HERDR_PANE_ID','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT','HC_TERMINAL_ID']) delete env[key];
     if(mode==='explicit-priority')Object.assign(env,{HERDR_ENV:'1',ORCA_TERMINAL_HANDLE:'existing'});
     const projectArgs=mode==='outside-id'?['--project','id:r42']:['outside-project','project-url-mismatch','ambiguous-project'].includes(mode)?['--project','review-project']:mode==='missing-project'?['--project','unknown']:[];
     const input=['outside-project','outside-id','missing-project','ambiguous-project','number-cwd'].includes(mode)?'1':['url-mismatch','project-url-mismatch'].includes(mode)?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1';
@@ -246,13 +290,15 @@ else process.exit(2);
   for(const [label,selection,host] of [
     ['unsupported',['--environment','paseo'],{}],['unknown',[],{}],
     ['ambiguous',[],{HERDR_ENV:'1',ORCA_TERMINAL_HANDLE:'other'}],
+    ['core-ambiguous',[],{HC_TERMINAL_ID:'t1',HERDR_ENV:'1'}],
+    ['core-orca-ambiguous',[],{HC_TERMINAL_ID:'t1',ORCA_TERMINAL_HANDLE:'other'}],
     ['outside',['--environment','herdr'],{}],
     ['project-herdr',['--environment','herdr','--project','id:r42'],{HERDR_ENV:'1'}],
     ['repo-orca',['--environment','orca','--repo-path',callerRepo],{}],
   ]) {
     const dir=path.join(root,'gate-'+label);fs.mkdirSync(dir);
     const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH};
-    for(const key of ['HERDR_ENV','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT'])delete env[key];
+    for(const key of ['HERDR_ENV','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT','HC_TERMINAL_ID'])delete env[key];
     Object.assign(env,host);
     const stopped=spawnSync('bash',[entry,...selection,'1'],{cwd:callerRepo,env,encoding:'utf8'});
     assert.equal(stopped.status,1,stopped.stderr);
@@ -271,7 +317,7 @@ else process.exit(2);
     const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
     const config=path.join(dir,'fixture.json');fs.writeFileSync(config,JSON.stringify(fixture));
     const env={...process.env,HOME:dir,HERDR_ENV:'1',HERDR_SOCKET_PATH:socket,PATH:bin+path.delimiter+process.env.PATH+path.delimiter+('/long-path-entry'.repeat(1000)),FIXTURE:config};
-    delete env.ORCA_WORKTREE_ID;delete env.ORCA_TERMINAL_HANDLE;delete env.ORCA_DEV_REPO_ROOT;
+    delete env.ORCA_WORKTREE_ID;delete env.ORCA_TERMINAL_HANDLE;delete env.ORCA_DEV_REPO_ROOT;delete env.HC_TERMINAL_ID;
     if(mode==='herdr-success')env.ORCA_TERMINAL_HANDLE='other-host';
     const selection=mode==='herdr-auto'?[]:['--environment','herdr'];
     const input=mode==='herdr-repo-mismatch'?'https://github.com/other/repo/pull/1':'https://github.com/a/b/pull/1';
@@ -331,6 +377,81 @@ else process.exit(2);
       const changedBranch=spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],{cwd:fixture.checkout,env:preparedEnv,encoding:'utf8'});
       assert.notEqual(changedBranch.status,0,'checkout ownership requires its recorded branch');
     }
+  }
+  // Core uses a separate terminal identity from the Worktrunk checkout owner.
+  for(const mode of ['core-success','core-auto','core-outside','core-accepted','core-early-wake','core-unapproved','core-late-unapproved',
+    'core-wrong-id','core-wrong-cwd','core-wrong-process','core-partial-run','core-send-rejected','core-send-partial']) {
+    const dir=path.join(root,mode);fs.mkdirSync(dir);
+    const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count'),expectedPath:bin+path.delimiter+process.env.PATH};
+    const config=path.join(dir,'fixture.json');fs.writeFileSync(config,JSON.stringify(fixture));
+    const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH,FIXTURE:config,HC_TERMINAL_ID:'t1'};
+    for(const key of ['HERDR_ENV','HERDR_WORKSPACE_ID','HERDR_PANE_ID','ORCA_WORKTREE_ID','ORCA_TERMINAL_HANDLE','ORCA_DEV_REPO_ROOT'])delete env[key];
+    if(mode==='core-outside')delete env.HC_TERMINAL_ID;
+    const selection=mode==='core-auto'?[]:['--environment','herdr-core'];
+    const launched=spawnSync('bash',[entry,...selection,'--repo-path',callerRepo,'--no-focus','--skill-file',skill,'https://github.com/a/b/pull/1'],{cwd:root,env,encoding:'utf8'});
+    const success=['core-success','core-auto','core-outside','core-accepted','core-early-wake'].includes(mode);
+    assert.equal(launched.status,success?0:1,mode+': '+launched.stderr);
+    const output=JSON.parse(success?launched.stdout:launched.stderr);
+    const calls=fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse);
+    const core=calls.filter(call=>call.name==='hc');
+    const creates=calls.filter(call=>call.name==='wt'&&call.args.includes('--create'));
+    const starts=core.filter(call=>call.args[0]==='run');
+    const sends=core.filter(call=>call.args[0]==='send');
+    assert.equal(creates.length,mode==='core-unapproved'?0:1,'checkout is never retried');
+    assert.equal(starts.length,['core-unapproved','core-late-unapproved'].includes(mode)?0:1,'terminal is never retried');
+    assert.equal(sends.length,success||['core-send-rejected','core-send-partial'].includes(mode)?1:0,'prompt is submitted at most once');
+    if(mode==='core-early-wake') assert.equal(core.filter(call=>call.args[0]==='wait').length,2,'early wake waits for the original reviewer');
+    assert.ok(!core.some(call=>['kill','rm','interrupt'].includes(call.args[0])),'uncertain resources are never destroyed');
+    assert.ok(!calls.some(call=>['herdr','orca-fixture'].includes(call.name)),'Core never falls back to another host');
+    assert.equal(fs.existsSync(fixture.checkout),mode!=='core-unapproved','created checkout is retained');
+    if(starts.length) {
+      assert.ok(starts[0].args.includes('--bg'));
+      assert.equal(starts[0].args[starts[0].args.indexOf('--cwd')+1],fixture.checkout);
+      assert.ok(JSON.stringify(output.interaction).includes('t2'),'terminal identity is retained');
+    }
+    if(sends.length) {
+      assert.ok(sends[0].args.includes('t2'),'send targets the created terminal');
+      assert.ok(!sends[0].args.includes('--force'),'blocked prompts are never forced');
+      assert.ok(fs.existsSync(path.join(output.artifactPath,'submission.json')),'send receipt survives failure');
+    }
+    if(!success) {
+      assert.equal(output.status,'blocked');
+      assert.ok(fs.existsSync(path.join(output.artifactPath,'startup.json')));
+      continue;
+    }
+    assert.equal(output.status,mode==='core-accepted'?'accepted':'started');
+    assert.equal(output.executionEnvironment,'herdr-core');assert.equal(output.checkout.owner,'worktrunk');
+    const actual=spawnSync('git',['-C',fixture.checkout,'rev-parse','HEAD'],{encoding:'utf8'});
+    assert.equal(actual.status,0,actual.stderr);assert.equal(actual.stdout.trim(),base);
+    assert.equal(fs.statSync(output.artifactPath).mode&0o777,0o700);
+    for(const file of ['prepared-context.json','runtime.js','omp-config.yml','environments/index.js',
+      'environments/herdr-core.js','SKILL.md','references/environments.md','references/herdr-core.md','references/worktrunk.md','sessions/session.jsonl'])
+      assert.equal(fs.statSync(path.join(output.artifactPath,file)).mode&0o777,0o600,`private ${file}`);
+    const preparedRuntime=path.join(output.artifactPath,'runtime.js'), preparedEnv={...env,HC_TERMINAL_ID:'t2'};
+    const validate=(cwd=fixture.checkout,overrides={})=>spawnSync(process.execPath,[preparedRuntime,'validate-context',output.contextFile],
+      {cwd,env:{...preparedEnv,...overrides},encoding:'utf8'});
+    const valid=validate();assert.equal(valid.status,0,valid.stderr);
+    const aux=path.join(output.artifactPath,'sessions/session');fs.chmodSync(aux,0o755);
+    assert.notEqual(validate().status,0,'public session directories are rejected');fs.chmodSync(aux,0o700);
+    const identity=JSON.parse(valid.stdout);assert.equal(identity.baseSha,base);assert.equal(identity.headSha,head);
+    assert.notEqual(validate(fixture.checkout,{HC_TERMINAL_ID:'t3'}).status,0,'another terminal cannot use the prepared review');
+    assert.notEqual(validate(callerRepo).status,0,'prepared execution must run in the base checkout');
+    fixture.mode='core-wrong-cwd';fs.writeFileSync(config,JSON.stringify(fixture));
+    assert.notEqual(validate().status,0,'live foreground cwd must still be the base checkout');
+    fixture.mode='core-wrong-id';fs.writeFileSync(config,JSON.stringify(fixture));
+    assert.notEqual(validate().status,0,'live address must match the prepared terminal');
+    fixture.mode='core-wrong-process';fs.writeFileSync(config,JSON.stringify(fixture));
+    assert.notEqual(validate().status,0,'live process must still be the prepared reviewer');
+    fixture.mode='core-changed-pid';fs.writeFileSync(config,JSON.stringify(fixture));
+    assert.notEqual(validate().status,0,'replaced foreground process is rejected');
+    fixture.mode='core-changed-created';fs.writeFileSync(config,JSON.stringify(fixture));
+    assert.notEqual(validate().status,0,'replaced terminal incarnation is rejected');
+    fixture.mode=mode;fs.writeFileSync(config,JSON.stringify(fixture));
+    const adapter=path.join(output.artifactPath,'environments/herdr-core.js');fs.chmodSync(adapter,0o644);
+    assert.notEqual(validate().status,0,'public snapshot code is rejected');fs.chmodSync(adapter,0o600);
+    const adapterBytes=fs.readFileSync(adapter);fs.unlinkSync(adapter);
+    assert.notEqual(validate().status,0,'missing snapshot never falls back to live source');
+    fs.writeFileSync(adapter,adapterBytes,{mode:0o600});
   }
   // Exercise only public runtime boundaries against a divergent, local Git fixture.
   const coverageRepo=path.join(root,'coverage-repo'); fs.mkdirSync(coverageRepo); repo=coverageRepo;
@@ -592,8 +713,10 @@ else process.exit(2);
   const primaryLens=plan.specialists[0];
   plan.specialists=[primaryLens,{...primaryLens,role:'security',route:'sequential'},{...primaryLens,role:'performance',route:'independent'}];
   saveReview(); assert.equal(validate().valid,true,'independent wins over completed sequential and primary lenses');
+  metadata.delegation.agents='herdr-core'; writeArtifact('metadata.json',metadata); refreshReport();
+  assert.equal(validate().valid,true,'independent review accepts the herdr-core transport label');
   metadata.delegation.agents='none'; writeArtifact('metadata.json',metadata); refreshReport();
-  assert.throws(validate,/delegation|route|mismatch/i,'independent completion requires omp-internal disclosure');
+  assert.throws(validate,/delegation|route|mismatch/i,'independent review rejects the none transport label');
   plan.specialists.pop(); saveReview(); assert.equal(validate().valid,true,'sequential wins when no independent lens completed');
   plan.specialists=[primaryLens]; saveReview();
   for(const route of ['sequential','independent']){

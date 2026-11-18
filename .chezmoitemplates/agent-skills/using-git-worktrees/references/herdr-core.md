@@ -16,8 +16,9 @@ adoption; never fabricate it or operate on whichever terminal happens to be visi
 
 Outside core, do not claim an inherited core session. A separately requested manual launch must
 use an explicit target machine and absolute cwd, record the actual returned terminal address and
-verify it live. Read the core skill's communication contract before starting an external agent;
-internal delegation needs no core terminal. Keep orchestration background/hidden by default.
+verify it live. Read the core skill's communication contract before starting an agent. In OMP,
+justified delegation uses an HC terminal; other runtimes may use their native internal route.
+Keep orchestration background/hidden by default.
 Core has no no-focus workspace operation: do not translate legacy workspace/pane commands to it.
 Visible UI belongs to the distinct `herdr-app` skill and `herdr-app --skill`; create, reveal or
 rearrange app views only when the user requests visible work.
@@ -36,13 +37,12 @@ well as the live terminal identity. Preserve the returned full remote address wh
 local file tools do not inspect a remote machine. Retain resources on failed inspection rather
 than recreate, switch hosts or execute unapproved hooks.
 
-## No automated PR review adapter
+## Automated PR review adapter
 
-The existing `pr-review` executable does not support core. There is no
-`--environment herdr-core`; `--environment herdr` selects the legacy host and requires its verified
-session. Do not choose it merely because `herdr` is installed or treat `HC_TERMINAL_ID` as legacy
-session evidence. Report the unsupported route before launch side effects rather than silently
-fall back. A separately authorized manual review is not a prepared executable run.
+`pr-review --environment herdr-core` uses the core terminal and a Worktrunk-owned base checkout.
+The terminal is not a legacy workspace or pane. Verify the actual terminal and checkout identity;
+do not select legacy `herdr` or reinterpret `HC_TERMINAL_ID` as legacy session evidence. Inspect
+the same terminal after uncertain delivery and never resend, recreate or switch backends blindly.
 
 An explicit prepared context retains its recorded host, adapter, checkout and reviewer session.
 Use its trusted run-local instructions and live adapter validation there. Reading that context in

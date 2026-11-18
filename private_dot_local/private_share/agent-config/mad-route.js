@@ -7,7 +7,7 @@ const contract = require('./mad-contract.js')
 const TOP_KEYS = ['version', 'type', 'routeId', 'recordedAt', 'route', 'workClass', 'complexity', 'role', 'confidence', 'reasonCode', 'backend', 'provider', 'model', 'effort', 'delegated']
 const WORK_CLASSES = ['mechanical', 'routine', 'integration', 'architectural']
 const COMPLEXITIES = ['simple', 'routine', 'complex', 'critical']
-const BACKENDS = ['omp-internal', 'herdr-cli']
+const BACKENDS = ['omp-internal', 'herdr-cli', 'herdr-core']
 const HISTORICAL_BACKENDS = ['paseo-cli', 'paseo-mcp']
 
 function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) }

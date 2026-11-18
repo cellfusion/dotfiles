@@ -5,8 +5,8 @@ not isolation, a checkout need not have a pane, and a host may display another o
 
 ## Select before side effects
 
-For the `pr-review` executable, explicit `--environment herdr|orca|paseo` wins among its known
-adapters. Manual herdr-core interaction is a separate route, not an additional executable adapter.
+For the `pr-review` executable, explicit `--environment herdr|herdr-core|orca|paseo` wins among its
+known adapters.
 Without explicit selection, require reliable current host identity. Binary availability, UI focus,
 names and cwd alone do not identify a host. Unknown or multiple matching hosts stop with a reason
 and a request for explicit selection; never silently choose Orca or fall back to another backend.
@@ -21,12 +21,10 @@ workspace or session.
 - **Paseo:** known but unsupported until current CLI/guide and safety capabilities are verified.
   Selection reports `unsupported-environment`, not a syntax error. Installed guidance is `paseo.md`;
   there is no prepared Paseo run or adapter.
-- **herdr-core:** for manual terminal interaction read [herdr-core.md](herdr-core.md) and the live
-  `hc --skill` manual. Verify `HC_TERMINAL_ID` against live core identity; it is not `HERDR_ENV`.
-  Core provides terminals, not legacy Herdr workspaces/panes or checkout ownership. Worktrunk
-  creates isolation independently, without UI. The `pr-review` executable has no core adapter:
-  never pass `--environment herdr-core`, reinterpret core as `herdr`, or fall back merely because
-  the legacy binary is installed.
+- **herdr-core:** read [herdr-core.md](herdr-core.md) and the live `hc --skill` manual. Verify
+  `HC_TERMINAL_ID` against live core identity; it is not `HERDR_ENV`. Use the cwd repository or
+  `--repo-path`; core provides terminals, not legacy Herdr workspaces/panes or checkout ownership.
+  Worktrunk creates isolation independently without UI. Never reinterpret core as legacy `herdr`.
 
 A PR URL must match the selected real Git repository. Herdr does not discover other repositories
 from a URL; supply their absolute path explicitly. Resolve actual default branches and immutable
@@ -48,8 +46,8 @@ Record separately:
 - creation/adoption, integration, liveness, and the resources retained after failure.
 
 Determine ownership from creation/adoption records plus live exact-path inspection, never from
-names, a listing in another tool, or the execution environment. In the Herdr review adapter the
-checkout owner is **Worktrunk**, while the attached workspace/pane belongs to Herdr. See
+names, a listing in another tool, or the execution environment. In the Herdr and herdr-core review
+adapters the checkout owner is **Worktrunk**; the workspace or terminal has its own identity. See
 [Worktrunk](worktrunk.md). Orca review checkouts are Orca-owned. Unknown/external resources must
 not be removed. Remove only saved, inactive, proven-owned resources through their recorded owner
 following explicit cleanup authorization; posting or completion never authorizes cleanup.

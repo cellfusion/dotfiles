@@ -1,39 +1,24 @@
-# OMP Internal Communication
+# OMP Communication Through HC
 
-Confirm the tools actually exposed by the current OMP session. This reference describes the
-`task` / `write` / `read` surface when available, not an API promised to every host.
+For justified OMP delegation, use `hc run` and the
+[herdr-core communication contract](herdr-core.md). Read `herdr-core` and the installed
+`hc --skill` first. This is guidance, not an override of higher-priority runtime policy:
+if HC is unavailable or conflicts with that policy, report the blocker; do not silently use
+OMP `task`, Eval agents, or another backend as a fallback.
 
-## Dispatch and follow-up
+Give each child a bounded request with a unique `request_id`, exact cwd and allowed files,
+shared contracts, acceptance, verification owner, stop conditions and either the parent's verified
+return address or an actual shared result path / `hc read` procedure when the parent is outside HC.
+Do not pass credentials or unrelated history; do not authorize recursive agents, commit, push,
+apply or install unless explicitly assigned.
 
-Use `task` for justified bounded children. Provide goal, exact files, shared contracts, acceptance,
-verification owner and stop conditions. Internal children do not inherit the parent's conversation
-or permission to commit/push/apply. Follow host role and delegation rules; do not create a child
-for a trivial question or to simulate another repository's workspace.
+Record the returned full terminal address and inspect `first_message.sent`. Expand the parent's
+address before launch: the child's `$HC_TERMINAL_ID` names the child. Follow the live manual for
+readiness, `hc send`, `hc read` and finite `hc wait`; do useful work rather than polling. A
+timeout, blocked approval or ambiguous delivery is unresolved: inspect the same terminal, do not
+force approval, resend blindly, launch a replacement or switch backend. A wait or idle state is
+not completion; correlate the actual reply and `request_id` before adoption.
 
-Record the actual returned child ID/handle. With the URI surface:
-
-- `write` to `agent://<actual-id>` sends a follow-up to that child;
-- `read` from `agent://<actual-id>` reads status/progress/result;
-- completion/results arrive automatically. Use the host's wait mechanism only when blocked with
-  no useful work remaining; do not poll repeatedly or wait for work you did not start.
-
-Use the same `request_id` for a bounded assignment and `in_reply_to` for clarifications. Check that
-a supplemental message was reflected in the result, not merely that the write succeeded. Completed
-children may not accept further work: inspect the actual API/state instead of inventing resume.
-
-## Eval alternative
-
-Only if this host exposes the Eval agent API, read `xd://eval/agents` first. Its returned handle
-supports `.send(message)`, `.output()` and `.wait(timeout)`. Keep one dispatch/message surface per
-assignment; do not create another child because a different API looks more convenient. This is not
-a shell command. Do not execute `agent://` or `task` as binaries.
-
-## Boundaries
-
-`agent://` addresses runtime-owned children, not every OMP conversation on the machine. Another
-host pane is not necessarily a child. Use `agent-communication` and the selected environment route
-for another repository's independent owner. `local://` is host-local; share a permitted real path.
-
-Do not assume Claude's `SendMessage`, Codex's child tools, or an OMP resume API exist merely from
-a generic runtime table. Read the actual tool contracts. If no internal messaging surface exists,
-state that limitation; do not silently start a second CLI for same-repository delegation.
+An HC terminal is neither a pane nor checkout ownership. For another repository select its
+independently identified owner; for write isolation follow `using-git-worktrees`. Share permitted
+absolute paths rather than host-local `local://` handles. Never infer identity from an example.

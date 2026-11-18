@@ -2,8 +2,8 @@
 name: agent-communication
 description: >-
   Send bounded requests, questions, updates and results to other agents and correlate their replies.
-  Use internal children for same-repository work and the selected host's repository owner for
-  cross-repository changes. Skip solo work and do not create agents merely to send a message.
+  Use the runtime's authorized route for same-repository work and the selected host's repository
+  owner for cross-repository changes. Skip solo work and do not create agents merely to send a message.
 ---
 
 # Communicate With Other Agents
@@ -13,8 +13,9 @@ This skill adds communication rules, not a new transport, permissions, model sel
 
 ## Select the route
 
-- Same repository: use the host's actual internal delegation/message tools when a justified child
-  already exists or the task warrants one. In OMP, read [OMP communication](references/omp.md).
+- Same repository: in OMP, use HC for justified delegation and follow
+  [OMP communication](references/omp.md); otherwise use the host's actual internal
+  delegation/message tools when a justified child exists or the task warrants one.
 - Another repository: use an agent in that repository's independently identified environment.
   Select a supported host through `using-git-worktrees/references/environments.md`. For herdr-core
   (`hc`, including `$HC_TERMINAL_ID` environments), read `herdr-core` and

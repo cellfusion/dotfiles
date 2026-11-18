@@ -102,10 +102,12 @@ Choose execution based on plan structure:
 
 Re-read the approved plan immediately before handoff. Pass its absolute path, not copied prose.
 
-Ordinary delegation stays inside the current host's internal tools (OMP when running in OMP).
-State execution and write placement independently in the handoff: reuse the approved checkout;
-use hidden Worktrunk only for separate writer ownership, with no extra pane. An independent CLI
-conversation uses the selected supported host: herdr-core can run a hidden terminal without a
+For justified OMP delegation use HC through `agent-communication`; other runtimes retain their
+native internal route. If HC is unavailable or conflicts with higher-priority runtime policy,
+report the blocker without silently falling back to OMP `task`. State execution and write
+placement independently in the handoff: reuse the approved checkout; use hidden Worktrunk only for
+separate writer ownership, with no extra pane. An independent CLI conversation uses the selected
+supported host: herdr-core can run a hidden terminal without a
 legacy workspace; legacy Herdr remains supported. Only use herdr-app for visible UI the user
 requested. Record the committed base and prerequisite decisions; do not automatically copy
 uncommitted parent changes or grant commit/push/apply permissions. Name the integration/verification

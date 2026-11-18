@@ -627,7 +627,7 @@ subMBPはGhostty／旧Herdr／Tailscaleを使い、`herdr --remote`でmainMBP側
 Android端末にはMoshiを使う。接続元へ認証や履歴を複製しない。
 
 - メイン作業はdefaultブランチからWorktrunkでworktreeを作り、Herdr workspaceで開く。
-- 同一リポジトリの通常の委譲はOMP内で済ませる。
+- 同一リポジトリでも OMP のエージェント委譲は `hc run` を使う。
 - 別リポジトリの変更は、そのリポジトリのHerdr workspaceの担当へ依頼する。
   適合するidle担当を再利用し、いなければ対象workspaceでOMPをno-focus起動する。
 - 独立対話、ユーザー介入、別CLIエージェントにもHerdrの別paneを使う。
@@ -649,8 +649,8 @@ workspace名だけで選ばず、実際のrepository／cwd／agent sessionと作
 native role は Claude Code、Codex へ同じ role catalog から配る。
 Claude Code は `~/.config/claude/agents`、Codex は `$CODEX_HOME/agents` を使う。
 
-MAD の route 記録は OMP 内部委譲／Herdr CLI の backend だけを新規に受け付ける。
-集計器は移行前の既存ログも読み取るが、退役 backend での新しい記録は拒否する。
+MAD の route／outcome 記録は `herdr-core` を受け付ける。既存の `omp-internal` と
+`herdr-cli` の記録も維持し、集計器は退役 backend の過去ログを読めるが新規記録は拒否する。
 
 ### ツールの入口
 
@@ -737,7 +737,8 @@ Git の引用付き path を復元し、対象 head path の diff section 内だ
 finding の CI／local 根拠と挙動の `executed` は、固定 head の `targetSha` を持つ
 同種 check の `pass` または `fail` を参照する。`executed` は実行済みの意味であり、
 成功の意味ではない。`not_run` は実行根拠にならず、PR script の実行を義務付けるものでもない。
-委譲は `none` または `omp-internal` とし、summary route は完了 lens の
+委譲は `none`、`herdr-core`、または既存記録・他ランタイム用の `omp-internal` とし、
+実際の独立レビューの実行経路を記録する。summary route は完了 lens の
 `independent` > `sequential` > `primary` の順で決める。完了 lens がなければ `primary` とする。
 
 JSON 成果物を構成した後、`render-summary <prepared-context.json>` の JSON 応答から

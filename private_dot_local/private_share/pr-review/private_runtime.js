@@ -26,7 +26,7 @@ function parseArgs(args) {
       const key = arg === '--environment' ? 'environment' : 'repoPath';
       if (result[key] || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`invalid ${key} option`);
       result[key] = args[++i];
-      if (key === 'environment' && !['herdr', 'orca', 'paseo'].includes(result[key])) throw new Error('invalid environment');
+      if (key === 'environment' && !['herdr', 'herdr-core', 'orca', 'paseo'].includes(result[key])) throw new Error('invalid environment');
       if (key === 'repoPath' && !path.isAbsolute(result[key])) throw new Error('repo-path must be absolute');
     } else if (arg === '--project') {
       if (result.project || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error('invalid project option');
@@ -107,7 +107,7 @@ function validateContextCommon(context, file, cwd) {
 }
 function snapshotAdapter(context) {
   const name = context.executionEnvironment;
-  if (!['herdr', 'orca'].includes(name) || context.runtime?.schemaVersion !== 1 || context.runtime.adapter !== name || context.runtime.snapshot !== '.') throw new Error('invalid runtime snapshot identity');
+  if (!['herdr', 'herdr-core', 'orca'].includes(name) || context.runtime?.schemaVersion !== 1 || context.runtime.adapter !== name || context.runtime.snapshot !== '.') throw new Error('invalid runtime snapshot identity');
   const root = fs.realpathSync(context.artifactPath);
   for (const relative of ['environments', 'references', 'sessions', ...(name === 'herdr' ? ['bin'] : [])]) {
     const dir = path.join(root, relative); checkPrivate(dir, true);
@@ -374,7 +374,8 @@ function validateReview(file, cwd = process.cwd(), env = process.env) {
   if (roles.some(role => !nonempty(role)) || new Set(roles).size !== roles.length || !Array.isArray(recordedRoles) || new Set(recordedRoles).size !== recordedRoles.length || !equal([...roles].sort(), [...recordedRoles].sort())) throw new Error('specialist roles must be unique and match metadata');
   const completedRoutes = plan.specialists.filter(lens => lens.status === 'completed').map(lens => lens.route);
   const route = completedRoutes.includes('independent') ? 'independent' : completedRoutes.includes('sequential') ? 'sequential' : 'primary';
-  if (metadata.delegation?.route !== route || metadata.delegation?.agents !== (route === 'independent' ? 'omp-internal' : 'none') || !nonempty(metadata.delegation?.reason)) throw new Error('metadata delegation route mismatch');
+  const agents = metadata.delegation?.agents;
+  if (metadata.delegation?.route !== route || !(route === 'independent' ? ['omp-internal', 'herdr-core'].includes(agents) : agents === 'none') || !nonempty(metadata.delegation?.reason)) throw new Error('metadata delegation route mismatch');
   const checkNames = new Set();
   for (const check of checks.checks) {
     if (!nonempty(check.name) || checkNames.has(check.name) || !['static', 'ci', 'local'].includes(check.kind) || !['pass', 'fail', 'not_run'].includes(check.status) || !nonempty(check.command) || !Number.isFinite(Date.parse(check.at)) || (check.status === 'not_run' ? !nonempty(check.reason) : !nonempty(check.evidence))) throw new Error('invalid check evidence');
@@ -546,7 +547,7 @@ async function launch(args) {
     for (const [name, text] of references) privateWrite(path.join(run, 'references', `${name}.md`), text);
     stage = 'worktree-create';
     resources.name = `pr-review-${runId.slice(-20)}`;
-    resources.checkout = { owner: environment === 'herdr' ? 'worktrunk' : 'orca', path: null, repositoryGitDir, baseSha: fixed.baseSha, branch: null, ownerId: null };
+    resources.checkout = { owner: environment === 'orca' ? 'orca' : 'worktrunk', path: null, repositoryGitDir, baseSha: fixed.baseSha, branch: null, ownerId: null };
     const persist = () => fs.writeFileSync(path.join(run, 'resources.json'), JSON.stringify(resources, null, 2) + '\n', { mode: 0o600 });
     privateWrite(path.join(run, 'attempt.json'), { runId, repository, prNumber: options.number, ...fixed, ...resources });
     adapter.createCheckout(api, options, resources, fixed, callerRoot, persist);
@@ -586,7 +587,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--environment herdr|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr uses cwd/--repo-path and the configured Worktrunk lifecycle plus a dedicated Herdr workspace (local zsh/bash input readiness required). --no-focus preserves focus; otherwise the new workspace is focused. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is known unsupported and stops before resources. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
+    process.stdout.write('Usage: pr-review [--environment herdr|herdr-core|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr and herdr-core use cwd/--repo-path and Worktrunk; core terminals are background-only. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is unsupported. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

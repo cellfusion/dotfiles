@@ -21,7 +21,7 @@ cat > "$record" <<'JSON'
   "role": "implementer",
   "confidence": "high",
   "reasonCode": "single_task_low_parallelism",
-  "backend": "omp-internal",
+  "backend": "herdr-core",
   "provider": "openai-codex",
   "model": "openai-codex/gpt-5.6-luna",
   "effort": "xhigh",
@@ -40,6 +40,7 @@ assert_eq "$(wc -l < "$output" | tr -d ' ')" 1 'route JSONL に一行追加す�
 assert_eq "$(stat -f '%Lp' "$output")" 600 'route log を mode 0600 で作る'
 assert_eq "$(jq -r '.route' "$output")" single 'route を保持する'
 assert_eq "$(jq -r '.model' "$output")" 'openai-codex/gpt-5.6-luna' '選択 model を保持する'
+assert_eq "$(jq -r '.backend' "$output")" 'herdr-core' 'HC backend を保持する'
 
 summary_out="$(MAD_ROUTE_SHARE_DIR="$root/private_dot_local/private_share/agent-config" \
   "$summary" --input "$output")"

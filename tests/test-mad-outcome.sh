@@ -23,7 +23,7 @@ cat > "$record" <<'JSON'
     "workClass": "routine",
     "complexity": "routine",
     "role": "implementer",
-    "backend": "omp-internal",
+    "backend": "herdr-core",
     "provider": "codex",
     "model": "gpt-5.6-luna",
     "effort": "xhigh",
@@ -64,6 +64,7 @@ assert_eq "$(stat -f '%Lp' "$output")" 600 'ログを mode 0600 で作る'
 assert_eq "$(jq -r '.type' "$output")" 'mad-attempt-outcome' 'type を保持する'
 assert_eq "$(jq -r '.route.model' "$output")" 'gpt-5.6-luna' 'route を保持する'
 assert_eq "$(jq -r '.verification.tests' "$output")" 'passed' 'verification を保持する'
+assert_eq "$(jq -r '.route.backend' "$output")" 'herdr-core' 'HC backend を保持する'
 
 bad="$tmp/bad.json"
 jq 'del(.usage.inputTokens)' "$record" > "$bad"

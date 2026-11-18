@@ -4,6 +4,8 @@ modelRoles:
   smol: openai-codex/gpt-6-luna:medium
 symbolPreset: nerd
 setupVersion: 2
+task:
+  maxRecursionDepth: 0
 steeringMode: one-at-a-time
 followUpMode: one-at-a-time
 interruptMode: immediate

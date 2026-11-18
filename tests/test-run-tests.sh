@@ -41,6 +41,7 @@ expected_names=(
   test-pr-review.sh
   test-github-worktree.sh
   test-agent-usage.sh
+  test-hc-question.sh
   test-run-tests.sh
 )
 expected_order="$(printf '%s\n' "${expected_names[@]}")"

@@ -33,6 +33,7 @@ tests=(
   test-pr-review.sh
   test-github-worktree.sh
   test-agent-usage.sh
+  test-hc-question.sh
   test-run-tests.sh
 )
 

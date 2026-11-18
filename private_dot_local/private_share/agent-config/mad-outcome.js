@@ -57,7 +57,7 @@ function assertOutcomeV1(value) {
   }
   if (!['mechanical', 'routine', 'integration', 'architectural'].includes(value.route.workClass)) throw new Error('route.workClass is invalid')
   if (!['simple', 'routine', 'complex', 'critical'].includes(value.route.complexity)) throw new Error('route.complexity is invalid')
-  if (!['omp-internal', 'herdr-cli'].includes(value.route.backend)) throw new Error('route.backend is invalid')
+  if (!['omp-internal', 'herdr-cli', 'herdr-core'].includes(value.route.backend)) throw new Error('route.backend is invalid')
   if (!['initial', 'retry', 'escalation'].includes(value.route.trigger)) throw new Error('route.trigger is invalid')
   nonNegativeInteger(value.route.policyLevel, 'route.policyLevel')
   nonNegativeInteger(value.route.round, 'route.round')
