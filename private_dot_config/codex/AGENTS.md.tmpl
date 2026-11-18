@@ -22,6 +22,9 @@ In code mode, MCP tools do not appear in the standard tool listing. Invoke them 
 
 - If unsure of available tool names, inspect via `Object.keys(tools)` in `exec`. Never claim "MCP is unavailable" simply because tools do not appear in the default tool list.
 
+{{ includeTemplate "agent-instructions/common.md" . }}
+{{ includeTemplate "agent-instructions/worktree-workflow.md" . }}
+
 ## Chezmoi
 
 - When modifying files under `~/.config`, never edit them directly; edit the corresponding source under `~/.local/share/chezmoi/`.

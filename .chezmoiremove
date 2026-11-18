@@ -19,10 +19,9 @@ CLAUDE.md
 # source を編集しても workflow が古いコピーを実行し続ける。
 .config/claude/skills/subagent-driven-development/scripts
 
-# codex の設定は実運用の CODEX_HOME（~/.config/codex）へ移した。旧 ~/.codex に
-# 配った AGENTS.md と agent 定義が残ると、どちらが正か分からなくなる。
-# sessions/ や history.jsonl は chezmoi 管理外なのでここでは触らない。
-.codex/AGENTS.md
+# codex の設定は実運用の CODEX_HOME（~/.config/codex）へ移した。
+# ~/.codex/AGENTS.md は直接起動時にも共通 worktree ルールを読むため再び管理する。
+# 旧 agent 定義だけを回収し、sessions/ や history.jsonl は触らない。
 .codex/agents
 
 .agents/skills/subagent-driven-development/scripts/herdr-dispatch
@@ -218,7 +217,6 @@ Library/LaunchAgents/com.cellfusion.paseo-link-claude-history.plist
 .pi/agent/agents/re-reviewer.md
 .pi/agent/extensions/subagent/agents.ts
 .pi/agent/extensions/subagent/index.ts
-.config/opencode/AGENTS.md
 .config/opencode/agents/architectural-implementer.md
 .config/opencode/agents/escalation-judge.md
 .config/opencode/agents/intake-router.md

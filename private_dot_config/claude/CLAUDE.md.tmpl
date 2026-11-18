@@ -35,6 +35,9 @@ Prefer the normal context-compaction and continuation mechanisms. When a handoff
 use the `/handoff` skill at a clean work boundary. Do not automatically launch a successor, close
 the current session, change permissions, or infer readiness from an idle terminal.
 
+{{ includeTemplate "agent-instructions/common.md" . }}
+{{ includeTemplate "agent-instructions/worktree-workflow.md" . }}
+
 ## Conventional Commits
 
 Format: `<type>: <description>`. Scope is optional (`feat(auth): add login endpoint`).
