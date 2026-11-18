@@ -50,10 +50,29 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   const openCode = successful(run(configPath, mockBin, ['--family=opencode', '--', 'prompt with spaces']), 'cwd OpenCode')
   if (openCode.binary !== 'opencode' || openCode.environment !== 'lab' ||
       JSON.stringify(openCode.args) !== JSON.stringify(['prompt with spaces'])) throw new Error('OpenCode routing failed')
+  fs.mkdirSync(path.join(home, '.pi/agent/extensions'), { recursive: true })
+  fs.writeFileSync(path.join(home, '.pi/agent/settings.json'), '{}')
+  fs.writeFileSync(path.join(home, '.pi/agent/auth.json'), 'private')
   const pi = successful(run(configPath, mockBin, ['--family=pi', '--', 'prompt with spaces'],
     { PI_CODING_AGENT_DIR: '/custom/pi' }), 'cwd Pi')
-  if (pi.binary !== 'pi' || pi.environment !== 'lab' || pi.storage !== '/custom/pi' ||
+  if (pi.binary !== 'pi' || pi.environment !== 'lab' || pi.storage !== path.join(home, '.pi/agent_lab') ||
       JSON.stringify(pi.args) !== JSON.stringify(['prompt with spaces'])) throw new Error('Pi routing failed')
+  for (const name of ['settings.json', 'extensions']) {
+    if (fs.realpathSync(path.join(pi.storage, name)) !== fs.realpathSync(path.join(home, '.pi/agent', name))) throw new Error(`Pi did not share ${name}`)
+  }
+  if (fs.existsSync(path.join(pi.storage, 'auth.json'))) throw new Error('Pi shared credentials')
+  fs.symlinkSync(path.join(home, '.pi/agent/auth.json'), path.join(pi.storage, 'auth.json'))
+  if (run(configPath, mockBin, ['--family=pi']).status !== 2) throw new Error('Pi accepted shared auth symlink')
+  fs.unlinkSync(path.join(pi.storage, 'auth.json'))
+  fs.linkSync(path.join(home, '.pi/agent/auth.json'), path.join(pi.storage, 'auth.json'))
+  if (run(configPath, mockBin, ['--family=pi']).status !== 2) throw new Error('Pi accepted shared auth hard link')
+  fs.unlinkSync(path.join(pi.storage, 'auth.json'))
+  const defaultPi = successful(run(configPath, mockBin, ['--family=pi', '--environment=primary'],
+    { PI_CODING_AGENT_DIR: '/custom/pi' }), 'default Pi')
+  if (defaultPi.storage !== path.join(home, '.pi/agent')) throw new Error('Pi default did not use existing credentials')
+  const configlessPi = successful(run(path.join(temporary, 'missing.json'), mockBin, ['--family=pi'],
+    { PI_CODING_AGENT_DIR: '/custom/pi' }), 'configless Pi')
+  if (configlessPi.storage !== '/custom/pi') throw new Error('configless Pi changed inherited storage')
   const parent = successful(run(configPath, mockBin, ['--family', 'claude'], { AGENT_ENV: 'primary' }), 'parent Claude')
   if (parent.environment !== 'primary' || parent.claude !== path.join(home, '.config/claude')) throw new Error('parent did not override cwd')
   const explicit = successful(run(configPath, mockBin, ['--family=codex', '--environment=lab'], { AGENT_ENV: 'primary' }), 'explicit Codex')

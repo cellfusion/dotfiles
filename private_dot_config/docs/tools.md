@@ -266,8 +266,11 @@ environment の `providers` に `"opencode"` を追加する。環境は起動�
 選択に使うだけで、OpenCode の設定・認証・履歴は環境間で分離せず既定の保存先を共有する。
 
 Pi も同様に `"pi": { "displayName": "Pi", "setup": null }` と各 environment の
-`"pi"` を登録する。OpenCode と同じく、Pi の設定・認証・履歴は環境間で分離せず
-Pi の保存先を共有する。`PI_CODING_AGENT_DIR` など Pi 自身の環境設定は引き継ぐ。
+`"pi"` を登録する。デフォルト環境は `~/.pi/agent`、その他は
+`~/.pi/agent_<environment>` を使い、認証情報とセッションを分離する。
+非デフォルト環境の初回起動時に、共通の設定や拡張機能などへの symlink を作る。
+既存の環境固有ファイルは上書きしない。設定がある場合は継承した
+`PI_CODING_AGENT_DIR` より選択された環境を優先し、設定がない場合は引き継ぐ。
 
 
 ## core

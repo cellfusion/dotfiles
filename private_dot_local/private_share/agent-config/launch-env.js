@@ -43,8 +43,37 @@ function main(argv) {
   if (!config.environments[selected.environment].providers.includes(family)) {
     fail(`CLI ${family}: not configured in environment ${selected.environment}`)
   }
-  if (family === 'opencode' || family === 'pi') {
+  if (family === 'opencode') {
     process.stdout.write(`binary ${family}\nenv AGENT_ENV ${selected.environment}\n`)
+    return
+  }
+  if (family === 'pi') {
+    if (!process.env.HOME || !path.isAbsolute(process.env.HOME)) fail('HOME: absolute path is required')
+    const primary = path.join(process.env.HOME, '.pi', 'agent')
+    const directory = selected.environment === config.defaults.environment
+      ? primary : path.join(process.env.HOME, '.pi', `agent_${selected.environment}`)
+    if (directory !== primary) {
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+      if (!fs.lstatSync(directory).isDirectory()) fail('pi: environment directory must not be a symlink')
+      const auth = path.join(directory, 'auth.json')
+      try {
+        const entry = fs.lstatSync(auth)
+        if (entry.isSymbolicLink()) fail('pi: environment auth.json must not be a symlink')
+        try {
+          const original = fs.statSync(path.join(primary, 'auth.json'))
+          if (entry.dev === original.dev && entry.ino === original.ino) fail('pi: environment auth.json must be independent')
+        } catch (error) { if (error.code !== 'ENOENT') throw error }
+      } catch (error) { if (error.code !== 'ENOENT') throw error }
+      for (const name of ['settings.json', 'keybindings.json', 'mcp.json', 'models.json', 'AGENTS.md',
+        'AGENTS.override.md', 'SYSTEM.md', 'APPEND_SYSTEM.md', 'extensions', 'skills', 'prompts', 'themes', 'npm']) {
+        const source = path.join(primary, name)
+        const destination = path.join(directory, name)
+        try { fs.lstatSync(source) } catch (error) { if (error.code === 'ENOENT') continue; throw error }
+        try { fs.symlinkSync(path.relative(directory, source), destination) }
+        catch (error) { if (error.code !== 'EEXIST') throw error }
+      }
+    }
+    process.stdout.write(`binary pi\nenv AGENT_ENV ${selected.environment}\nenv PI_CODING_AGENT_DIR ${directory}\n`)
     return
   }
   if (family === 'omp') {
