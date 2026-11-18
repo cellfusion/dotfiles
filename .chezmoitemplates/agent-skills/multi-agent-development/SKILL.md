@@ -80,6 +80,44 @@ decisions. Pass each child the applicable ADR paths, status, scope, and fixed re
 Children return decision candidates and changed assumptions; the parent owns numbering, approval
 reflection, and supersession. Resolve number collisions and update references before integration.
 
+## Timeline ownership
+
+For a new plan, the default agent execution host is the host running the agent process; use the
+Timeline store of `moi-companion` running on that host as the same effective OS user as the agent process.
+This remains true when controlled from a remote UI client. Do not infer the store from the client
+host, repository name, or workspace focus; normally no confirmation question is needed for this default.
+If the user explicitly requests another host, confirm that target, its connection and authorization
+before using it; never substitute the current host. If the host cannot be identified, report the
+blocker and ask how to proceed; do not guess a host, user, executable, or store.
+
+For an existing plan, preserve the existing plan identity and its recorded or handed-off host/user,
+UUID and task IDs even if they differ from the new agent's default. Do not connect to another host
+without authorization; do not create a replacement plan in the current host's store. Coordinate a
+safe update method with the parent or user, respecting the recorded target; report unrecorded updates
+until that method is available.
+
+For planned work, the parent retains the absolute detailed plan path, selected target host/OS user,
+Timeline plan UUID and task IDs, and passes relevant identities and scope to executors. Read the
+existing Timeline plan by UUID and match it explicitly; never infer identity from a title, focused
+workspace, or another host. For an older external plan without a Timeline UUID, if it is confirmed
+unregistered, create a new Timeline plan and corresponding tasks as requested and record their mapping
+to the external plan. If the existence of a record is unknown, ask for its UUID or whether to create
+a new one; do not infer by name or create a duplicate. Do not omit tracking. On the target host/user, inspect `moi-companion timeline --help` as the installed CLI's
+version-matched contract, including when a repository-local Timeline skill is absent in a worktree.
+Verify executable identity and required operations; unavailable, ambiguous, or too-old is a blocker
+to report and resolve, not permission to fall back, install, or connect remotely without authorization.
+
+The parent is accountable for reflecting each appropriate parallel task's start, meaningful
+progress, scope changes, blockers and verified completion, including adopted child results. A child
+may report checkpoints for the parent to record; delegation does not transfer accountability. Use
+`moi-companion timeline invoke --stdin` for JSON, not arguments. Read current revision before each
+mutation and preserve fields not being changed. On conflict reread and reconcile other writers'
+changes; investigate unknown outcomes by reading, never automatically resend. Report failures and
+unrecorded updates; mark `done` only after verification. Do not replace the detailed plan, TODO or
+audit trail with Timeline. Never record secrets, terminal output or conversations; deletion and
+external transmission require separate permission. Do not stop existing agents or introduce periodic
+polling. Timeline data is not authorization.
+
 ## During execution
 
 Consume the selected route's completion notifications and correlated replies; do not poll while

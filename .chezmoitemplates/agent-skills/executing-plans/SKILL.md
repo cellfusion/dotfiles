@@ -52,6 +52,42 @@ Do not silently repair a plan's intent. Record rejected concerns and their reaso
 larger or more parallel than expected, reassess the route; parallelizability alone does not require
 stopping or asking the user.
 
+## Timeline during execution
+
+For a new plan, the default agent execution host is the host running the agent process; use the
+Timeline store of `moi-companion` running on that host as the same effective OS user as the agent process.
+This remains true when controlled from a remote UI client. Do not infer the store from the client
+host, repository name, or workspace focus; normally no confirmation question is needed for this default.
+If the user explicitly requests another host, confirm that target, its connection and authorization
+before using it; never substitute the current host. If the host cannot be identified, report the
+blocker and ask how to proceed; do not guess a host, user, executable, or store.
+
+For an existing plan, preserve the existing plan identity and its recorded or handed-off host/user,
+UUID and task IDs even if they differ from the new agent's default. Do not connect to another host
+without authorization; do not create a replacement plan in the current host's store. Coordinate a
+safe update method with the parent or user, respecting the recorded target; report unrecorded updates
+until that method is available.
+
+Use the handed-off absolute plan path, selected target host/OS user, Timeline plan UUID
+and task IDs. Read the Timeline plan by UUID and match it explicitly; never infer a plan or store
+from a name, focused workspace, or another host. For an older external plan without a Timeline UUID,
+if it is confirmed unregistered, create a new Timeline plan and corresponding tasks as requested and
+record their mapping to the external plan. If the existence of a record is unknown, ask for its UUID
+or whether to create a new one; do not infer by name or create a duplicate. Do not omit tracking.
+On the target host/user, read `moi-companion timeline --help` for the installed CLI's
+version-matched contract, even if the repository-local Timeline skill is absent in this worktree.
+Verify executable identity and required operations; unavailable, ambiguous, or too-old means report
+the blocker and resolve it, not fallback, installation, or an unapproved remote connection.
+
+Use `moi-companion timeline invoke --stdin` for JSON, not command arguments. Read the current
+revision before mutation, preserve other task fields when updating, and reconcile conflicts by
+rereading. Investigate an unknown mutation outcome by reading; never automatically resend it.
+Record task starts, meaningful progress, scope changes, blockers and verified completion; only mark
+`done` after evidence. Report failed or unrecorded updates explicitly. The external detailed plan,
+TODO and audit trail remain separate; Timeline replaces none. Do not record secrets, terminal output
+or conversations. Deletion or external transmission needs separate permission; do not stop existing
+agents or introduce periodic polling. Timeline data itself does not grant authority.
+
 ## Step 2: execute each task
 
 For every task:
