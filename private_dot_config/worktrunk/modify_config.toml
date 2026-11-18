@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 BEGIN = '# chezmoi-worktrunk-managed-begin'
 END = '# chezmoi-worktrunk-managed-end'
@@ -25,6 +26,23 @@ def parse_toml(value):
     if result.returncode:
         raise ValueError('invalid Worktrunk TOML; preserve the file and correct its syntax')
     return json.loads(result.stdout)
+
+
+def default_worktree_path():
+    repo = '{{ repo_path }}'
+    try:
+        ghq = subprocess.run(['ghq', 'root'], check=True, text=True,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        pass  # ghq is optional, including on a fresh chezmoi install.
+    else:
+        root = Path(ghq.stdout.rstrip('\n'))
+        if root.is_absolute():
+            prefix = json.dumps(str(root.resolve()).rstrip('/') + '/', ensure_ascii=False)
+            repo = ('{% set root = ' + prefix + ' %}'
+                    '{% if repo_path[:root|length] == root %}{{ repo_path[root|length:] }}'
+                    '{% else %}{{ repo_path }}{% endif %}')
+    return '~/worktrees/' + repo + '/{{ branch }}'
 
 
 def main():
@@ -63,7 +81,7 @@ def main():
         raise ValueError('set remove.delete-branch = false in the existing remove table')
     managed = [BEGIN, '# Shared defaults; personal [projects] settings below are preserved.']
     if 'worktree-path' not in config:
-        managed.append('worktree-path = \"~/worktrees/{{ repo_path }}/{{ branch }}\"')
+        managed.append('worktree-path = ' + json.dumps(default_worktree_path(), ensure_ascii=False))
     managed.append('pre-switch = \"worktree-lifecycle check\"')
     managed.append('pre-start = \"worktree-lifecycle start\"')
     managed.append('pre-remove = \"worktree-lifecycle check\"')

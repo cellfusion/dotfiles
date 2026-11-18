@@ -226,18 +226,25 @@ assert_eq "$dupes" "" "run_onchange スクリプトの番号が一意である"
 # Preserve personal project settings while upgrading the shared Worktrunk defaults.
 worktrunk_status=0
 python3 -B - "$CHEZMOI_SOURCE" <<'PY' || worktrunk_status=$?
-import subprocess, sys, tomllib
+import os, subprocess, sys, tempfile, tomllib
 from pathlib import Path
 
 script = Path(sys.argv[1]) / 'private_dot_config/worktrunk/modify_config.toml'
+fixture = tempfile.TemporaryDirectory()
+ghq = Path(fixture.name) / 'ghq'
+ghq.write_text('#!/bin/sh\n[ "$1" = root ] && printf "%s\\n" "$TEST_GHQ_ROOT"\n')
+ghq.chmod(0o755)
+env = dict(os.environ, PATH=fixture.name + os.pathsep + os.environ['PATH'],
+           TEST_GHQ_ROOT='/worktrunk-test/ghq')
 original = '''worktree-path = "~/.herdr/worktrees/{{ repo }}/{{ branch | sanitize }}"
 
 [projects."github.com/example/private".pre-start]
 install = "printf private"
 '''
-def render(value):
+def render(value, **overrides):
     result = subprocess.run([sys.executable, str(script)], input=value, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                            env=dict(env, **overrides))
     return result.stdout
 first = render(original)
 config = tomllib.loads(first)
@@ -246,8 +253,15 @@ assert config['pre-switch'] == 'worktree-lifecycle check'
 assert config['pre-start'] == 'worktree-lifecycle start'
 assert config['pre-remove'] == 'worktree-lifecycle check'
 assert config['remove']['delete-branch'] is False
-assert config['worktree-path'] == '~/worktrees/{{ repo_path }}/{{ branch }}'
+assert config['worktree-path'] == (
+    '~/worktrees/{% set root = "/worktrunk-test/ghq/" %}'
+    '{% if repo_path[:root|length] == root %}{{ repo_path[root|length:] }}'
+    '{% else %}{{ repo_path }}{% endif %}/{{ branch }}'
+), config['worktree-path']
 assert render(first) == first
+assert tomllib.loads(render(original, TEST_GHQ_ROOT=''))['worktree-path'] == (
+    '~/worktrees/{{ repo_path }}/{{ branch }}'
+)
 custom = 'worktree-path = "/private/custom/{{ branch }}"\n[remove]\ndelete-branch = false\n'
 preserved = tomllib.loads(render(custom))
 assert preserved['worktree-path'] == '/private/custom/{{ branch }}'
