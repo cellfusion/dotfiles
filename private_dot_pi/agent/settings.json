@@ -1,0 +1,17 @@
+{
+  "theme": "dark",
+  "lastChangelogVersion": "1.5.2",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-6.1-terra",
+  "defaultTools": [
+    "+codemode"
+  ],
+  "packages": [
+    "npm:pi-lens",
+    "npm:pi-web-search@1.7.0",
+    "npm:pi-goal"
+  ],
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:pi-lens\",\"scope\":\"user\"}": "4.4.12"
+  }
+}
