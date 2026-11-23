@@ -252,3 +252,16 @@ Library/LaunchAgents/com.cellfusion.paseo-link-claude-history.plist
 # 2026-10-16: Orca専用discovery skillを撤去する。アプリ・認証・履歴は残す。
 .agents/skills/orca-cli/SKILL.md
 .agents/skills/computer-use/SKILL.md
+
+# Rex に移行したため、配布済みの hc テンプレートと専用ガイドだけを回収する。
+.config/herdr-core/templates/assistant-review.md
+.config/herdr-core/templates/assistant.md
+.config/herdr-core/templates/debug.md
+.config/herdr-core/templates/implement.md
+.config/herdr-core/templates/plan-auditor.md
+.config/herdr-core/templates/question.md
+.config/herdr-core/templates/research.md
+.config/herdr-core/templates/review.md
+.config/herdr-core/templates/security-review.md
+.config/herdr-core/templates/ui.md
+.config/docs/herdr-core-templates.md

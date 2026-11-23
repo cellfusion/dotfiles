@@ -1,3 +1,9 @@
+## Agent Selection
+
+- OMP is my primary coding agent. When a task calls for a new top-level agent session and I did not name a runtime, use OMP. An explicit user choice or a verified existing session takes precedence; do not switch the current session to OMP just because it is the default.
+- Skills and prompts should describe the task or role, not select an agent executable. Use this policy when a separate agent session is needed. For ordinary delegation within the current runtime, use its supported native mechanism; read `agent-communication` before delegating or handing off to another terminal.
+- Load runtime-specific instructions only when using that runtime: `agent-communication` has an OMP reference; read `pi-runtime` before launching or delegating from Pi. Keep tool availability, permissions, and terminal operations separate from the choice of agent.
+
 ## Documentation Format Preferences
 
 - Prefer text-based diagram formats such as Mermaid for diagrams, rather than ASCII art. Choose a format supported by the destination.

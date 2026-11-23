@@ -46,8 +46,7 @@ pi="$(chezmoi cat --source "$CHEZMOI_SOURCE" "$HOME/.pi/agent/AGENTS.md")"
 for heading in \
   '## Project to-do lists (Herdr)' \
   '## Explaining Work to the User' \
-  '## Deliver the requested implementation' \
-  '## Subagents with Herdr Core'
+  '## Deliver the requested implementation'
 do
   assert_contains "$pi" "$heading" "Pi: 既存メモリ $heading を保持する"
 done

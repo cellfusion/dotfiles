@@ -17,13 +17,7 @@ when you leave follow-up work undone. Keep items short, one line each.
 
 {{ includeTemplate "agent-instructions/common.md" . }}
 {{ includeTemplate "agent-instructions/worktree-workflow.md" . }}
-## Subagents with Herdr Core
+## Pi runtime
 
-When delegation is useful or requested, use `hc run` to start interactive Pi subagents. First read the `herdr-core` skill and version-matched `hc --skill` manual, then inspect `hc templates` and choose the role best suited to the task. Check the template's command and safety constraints; if no suitable Pi template is available, run `pi` interactively with `hc run` instead. Do not spawn agents for trivial work or let children spawn further agents unless explicitly assigned.
-
-Give each child a bounded scope, explicit checkout and working directory, acceptance criteria, request ID, and verified reply address. When a parent HC terminal is available, require the child in the initial task to report the result or blocker to that address with `hc send` and the request ID. Use `--bg` and check `first_message.sent`.
-
-Continue independent work while reports are pending. When there is no useful work to do, wait for direct-child messages or lifecycle events with `hc wait --children any`; a message wakeup arrives as subsequent input. If no verified parent HC terminal exists, provide an actually reachable reply channel and follow the manual's explicit-target waits instead of assuming parent notifications.
-
-Do not use `sleep` or repeatedly poll `hc get`, `hc read`, or other status commands as a waiting loop. A timeout is a check-in, not failure or permission to resend. Correlate and inspect the actual report and result; an idle, done, or exited child alone is not success. If a child is blocked, reports an error, or stops without a report, inspect that same terminal and follow the manual's blocked-state and error-handling rules. Respect checkout ownership, other people's changes, approval boundaries, and the cleanup rules.
+Read `pi-runtime` before launching another agent or handing off work. Use the shared Agent Selection policy; being in Pi does not make Pi the default for new sessions.
 

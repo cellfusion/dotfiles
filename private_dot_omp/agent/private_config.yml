@@ -1,11 +1,15 @@
 modelRoles:
-  default: openai-codex/gpt-6.1-terra:xhigh
+  default: openai-codex/gpt-6.2-sol:medium
   commit: openai-codex/gpt-6-luna:auto
   smol: openai-codex/gpt-6-luna:medium
-symbolPreset: nerd
-setupVersion: 2
+  plan: openai-codex/gpt-6.2-astra
+  judge: openai-codex/gpt-6-luna:low
+  task: openai-codex/gpt-6.1-terra:high
+  tiny: openai-codex/gpt-6-luna:high
 task:
-  maxRecursionDepth: 0
+  autoParallel: suggest
+symbolPreset: nerd
+setupVersion: 3
 steeringMode: one-at-a-time
 followUpMode: one-at-a-time
 interruptMode: immediate
@@ -16,6 +20,7 @@ tui:
   reactions: true
   tight: false
   textSizing: true
+  titleState: false
 loop:
   mode: prompt
 doubleEscapeAction: rewind
@@ -53,19 +58,29 @@ display:
   subagentLivePreview: false
   showTokenUsage: true
   showTurnTime: true
+  hideToolActivity: false
 hideThinkingBlock: false
 includeWorkspaceTree: false
 codexResets:
-  autoRedeem: "yes"
+  autoRedeem5h: "yes"
+  autoRedeemWeekly: "yes"
 title:
   icons: boring
 autolearn:
   enabled: false
 readLineNumbers: true
 read:
-  renderMarkdown: true
-  toolResultPreview: true
+  renderMarkdown: false
+  toolResultPreview: false
 computer:
   enabled: true
 github:
   enabled: true
+update:
+  auto: true
+extensionRenderers:
+  transcriptPresenters: true
+vault:
+  enabled: true
+browser:
+  relay: false
