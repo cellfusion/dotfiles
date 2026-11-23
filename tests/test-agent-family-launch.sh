@@ -41,6 +41,9 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   const value = structuredClone(sample)
   value.providers.pi = { displayName: 'Pi', setup: null }
   value.environments.lab.providers = [...new Set([...value.environments.lab.providers, 'pi'])]
+  const baseOmpConfig = path.join(home, 'default settings.yml')
+  const labOmpConfig = path.join(home, 'lab settings.yml')
+  value.environments.lab.ompConfigOverlays = [baseOmpConfig, labOmpConfig]
   value.projectRouting.rules = [{ name: 'cwd', environment: 'lab', match: { path: temporary } }]
   const configPath = path.join(temporary, 'agent-config.json')
   fs.writeFileSync(configPath, JSON.stringify(value))
@@ -114,10 +117,19 @@ profile: process.env.OMP_PROFILE || null, storage: process.env.PI_CODING_AGENT_D
   if (cwdOmp.environment !== 'lab' || cwdOmp.profile !== 'lab' || cwdOmp.storage !== null) {
     throw new Error('OMP did not select cwd profile or retained old storage')
   }
+  if (JSON.stringify(cwdOmp.args) !== JSON.stringify(['--config', baseOmpConfig, '--config', labOmpConfig])) {
+    throw new Error('OMP did not load default config before profile overrides')
+  }
+  const customOmpConfig = path.join(home, 'custom settings.yml')
+  const customOmp = successful(run(configPath, mockBin, ['--family=omp', '--', '--config', customOmpConfig]), 'OMP custom overlay')
+  if (JSON.stringify(customOmp.args) !== JSON.stringify([...cwdOmp.args, '--config', customOmpConfig])) {
+    throw new Error('explicit OMP overlays must load last')
+  }
   const parentOmp = successful(run(configPath, mockBin, ['--family=omp'], { ...inherited, AGENT_ENV: 'primary' }), 'parent OMP')
   if (parentOmp.environment !== 'primary' || parentOmp.profile !== null || parentOmp.storage !== null) {
     throw new Error('OMP parent did not override cwd with native default')
   }
+  if (parentOmp.args.length !== 0) throw new Error('OMP default loaded a named profile overlay')
   for (const option of [['--environment=lab'], ['--environment', 'lab']]) {
     const explicitOmp = successful(run(configPath, mockBin, ['--family=omp', ...option], {
       ...inherited, AGENT_ENV: 'primary',

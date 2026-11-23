@@ -56,15 +56,17 @@ launch_args=(--family "$family")
 [ "$environment_seen" -eq 0 ] || launch_args+=(--environment "$environment")
 if ! assignments="$(node "$share/launch-env.js" "${launch_args[@]}")"; then exit 2; fi
 binary=""
+prefix=()
 while IFS=' ' read -r kind key value; do
   case "$kind" in
     binary) binary="$key" ;;
     env) export "$key=$value" ;;
     unset) unset "$key" ;;
+    arg) prefix+=("$key" "$value") ;;
     *) printf 'agent: invalid launch-env.js output\n' >&2; exit 2 ;;
   esac
 done <<EOF
 $assignments
 EOF
 [ -n "$binary" ] || usage_error 'no CLI selected'
-exec "$binary" ${forward[@]+"${forward[@]}"}
+exec "$binary" ${prefix[@]+"${prefix[@]}"} ${forward[@]+"${forward[@]}"}

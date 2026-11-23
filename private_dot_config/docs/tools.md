@@ -259,6 +259,12 @@ OMP の profile はネイティブの保存先を使い、`agent-config setup` �
 `agent --family=omp --environment=lab -- [args...]` は、`lab` が非デフォルト環境なら
 OMP の `lab` プロファイルで起動する。`--environment lab` 形式も使える。
 設定なしでの明示的なプロファイル指定は `agent --family=omp -- --profile lab` で OMP 本体に渡せる。
+特定の環境で既定プロファイルの設定を引き継ぐには、環境の `ompConfigOverlays` に
+設定ファイルの絶対パスを読み込み順で指定する。共通の `config.yml` を先、名前付き
+プロファイル固有の `config.yml` を後に置くと、固有設定が共通設定に優先する。
+これらは OMP の読み取り専用 overlay で、プロジェクト設定より優先し、明示的な
+`--config` 引数より先に読み込まれる。認証・履歴の保存先はプロファイルごとに分かれたまま。
+直接 `command omp --profile ...` を実行した場合は、このランチャー設定を読み込まない。
 
 OpenCode を有効にするには、`agent-config.json` の `providers` に
 `"opencode": { "displayName": "OpenCode", "setup": null }` を追加し、利用する各

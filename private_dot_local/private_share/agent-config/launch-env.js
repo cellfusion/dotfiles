@@ -84,6 +84,9 @@ function main(argv) {
       'unset PI_CODING_AGENT_DIR',
     ]
     if (selected.environment !== config.defaults.environment) lines.push(`env OMP_PROFILE ${selected.environment}`)
+    for (const overlay of config.environments[selected.environment].ompConfigOverlays ?? []) {
+      lines.push(`arg --config ${overlay}`)
+    }
     process.stdout.write(`${lines.join('\n')}\n`)
     return
   }
