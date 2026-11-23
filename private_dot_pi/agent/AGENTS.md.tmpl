@@ -17,6 +17,18 @@ when you leave follow-up work undone. Keep items short, one line each.
 
 {{ includeTemplate "agent-instructions/common.md" . }}
 {{ includeTemplate "agent-instructions/worktree-workflow.md" . }}
+## When to use brainstorming
+
+Load `brainstorming` for explicit brainstorming or design-option requests, including
+「ブレストしたい」「案を比較したい」「方針を一緒に決めたい」, even when the user is not asking
+for implementation. Also load it when a requested change leaves an important choice about intended
+behavior, scope, constraints, or side effects unresolved. Compare viable options before committing
+to one; ask only when a consequential choice actually requires the user.
+
+Skip brainstorming for a settled local change or a routine, reversible implementation detail.
+An unknown bug cause calls for `systematic-debugging`, not brainstorming. A design-only request
+does not authorize implementation, and loading brainstorming does not require delegation.
+
 ## Pi runtime
 
 Read `pi-runtime` before launching another agent or handing off work. Use the shared Agent Selection policy; being in Pi does not make Pi the default for new sessions.
