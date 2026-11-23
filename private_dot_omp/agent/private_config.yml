@@ -1,13 +1,19 @@
+defaultThinkingLevel: medium
 modelRoles:
   default: openai-codex/gpt-6.2-sol:medium
   commit: openai-codex/gpt-6-luna:auto
   smol: openai-codex/gpt-6-luna:medium
-  plan: openai-codex/gpt-6.2-astra
-  judge: openai-codex/gpt-6-luna:low
-  task: openai-codex/gpt-6.1-terra:high
-  tiny: openai-codex/gpt-6-luna:high
+  slow: openai-codex/gpt-6.2-astra:medium
+  plan: openai-codex/gpt-6.2-astra:medium
+  judge: openai-codex/gpt-6-luna
+  task: openai-codex/gpt-6.1-terra:medium
+  tiny: openai-codex/gpt-6-luna:medium
 task:
   autoParallel: suggest
+  eager: preferred
+  steps: true
+  structured: true
+  enableEffort: false
 symbolPreset: nerd
 setupVersion: 3
 steeringMode: one-at-a-time
@@ -26,7 +32,7 @@ loop:
 doubleEscapeAction: rewind
 composer:
   recallClearedDrafts: true
-  shape: band
+  shape: rule
   tokenRate: true
 treeFilterMode: default
 spelling:
@@ -84,3 +90,12 @@ vault:
   enabled: true
 browser:
   relay: false
+astGrep:
+  enabled: true
+btw:
+  inject: false
+autoResume: true
+startup:
+  quiet: true
+features:
+  unexpectedStopDetection: smart
