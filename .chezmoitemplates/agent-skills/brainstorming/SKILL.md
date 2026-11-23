@@ -1,8 +1,8 @@
 ---
 name: brainstorming
 description: >-
-  Clarify intent and design only when a request leaves meaningful choices unresolved. Avoid formal
-  gates for clear local changes; ask the smallest question that prevents costly rework.
+  Use only when the user explicitly requests this legacy brainstorming skill by name.
+  For ordinary design questions, let pstack select the design workflow.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}

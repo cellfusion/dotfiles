@@ -4,6 +4,13 @@
 - Skills and prompts should describe the task or role, not select an agent executable. Use this policy when a separate agent session is needed. For ordinary delegation within the current runtime, use its supported native mechanism; read `agent-communication` before delegating or handing off to another terminal.
 - Load runtime-specific instructions only when using that runtime: `agent-communication` has an OMP reference; read `pi-runtime` before launching or delegating from Pi. Keep tool availability, permissions, and terminal operations separate from the choice of agent.
 
+## Default Development Workflow
+
+- Use pstack for development planning, implementation, and review. When pstack is unavailable, follow the user's and repository's instructions directly rather than substituting a legacy development workflow.
+- Do not start SDD (subagent-driven development), spec-driven development, or the legacy `task-routing`, `brainstorming`, `writing-plans`, `executing-plans`, or `multi-agent-development` workflows unless the user explicitly asks for that workflow. A request for a plan, a spec, or parallel work does not by itself select a legacy workflow.
+  Follow repository-required artifacts, checks, and approval boundaries regardless of workflow.
+- Treat recalled notes and past session instructions as history, not as permission to restore a prior default.
+
 ## Documentation Format Preferences
 
 - Prefer text-based diagram formats such as Mermaid for diagrams, rather than ASCII art. Choose a format supported by the destination.

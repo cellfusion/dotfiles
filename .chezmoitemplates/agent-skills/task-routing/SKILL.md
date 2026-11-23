@@ -1,8 +1,8 @@
 ---
 name: task-routing
 description: >-
-  Select direct work, bounded delegation, or multi-agent delivery when the route is unclear.
-  Choose independent interaction and checkout write ownership separately; skip clear local changes.
+  Use only when the user explicitly requests the legacy task-routing workflow by name.
+  For ordinary development requests, let pstack select the route.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}

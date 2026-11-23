@@ -14,6 +14,16 @@ task:
   steps: true
   structured: true
   enableEffort: false
+skills:
+  manualSkills:
+    - task-routing
+    - brainstorming
+    - writing-plans
+    - executing-plans
+    - multi-agent-development
+    - subagent-driven-development
+    - spec-driven-development
+    - sdd
 symbolPreset: nerd
 setupVersion: 3
 steeringMode: one-at-a-time

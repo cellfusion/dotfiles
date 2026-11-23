@@ -1,8 +1,8 @@
 ---
 name: writing-plans
 description: >-
-  Turn finalized requirements and architecture into an actionable implementation plan before coding.
-  Use it only for multi-stage work where the plan will guide execution and verification.
+  Use only when the user explicitly requests the legacy writing-plans skill by name.
+  For ordinary implementation plans, let pstack select the planning workflow.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}

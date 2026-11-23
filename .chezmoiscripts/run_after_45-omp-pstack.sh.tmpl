@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -eu
+
+{{ includeTemplate "install/preamble" }}
+
+bun_env
+local_bin_env
+command -v omp >/dev/null 2>&1 || exit 0
+cd "$HOME"
+
+plugin=pstack@pstack-claude
+installed=$(omp plugin list --json)
+if printf '%s\n' "$installed" | jq -e --arg id "$plugin" \
+  'any(.marketplace[]; .id == $id and any(.entries[]; .scope == "user"))' >/dev/null; then
+  exit 0
+fi
+
+marketplaces=$(omp plugin marketplace list)
+if ! printf '%s\n' "$marketplaces" | awk '$1 == "pstack-claude" { found = 1 } END { exit !found }'; then
+  omp plugin marketplace add michael-denyer/pstack-claude
+fi
+omp plugin install "$plugin" --scope=user

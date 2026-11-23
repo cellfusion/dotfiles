@@ -1,8 +1,8 @@
 ---
 name: executing-plans
 description: >-
-  Execute a small, sequential implementation plan in the current session when parallelism, strict
-  multi-agent delivery, and independent task worktrees are unnecessary.
+  Use only when the user explicitly requests the legacy executing-plans skill by name.
+  For ordinary implementation requests, let pstack select the execution workflow.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}

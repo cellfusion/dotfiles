@@ -30,7 +30,7 @@ An explicit user selection wins; verify that host before acting. Neither an inst
 nor OMP itself selects a terminal host. If identity, capability, or delivery is uncertain, stop
 the selected terminal route; do not silently start another backend or replace a live agent.
 
-Use `multi-agent-development` for decomposition and `using-git-worktrees` for write ownership.
+Use the active development workflow for decomposition and `using-git-worktrees` for write ownership.
 A pane is not write isolation. Do not create worktrees, copy dirty files or change branches merely
 for communication. Commit, push, apply, installation and permission prompts need separate authority.
 

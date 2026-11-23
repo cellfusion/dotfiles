@@ -1,9 +1,8 @@
 ---
 name: multi-agent-development
 description: >-
-  Coordinate multiple bounded children or independent reviews with scoped artifacts.
-  Choose independent interaction hosts separately from checkout write ownership and isolation.
-  Skip a single local task or a small sequential plan.
+  Use only when the user explicitly requests the legacy multi-agent-development workflow by name.
+  For ordinary parallel development or review, let pstack select the delegation workflow.
 ---
 {{ includeTemplate (printf "agent-skills/_runtime/%s.md" .tool) . }}
 {{ includeTemplate "agent-skills/_audit.md" . }}
