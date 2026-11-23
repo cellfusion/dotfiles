@@ -28,15 +28,13 @@ Choose the lightest route that can answer the question:
 Do not dispatch a child merely because a review is required. Do not skip independent review for a
 major change merely because the diff looks familiar.
 
-In OMP use HC for justified independent review via `agent-communication`; in other runtimes use
-their read-only internal delegation. HC requires a terminal but not a pane or worktree. If HC is
-unavailable or conflicts with higher-priority runtime policy, report that limitation without silent
-`task` fallback. Delegate explicitly independent conversations to `agent-communication` and the
-[environment contract](../using-git-worktrees/references/environments.md). Delegate write-isolated
-fixes separately to `using-git-worktrees`; an execution host does not determine checkout ownership.
-Normal GitHub PR review uses `pr-review --environment <herdr|herdr-core|orca|paseo> --no-focus [--quick] <PR>`
-from agents, with selection and environment-specific options defined by `pr-review`. Verified current
-host selection may omit `--environment`; unknown or ambiguous hosts stop before side effects.
+Select read-only delegation and separately requested terminal conversations through
+`agent-communication`. In Rex, ordinary OMP review uses native `task`, with no pane or worktree.
+Delegate write-isolated fixes separately to `using-git-worktrees`; an execution host does not
+determine checkout ownership.
+For GitHub PR review, invoke the `pr-review` skill and follow the installed
+`pr-review` contract for supported hosts and explicit `--environment` selection. Unknown or
+unsupported hosts stop before side effects; do not substitute herdr-core for Rex.
 Prepared review context stays in its existing validated environment instead of creating another one.
 Core has its own adapter and terminal identity. Do not select legacy `herdr` merely because it is
 installed or reinterpret `HC_TERMINAL_ID` as its session. Prepared context retains its recorded host.

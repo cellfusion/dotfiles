@@ -67,9 +67,9 @@ another base. Reuse an existing approved task workspace rather than resetting it
 worktree. Select a supported host through the [environment contract](references/environments.md)
 and follow its reference for no-focus creation, safe hook policy and live identity inspection.
 
-For PR review, use `pr-review [--environment herdr|herdr-core|orca|paseo] [--quick] <PR>`; agents add
-`--no-focus`. See `pr-review` for repository selectors and prepared validation. The entry creates
-an isolated base-SHA checkout and run-private reviewer session using the selected adapter.
+For PR review, invoke the `pr-review` skill. Follow its environment reference for repository
+selectors, fixed base-SHA checkout preparation and reviewer launch. In Rex the skill, not the
+shell entry, starts the reviewer.
 Prepared reviews reuse that environment and fixed context; never relaunch the primary reviewer or
 switch its checkout to PR head. The prepared `pr-review` contract permits bounded read-only HC lens
 terminals in that same verified checkout, without a new checkout or visible pane; do not execute

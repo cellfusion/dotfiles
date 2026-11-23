@@ -659,13 +659,16 @@ MAD の route／outcome 記録は `herdr-core` を受け付ける。既存の `o
 | `lazygit` / `Alt-g` | 現在の作業場所でLazyGit。ショートカットは全画面popup |
 | `gh-dash` / `Alt-d` | PR / Issue一覧。`w` でworktree、PRの `r` で隔離レビューを起動。ショートカットは全画面popup |
 | `tuicr` / `Alt-a` | 現在の作業場所でTuicr。ショートカットは全画面popup |
-| `pr-review [--environment herdr\|orca\|paseo] [--quick] <番号またはURL>` | 実行環境を選び、固定PR base SHAの隔離checkoutと専用OMPを起動 |
+| `pr-review` スキル | 固定 PR base SHA の隔離 checkout を準備し、Rex ではスキルが専用 OMP を起動 |
 | `agent-usage` / `Ctrl-b → u` | アカウント使用枠を確認。ショートカットは操作待ちのpopup |
 
 汎用agent-launcherは廃止し、別エージェントは必要な場面でHerdrから直接起動する。
 既存のClaude新tab起動、ファイル選択、zoxide、スクラッチ端末は維持する。
 
 ### PRレビュー
+
+Rex では OMP で `/skill:pr-review <番号またはURL>` を呼び出す。シェルの `pr-review` は
+Rex のレビュー担当を起動しない。以下のシェル例は旧環境用。
 
 実行環境は `--environment` の明示指定を優先し、未指定なら現在のhostを判定する。
 host不明・複数一致・必須能力不足では環境作成前に停止する。Orcaへ暗黙にfallbackしない。

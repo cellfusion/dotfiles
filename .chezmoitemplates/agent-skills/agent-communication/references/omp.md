@@ -1,24 +1,28 @@
-# OMP Communication Through HC
+# OMP Delegation and Handoffs
 
-For justified OMP delegation, use `hc run` and the
-[herdr-core communication contract](herdr-core.md). Read `herdr-core` and the installed
-`hc --skill` first. This is guidance, not an override of higher-priority runtime policy:
-if HC is unavailable or conflicts with that policy, report the blocker; do not silently use
-OMP `task`, Eval agents, or another backend as a fallback.
+OMP is the agent runtime, not the terminal host. Select one route before dispatch:
 
-Give each child a bounded request with a unique `request_id`, exact cwd and allowed files,
-shared contracts, acceptance, verification owner, stop conditions and either the parent's verified
-return address or an actual shared result path / `hc read` procedure when the parent is outside HC.
-Do not pass credentials or unrelated history; do not authorize recursive agents, commit, push,
-apply or install unless explicitly assigned.
+| Context | Bounded same-repository child | Explicit terminal session or handoff |
+| --- | --- | --- |
+| Verified Rex | Native OMP `task` | [Rex communication](rex.md) |
+| Verified herdr-core, not Rex | [HC communication](herdr-core.md), subject to runtime policy | [HC communication](herdr-core.md) |
+| Neither host selected or verified | Native OMP `task` if available | Verify the requested host before acting |
 
-Record the returned full terminal address and inspect `first_message.sent`. Expand the parent's
-address before launch: the child's `$HC_TERMINAL_ID` names the child. Follow the live manual for
-readiness, `hc send`, `hc read` and finite `hc wait`; do useful work rather than polling. A
-timeout, blocked approval or ambiguous delivery is unresolved: inspect the same terminal, do not
-force approval, resend blindly, launch a replacement or switch backend. A wait or idle state is
-not completion; correlate the actual reply and `request_id` before adoption.
+In Rex, confirm inherited `REX_SESSION` and `REX_BLOCK` with `rex whoami --json` before
+terminal operations. A confirmed Rex host or explicit Rex request does not select HC even
+if `hc` is installed or `HC_TERMINAL_ID` leaked into the environment. For an explicit HC request
+or a candidate HC session without Rex, verify live HC identity according to its reference.
+Do not reinterpret missing or ambiguous terminal identity as permission to start a terminal.
 
-An HC terminal is neither a pane nor checkout ownership. For another repository select its
-independently identified owner; for write isolation follow `using-git-worktrees`. Share permitted
-absolute paths rather than host-local `local://` handles. Never infer identity from an example.
+## Native children
+
+Use the exposed `task` tool for justified bounded work. Give each child a `request_id`, exact cwd,
+files and non-goals, acceptance criteria, verification owner and stop conditions. Do not delegate
+permissions or unrelated conversation. Record the returned ID. Follow up via `write agent://<actual-id>`
+if supported; read `agent://<actual-id>` for status or result. Consume completion notifications and
+wait only when blocked. When using the Eval agent API instead, read `xd://eval/agents` before
+dispatch and keep the same handle for follow-up.
+
+`agent://` does not address a separate OMP conversation in a terminal. For that, use the selected
+host's reference. If the chosen route is unavailable or delivery is uncertain, report the blocker
+and inspect the same resource; do not silently switch transports or spawn a replacement.

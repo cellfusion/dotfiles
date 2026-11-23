@@ -13,20 +13,22 @@ This skill adds communication rules, not a new transport, permissions, model sel
 
 ## Select the route
 
-- Same repository: in OMP, use HC for justified delegation and follow
-  [OMP communication](references/omp.md); otherwise use the host's actual internal
-  delegation/message tools when a justified child exists or the task warrants one.
-- Another repository: use an agent in that repository's independently identified environment.
-  Select a supported host through `using-git-worktrees/references/environments.md`. For herdr-core
-  (`hc`, including `$HC_TERMINAL_ID` environments), read `herdr-core` and
-  [terminal communication](references/herdr-core.md); no legacy workspace or visible UI is required.
-  For legacy Herdr, read `herdr` and [repository workspace communication](references/herdr.md).
-  For explicit Orca, follow the Orca reference and its version-matched CLI guide. Reuse an
-  appropriate idle agent or start the requested CLI there without changing user focus. Do not spawn
-  an internal child in the parent's repository to edit another repository.
-- An explicitly requested independent conversation uses the selected host's verified capabilities,
-  not an automatic host switch. Native internal messaging must follow the actual tool inventory;
-  never pretend another runtime exposes OMP APIs. Unsupported hosts stop before side effects.
+- **Bounded children in the same repository:** use the runtime's authorized internal route
+  by default. For OMP, follow [OMP communication](references/omp.md) to distinguish Rex,
+  verified herdr-core, and sessions without a terminal host.
+- **Existing pane handoff or explicitly independent CLI session:** use the verified target
+  host, not the child-agent API. In Rex, read `rex` and follow [Rex communication](references/rex.md).
+  On herdr-core, read `herdr-core` and [terminal communication](references/herdr-core.md).
+  For legacy Herdr, read [repository workspace communication](references/herdr.md).
+  For explicit Orca, use its environment reference and version-matched CLI guide. Reuse a suitable
+  idle owner without changing user focus.
+- **Another repository:** resolve its repository owner, checkout and live host independently.
+  Follow the selected host's reference and `using-git-worktrees/references/environments.md`
+  where applicable. Do not send a child in the parent's checkout to edit another repository.
+
+An explicit user selection wins; verify that host before acting. Neither an installed binary
+nor OMP itself selects a terminal host. If identity, capability, or delivery is uncertain, stop
+the selected terminal route; do not silently start another backend or replace a live agent.
 
 Use `multi-agent-development` for decomposition and `using-git-worktrees` for write ownership.
 A pane is not write isolation. Do not create worktrees, copy dirty files or change branches merely

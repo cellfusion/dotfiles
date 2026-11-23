@@ -26,7 +26,7 @@ function parseArgs(args) {
       const key = arg === '--environment' ? 'environment' : 'repoPath';
       if (result[key] || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`invalid ${key} option`);
       result[key] = args[++i];
-      if (key === 'environment' && !['herdr', 'herdr-core', 'orca', 'paseo'].includes(result[key])) throw new Error('invalid environment');
+      if (key === 'environment' && !['rex', 'herdr', 'herdr-core', 'orca', 'paseo'].includes(result[key])) throw new Error('invalid environment');
       if (key === 'repoPath' && !path.isAbsolute(result[key])) throw new Error('repo-path must be absolute');
     } else if (arg === '--project') {
       if (result.project || !args[i + 1] || args[i + 1].startsWith('-')) throw new Error('invalid project option');
@@ -107,13 +107,14 @@ function validateContextCommon(context, file, cwd) {
 }
 function snapshotAdapter(context) {
   const name = context.executionEnvironment;
-  if (!['herdr', 'herdr-core', 'orca'].includes(name) || context.runtime?.schemaVersion !== 1 || context.runtime.adapter !== name || context.runtime.snapshot !== '.') throw new Error('invalid runtime snapshot identity');
+  if (!['rex', 'herdr', 'herdr-core', 'orca'].includes(name) || context.runtime?.schemaVersion !== 1 || context.runtime.adapter !== name || context.runtime.snapshot !== '.') throw new Error('invalid runtime snapshot identity');
   const root = fs.realpathSync(context.artifactPath);
   for (const relative of ['environments', 'references', 'sessions', ...(name === 'herdr' ? ['bin'] : [])]) {
     const dir = path.join(root, relative); checkPrivate(dir, true);
     if (path.dirname(fs.realpathSync(dir)) !== root) throw new Error('snapshot directory escapes run');
   }
   const dependencies = ['runtime.js', 'omp-config.yml', 'environments/index.js', `environments/${name}.js`, 'SKILL.md', 'references/environments.md', `references/${name}.md`, 'references/worktrunk.md'];
+  if (['rex', 'herdr-core'].includes(name)) dependencies.push('environments/worktrunk.js');
   if (name === 'herdr') dependencies.push('shell-setup.sh', 'shell-setup-ready');
   for (const relative of dependencies) {
     const file = path.join(root, relative); checkPrivate(file, false);
@@ -487,13 +488,30 @@ function recordFailure(run, stage, error, resources) {
   return result;
 }
 
-async function launch(args) {
+const PR_METADATA_FIELDS = 'number,url,baseRefOid,headRefOid,headRepository,headRepositoryOwner,isCrossRepository';
+
+function bindRexReviewer(file, blockId) {
+  checkPrivate(file, false);
+  if (path.basename(file) !== 'launch-context.json') throw new Error('expected Rex launch context');
+  const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (c.executionEnvironment !== 'rex') throw new Error('expected Rex launch context');
+  validateContextCommon(c, file, c.checkout.path);
+  const adapter = snapshotAdapter(c);
+  assertSameRevision(c, validateMetadata(jsonCommand('gh', ['pr', 'view', String(c.prNumber), '--repo', c.repository, '--json', PR_METADATA_FIELDS], c.callerRoot), c.repository, c.prNumber));
+  adapter.bindReviewer(adapterApi(), c, blockId, c.callerRoot);
+  const contextFile = path.join(c.artifactPath, 'prepared-context.json');
+  privateWrite(contextFile, c);
+  return { status: 'ready', contextFile, checkout: c.checkout, interaction: c.interaction };
+}
+
+async function launch(args, prepareRex = false) {
   const options = parseArgs(args);
   let stage = 'environment'; let run = null;
   const resources = { executionEnvironment: null, checkout: {}, interaction: {} };
   try {
     const registry = require('./environments/index.js');
     const environment = registry.select(options);
+    if (prepareRex !== (environment === 'rex')) throw new Error(prepareRex ? 'Rex preparation requires a local Rex session' : 'invoke the pr-review skill in Rex; the shell command does not start a reviewer');
     resources.executionEnvironment = environment;
     const adapter = registry.load(environment), api = adapterApi();
     stage = 'dependencies';
@@ -521,8 +539,7 @@ async function launch(args) {
       resources.projectResolutionError = 'mismatch'; throw new Error('selected repository and PR URL mismatch');
     }
     const repositoryGitDir = fs.realpathSync(git(callerRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
-    const fields = 'number,url,baseRefOid,headRefOid,headRepository,headRepositoryOwner,isCrossRepository';
-    const metadata = () => jsonCommand('gh', ['pr', 'view', String(options.number), '--repo', repository, '--json', fields], callerRoot);
+    const metadata = () => jsonCommand('gh', ['pr', 'view', String(options.number), '--repo', repository, '--json', PR_METADATA_FIELDS], callerRoot);
     stage = 'metadata';
     const fixed = validateMetadata(metadata(), repository, options.number);
     stage = 'objects';
@@ -539,10 +556,12 @@ async function launch(args) {
     fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
     run = path.join(parent, runId); fs.mkdirSync(run, { mode: 0o700 });
     fs.mkdirSync(path.join(run, 'sessions'), { mode: 0o700 });
-    privateWrite(path.join(run, 'omp-config.yml'), 'autoResume: false\n');
+    privateWrite(path.join(run, 'omp-config.yml'), environment === 'rex'
+      ? 'autoResume: false\nstartup:\n  setupWizard: false\n  checkUpdate: false\nupdate:\n  auto: false\ntask:\n  autoParallel: off\nmcp:\n  enableProjectConfig: false\nproviders:\n  openai-codex:\n    daybreak: false\n'
+      : 'autoResume: false\n');
     for (const dir of ['environments', 'references']) fs.mkdirSync(path.join(run, dir), { mode: 0o700 });
     privateWrite(path.join(run, 'runtime.js'), fs.readFileSync(__filename));
-    for (const name of ['index', environment]) privateWrite(path.join(run, 'environments', `${name}.js`), fs.readFileSync(path.join(__dirname, 'environments', `${name}.js`)));
+    for (const name of ['index', environment, ...(['rex', 'herdr-core'].includes(environment) ? ['worktrunk'] : [])]) privateWrite(path.join(run, 'environments', `${name}.js`), fs.readFileSync(path.join(__dirname, 'environments', `${name}.js`)));
     privateWrite(path.join(run, 'SKILL.md'), skillText);
     for (const [name, text] of references) privateWrite(path.join(run, 'references', `${name}.md`), text);
     stage = 'worktree-create';
@@ -554,6 +573,17 @@ async function launch(args) {
     stage = 'checkout-verify';
     const root = resources.checkout.path;
     const context = { version: 3, runId, repository, prNumber: options.number, ...fixed, mergeBaseSha, executionEnvironment: environment, checkout: resources.checkout, interaction: resources.interaction, artifactPath: run, quick: options.quick, callerRoot, runtime: { schemaVersion: 1, adapter: environment, snapshot: '.' } };
+    if (environment === 'rex') {
+      resources.interaction.agentName = resources.name;
+      const launchContextFile = path.join(run, 'launch-context.json');
+      privateWrite(launchContextFile, context);
+      validateContextCommon(context, launchContextFile, root);
+      process.stdout.write(JSON.stringify({
+        status: 'prepared', launchContextFile, repository, prNumber: options.number, checkout: context.checkout,
+        artifactPath: run, agentName: resources.name, sessionId: process.env.REX_SESSION,
+      }, null, 2) + '\n');
+      return;
+    }
     const contextFile = path.join(run, 'prepared-context.json');
     // Common Git/private invariants are checked before any agent is started.
     privateWrite(contextFile, context); validateContextCommon(context, contextFile, root);
@@ -579,7 +609,14 @@ async function launch(args) {
 module.exports = { parseArgs, validateMetadata, assertSameRevision, validateContext, validateContextCommon, recordFailure, inspectContext, prepareCoverage, readSource, validateReview, renderSummary };
 if (require.main === module) {
   const operations = { 'validate-context': validateContext, 'inspect-context': inspectContext, 'prepare-coverage': prepareCoverage, 'validate-review': validateReview, 'render-summary': renderSummary };
-  if (Object.hasOwn(operations, process.argv[2]) || process.argv[2] === 'read-source') {
+  if (process.argv[2] === 'prepare-rex') {
+    launch(process.argv.slice(3), true).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
+  } else if (process.argv[2] === 'bind-rex-reviewer') {
+    try {
+      if (process.argv.length !== 5 || !path.isAbsolute(process.argv[3])) throw new Error('expected absolute Rex launch-context path and block ID');
+      process.stdout.write(JSON.stringify(bindRexReviewer(process.argv[3], process.argv[4]), null, 2) + '\n');
+    } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
+  } else if (Object.hasOwn(operations, process.argv[2]) || process.argv[2] === 'read-source') {
     try {
       const read = process.argv[2] === 'read-source';
       if (read ? ![6, 8].includes(process.argv.length) : process.argv.length !== 4) throw new Error('invalid prepared operation arguments');
@@ -587,7 +624,7 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } catch (error) { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 1; }
   } else if (process.argv.includes('--help')) {
-    process.stdout.write('Usage: pr-review [--environment herdr|herdr-core|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nHerdr and herdr-core use cwd/--repo-path and Worktrunk; core terminals are background-only. Orca uses registered projects (--project is Orca-only). Host ambiguity/unknown hosts require explicit selection. Paseo is unsupported. All failures retain resources; no fallback or automatic resend. Prepared operations require v3 run-local snapshots.\n');
+    process.stdout.write('Usage: pr-review [--environment herdr|herdr-core|orca|paseo] [--repo-path /absolute/repository | --project <name|id:repoId>] [--quick] [--no-focus] [--skill-file /absolute/rendered/SKILL.md] <positive-number|GitHub-PR-URL>\nIn Rex, invoke the pr-review skill instead. Prepared operations require v3 run-local snapshots.\n');
   } else {
     launch(process.argv.slice(2)).catch(error => { process.stderr.write(`pr-review: ${error.message}\n`); process.exitCode = 2; });
   }

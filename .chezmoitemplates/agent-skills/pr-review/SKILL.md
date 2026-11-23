@@ -24,18 +24,15 @@ dedicated worktree is a trusted base-SHA runtime checkout, not a PR-head executi
 Isolation protects the user's checkout; it does not authorize running untrusted PR scripts.
 
 
-A normal request routes to the shell command:
+Invoke the `pr-review` skill with a GitHub PR URL or number. A request with an explicit private
+`prepared-context.json` path instead resumes the recorded reviewer; validate it there and never
+start a second reviewer. In Rex, the skill owns the launch and submission. Read Agent Selection
+in `~/.agents/AGENTS.md`, then follow the [Rex reference](../using-git-worktrees/references/rex.md)
+to prepare a fixed checkout, start the selected supported agent, verify it, and submit one prompt.
 
-```text
-pr-review [--environment herdr|herdr-core|orca|paseo] [--repo-path <absolute-path> | --project <name|id:repoId>] [--quick] [--no-focus] <positive-number|GitHub-PR-URL>
-```
-
-The command validates input and the matching real GitHub repository, fixes base/head SHAs,
-fetches verified objects and checks revision races before resource creation. It creates an isolated
-base-SHA checkout, then starts OMP in a dedicated interaction resource using a run-unique private
-session directory, `autoResume: false` overlay and `umask 077` before exec. Preserve existing models
-and approval defaults. Submit one explicit skill-read request; do not rely on startup slash commands.
-Agents MUST pass `--no-focus`; a shell user may omit it to reveal the new environment.
+Do not ask the user to run a shell launcher. The Rex helper only prepares a fixed base-SHA
+checkout and private artifacts; it does not start an agent or send input. Legacy Herdr/Core/Orca
+adapters retain their existing launch contract and are never fallback routes for Rex.
 
 Environment selection and concrete operations belong to the shared environment references:
 for a new launch read `../using-git-worktrees/references/environments.md` and the selected host's
@@ -45,11 +42,12 @@ Herdr requires execution inside its verified session and selects cwd Git reposit
 `--repo-path <absolute-path>`. Orca preserves registered-project `--project <name|id:repoId>` and
 URL matching. These selectors are not interchangeable. Paseo is known but unsupported and stops
 with `unsupported-environment` before creating even a run directory.
+Rex requires a verified local session and block; see the Rex reference for invocation and observation.
 herdr-core uses a dedicated `hc` terminal and a Worktrunk checkout. `HC_TERMINAL_ID` is not
 legacy Herdr session identity; do not select `herdr` merely because it is installed. Prepared
 context retains its recorded host/adapter and must validate there, not be migrated or impersonated.
 
-Execution host does not determine checkout owner: Herdr and herdr-core reviews use Worktrunk's
+Execution host does not determine checkout owner: Rex, Herdr and herdr-core reviews use Worktrunk's
 configured lifecycle; Herdr attaches a no-focus workspace and core starts a dedicated terminal.
 Orca owns its review checkout with setup suppressed. Worktrunk's lifecycle may copy ignored files
 selected by the primary checkout and run personal or explicitly approved project hooks.
@@ -61,13 +59,13 @@ in `using-git-worktrees`, record its separate path/owner/branch/SHA, and preserv
 checkout. Report a concrete blocker if that route cannot be completed; do not imply the base checkout
 fulfills the user's request. Creating that checkout does not authorize executing PR code.
 
-For normal requests, invoke the entry and report execution environment, checkout owner/path/ID,
+For new requests, follow the selected launch procedure and report execution environment, checkout owner/path/ID,
 interaction identity, observed reviewer-prompt acceptance receipt and artifact path. Input
 acceptance is not start evidence, review completion or GitHub posting. Preserve `created`, `ready`,
 `accepted`, `started`, `completed` and `blocked` distinctions; do not fabricate one host's receipt
 semantics for another.
 
-An acceptance-only report is an interim update, not the completed review deliverable. Use the
+Rex's queued input is not reviewer acceptance or start. An acceptance-only report is an interim update, not the completed review deliverable. Use the
 selected host's supported, bounded observation of the same recorded reviewer to obtain its
 completion or blocker report. Match its run/repository/PR/fixed SHAs and read the resulting
 artifacts before relaying the verdict, coverage and limits to the requesting user. A file's
@@ -297,11 +295,11 @@ that every bug was found or that the PR works. Keep exclusions and runtime limit
 
 ## Review contract and adaptive plan
 
-The prepared reviewer is an OMP session; it performs primary review and synthesis. For justified
-independent read-only lenses use HC as specified below, not global `agent-communication` skills.
-Reuse the verified base checkout as cwd; do not create another checkout, visible pane or replacement
-reviewer. Higher-priority runtime restrictions still apply: if HC is unavailable or conflicts,
-report the limitation and do not silently fall back to OMP `task`. Preserve models and permissions.
+The prepared reviewer performs primary review and synthesis. For a run whose recorded adapter
+is Rex, use sequential lenses in the prepared reviewer session; do not launch HC or extra terminals.
+Only a run whose recorded adapter is `herdr-core` may use HC for independent read-only lenses as
+specified below. Reuse the verified base checkout and keep the same runtime permissions. If
+that route is unavailable or conflicts with higher-priority policy, report the limitation.
 
 For a prepared HC lens, consult the installed `hc --skill` and command help without loading global
 skills or repository head instructions. Verify the parent's HC address with `hc get` if present;
@@ -422,10 +420,10 @@ exclusions and a partial review, never silently shrink the inventory or claim fu
 
 ### Specialist triggers
 
-Specialists are selected by the plan; never launch every lens mechanically. The OMP prepared
-reviewer uses HC for independent triggered lenses only when permitted, under the fixed-package
-contract above. Otherwise report the limitation and run selected lenses sequentially in this
-session if allowed, without claiming independence or silently switching to `task`.
+Specialists are selected by the plan; never launch every lens mechanically. Use HC for an
+independent triggered lens only on a verified, prepared `herdr-core` run under the contract above.
+On Rex and other routes without independent lenses, run selected lenses sequentially if allowed
+and report the limitation. Do not claim independence or switch backends.
 Resolve available roles and schemas before launching; never invent a role, engine,
 model, or provider. Keep the primary review and synthesis in this dedicated terminal.
 

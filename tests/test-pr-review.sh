@@ -17,6 +17,12 @@ assert.equal(runtime.parseArgs(['--no-focus', '--quick', 'https://github.com/a/b
 assert.equal(runtime.parseArgs(['123']).number, 123);
 assert.equal(runtime.parseArgs(['--environment','herdr','--repo-path','/tmp/repo','123']).environment,'herdr');
 assert.equal(runtime.parseArgs(['--environment','herdr-core','--repo-path','/tmp/repo','123']).environment,'herdr-core');
+assert.equal(runtime.parseArgs(['--environment','rex','--repo-path','/tmp/repo','123']).environment,'rex');
+const registry=require(path.join(process.argv[2],'private_dot_local/private_share/pr-review/environments/index.js'));
+// Do not let the test runner's terminal affect host selection in fixtures.
+delete process.env.REX_SESSION; delete process.env.REX_BLOCK;
+assert.equal(registry.select({}, {REX_SESSION:'session:fixture',REX_BLOCK:'block:fixture'}),'rex');
+assert.throws(()=>registry.select({}, {REX_SESSION:'session:fixture',REX_BLOCK:'block:fixture',HC_TERMINAL_ID:'t1'}),/ambiguous-host/);
 assert.throws(()=>runtime.parseArgs(['--environment','unknown','1']),/environment/);
 assert.throws(() => runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:null}, 'a/b', 1), /fork/);
 assert.equal(runtime.validateMetadata({number: 1, baseRefOid:'a'.repeat(40), headRefOid:'b'.repeat(40), url:'https://github.com/a/b/pull/1', isCrossRepository:true, headRepository:{name:'fork'}, headRepositoryOwner:{login:'other'}}, 'a/b', 1).headRepository, 'other/fork');
@@ -212,6 +218,18 @@ if(name==='hc') {
   } else process.exit(2);
   process.exit(0);
 }
+if(name==='rex') {
+  const save=c.log+'.rex', state=()=>JSON.parse(fs.readFileSync(save,'utf8'));
+  const out=value=>console.log(JSON.stringify(value));
+  const host='local-host', caller='block:caller', reviewer='block:review', session='session:fixture', window='window:review';
+  if(a.includes('--help')) { console.log('--json --shell --focus --cwd --keep-open'); process.exit(0); }
+  if(a.includes('whoami')) out({principal:{transport:c.mode==='rex-remote'?'tcp':'unix',uid:process.getuid()},instance_id:'local-instance',host_id:host,session_id:session,block_id:process.env.REX_BLOCK});
+  else if(a.includes('inspect')) out({session_id:session,api:{methods:{process:{},program_status:{},write:{}}},block:{block_id:a.at(-1),window_id:window,host_id:host,placement:'placed',label:a.at(-1)===caller?'caller':state().name}});
+  else if(a.includes('process')) out({last_exit:null,child:{pid:202,user_id:process.getuid(),name:'omp',path:fs.realpathSync(path.join(path.dirname(process.argv[1]),'omp')),cwd:c.mode==='rex-wrong-cwd'?c.repo:c.checkout}});
+  else if(a.includes('program_status')) out({records:[{app:'omp',state:c.mode==='rex-blocked'?'blocked':'idle',owner:{pid:202,name:'omp'}}]});
+  else process.exit(2);
+  process.exit(0);
+}
 if(name==='gh'){
   if(a[0]==='repo') console.log('a/b');
   else {
@@ -243,11 +261,12 @@ else process.exit(2);
   fs.symlinkSync(driver,path.join(bin,'gh')); fs.symlinkSync(driver,path.join(bin,'orca-fixture'));
   fs.symlinkSync(driver,path.join(bin,'wt')); fs.symlinkSync(driver,path.join(bin,'herdr')); fs.symlinkSync(driver,path.join(bin,'hc'));
   fs.symlinkSync(driver,path.join(bin,'ps'));fs.symlinkSync(driver,path.join(bin,'stty'));
+  fs.symlinkSync(driver,path.join(bin,'rex'));
   fs.writeFileSync(path.join(bin,'omp'),`#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path'),a=process.argv.slice(2),c=JSON.parse(fs.readFileSync(process.env.FIXTURE)),sessions=a[a.indexOf('--session-dir')+1];if(c.mode.startsWith('core-')){if(process.env.PATH!==c.expectedPath)process.exit(3);fs.writeFileSync(c.log+'.omp',JSON.stringify(['omp',...a]));fs.mkdirSync(path.join(sessions,'session'),{mode:0o700});fs.writeFileSync(path.join(sessions,'.session.jsonl.lock.os'),'',{mode:0o600});}if(c.mode!=='herdr-lazy-session')fs.writeFileSync(path.join(sessions,'session.jsonl'),'private session');\n`,{mode:0o700});
   const skill=path.join(root,'SKILL.md');
   fs.writeFileSync(skill,'---\nname: pr-review\n---\n**Prepared-review contract:**\n');
   fs.mkdirSync(path.join(root,'references'));
-  for(const name of ['environments','orca','herdr','herdr-core','worktrunk']) fs.writeFileSync(path.join(root,'references',name+'.md'),'trusted fixture guidance');
+  for(const name of ['environments','orca','herdr','herdr-core','rex','worktrunk']) fs.writeFileSync(path.join(root,'references',name+'.md'),'trusted fixture guidance');
   git('remote','add','origin','git@github.com:a/b.git');
   for(const mode of ['success','explicit-priority','outside-url','outside-project','outside-id','project-url-mismatch','missing-project','ambiguous-project','ambiguous-url','number-cwd','unproven','url-mismatch','race','timeout','wrong-base','wrong-terminal','partial','partial-terminal','rejected']){
     const dir=path.join(root,mode); fs.mkdirSync(dir);
@@ -452,6 +471,43 @@ else process.exit(2);
     const adapterBytes=fs.readFileSync(adapter);fs.unlinkSync(adapter);
     assert.notEqual(validate().status,0,'missing snapshot never falls back to live source');
     fs.writeFileSync(adapter,adapterBytes,{mode:0o600});
+  }
+  for(const mode of ['rex-success','rex-remote','rex-wrong-cwd','rex-blocked']) {
+    const dir=path.join(root,mode);fs.mkdirSync(dir);
+    const fixture={mode,repo:callerRepo,base,head,checkout:path.join(dir,'review'),log:path.join(dir,'calls'),count:path.join(dir,'count')};
+    const config=path.join(dir,'fixture.json');fs.writeFileSync(config,JSON.stringify(fixture));
+    const env={...process.env,HOME:dir,PATH:bin+path.delimiter+process.env.PATH,FIXTURE:config,REX_SESSION:'session:fixture',REX_BLOCK:'block:caller'};
+    for(const key of ['HERDR_ENV','ORCA_TERMINAL_HANDLE','ORCA_WORKTREE_ID','ORCA_DEV_REPO_ROOT','HC_TERMINAL_ID'])delete env[key];
+    const shellEntry=spawnSync('bash',[entry,'--repo-path',callerRepo,'--no-focus','--skill-file',skill,'1'],{cwd:root,env,encoding:'utf8'});
+    assert.equal(shellEntry.status,1);
+    assert.match(shellEntry.stderr,/invoke the pr-review skill in Rex/);
+    assert.ok(!fs.existsSync(fixture.checkout),'the shell entry cannot create a Rex review checkout');
+    const prepared=spawnSync('bash',[entry,'prepare-rex','--repo-path',callerRepo,'--no-focus','--skill-file',skill,'1'],{cwd:root,env,encoding:'utf8'});
+    const remote=mode==='rex-remote';
+    assert.equal(prepared.status,remote?1:0,mode+': '+prepared.stderr);
+    const output=JSON.parse(remote?prepared.stderr:prepared.stdout);
+    const calls=fs.readFileSync(fixture.log,'utf8').trim().split('\n').map(JSON.parse);
+    assert.ok(!calls.some(c=>['hc','herdr','orca-fixture','omp','pi'].includes(c.name)));
+    assert.ok(!calls.some(c=>c.name==='rex'&&(c.args.includes('write')||(c.args.includes('run')&&!c.args.includes('--help')))),'preparation never launches or sends input');
+    if(remote) {assert.equal(output.artifactPath,null);assert.ok(!fs.existsSync(fixture.checkout));continue;}
+    assert.equal(output.status,'prepared');
+    assert.equal(output.checkout.owner,'worktrunk');
+    const runtime=path.join(output.artifactPath,'runtime.js');
+    const bind=(block)=>spawnSync(process.execPath,[runtime,'bind-rex-reviewer',output.launchContextFile,block],{cwd:root,env,encoding:'utf8'});
+    assert.notEqual(bind('block:caller').status,0,'launcher cannot bind itself');
+    fs.writeFileSync(fixture.log+'.rex',JSON.stringify({name:output.agentName}));
+    const bound=bind('block:review'), success=mode==='rex-success';
+    assert.equal(bound.status,success?0:1,bound.stderr);
+    if(!success) {assert.ok(!fs.existsSync(path.join(output.artifactPath,'prepared-context.json')));continue;}
+    const ready=JSON.parse(bound.stdout);
+    assert.equal(ready.status,'ready');
+    assert.equal(ready.interaction.agentKind,'omp');
+    assert.notEqual(bind('block:review').status,0,'a second bind cannot overwrite the prepared context');
+    const sessionFile=path.join(output.artifactPath,'sessions','omp.jsonl');fs.writeFileSync(sessionFile,'private session',{mode:0o600});
+    const validate=(overrides={})=>spawnSync(process.execPath,[runtime,'validate-context',ready.contextFile],{cwd:fixture.checkout,env:{...env,REX_BLOCK:'block:review',...overrides},encoding:'utf8'});
+    const valid=validate();assert.equal(valid.status,0,valid.stderr);
+    assert.notEqual(validate({REX_BLOCK:'block:caller'}).status,0,'caller tab cannot use another block’s context');
+    fs.chmodSync(sessionFile,0o644);assert.notEqual(validate().status,0,'public OMP session must not pass validation');
   }
   // Exercise only public runtime boundaries against a divergent, local Git fixture.
   const coverageRepo=path.join(root,'coverage-repo'); fs.mkdirSync(coverageRepo); repo=coverageRepo;
