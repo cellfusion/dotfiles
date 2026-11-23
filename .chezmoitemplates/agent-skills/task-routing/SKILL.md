@@ -15,9 +15,8 @@ skill does not implement code or approve a design. A clear local change needs no
 ## Make three independent decisions
 
 1. **Execution:** direct parent work, one child, or multiple children.
-2. **Interaction:** in OMP use HC for justified same-repository delegation; other runtimes retain
-   their native internal route. Delegate cross-repository ownership and explicitly independent
-   conversations to `agent-communication`; it resolves host and live recipient identity.
+2. **Interaction:** select internal delegation or a verified terminal route through
+   `agent-communication`. It also resolves cross-repository owners and live recipient identities.
 3. **Writes:** use the existing checkout with disjoint scopes and one integration owner when safe.
    Delegate separate checkout ownership and isolation to `using-git-worktrees` when required.
 
@@ -60,9 +59,8 @@ machinery for one bounded task.
 1. Fix the child contract and artifact expectations.
 2. If write isolation is needed, delegate it to `using-git-worktrees` from the recorded committed
    parent base. Otherwise explicitly assign disjoint writes in the existing cwd.
-3. In OMP dispatch via HC per `agent-communication`; if unavailable or conflicting with
-   higher-priority runtime policy, report the blocker without silent `task` fallback. Elsewhere use
-   the runtime's actual internal tool and documented cwd and role interface.
+3. Dispatch through the route selected by `agent-communication` using its documented cwd and
+   role interface. Do not switch to a different backend after a failed or ambiguous dispatch.
 4. The child changes only its scope and returns changes, evidence, and unresolved conditions.
    Commit, push, apply, dependency setup, and external writes still require explicit authorization.
 5. The parent independently checks artifacts, changed files, scope, acceptance, and verification.

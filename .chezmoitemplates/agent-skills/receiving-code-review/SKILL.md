@@ -85,13 +85,10 @@ Do not make child delegation mandatory. Do not let a reviewer choose provider, m
 or worktree ownership. Pass only the finding, fixed review package, allowed files, requirements, and
 verification commands.
 
-In OMP use HC for justified delegation via `agent-communication`; other runtimes retain their
-internal route. If HC is unavailable or conflicts with higher-priority runtime policy, report the
-blocker without silent `task` fallback. A read-only reviewer needs no worktree; an HC terminal needs
-no visible pane. A writer requiring separate ownership uses hidden Worktrunk from the committed
-parent base. Independent CLI interaction uses the selected host: herdr-core terminals need no
-legacy workspace, and legacy Herdr remains supported. herdr-app changes visible UI only when the
-user requested it. Preserve existing runtime models/permissions.
+Select the delegation route through `agent-communication`. A read-only reviewer needs no
+worktree. A writer requiring separate ownership uses hidden Worktrunk from the committed
+parent base. Keep any independent CLI interaction on the verified host; do not change visible
+layout unless requested or change runtime models/permissions.
 Shared-write children return checks to the integration owner instead of running mid-flight
 verification. Never auto-copy uncommitted parent prerequisites; obtain the user's scoped decision
 before dependent dispatch.

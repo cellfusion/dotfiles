@@ -41,8 +41,8 @@ creation, switch owner/backend or remove partially created resources automatical
 
 Use the selected host's supported private launch and live identity contract in the approved cwd,
 without repurposing user terminals. Keep existing models/permissions, a run-specific private
-session directory and safe launch umask. Reuse a validated prepared reviewer session; an HC child
-terminal for OMP delegation is not a second checkout. Readiness is input readiness, not task success.
+session directory and safe launch umask. Reuse a validated prepared reviewer session. A
+separate terminal is not a second checkout. Readiness is input readiness, not task success.
 
 ### 5. Submit one bounded initial request
 

@@ -22,10 +22,10 @@ No external skill package is required: this skill routes to the version-matched 
 
 ## Choose the right surface
 
-- In OMP, justified same-repository delegation uses `hc` via `agent-communication`. If HC is
-  unavailable or conflicts with higher-priority runtime policy, report the blocker; do not silently
-  fall back to OMP `task`. Other runtimes retain their native internal delegation route.
-- Explicit independent agents and persistent programs use `hc`; no visible tab/split is needed.
+- Select HC only for verified herdr-core work or an explicit HC request with a verified target.
+  OMP under Rex uses its native child tools and `rex` for pane handoffs; see `agent-communication`.
+- On the selected core host, use `hc` for independent agents and persistent programs; no visible
+  tab or split is needed.
 - Visible spaces, tabs, panes and focus use `herdr-app` only when requested. Read that skill first.
 - Checkout isolation uses `using-git-worktrees`; a core terminal is not a checkout owner.
 - Legacy `HERDR_ENV=1` belongs to `herdr`, not core. `$HC_TERMINAL_ID` is a terminal address,

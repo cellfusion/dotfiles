@@ -26,11 +26,10 @@ task needs them; spec and plan are not mandatory child roles.
 
 ## Execution and placement
 
-In OMP, use HC for justified same-repository delegation through `agent-communication`; follow its
-identity, handoff and wait contract. If HC is unavailable or higher-priority runtime policy conflicts,
-report the blocker; do not silently fall back to `task`. Other runtimes retain their native internal
-route. For cross-repository changes, resolve each target repository's environment and owner through
-`agent-communication`, not children editing foreign checkouts. Preserve models and permissions.
+Select delegation and handoff through `agent-communication` before dispatch. In Rex, OMP bounded
+children use native `task`; independent CLI conversations and pane handoffs use `rex` after live
+identity verification. Do not launch HC for a Rex task. For cross-repository changes, resolve the
+target's owner and host independently. Preserve models and permissions.
 
 Choose write placement independently:
 
@@ -41,7 +40,7 @@ Choose write placement independently:
   worktree only when write isolation is also needed.
 
 Use `using-git-worktrees` for ownership, setup, and cleanup. Do not re-create an existing workspace;
-an HC terminal does not by itself require another checkout or visible pane.
+a terminal does not by itself require another checkout.
 
 Read `agent-communication` for recipient identity, bounded requests, reply correlation and uncertain
 delivery. Reuse appropriate idle repository owners; do not interrupt unrelated work. Repository

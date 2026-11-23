@@ -13,7 +13,7 @@ records contain only sanitized identity, route, status, counts, verification sum
 artifact references, never prompts, raw transport responses, secrets, or source/diff contents.
 
 Record repository, parent path/branch, resolved commit base, task/dependency identity, execution
-route (HC for OMP delegation, native delegation in other runtimes, or independent CLI), actual child ID, allowed files, attempt/round
+route from `agent-communication`, actual child ID, allowed files, attempt/round
 budget, timestamps, verification owner, status and parent adoption decision. Record the selected
 execution environment and live interaction identity separately from checkout ownership. Use actual
 runtime IDs, not predicted IDs. A worktree record includes its proven owner, absolute path, branch,
@@ -99,9 +99,9 @@ At the limit, preserve artifacts and report the precise required decision.
 
 ## Lifecycle and failure preservation
 
-Create a child/resource once and record acceptance. In OMP follow HC's documented notifications,
-identity and wait contract; in other runtimes use their actual delegation mechanism. For a CLI,
-readiness, prompt acceptance, execution start and task completion require their own supported evidence.
+Create a child/resource once and record acceptance. Follow the selected route's documented
+identity, notifications and wait contract. For a separate CLI, readiness, prompt acceptance,
+execution start and task completion require their own evidence.
 Inspect the same agent/interaction resource and matching result artifacts; idle alone is not
 success. Track running, completed, blocked, failed or unknown and independently adopt results.
 

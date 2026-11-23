@@ -2,8 +2,8 @@
 
 Read `herdr-core` and the installed `hc --skill` first; use `hc <command> --help` for exact
 arguments. This route uses herdr-core's `hc`, not legacy `herdr`. `$HC_TERMINAL_ID` is a terminal
-address, not a pane or workspace ID. In OMP use HC for justified delegation; other runtimes retain
-their native same-host route unless an independently running terminal agent is selected.
+address, not a pane or workspace ID. Use this route only for verified herdr-core work or an
+explicit HC request with a verified target. OMP in Rex is not a core session.
 
 ## Resolve identity, checkout and return address
 
