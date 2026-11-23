@@ -48,11 +48,12 @@ brew bundle --file ~/.config/install/Brewfile --no-upgrade
 subMBPは`herdr --remote`でmainMBP側へ接続する。Android端末にはMoshiを使う。
 
 OMP のデフォルト設定は `private_dot_omp/agent/private_config.yml` から
-`~/.omp/agent/config.yml` へ共有する。環境別 profile、認証、履歴、DB は共有しない。
+`~/.omp/agent/config.yml` へ共有する。プロファイル固有の認証、モデル設定、履歴、DB は共有しない。
 通常の `omp` 起動は Claude／Codex の環境切替から独立している。
 OMP の開発ワークフローは pstack を既定とする。chezmoi は `~/.omp/pstack-models.md` を配布し、
-OMP が導入済みなら `chezmoi apply` 時に pstack プラグインを未導入の場合だけインストールする。
-旧ワークフローのスキルは `skills.manualSkills` に登録し、手動呼び出しだけに残す。
+OMP が導入済みなら `chezmoi apply` 時に `default` と `pxgrid` のそれぞれに、
+未導入の pstack プラグインをインストールする。`pxgrid` の `skills.manualSkills` は
+`default` と同じ値にそろえ、旧ワークフローのスキルは手動呼び出しだけに残す。
 
 共有エージェントスキルは `.chezmoitemplates/agent-skills/` で管理し、Codex / OMP 用と
 Claude 用に展開する。明確な依頼は必要な調査の後に実装し、同じ対象・条件の検証結果は
