@@ -25,6 +25,7 @@ yabai の上余白は `~/.config/yabai/display-padding` が画面ごとに設定
 | native installer（chezmoi・ランタイム・旧Herdr） | なし（スクリプトに直書き） | `run_onchange_after_20-runtimes.sh` |
 | mise | `~/.config/mise/config.toml` | `run_onchange_after_30-mise.sh` |
 | native installer（AI CLI） | なし（スクリプトに直書き） | `run_onchange_after_40-ai-clis.sh` |
+| native installer（Terminal Browser） | なし（CLI と同梱スキルを確認） | `run_after_42-terminal-browser.sh` |
 | cargo | `~/.config/install/cargo-globals.txt` | `run_onchange_after_60-cargo.sh` |
 | ビルド・サービス登録 | sketchybar helper のソース、SbarLua の固定コミット | `run_onchange_after_70-macos-services.sh` |
 | GitHub 用の鍵生成 | なし（Secure Enclave の状態を見る） | `run_onchange_after_80-secure-enclave-keys.sh` |
@@ -430,6 +431,12 @@ rustup に `--no-modify-path` を渡すのは、PATH の管理を `~/.config/zsh
 この旧 `herdr` の導入手順は `hc`／`herdr-app` の導入や更新を管理するものではない。
 core／appの配布・更新方式は別途確認が必要である。
 chezmoi は `chezmoi upgrade`、mise は `mise self-update`、rustup は `rustup self update` で更新する。
+
+Terminal Browser は macOS と Linux が対象。`chezmoi apply` は CLI や同梱スキルが
+使えないときだけ公式インストーラーを実行し、インストーラーの `setup` は実行しない。
+chezmoi は `~/.agents/skills`、`~/.claude/skills`、`~/.config/claude/skills` に
+同梱の `terminal-browser` スキルへのリンクを置く。スキル本体はアプリが管理する。
+更新は `terminal-browser upgrade` で行う。
 
 ### zsh の初期化とシステム設定
 

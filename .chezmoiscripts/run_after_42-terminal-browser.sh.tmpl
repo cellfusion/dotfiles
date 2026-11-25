@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -eu
+
+{{ if not (or (eq .chezmoi.os "darwin") (eq .chezmoi.os "linux")) -}}
+exit 0
+{{ end -}}
+
+{{ includeTemplate "install/preamble" }}
+
+skill_dir='{{ includeTemplate "agent-skills/terminal-browser-target" . | replace "'" "'\"'\"'" }}'
+app_dir=${skill_dir%/skills/default/terminal-browser}
+XDG_DATA_HOME=${app_dir%/terminal-browser/app}
+bin_home='{{ env "XDG_BIN_HOME" | default (printf "%s/.local/bin" .chezmoi.homeDir) | replace "'" "'\"'\"'" }}'
+launcher="$bin_home/terminal-browser"
+app_launcher="$app_dir/bin/terminal-browser"
+skill="$skill_dir/SKILL.md"
+
+terminal_browser_installed() {
+  [ -f "$launcher" ] && [ -x "$launcher" ] &&
+    [ -f "$app_launcher" ] && [ -x "$app_launcher" ] &&
+    [ -f "$skill" ] && [ -s "$skill" ] &&
+    "$launcher" --version >/dev/null 2>&1
+}
+
+if terminal_browser_installed; then
+  exit 0
+fi
+
+curl -fsSL https://terminal-browser.sh/install |
+  XDG_BIN_HOME="$bin_home" TERMINAL_BROWSER_SKIP_SETUP=1 bash || die 'terminal-browser の導入に失敗した'
+terminal_browser_installed || die 'terminal-browser の CLI または同梱スキルを確認できない'

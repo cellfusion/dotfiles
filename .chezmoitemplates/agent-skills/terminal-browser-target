@@ -1,0 +1,2 @@
+{{- $dataHome := env "XDG_DATA_HOME" | default (printf "%s/.local/share" .chezmoi.homeDir) -}}
+{{- printf "%s/terminal-browser/app/skills/default/terminal-browser" $dataHome -}}
