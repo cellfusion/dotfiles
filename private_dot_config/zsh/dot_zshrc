@@ -112,6 +112,9 @@ alias t='tv'
 # herdr セッション一覧から選んで attach
 alias ss='tv herdr-sessions'
 
+# fvm
+export PATH="$HOME/fvm/bin:$PATH"
+
 [[ -r "$HOME/.local/bin/env" ]] && source "$HOME/.local/bin/env"
 
 
